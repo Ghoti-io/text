@@ -1,0 +1,916 @@
+# tools/oracle/css_prop_diff.py: one witness for every key of css_prop_divergences.txt: the smallest item of the key, what this library
+# says of it (OK=<serialization>, NO) and what an engine says that differs from that. Columns: key, property, value, ours, reference.
+# The run asks every witness again and fails when either answer is not the one written here.
+acc:011:clip-path:ellipse( D closest-side )	clip-path	ellipse(1px closest-side)	NO	OK=ellipse(1px closest-side)
+acc:011:clip-path:ellipse( P closest-side at P P )	clip-path	ellipse(60% closest-side at 50% 50%)	NO	OK=ellipse(60% closest-side at 50% 50%)
+acc:011:clip-path:ellipse( farthest-side P at bottom left )	clip-path	ellipse(farthest-side 4% at bottom left)	NO	OK=ellipse(farthest-side 4% at left bottom)
+acc:011:offset-path:ellipse( D closest-side )	offset-path	ellipse(1px closest-side)	NO	OK=ellipse(1px closest-side)
+acc:011:offset-path:ellipse( farthest-side P at P P )	offset-path	ellipse(farthest-side 4% at 0% 100%)	NO	OK=ellipse(farthest-side 4% at 0% 100%)
+acc:011:offset-path:ellipse( farthest-side P at bottom left )	offset-path	ellipse(farthest-side 4% at bottom left)	NO	OK=ellipse(farthest-side 4% at left bottom)
+acc:011:shape-outside:ellipse( D closest-side at right top )	shape-outside	ellipse(10px closest-side at right top)	NO	OK=ellipse(10px closest-side at right top)
+acc:011:shape-outside:ellipse( closest-side P )	shape-outside	\nellipse(closest-side 20% )\n	NO	OK=ellipse(closest-side 20%)
+acc:011:shape-outside:ellipse( farthest-side D at center top )	shape-outside	ellipse(farthest-side 20px at center top)	NO	OK=ellipse(farthest-side 20px at center top)
+acc:011:shape-outside:ellipse( farthest-side P )	shape-outside	ellipse(farthest-side 20%)	NO	OK=ellipse(farthest-side 20%)
+acc:10-:speak:auto	speak	auto	OK=auto	NO
+acc:100:-webkit-text-stroke-width:hairline	-webkit-text-stroke-width	hairline	OK=hairline	NO
+acc:100:align-content:baseline last	align-content	baseline last	OK=last baseline	NO
+acc:100:align-items:baseline last	align-items	baseline last	OK=last baseline	NO
+acc:100:align-items:flow-end	align-items	flow-end	OK=flow-end	NO
+acc:100:align-items:flow-start	align-items	 flow-start	OK=flow-start	NO
+acc:100:align-self:baseline last	align-self	baseline last	OK=last baseline	NO
+acc:100:align-self:flow-end	align-self	flow-end	OK=flow-end	NO
+acc:100:align-self:flow-start	align-self	flow-start	OK=flow-start	NO
+acc:100:background-image:cross-fade( P color-mix( in srgb , currentcolor , blue ) , white )	background-image	cross-fade(30% color-mix(in srgb, currentcolor, blue), white)	OK=cross-fade(color-mix(in srgb, currentcolor, blue) 30%, white)	NO
+acc:100:background-image:cross-fade( P red , green )	background-image	cross-fade( 1% red, green)	OK=cross-fade(red 1%, green)	NO
+acc:100:background-image:cross-fade( P url( http : / / www . example . com ) , P url( http : / / www . example . com ) )	background-image	cross-fade(50% url(http://www.example.com), 50% url(http://www.example.com))	OK=cross-fade(url("http://www.example.com") 50%, url("http://www.example.com") 50%)	NO
+acc:100:background-image:cross-fade( blue , linear-gradient( D , rgb( N , N , N ) P , rgb( N , N , N ) P ) )	background-image	cross-fade(blue, linear-gradient(90deg, rgb(2, 0, 36) 0%, rgb(0, 212, 255) 100%))	OK=cross-fade(blue, linear-gradient(90deg, rgb(2, 0, 36) 0%, rgb(0, 212, 255) 100%))	NO
+acc:100:background-image:cross-fade( image( green ) , red )	background-image	cross-fade(image(green), red)	OK=cross-fade(image(green), red)	NO
+acc:100:background-image:cross-fade( light-dark( red , blue ) P ) , element( #H )	background-image	cross-fade(light-dark(red, blue) 0%), element(#zz)	OK=cross-fade(light-dark(red, blue) 0%), element(#zz)	NO
+acc:100:background-image:cross-fade( red P , white P , blue )	background-image	cross-fade(red 33%, white 33%, blue)	OK=cross-fade(red 33%, white 33%, blue)	NO
+acc:100:background-image:none , none , image-set( cross-fade( light-dark( none , none ) P ) ) , none	background-image	none, none, image-set(cross-fade(light-dark(none, none) 0%) ), none	OK=none, none, image-set(cross-fade(light-dark(none, none) 0%)), none	NO
+acc:100:background-image:url( S cross-origin( anonymous ) cross-origin( anonymous ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) cross-origin(anonymous))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) cross-origin(anonymous))	NO
+acc:100:background-image:url( S cross-origin( anonymous ) cross-origin( use-credentials ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) cross-origin(use-credentials))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) cross-origin(use-credentials))	NO
+acc:100:background-image:url( S crossorigin( anonymous ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" crossorigin(anonymous))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" crossorigin(anonymous))	NO
+acc:100:background-image:url( S integrity( S ) integrity( S ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" integrity("sha384-foobar") integrity("sha384-barbaz"))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" integrity("sha384-foobar") integrity("sha384-barbaz"))	NO
+acc:100:background-image:url( S param( --c < color > , green ) )	background-image	url("icon.svg" param(--c <color>, green))	OK=url("icon.svg" param(--c <color>, green))	NO
+acc:100:background-image:url( S referrer-policy( no-referrer ) referrer-policy( no-referrer ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(no-referrer) referrer-policy(no-referrer))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(no-referrer) referrer-policy(no-referrer))	NO
+acc:100:background-image:url( S referrer-policy( no-referrer ) referrer-policy( same-origin ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(no-referrer) referrer-policy(same-origin))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(no-referrer) referrer-policy(same-origin))	NO
+acc:100:background-image:url( S referrerpolicy( no-referrer ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrerpolicy(no-referrer))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrerpolicy(no-referrer))	NO
+acc:100:background-position-x:x-end	background-position-x	 x-end	OK=x-end	NO
+acc:100:background-position-x:x-start	background-position-x	x-start	OK=x-start	NO
+acc:100:background-position-y:y-end	background-position-y	y-end	OK=y-end	NO
+acc:100:background-position-y:y-start	background-position-y	y-start	OK=y-start	NO
+acc:100:background-position:end D start D , x-end , y-start	background-position	\nend\n2rem start 100pt, \n x-end,\ny-start 	OK=end 2rem start 100pt, x-end, y-start	NO
+acc:100:background-position:right D center , y-end x-end	background-position	right 0.5ch center, y-end x-end	OK=right 0.5ch center, x-end y-end	NO
+acc:100:background-repeat:repeat-inline	background-repeat	repeat-inline	OK=repeat-inline	NO
+acc:100:background-repeat:repeat-x , repeat-block	background-repeat	repeat-x, repeat-block	OK=repeat-x, repeat-block	NO
+acc:100:background:cross-fade( #H , cross-fade( oklch( P N N ) , #H P , P oklch( P N N ) ) , P #H ) local D / D padding-box repeat-x	background	cross-fade( #abc,  cross-fade( oklch(50% 0.1 120), #fff 0%, 0% oklch(50% 0.1 120)), 0% #abc) local 1.5px / 0ch padding-box repeat-x	OK=cross-fade(rgb(170, 187, 204), cross-fade(oklch(0.5 0.1 120), rgb(255, 255, 255) 0%, oklch(0.5 0.1 120) 0%), rgb(170, 187, 204) 0%) 1.5px center / 0ch auto repeat-x local padding-box	NO
+acc:100:background:cross-fade( #H , cross-fade( oklch( P N N ) , #H P , paint( bar-baz ) P ) , #H ) local D / D padding-box repeat-x	background	cross-fade( #abc,  cross-fade( oklch(50% 0.1 120), #fff 10%, paint(bar-baz ) 0%),  #abc) local 1.5px / 0ch padding-box repeat-x	OK=cross-fade(rgb(170, 187, 204), cross-fade(oklch(0.5 0.1 120), rgb(255, 255, 255) 10%, paint(bar-baz) 0%), rgb(170, 187, 204)) 1.5px center / 0ch auto repeat-x local padding-box	NO
+acc:100:background:cross-fade( #H , cross-fade( oklch( P N N ) , #H P , paint( bar-baz ) P ) , color( srgb N N N / P ) P ) local #H content-box repeat-block	background	cross-fade( #abc,  cross-fade( oklch(-50% 0.1 120), #fff 10%, paint(bar-baz ) 0%), color(srgb 1 0 0 / 50%) 1e-07%) local #fff content-box repeat-block	OK=cross-fade(rgb(170, 187, 204), cross-fade(oklch(0 0.1 120), rgb(255, 255, 255) 10%, paint(bar-baz) 0%), color(srgb 1 0 0 / 0.5) 0%) repeat-block local content-box rgb(255, 255, 255)	NO
+acc:100:background:element( #H ) rgb( from red r g b ) right D bottom / D	background	element(#zz) rgb(from red r g b) right 65535vmin bottom / 0in	OK=element(#zz) right 65535vmin bottom / 0in auto rgb(from red r g b)	NO
+acc:100:background:element( #H ) rgb( from red r g b ) right P center / contain content-box	background	\nelement(#zz)  rgb(from red\nr\ng  b) right   1e-07%\ncenter \n /  contain  content-box	OK=element(#zz) right 0% center / contain content-box rgb(from red r g b)	NO
+acc:100:background:y-end P x-end D content-box none scroll	background	y-end 65535% x-end 2px  content-box none scroll	OK=x-end 2px y-end 65535% content-box	NO
+acc:100:block-size:fit-content( D )	block-size	fit-content(100cap)	OK=fit-content(100cap)	NO
+acc:100:block-size:stretch( D )	block-size	stretch(0.001in)	OK=stretch(0.001in)	NO
+acc:100:border-block-color:canvas stripes( light-dark( red , blue ) )	border-block-color	Canvas stripes( light-dark(red, blue))	OK=canvas stripes(light-dark(red, blue))	NO
+acc:100:border-block-color:stripes( D #H )	border-block-color	stripes(0.5svw #abc)	OK=stripes(rgb(170, 187, 204) 0.5svw)	NO
+acc:100:border-block-color:stripes( D rgb( N N N ) )	border-block-color	stripes(0rex rgb(1 2 3))	OK=stripes(rgb(1, 2, 3) 0rex)	NO
+acc:100:border-block-color:stripes( canvas , rgb( from red r g b ) P )	border-block-color	stripes( Canvas, rgb(from red r g b) 2%)	OK=stripes(canvas, rgb(from red r g b) 2%)	NO
+acc:100:border-block-color:stripes( hsl( N P P ) , D currentcolor , hwb( N P P ) , lab( N N N ) D ) lab( N N N )	border-block-color	stripes( hsl(120 50% 50%), 0cm currentcolor,  hwb(0 10% 20%), lab(50 20 30) 0.5fr) lab(50 20 30)	OK=stripes(rgb(64, 191, 64), currentcolor 0cm, rgb(204, 26, 26), lab(50 20 30) 0.5fr) lab(50 20 30)	NO
+acc:100:border-block-color:stripes( hsl( N P P ) , P lab( N N N ) , light-dark( red , blue ) , D red ) stripes( D oklch( P N N ) )	border-block-color	\nstripes(  \n hsl(120 \n 50%   50%),  0.1%  lab(50   20 \n 30),\tlight-dark(red,\tblue),   1e-07fr RED)   stripes(1.5fr oklch(50% \n 0.1  120))	OK=stripes(rgb(64, 191, 64), lab(50 20 30) 0.1%, light-dark(red, blue), red 0fr) stripes(oklch(0.5 0.1 120) 1.5fr)	NO
+acc:100:border-block-color:stripes( rgba( N , N , N , N ) )	border-block-color	stripes(rgba(1, 2, 3, .5) )	OK=stripes(rgba(1, 2, 3, 0.5))	NO
+acc:100:border-block-end-color:stripes( D color( srgb N N N / P ) , rgb( from red r g b ) , oklch( P N N ) )	border-block-end-color	stripes(-1e+20fr color(srgb 1 0 0 / 50%), rgb(from red r g b) ,  oklch(50% 0.1 120))	OK=stripes(color(srgb 1 0 0 / 0.5) -100000000000000000000fr, rgb(from red r g b), oklch(0.5 0.1 120))	NO
+acc:100:border-block-end-color:stripes( D red , color( srgb N N N / P ) , lab( N N N ) , #H )	border-block-end-color	stripes(-1e+20fr RED,  color(srgb 1 0 0 / 50%), lab(50 20 30) , #fff )	OK=stripes(red -100000000000000000000fr, color(srgb 1 0 0 / 0.5), lab(50 20 30), rgb(255, 255, 255))	NO
+acc:100:border-block-end-color:stripes( D rgb( from red r g b ) , D lab( N N N ) , D rgb( N N N ) , hwb( N P P ) )	border-block-end-color	stripes(-100fr   rgb(from   red\nr  g\tb),  2fr lab(50  20 \n 30),  0fr\trgb(1   2\t3), \n hwb(0 10%\n20%))	OK=stripes(rgb(from red r g b) -100fr, lab(50 20 30) 2fr, rgb(1, 2, 3) 0fr, rgb(204, 26, 26))	NO
+acc:100:border-block-end-color:stripes( D rgba( N , N , N , N ) )	border-block-end-color	stripes(-1e+20fr rgba(1, 2, 3, .5))	OK=stripes(rgba(1, 2, 3, 0.5) -100000000000000000000fr)	NO
+acc:100:border-block-end-color:stripes( light-dark( red , blue ) D , currentcolor D )	border-block-end-color	stripes(light-dark(red, blue) 1e+20svw, currentcolor 0.1fr)	OK=stripes(light-dark(red, blue) 100000000000000000000svw, currentcolor 0.1fr)	NO
+acc:100:border-block-end-color:stripes( oklch( P N N ) , color-mix( in srgb , red , blue ) , D red )	border-block-end-color	stripes( oklch(50% 0.1 120), color-mix(in srgb, red, blue) , -1fr RED)	OK=stripes(oklch(0.5 0.1 120), color-mix(in srgb, red, blue), red -1fr)	NO
+acc:100:border-block-end-width:hairline	border-block-end-width	hairline	OK=hairline	NO
+acc:100:border-block-end:hairline	border-block-end	hairline	OK=hairline	NO
+acc:100:border-block-start-color:stripes( D color( srgb N N N / P ) , hwb( N P P ) , currentcolor D , #H )	border-block-start-color	\nstripes( 0.1rex   color(srgb  1  0\n0  / 50%), \n hwb(0 \n 10%   20%), \n currentcolor   2fr, \t#abc) 	OK=stripes(color(srgb 1 0 0 / 0.5) 0.1rex, rgb(204, 26, 26), currentcolor 2fr, rgb(170, 187, 204))	NO
+acc:100:border-block-start-color:stripes( D color( srgb N N N / P ) , hwb( N P P ) , currentcolor D , D light-dark( red , blue ) )	border-block-start-color	stripes(0.1rex color(srgb 1 0 0 / 50%),  hwb(0 10% 20%), currentcolor 1000fr, 0rem light-dark(red, blue))	OK=stripes(color(srgb 1 0 0 / 0.5) 0.1rex, rgb(204, 26, 26), currentcolor 1000fr, light-dark(red, blue) 0rem)	NO
+acc:100:border-block-start-color:stripes( D color( srgb N N N / P ) , oklch( P N N ) )	border-block-start-color	Stripes(3in Color(Srgb 1 0 0 / 50%), Oklch(50% 0.1 120) )	OK=stripes(color(srgb 1 0 0 / 0.5) 3in, oklch(0.5 0.1 120))	NO
+acc:100:border-block-start-color:stripes( D hsl( N P P ) , hsl( N P P ) )	border-block-start-color	stripes(0in hsl(120 50% 50%),  hsl(120 50% 50%))	OK=stripes(rgb(64, 191, 64) 0in, rgb(64, 191, 64))	NO
+acc:100:border-block-start-color:stripes( D hsl( N P P ) , oklch( P N N ) , P rgba( N , N , N , N ) , D light-dark( red , blue ) )	border-block-start-color	stripes(0.5rex hsl(120 50% 50%), oklch(50% 0.1 120) , 1.5% rgba(1, 2, 3, .5), 1rem light-dark(red, blue))	OK=stripes(rgb(64, 191, 64) 0.5rex, oklch(0.5 0.1 120), rgba(1, 2, 3, 0.5) 1.5%, light-dark(red, blue) 1rem)	NO
+acc:100:border-block-start-color:stripes( canvas , currentcolor , red D )	border-block-start-color	stripes( Canvas,  currentcolor, red -1e+20fr)	OK=stripes(canvas, currentcolor, red -100000000000000000000fr)	NO
+acc:100:border-block-start-color:stripes( lab( N N N ) , transparent , D red )	border-block-start-color	stripes( lab(50 20 30),  transparent, 2147483647ex RED)	OK=stripes(lab(50 20 30), transparent, red 2147483647ex)	NO
+acc:100:border-block-start-width:hairline	border-block-start-width	hairline	OK=hairline	NO
+acc:100:border-block-width:hairline	border-block-width	hairline	OK=hairline	NO
+acc:100:border-block:hairline hidden	border-block	hairline hidden	OK=hairline hidden	NO
+acc:100:border-bottom-color:stripes( D #H )	border-bottom-color	stripes(-1e+20fr #abc)	OK=stripes(rgb(170, 187, 204) -100000000000000000000fr)	NO
+acc:100:border-bottom-color:stripes( D canvas )	border-bottom-color	stripes(-1fr Canvas)	OK=stripes(canvas -1fr)	NO
+acc:100:border-bottom-color:stripes( hsl( N P P ) D )	border-bottom-color	stripes(hsl(120 50% 50%) -100fr)	OK=stripes(rgb(64, 191, 64) -100fr)	NO
+acc:100:border-bottom-color:stripes( red )	border-bottom-color	stripes(RED )	OK=stripes(red)	NO
+acc:100:border-bottom-color:stripes( transparent , lab( N N N ) , hwb( N P P ) )	border-bottom-color	stripes( transparent, lab(50 20 30) , hwb(0 10% 20%) )	OK=stripes(transparent, lab(50 20 30), rgb(204, 26, 26))	NO
+acc:100:border-bottom-left-radius:D / D	border-bottom-left-radius	0mm / 0rex	OK=0mm / 0rex	NO
+acc:100:border-bottom-left-radius:P / D	border-bottom-left-radius	1% / 0em	OK=1% / 0em	NO
+acc:100:border-bottom-right-radius:D / D	border-bottom-right-radius	0rlh / 2147483648cm	OK=0rlh / 2147483648cm	NO
+acc:100:border-bottom-right-radius:P / D	border-bottom-right-radius	0% / 1.5ic	OK=0% / 1.5ic	NO
+acc:100:border-color:#H canvas hwb( N P P ) stripes( canvas )	border-color	#abc Canvas hwb(0 10% 20%) stripes(Canvas )	OK=rgb(170, 187, 204) canvas rgb(204, 26, 26) stripes(canvas)	NO
+acc:100:border-color:rgb( from red r g b ) stripes( rgb( N N N ) D , red D )	border-color	rgb(from red r g b) stripes(rgb(1 2 3) 100ch, RED 0.5dvh)	OK=rgb(from red r g b) stripes(rgb(1, 2, 3) 100ch, red 0.5dvh)	NO
+acc:100:border-color:stripes( #H , oklch( P N N ) D ) color-mix( in srgb , red , blue ) stripes( rgb( from red r g b ) D , D lab( N N N ) , lab( N N N ) , oklch( P N N ) )	border-color	stripes( #abc, oklch(50% 0.1 120) 360vw) color-mix(in srgb, red, blue) stripes(rgb(from red r g b) -1e+20fr, 0.001fr lab(50 20 30), lab(50 20 30) , oklch(50% 0.1 120) )	OK=stripes(rgb(170, 187, 204), oklch(0.5 0.1 120) 360vw) color-mix(in srgb, red, blue) stripes(rgb(from red r g b) -100000000000000000000fr, lab(50 20 30) 0.001fr, lab(50 20 30), oklch(0.5 0.1 120))	NO
+acc:100:border-color:stripes( #H , oklch( P N N ) D ) color-mix( in srgb , red , blue ) stripes( rgb( from red r g b ) D , color-mix( in srgb , red , blue ) D , lab( N N N ) , oklch( P N N ) )	border-color	\nsTRipES(  #ABC,\noKlCH(50%\t0.1  120)   360vw)  coLOr-mIx(in\nsrgb,\trED, \n BluE)   stRipes(rgB(frOm \n red   r g  B)\t1.5fr,   cOlOr-MiX(iN  SRGb,   REd,\nBLUe)\n0fR,   laB(50   20 30)   , OKlcH(50%   0.1  120)\t )	OK=stripes(rgb(170, 187, 204), oklch(0.5 0.1 120) 360vw) color-mix(in srgb, red, blue) stripes(rgb(from red r g b) 1.5fr, color-mix(in srgb, red, blue) 0fr, lab(50 20 30), oklch(0.5 0.1 120))	NO
+acc:100:border-color:stripes( #H , oklch( P N N ) D ) stripes( color( srgb N N N / P ) D ) stripes( D lab( N N N ) , lab( N N N ) )	border-color	stripes( #abc, oklch(50% 0.1 120) 0.5vw) stripes(color(srgb 1 0 0 / 50%) -1fr) stripes(0.001fr lab(50 20 30), lab(50 20 30) )	OK=stripes(rgb(170, 187, 204), oklch(0.5 0.1 120) 0.5vw) stripes(color(srgb 1 0 0 / 0.5) -1fr) stripes(lab(50 20 30) 0.001fr, lab(50 20 30))	NO
+acc:100:border-color:stripes( #H , transparent , canvas D , D rgb( N N N ) ) color-mix( in srgb , red , blue ) stripes( D lab( N N N ) , light-dark( red , blue ) , oklch( P N N ) ) #H	border-color	StRIPeS( #abC  ,  tRANSpAREnt   , CanVAs   1E+20cap,  123456789Px   Rgb(1 2\t3))  color-MIX(IN   SRgB,   RED, \n blue)\nsTrIPEs(2dVh lab(50\n20\n30),   LIGHT-dARk(REd,\nbLuE)\n, \n OKLch(50% \n 0.1\t120))  #fFF	OK=stripes(rgb(170, 187, 204), transparent, canvas 100000000000000000000cap, rgb(1, 2, 3) 123456789px) color-mix(in srgb, red, blue) stripes(lab(50 20 30) 2dvh, light-dark(red, blue), oklch(0.5 0.1 120)) rgb(255, 255, 255)	NO
+acc:100:border-color:stripes( #H , transparent , canvas P , P light-dark( red , blue ) ) rgb( N N N ) color-mix( in srgb , red , blue ) stripes( D lab( N N N ) , light-dark( red , blue ) , oklch( P N N ) )	border-color	stripes(#abc , transparent , Canvas 0%, 0.001% light-dark(red, blue)) rgb(1 2 3) color-mix(in srgb, red, blue) stripes(2dvh lab(50 20 30), light-dark(red, blue) ,  oklch(50% 0.1 120))	OK=stripes(rgb(170, 187, 204), transparent, canvas 0%, light-dark(red, blue) 0.001%) rgb(1, 2, 3) color-mix(in srgb, red, blue) stripes(lab(50 20 30) 2dvh, light-dark(red, blue), oklch(0.5 0.1 120))	NO
+acc:100:border-color:stripes( oklch( P N N ) D ) stripes( rgba( N , N , N , N ) D , transparent , rgba( N , N , N , N ) D ) color-mix( in srgb , red , blue ) lab( N N N )	border-color	stripes(oklch(50% 0.1 120) 1000fr) stripes(rgba(1, 2, 3, .5) 0.5fr,  transparent, rgba(1, 2, 3, .5) 0pc) color-mix(in srgb, red, blue) lab(50 20 30)	OK=stripes(oklch(0.5 0.1 120) 1000fr) stripes(rgba(1, 2, 3, 0.5) 0.5fr, transparent, rgba(1, 2, 3, 0.5) 0pc) color-mix(in srgb, red, blue) lab(50 20 30)	NO
+acc:100:border-color:stripes( oklch( P N N ) D ) stripes( rgba( N , N , N , N ) D , transparent , rgba( N , N , N , N ) D ) stripes( hwb( N P P ) D , color( srgb N N N / P ) D , canvas D ) rgb( N N N )	border-color	stripes(oklch(50% 0.1 120) 1000fr) stripes(rgba(1, 2, 3, .5) 0.5fr,  transparent, rgba(1, 2, 3, .5) 0.5vmin) stripes(hwb(0 10% 20%) 0.1fr, color(srgb 1 0 0 / 50%) 0.5ch, Canvas 1e+20cap) rgb(1 2 3)	OK=stripes(oklch(0.5 0.1 120) 1000fr) stripes(rgba(1, 2, 3, 0.5) 0.5fr, transparent, rgba(1, 2, 3, 0.5) 0.5vmin) stripes(rgb(204, 26, 26) 0.1fr, color(srgb 1 0 0 / 0.5) 0.5ch, canvas 100000000000000000000cap) rgb(1, 2, 3)	NO
+acc:100:border-color:stripes( rgba( N , N , N , N ) , P red ) #H currentcolor #H	border-color	stripes( rgba(1, 2, 3, .5), 100% red) #ff00ff80 currentcolor #ff00ff80	OK=stripes(rgba(1, 2, 3, 0.5), red 100%) rgba(255, 0, 255, 0.5) currentcolor	NO
+acc:100:border-end-end-radius:D / D	border-end-end-radius	0.001lvi / 0.001Q	OK=0.001lvi / 0.001Q	NO
+acc:100:border-end-start-radius:D / D	border-end-start-radius	0vh / 1000pt	OK=0vh / 1000pt	NO
+acc:100:border-end-start-radius:D / P	border-end-start-radius	 360vh/ 3%	OK=360vh / 3%	NO
+acc:100:border-image-source:cross-fade( P #H , #H )	border-image-source	cross-fade(0% #fff,  #fff)	OK=cross-fade(rgb(255, 255, 255) 0%, rgb(255, 255, 255))	NO
+acc:100:border-image-source:cross-fade( hwb( D P P ) , rgb( from red r g b ) P , #H P , rgb( N N N ) )	border-image-source	cross-fade( hwb(0deg 10% 20%), rgb(from red r g b) 0%, #abc 0%, rgb(1 2 3) )	OK=cross-fade(rgb(204, 26, 26), rgb(from red r g b) 0%, rgb(170, 187, 204) 0%, rgb(1, 2, 3))	NO
+acc:100:border-image-source:cross-fade( hwb( N P P ) , rgb( from red r g b ) P , #H P , rgb( N N N ) )	border-image-source	cross-fade( hwb(0 /*\n*/10% 20%), rgb(from red r g b) 0%, #abc 0%, rgb(1 2 3) )	OK=cross-fade(rgb(204, 26, 26), rgb(from red r g b) 0%, rgb(170, 187, 204) 0%, rgb(1, 2, 3))	NO
+acc:100:border-image-source:cross-fade( hwb( N P P ) , rgb( from red r g b ) P , P color-mix( in srgb , red , blue ) , rgb( N N N ) )	border-image-source	 cross-fade( hwb(0   10%\t20%),\nrgb(from\nred \n r  g \n b)\t0%,  0%\tcolor-mix(in srgb, \n red, \tblue),  rgb(1   2  3) )	OK=cross-fade(rgb(204, 26, 26), rgb(from red r g b) 0%, color-mix(in srgb, red, blue) 0%, rgb(1, 2, 3))	NO
+acc:100:border-image-source:element( #H )	border-image-source	element(#zz)	OK=element(#zz)	NO
+acc:100:border-image:cross-fade( paint( foo ) , canvas )	border-image	cross-fade(paint(foo ) ,  Canvas)	OK=cross-fade(paint(foo), canvas)	NO
+acc:100:border-image:fill N P N P element( #H )	border-image	\t fill \n 0.1\n1e+20% \n 0 0% element(#zz) 	OK=element(#zz) 0.1 100000000000000000000% 0 0% fill	NO
+acc:100:border-inline-color:stripes( D #H )	border-inline-color	stripes(0.5lh #fff)	OK=stripes(rgb(255, 255, 255) 0.5lh)	NO
+acc:100:border-inline-color:stripes( D color-mix( in srgb , red , blue ) )	border-inline-color	stripes(-1fr color-mix(in srgb, red, blue))	OK=stripes(color-mix(in srgb, red, blue) -1fr)	NO
+acc:100:border-inline-color:stripes( D currentcolor )	border-inline-color	stripes(0lh currentcolor)	OK=stripes(currentcolor 0lh)	NO
+acc:100:border-inline-color:stripes( hwb( N P P ) , hwb( N P P ) )	border-inline-color	stripes(hwb(0 10% 20%) , hwb(0 10% 20%) )	OK=stripes(rgb(204, 26, 26), rgb(204, 26, 26))	NO
+acc:100:border-inline-color:stripes( lab( N N N ) ) stripes( color( srgb N N N / P ) )	border-inline-color	stripes(lab(50 20 30) ) stripes(color(srgb 1 0 0 / 50%) )	OK=stripes(lab(50 20 30)) stripes(color(srgb 1 0 0 / 0.5))	NO
+acc:100:border-inline-end-color:stripes( canvas )	border-inline-end-color	stripes(Canvas )	OK=stripes(canvas)	NO
+acc:100:border-inline-end-color:stripes( color( srgb N N N / P ) , P rgb( from red r g b ) )	border-inline-end-color	stripes( color(srgb 1 0 0 / 50%), 0% rgb(from red r g b))	OK=stripes(color(srgb 1 0 0 / 0.5), rgb(from red r g b) 0%)	NO
+acc:100:border-inline-end-color:stripes( red D )	border-inline-end-color	stripes(RED 0.5dvh)	OK=stripes(red 0.5dvh)	NO
+acc:100:border-inline-end-color:stripes( rgba( N , N , N , N ) , color( srgb N N N / P ) , rgb( from red r g b ) , currentcolor )	border-inline-end-color	stripes( rgba(1, 2, 3, .5),  color(srgb 1 0 0 / 50%), rgb(from red r g b) ,  currentcolor)	OK=stripes(rgba(1, 2, 3, 0.5), color(srgb 1 0 0 / 0.5), rgb(from red r g b), currentcolor)	NO
+acc:100:border-inline-end-width:hairline	border-inline-end-width	hairline	OK=hairline	NO
+acc:100:border-inline-start-color:stripes( #H )	border-inline-start-color	stripes( #abc)	OK=stripes(rgb(170, 187, 204))	NO
+acc:100:border-inline-start-color:stripes( light-dark( red , blue ) )	border-inline-start-color	stripes( light-dark(red, blue))	OK=stripes(light-dark(red, blue))	NO
+acc:100:border-inline-start-color:stripes( rgb( from red r g b ) D , oklch( P N N ) , rgb( from red r g b ) )	border-inline-start-color	stripes(rgb(from red r g b) -1e+20fr,  oklch(50% 0.1 120),  rgb(from red r g b))	OK=stripes(rgb(from red r g b) -100000000000000000000fr, oklch(0.5 0.1 120), rgb(from red r g b))	NO
+acc:100:border-inline-start-width:hairline	border-inline-start-width	hairline	OK=hairline	NO
+acc:100:border-inline-start:dashed hairline	border-inline-start	dashed hairline	OK=hairline dashed	NO
+acc:100:border-inline-width:hairline	border-inline-width	hairline	OK=hairline	NO
+acc:100:border-inline:hairline	border-inline	hairline	OK=hairline	NO
+acc:100:border-left-color:stripes( #H D , hwb( N P P ) D , #H )	border-left-color	stripes(#fff 0in, hwb(0 10% 20%) 0.1rem, #abc )	OK=stripes(rgb(255, 255, 255) 0in, rgb(204, 26, 26) 0.1rem, rgb(170, 187, 204))	NO
+acc:100:border-left-color:stripes( D lab( N N N ) )	border-left-color	stripes(-1e+20fr lab(50 20 30))	OK=stripes(lab(50 20 30) -100000000000000000000fr)	NO
+acc:100:border-left-color:stripes( D red )	border-left-color	stripes(1.5fr RED)	OK=stripes(red 1.5fr)	NO
+acc:100:border-left-color:stripes( color-mix( in srgb , red , blue ) , hwb( N P P ) )	border-left-color	stripes( color-mix(in srgb, red, blue), hwb(0 10% 20%) )	OK=stripes(color-mix(in srgb, red, blue), rgb(204, 26, 26))	NO
+acc:100:border-left-color:stripes( rgba( N , N , N , N ) )	border-left-color	stripes(rgba(1, 2, 3, .5) )	OK=stripes(rgba(1, 2, 3, 0.5))	NO
+acc:100:border-left-width:hairline	border-left-width	hairline	OK=hairline	NO
+acc:100:border-right-color:stripes( #H , oklch( P N N ) , red )	border-right-color	stripes( #ff00ff80,  oklch(50% 0.1 120), RED )	OK=stripes(rgba(255, 0, 255, 0.5), oklch(0.5 0.1 120), red)	NO
+acc:100:border-right-color:stripes( color( srgb N N N / P ) , rgb( from red r g b ) P )	border-right-color	stripes(color(srgb 1 0 0 / 50%) , rgb(from red r g b) 0%)	OK=stripes(color(srgb 1 0 0 / 0.5), rgb(from red r g b) 0%)	NO
+acc:100:border-right-color:stripes( currentcolor , transparent , light-dark( red , blue ) )	border-right-color	stripes(currentcolor , transparent ,  light-dark(red, blue))	OK=stripes(currentcolor, transparent, light-dark(red, blue))	NO
+acc:100:border-right-color:stripes( hwb( N P P ) D )	border-right-color	stripes(hwb(0 10% 20%) 0.5rex)	OK=stripes(rgb(204, 26, 26) 0.5rex)	NO
+acc:100:border-right-color:stripes( red , D red )	border-right-color	stripes(red , -1fr red)	OK=stripes(red, red -1fr)	NO
+acc:100:border-right-width:hairline	border-right-width	hairline	OK=hairline	NO
+acc:100:border-right:light-dark( red , blue ) hairline	border-right	light-dark(red, blue) hairline	OK=hairline light-dark(red, blue)	NO
+acc:100:border-start-end-radius:D / D	border-start-end-radius	0.001ex / 0vmin	OK=0.001ex / 0vmin	NO
+acc:100:border-start-end-radius:P / P	border-start-end-radius	2147483647% / 2147483647%	OK=2147483647% / 2147483647%	NO
+acc:100:border-start-start-radius:D / D	border-start-start-radius	0.5rem / 0.001rem	OK=0.5rem / 0.001rem	NO
+acc:100:border-start-start-radius:P / D	border-start-start-radius	0.001% / 1e+20vmin	OK=0.001% / 100000000000000000000vmin	NO
+acc:100:border-top-color:stripes( #H , hsl( N P P ) D )	border-top-color	stripes(#abc , hsl(120 50% 50%) -1e+20fr)	OK=stripes(rgb(170, 187, 204), rgb(64, 191, 64) -100000000000000000000fr)	NO
+acc:100:border-top-color:stripes( #H , oklch( P N N ) )	border-top-color	stripes(#ff00ff80 , oklch(50% 0.1 120) )	OK=stripes(rgba(255, 0, 255, 0.5), oklch(0.5 0.1 120))	NO
+acc:100:border-top-color:stripes( D hsl( N P P ) , D red , light-dark( red , blue ) , oklch( P N N ) D )	border-top-color	stripes(1.5in hsl(120 50% 50%), 2147483647fr red,  light-dark(red, blue), oklch(50% 0.1 120) 0fr)	OK=stripes(rgb(64, 191, 64) 1.5in, red 2147483647fr, light-dark(red, blue), oklch(0.5 0.1 120) 0fr)	NO
+acc:100:border-top-color:stripes( D red , P canvas , oklch( P N N ) P )	border-top-color	stripes(2147483647vw RED, 1% Canvas, oklch(50% 0.1 120) 0%)	OK=stripes(red 2147483647vw, canvas 1%, oklch(0.5 0.1 120) 0%)	NO
+acc:100:border-top-color:stripes( D red , P color-mix( in srgb , red , blue ) , D red )	border-top-color	stripes(2147483647vw RED, 0% color-mix(in srgb, red, blue), 0px red)	OK=stripes(red 2147483647vw, color-mix(in srgb, red, blue) 0%, red 0px)	NO
+acc:100:border-top-color:stripes( P rgba( N , N , N , N ) , red , #H )	border-top-color	stripes(0% rgba(1, 2, 3, .5), RED , #ff00ff80 )	OK=stripes(rgba(1, 2, 3, 0.5) 0%, red, rgba(255, 0, 255, 0.5))	NO
+acc:100:border-top-color:stripes( rgb( N N N ) , hsl( N P P ) D )	border-top-color	stripes(rgb(1 2 3) , hsl(120 50% 50%) -1e+20fr)	OK=stripes(rgb(1, 2, 3), rgb(64, 191, 64) -100000000000000000000fr)	NO
+acc:100:border-top-left-radius:D / D	border-top-left-radius	0.1ic / 100svw	OK=0.1ic / 100svw	NO
+acc:100:border-top-left-radius:D / P	border-top-left-radius	255lvi / 1%	OK=255lvi / 1%	NO
+acc:100:border-top-left-radius:P / P	border-top-left-radius	0% / 0%	OK=0% / 0%	NO
+acc:100:border-top-right-radius:D / D	border-top-right-radius	0.001em / 2lvi	OK=0.001em / 2lvi	NO
+acc:100:border-top-right-radius:P / D	border-top-right-radius	1% / 2147483648svw	OK=1% / 2147483648svw	NO
+acc:100:border-top-right-radius:P / P	border-top-right-radius	0% / 0.5%	OK=0% / 0.5%	NO
+acc:100:border-top-width:hairline	border-top-width	hairline	OK=hairline	NO
+acc:100:border-top:hairline	border-top	hairline	OK=hairline	NO
+acc:100:border-width:hairline	border-width	hairline	OK=hairline	NO
+acc:100:border:double hairline	border	double hairline	OK=hairline double	NO
+acc:100:border:hairline dotted green	border	hairline dotted green	OK=hairline dotted green	NO
+acc:100:caret-color:currentcolor auto	caret-color	currentcolor auto	OK=currentcolor auto	NO
+acc:100:caret-color:currentcolor currentcolor	caret-color	currentcolor currentcolor	OK=currentcolor currentcolor	NO
+acc:100:caret-color:red rgb( N , N , N )	caret-color	red rgb(0, 255, 0)	OK=red rgb(0, 255, 0)	NO
+acc:100:caret-color:red transparent	caret-color	red transparent	OK=red transparent	NO
+acc:100:caret-color:rgb( N N N ) auto	caret-color	rgb(1 2 3) auto	OK=rgb(1, 2, 3) auto	NO
+acc:100:caret-color:rgba( N , N , N , N ) auto	caret-color	rgba(10, 20, 30, 0.4) auto	OK=rgba(10, 20, 30, 0.4) auto	NO
+acc:100:caret-color:transparent transparent	caret-color	transparent transparent	OK=transparent transparent	NO
+acc:100:clip-path:ellipse( D at left D bottom D )	clip-path	ellipse(1cap at left -1e+20svw bottom 1dvh)	OK=ellipse(1cap at left -100000000000000000000svw bottom 1dvh)	NO
+acc:100:clip-path:ellipse( D at left D y-end D )	clip-path	ellipse(1cap at left 0cap y-end 1e+20Q)	OK=ellipse(1cap at left 0cap y-end 100000000000000000000Q)	NO
+acc:100:clip-path:ellipse( P )	clip-path	ellipse(0% )	OK=ellipse(0%)	NO
+acc:100:clip-path:ellipse( closest-side )	clip-path	ellipse(closest-side)	OK=ellipse()	NO
+acc:100:column-gap:hairline	column-gap	hairline	OK=hairline	NO
+acc:100:column-rule-width:repeat( N , hairline , thin , thick , thick )	column-rule-width	repeat(1, hairline, thin, thick, thick)	OK=repeat(1, hairline, thin, thick, thick)	NO
+acc:100:column-rule-width:repeat( N , medium , thick , hairline , medium )	column-rule-width	repeat(1, medium, thick, hairline, medium)	OK=repeat(1, medium, thick, hairline, medium)	NO
+acc:100:column-rule-width:repeat( auto , D , hairline , D )	column-rule-width	repeat(auto, 0cap, hairline, 1e+20rex) 	OK=repeat(auto, 0cap, hairline, 100000000000000000000rex)	NO
+acc:100:column-rule:repeat( auto , rgb( from red r g b ) groove thick , dashed hairline , hairline color( srgb N N N / P ) inset )	column-rule	repeat(auto, rgb(from red r g b) groove thick, dashed hairline, hairline color(srgb 1 0 0 / 50%) inset) 	OK=repeat(auto, thick groove rgb(from red r g b), hairline dashed, hairline inset color(srgb 1 0 0 / 0.5))	NO
+acc:100:column-width:fit-content( D )	column-width	/*x*/fit-content(2dvh)	OK=fit-content(2dvh)	NO
+acc:100:column-width:stretch( D )	column-width	streTch(0.001rlH)	OK=stretch(0.001rlh)	NO
+acc:100:columns:stretch( P )	columns	 /*\n*/ stretch(0%)\t  	OK=stretch(0%)	NO
+acc:100:content:element( #H )	content	element(#zz)	OK=element(#zz)	NO
+acc:100:fill:cross-fade( P light-dark( none , image( rtl #H ) ) )	fill	cross-fade(99% light-dark(none, image(rtl #fff)))	OK=cross-fade(light-dark(none, image(rtl rgb(255, 255, 255))) 99%)	NO
+acc:100:fill:cross-fade( cross-fade( P red , light-dark( none , element( #H ) ) , currentcolor , element( #H ) ) , #H , image-set( S , S type( S ) , cross-fade( P element( #H ) , lab( N N N ) , image-set( paint( foo ) type( S ) , light-dark( url( a . png ) , url( e ) ) D , S type( S ) D ) P , url( S ) P ) , S type( S ) ) P , rgb( from red r g b ) )	fill	cross-fade( cross-fade(50% RED,  light-dark(none, element(#zz)), currentcolor , element(#zz) ), #ff00ff80 , image-set("a" , "a b" type("\\41 "), cross-fade(0% element(#zz), lab(50 20 30) , image-set(paint(Foo ) type("\\41 "), light-dark(url(a.png), url(  e  )) 2147483648x, 'b' type("") 1000x) 0%, url('d') 1%) , "a" type("a")) 0.5%, rgb(from red r g b) )	OK=cross-fade(cross-fade(red 50%, light-dark(none, element(#zz)), currentcolor, element(#zz)), rgba(255, 0, 255, 0.5), image-set("a", "a b" type("A"), cross-fade(element(#zz) 0%, lab(50 20 30), image-set(paint(Foo) type("A"), light-dark(url("a.png"), url("e")) 2147483648x, "b" 1000x type("")) 0%, url("d") 1%), "a" type("a")) 0.5%, rgb(from red r g b))	NO
+acc:100:fill:image-set( url( e ) , S , cross-fade( hwb( N P P ) , url( S ) ) )	fill	image-set(url(  e  ) , "a" , cross-fade(hwb(0 10% 20%) , url("b c.png") ) )	OK=image-set(url("e"), "a", cross-fade(rgb(204, 26, 26), url("b c.png")))	NO
+acc:100:flex-basis:fit-content( D )	flex-basis	fit-content(0.001mm)	OK=fit-content(0.001mm)	NO
+acc:100:flex-basis:stretch( D )	flex-basis	stretch(0.001lh)	OK=stretch(0.001lh)	NO
+acc:100:flex-basis:stretch( P )	flex-basis	stretch(0%)	OK=stretch(0%)	NO
+acc:100:float:block-start	float	block-start	OK=block-start	NO
+acc:100:gap:hairline D	gap	hairline 360rem	OK=hairline 360rem	NO
+acc:100:grid-template-columns:D [ a ] repeat( auto-fit , [ b ] fit-content( D ) [ c ] ) [ d ] D	grid-template-columns	1px [a] repeat(auto-fit, [b] fit-content(200px) [c]) [d] 3px	OK=1px [a] repeat(auto-fit, [b] fit-content(200px) [c]) [d] 3px	NO
+acc:100:grid-template-columns:repeat( auto-fill , fit-content( D ) )	grid-template-columns	\nrepeat(auto-fill, fit-content(200px) )\n	OK=repeat(auto-fill, fit-content(200px))	NO
+acc:100:grid-template-columns:repeat( auto-fit , [ three ] fit-content( D ) [ four ] )	grid-template-columns	repeat(auto-fit, [three] fit-content(200px) [four])	OK=repeat(auto-fit, [three] fit-content(200px) [four])	NO
+acc:100:grid-template-columns:repeat( auto-fit , fit-content( D ) D fit-content( D ) )	grid-template-columns	repeat(auto-fit, fit-content(200px) 100px fit-content(200px))	OK=repeat(auto-fit, fit-content(200px) 100px fit-content(200px))	NO
+acc:100:grid-template-rows:D [ a ] repeat( auto-fit , [ b ] fit-content( D ) [ c ] ) [ d ] D	grid-template-rows	1px [a] repeat(auto-fit, [b] fit-content(200px) [c]) [d] 3px	OK=1px [a] repeat(auto-fit, [b] fit-content(200px) [c]) [d] 3px	NO
+acc:100:grid-template-rows:repeat( auto-fill , fit-content( D ) )	grid-template-rows	repeat(auto-fill, fit-content(200px))	OK=repeat(auto-fill, fit-content(200px))	NO
+acc:100:grid-template-rows:repeat( auto-fit , [ three ] fit-content( D ) [ four ] )	grid-template-rows	repeat(auto-fit, [three] fit-content(200px) [four])	OK=repeat(auto-fit, [three] fit-content(200px) [four])	NO
+acc:100:grid-template-rows:repeat( auto-fit , fit-content( D ) D fit-content( D ) )	grid-template-rows	repeat(auto-fit, fit-content(200px) 100px fit-content(200px))	OK=repeat(auto-fit, fit-content(200px) 100px fit-content(200px))	NO
+acc:100:grid:S auto [ a1 x \ y a1 ] S S [ foo x \ y ] [ foo foo ] S fit-content( D )	grid	 "a b" auto [a1 x\\ y a1]  "\\41 "    'b'  [foo x\\ y] [Foo foo] 'b' fit-content(0cap)  	OK="a b" [a1 x\ y a1] "A" "b" [foo x\ y Foo foo] "b" fit-content(0cap)	NO
+acc:100:grid:[ ] S [ ] S [ none-of foo ] S fit-content( P ) [ ] S fit-content( P ) [ ] / auto fit-content( D )	grid	[] 'b'  []  "a"   [none-of foo] 'b' fit-content(1%)  [] 'b' fit-content(0.001%) [] /  auto  fit-content(2147483648vmin) 	OK="b" "a" [none-of foo] "b" fit-content(1%) "b" fit-content(0.001%) / auto fit-content(2147483648vmin)	NO
+acc:100:grid:auto-flow dense fit-content( D ) min-content / [ none-of ] minmax( D , max-content ) [ x \ y foo ] repeat( auto-fit , [ x \ y none-of foo ] fit-content( P ) fit-content( P ) [ ] fit-content( P ) minmax( P , max-content ) ) [ foo ] minmax( D , max-content ) [ _x foo none-of ] repeat( N , minmax( P , min-content ) P D [ foo ] )	grid	auto-flow dense fit-content(2147483647lh) min-content / [none-of] minmax(0rlh, max-content) [x\\ y Foo] repeat(auto-fit, [x\\ y none-of foo] fit-content(0%)  fit-content(1%) [] fit-content(0%)  minmax(0.5%, max-content) ) [Foo] minmax(0lvi, max-content) [_x Foo none-of] repeat(1,  minmax(0%, min-content)  1%  1000Q [foo]) 	OK=auto-flow dense fit-content(2147483647lh) min-content / [none-of] minmax(0rlh, max-content) [x\ y Foo] repeat(auto-fit, [x\ y none-of foo] fit-content(0%) fit-content(1%) fit-content(0%) minmax(0.5%, max-content)) [Foo] minmax(0lvi, max-content) [_x Foo none-of] repeat(1, minmax(0%, min-content) 1% 1000Q [foo])	NO
+acc:100:grid:auto-flow fit-content( D ) fit-content( D ) fit-content( D ) / [ bar-baz none-of foo ] minmax( P , D ) [ x \ y ] minmax( D , auto ) repeat( auto-fit , P D [ bar-baz x \ y ] minmax( max-content , D ) [ a1 _x _x ] )	grid	 auto-flow fit-content(0lh) fit-content(1000pc) fit-content(0cqw) / [bar-baz none-of foo] minmax(1%, 0.1fr) [x\\ y] minmax(0.5dvh, auto)  repeat(auto-fit,  100%  360fr [bar-baz x\\ y] minmax(max-content, 1pc) [a1 _x _x])  	OK=auto-flow fit-content(0lh) fit-content(1000pc) fit-content(0cqw) / [bar-baz none-of foo] minmax(1%, 0.1fr) [x\ y] minmax(0.5dvh, auto) repeat(auto-fit, 100% 360fr [bar-baz x\ y] minmax(max-content, 1pc) [a1 _x _x])	NO
+acc:100:grid:auto-flow fit-content( P ) minmax( max-content , D ) fit-content( D ) / [ bar-baz none-of foo ] minmax( P , D ) [ x \ y ] minmax( D , auto ) repeat( auto-fit , P D [ bar-baz x \ y ] minmax( max-content , D ) [ a1 _x _x ] )	grid	 auto-flow fit-content(0%) minmax(max-content, 0.001pc) fit-content(0cqw) / [bar-baz none-of foo] minmax(1%, 0.1fr) [x\\ y] minmax(0.5dvh, auto)  repeat(auto-fit,  100%  360fr [bar-baz x\\ y] minmax(max-content, 1pc) [a1 _x _x])  	OK=auto-flow fit-content(0%) minmax(max-content, 0.001pc) fit-content(0cqw) / [bar-baz none-of foo] minmax(1%, 0.1fr) [x\ y] minmax(0.5dvh, auto) repeat(auto-fit, 100% 360fr [bar-baz x\ y] minmax(max-content, 1pc) [a1 _x _x])	NO
+acc:100:height:fit-content( D )	height	fit-content(0.001vmax)	OK=fit-content(0.001vmax)	NO
+acc:100:height:fit-content( P )	height	fit-content(10%)	OK=fit-content(10%)	NO
+acc:100:inline-size:fit-content( P )	inline-size	\t fit-content(1e+20% )	OK=fit-content(100000000000000000000%)	NO
+acc:100:justify-items:baseline last	justify-items	baseline last	OK=last baseline	NO
+acc:100:justify-items:flow-end	justify-items	flow-end	OK=flow-end	NO
+acc:100:justify-items:flow-start	justify-items	flow-start	OK=flow-start	NO
+acc:100:justify-self:baseline last	justify-self	baseline last	OK=last baseline	NO
+acc:100:justify-self:flow-end	justify-self	flow-end	OK=flow-end	NO
+acc:100:justify-self:flow-start	justify-self	flow-start	OK=flow-start	NO
+acc:100:list-style-image:cross-fade( color-mix( in srgb , red , blue ) P )	list-style-image	cross-fade(color-mix(in srgb, red, blue) 0%)	OK=cross-fade(color-mix(in srgb, red, blue) 0%)	NO
+acc:100:list-style-image:element( #H )	list-style-image	element(#zz)	OK=element(#zz)	NO
+acc:100:list-style-type:symbols( S light-dark( image( rtl S ) , none ) S cross-fade( P url( S ) , P red ) )	list-style-type	symbols( "\\41 " light-dark(image(rtl "\\"q\\"" ), none) 'b' cross-fade(0% url('d'), 0% RED))	OK=symbols("A" light-dark(image(rtl "\"q\""), none) "b" cross-fade(url("d") 0%, red 0%))	NO
+acc:100:list-style-type:symbols( alphabetic S light-dark( element( #H ) , cross-fade( url( S ) , hwb( N P P ) , rgb( N N N ) , P paint( foo , D ) ) ) )	list-style-type	symbols(alphabetic "\\-41 " light-dark(element(#zz), cross-fade(url("b c.png") , hwb(0 10% 20%) , rgb(1 2 3) , 100% paint(foo , 1px))))	OK=symbols(alphabetic "-41 " light-dark(element(#zz), cross-fade(url("b c.png"), rgb(204, 26, 26), rgb(1, 2, 3), paint(foo, 1px) 100%)))	NO
+acc:100:list-style-type:symbols( numeric S url( a . png ) image-set( repeating-linear-gradient( in hwb D , #H D ) , S ) cross-fade( color( srgb N N N / P ) ) )	list-style-type	symbols(numeric "" url(a.png) image-set(repeating-linear-gradient(in hwb  2147483648grad , #ff00ff80 0rex ) , "\\41 " ) cross-fade(color(srgb 1 0 0 / 50%) ))	OK=symbols(numeric "" url("a.png") image-set(repeating-linear-gradient(2147483648grad in hwb, rgba(255, 0, 255, 0.5) 0rex), "A") cross-fade(color(srgb 1 0 0 / 0.5)))	NO
+acc:100:list-style:cross-fade( light-dark( red , blue ) P , P canvas , P #H ) outside	list-style	cross-fade(light-dark(red, blue) 0%, 0% Canvas, 100% #fff) outside	OK=cross-fade(light-dark(red, blue) 0%, canvas 0%, rgb(255, 255, 255) 100%)	NO
+acc:100:list-style:cross-fade( light-dark( red , blue ) P , P hsl( N P P ) , color( srgb N N N / P ) ) outside	list-style	cross-fade(light-dark(red, blue) 0%, 0% hsl(120 50% 50%),  color(srgb 1 0 0 / 50%)) outside	OK=cross-fade(light-dark(red, blue) 0%, rgb(64, 191, 64) 0%, color(srgb 1 0 0 / 0.5))	NO
+acc:100:list-style:cross-fade( light-dark( red , blue ) P , P url( S ) , #H P ) inside	list-style	cross-fade( light-dark(red,   blue)\n0%,   10%\nurl("b c.png"),\n#fff   99.999% ) inside\n	OK=inside cross-fade(light-dark(red, blue) 0%, url("b c.png") 10%, rgb(255, 255, 255) 99.999%)	NO
+acc:100:list-style:cross-fade( rgb( N N N ) , color( srgb N N N / P ) , red )	list-style	cross-fade(rgb(1 2 3) , color(srgb 1 0 0 / 50%) ,  RED)	OK=cross-fade(rgb(1, 2, 3), color(srgb 1 0 0 / 0.5), red)	NO
+acc:100:list-style:element( #H ) bar-baz	list-style	element(#zz) bar-baz	OK=element(#zz) bar-baz	NO
+acc:100:list-style:repeating-radial-gradient( at y-start in --a-b , red D , D , red D , #H D , rgb( N N N ) , hsl( N P P ) P ) none-of	list-style	repeating-radial-gradient( at y-start in --a-b , RED -1e+20rlh , 1mm , RED 0.1rem, #fff 255dvh, rgb(1 2 3) , hsl(120 50% 50%) 1.5%) none-of	OK=repeating-radial-gradient(at y-start in --a-b, red -100000000000000000000rlh, 1mm, red 0.1rem, rgb(255, 255, 255) 255dvh, rgb(1, 2, 3), rgb(64, 191, 64) 1.5%) none-of	NO
+acc:100:list-style:repeating-radial-gradient( at y-start in --a-b , red D , lab( N N N ) , D , #H , #H D ) outside	list-style	repeating-radial-gradient( at y-start in --a-b , RED 0lvi , lab(50 20 30) , 0.001vh , #ff00ff80 , #fff 255dvh) outside	OK=repeating-radial-gradient(at y-start in --a-b, red 0lvi, lab(50 20 30), 0.001vh, rgba(255, 0, 255, 0.5), rgb(255, 255, 255) 255dvh)	NO
+acc:100:list-style:repeating-radial-gradient( at y-start in --a-b , red D , lab( N N N ) , D , #H , #H P ) inside foo	list-style	repeating-radial-gradient( at y-start in --a-b , RED 100lvi , lab(50 20 30) , 0.001vh , #ff00ff80 , #fff -1%) inside Foo	OK=inside repeating-radial-gradient(at y-start in --a-b, red 100lvi, lab(50 20 30), 0.001vh, rgba(255, 0, 255, 0.5), rgb(255, 255, 255) -1%) Foo	NO
+acc:100:list-style:repeating-radial-gradient( at y-start in --a-b , red D , lab( N N N ) , D , hwb( N P P ) , D , currentcolor P ) none	list-style	repeating-radial-gradient( at y-start in --a-b , RED 100lvi , lab(50 20 30) , -1e+20ic , hwb(0 10% 20%) , 2147483648rem , currentcolor 0%) none	OK=repeating-radial-gradient(at y-start in --a-b, red 100lvi, lab(50 20 30), -100000000000000000000ic, rgb(204, 26, 26), 2147483648rem, currentcolor 0%) none	NO
+acc:100:mask-image:cross-fade( P currentcolor , image-set( S type( S ) D ) , light-dark( light-dark( url( S ) , none ) , none ) P , color( srgb N N N / P ) ) , url( S ) , none	mask-image	cross-fade(0% currentcolor, image-set("a b" type('b') 0x) , light-dark(light-dark(url('d'), none), none) 0%,  color(srgb 1 0 0 / 50%)), url("b c.png"), none	OK=cross-fade(currentcolor 0%, image-set("a b" 0x type("b")), light-dark(light-dark(url("d"), none), none) 0%, color(srgb 1 0 0 / 0.5)), url("b c.png"), none	NO
+acc:100:mask-image:cross-fade( currentcolor P , image-set( S type( S ) ) P , P hsl( N P P ) , P url( S ) )	mask-image	cross-fade(currentcolor 0%, image-set('b' type("")) 0%, 0% hsl(120 50% 50%), 1.5% url("b c.png"))	OK=cross-fade(currentcolor 0%, image-set("b" type("")) 0%, rgb(64, 191, 64) 0%, url("b c.png") 1.5%)	NO
+acc:100:mask-image:cross-fade( currentcolor P , paint( bar-baz , ( > ) ) , P oklch( P N N ) , transparent )	mask-image	crosS-FaDe(currENTCOlOr 10%,  PaInt(BAR-BAZ , (>)), 0.001% oKLCh(50% 0.1 120),  TrANsPareNt)	OK=cross-fade(currentcolor 10%, paint(BAR-BAZ, (>)), oklch(0.5 0.1 120) 0.001%, transparent)	NO
+acc:100:mask-image:cross-fade( currentcolor P , paint( bar-baz , ( a ) ) , P oklch( P N N ) , transparent )	mask-image	cross-fade( currentcolor\t10%,\tpaint(bar-baz   ,\t(a)),   0.001%\toklch(50%   0.1\n120),  transparent )\n	OK=cross-fade(currentcolor 10%, paint(bar-baz, (a)), oklch(0.5 0.1 120) 0.001%, transparent)	NO
+acc:100:mask-image:cross-fade( oklch( P N N ) P , paint( foo , x ) P )	mask-image	cross-fade(oklch(50% 0.1 120) 100%, paint(Foo , x) 10%)	OK=cross-fade(oklch(0.5 0.1 120) 100%, paint(Foo, x) 10%)	NO
+acc:100:mask-image:element( #H ) , url( e )	mask-image	element(#zz), url(  e  )	OK=element(#zz), url("e")	NO
+acc:100:mask-position:D , left D y-end D , block-start P inline-end D , right	mask-position	\t 2147483648px,  \n left\n255cqw \n y-end\t1000rlh,   block-start \n 1.5% inline-end\t10cm,\nright 	OK=2147483648px center, left 255cqw y-end 1000rlh, block-start 1.5% inline-end 10cm, right center	NO
+acc:100:mask-position:bottom , x-end D bottom D	mask-position	bottom, x-end -1e+20pc bottom 10pc	OK=center bottom, x-end -100000000000000000000pc bottom 10pc	NO
+acc:100:mask-position:bottom , x-end D bottom P	mask-position	bottom, x-end -0.5em bottom 0.5%	OK=center bottom, x-end -0.5em bottom 0.5%	NO
+acc:100:mask-position:bottom , x-end D y-end P	mask-position	bottom, x-end 0pc y-end 1e+20%	OK=center bottom, x-end 0pc y-end 100000000000000000000%	NO
+acc:100:mask-position:bottom , x-end P bottom P	mask-position	 bottom, x-end -0.5%\tbottom 0% 	OK=center bottom, x-end -0.5% bottom 0%	NO
+acc:100:mask-position:center , D , x-start	mask-position	center, 0cm, x-start	OK=center center, 0cm center, x-start	NO
+acc:100:mask-position:right , end P end D , bottom x-end , top	mask-position	right, end 0.001% end 360cap, bottom x-end, top	OK=right center, end 0.001% end 360cap, x-end bottom, center top	NO
+acc:100:mask:cross-fade( P url( S ) , color( srgb N N N / P ) ) space no-repeat match-source , repeat-x intersect paint( bar-baz , ( a ) ) , stroke-box luminance block-start / contain	mask	cross-fade(99% url('d'), color(srgb 1 0 0 / 50%) ) space no-repeat match-source, repeat-x intersect paint(bar-baz , (a)), stroke-box luminance block-start / contain	OK=cross-fade(url("d") 99%, color(srgb 1 0 0 / 0.5)) space no-repeat, paint(bar-baz, (a)) repeat-x intersect, block-start / contain stroke-box luminance	NO
+acc:100:mask:exclude none bottom P x-start P repeat-x , view-box border-box repeat-inline , fill-box match-source , add fill-box url( e ) repeat-inline	mask	exclude none bottom -1% x-start 255%  repeat-x, view-box border-box repeat-inline, fill-box match-source, add fill-box url(  e  ) repeat-inline	OK=x-start 255% bottom -1% repeat-x exclude, repeat-inline view-box border-box, fill-box, url("e") repeat-inline fill-box	NO
+acc:100:mask:exclude view-box none repeat-y border-box , conic-gradient( color-mix( in srgb , red , blue ) D ) center , inline-start center add alpha light-dark( cross-fade( url( S ) , rgb( from red r g b ) , cross-fade( #H ) ) , url( a . png ) ) view-box , no-clip y-end D x-start D subtract stroke-box none repeat-x	mask	exclude view-box none repeat-y border-box, conic-gradient(color-mix(in srgb, red, blue) 1e+20rad ) center , inline-start center  add alpha light-dark(cross-fade( url("b c.png"),  rgb(from red r g b), cross-fade( #abc) ), url(a.png)) view-box, no-clip y-end 10lvi x-start 0pc  subtract stroke-box none repeat-x	OK=repeat-y view-box border-box exclude, conic-gradient(color-mix(in srgb, red, blue) 100000000000000000000rad) center center, light-dark(cross-fade(url("b c.png"), rgb(from red r g b), cross-fade(rgb(170, 187, 204))), url("a.png")) center inline-start view-box alpha, x-start 0pc y-end 10lvi repeat-x stroke-box no-clip subtract	NO
+acc:100:mask:exclude view-box none repeat-y border-box , conic-gradient( color-mix( in srgb , red , blue ) D ) center , inline-start center add alpha light-dark( cross-fade( url( S ) , rgb( from red r g b ) , cross-fade( #H ) ) , url( a . png ) ) view-box , no-clip y-end D x-start P / contain subtract stroke-box none repeat-x	mask	exclude view-box none repeat-y border-box, conic-gradient(color-mix(in srgb, red, blue) 0rad ) center , inline-start center  add alpha light-dark(cross-fade( url("b c.png"),  rgb(from red r g b), cross-fade( #abc) ), url(a.png)) view-box, no-clip y-end 10lvi x-start -100% / contain subtract stroke-box none repeat-x	OK=repeat-y view-box border-box exclude, conic-gradient(color-mix(in srgb, red, blue) 0rad) center center, light-dark(cross-fade(url("b c.png"), rgb(from red r g b), cross-fade(rgb(170, 187, 204))), url("a.png")) center inline-start view-box alpha, x-start -100% y-end 10lvi / contain repeat-x stroke-box no-clip subtract	NO
+acc:100:mask:exclude view-box none repeat-y border-box , conic-gradient( color-mix( in srgb , red , blue ) D ) repeat-inline stroke-box , inline-start center add alpha light-dark( cross-fade( url( S ) , rgb( from red r g b ) , cross-fade( #H ) ) , url( a . png ) ) view-box , no-clip y-end D x-start P / contain subtract stroke-box none repeat-x	mask	exclude view-box none repeat-y border-box, conic-gradient(color-mix(in srgb, red, blue) -1deg ) repeat-inline stroke-box, inline-start center  add alpha light-dark(cross-fade( url("b c.png"),  rgb(from red r g b), cross-fade( #abc) ), url(a.png)) view-box, no-clip y-end 10lvi x-start -100% / contain subtract stroke-box none repeat-x	OK=repeat-y view-box border-box exclude, conic-gradient(color-mix(in srgb, red, blue) -1deg) repeat-inline stroke-box, light-dark(cross-fade(url("b c.png"), rgb(from red r g b), cross-fade(rgb(170, 187, 204))), url("a.png")) center inline-start view-box alpha, x-start -100% y-end 10lvi / contain repeat-x stroke-box no-clip subtract	NO
+acc:100:mask:exclude view-box repeat-y border-box , conic-gradient( color-mix( in srgb , red , blue ) D ) center , inline-start center add alpha light-dark( cross-fade( url( S ) , rgb( from red r g b ) , cross-fade( #H ) ) , url( a . png ) ) view-box , no-clip y-end D right D / contain subtract stroke-box none repeat-x	mask	exclude view-box  repeat-y border-box, conic-gradient(color-mix(in srgb, red, blue) 1e+20rad ) center , inline-start center  add alpha light-dark(cross-fade( url("b c.png"),  rgb(from red r g b), cross-fade( #abc) ), url(a.png)) view-box, no-clip y-end -1e+20pt right -0.5mm / contain subtract stroke-box none repeat-x	OK=repeat-y view-box border-box exclude, conic-gradient(color-mix(in srgb, red, blue) 100000000000000000000rad) center center, light-dark(cross-fade(url("b c.png"), rgb(from red r g b), cross-fade(rgb(170, 187, 204))), url("a.png")) center inline-start view-box alpha, right -0.5mm y-end -100000000000000000000pt / contain repeat-x stroke-box no-clip subtract	NO
+acc:100:mask:space no-clip add x-start , no-clip repeat-y	mask	space no-clip add x-start , no-clip repeat-y	OK=x-start space no-clip, repeat-y no-clip	NO
+acc:100:mask:stroke-box add inline-end P block-end D match-source , element( #H ) alpha , no-clip cross-fade( P paint( foo ) , hwb( N P P ) P , #H P ) fill-box add	mask	stroke-box add inline-end 1.5% block-end -1vh  match-source, element(#zz) alpha, no-clip cross-fade(1.5% paint(Foo ), hwb(0 10% 20%) 0%, #abc 0%) fill-box add	OK=block-end -1vh inline-end 1.5% stroke-box, element(#zz) alpha, cross-fade(paint(Foo) 1.5%, rgb(204, 26, 26) 0%, rgb(170, 187, 204) 0%) fill-box no-clip	NO
+acc:100:mask:view-box repeat-y alpha no-clip x-end bottom exclude url( e ) , stroke-box x-start / cover	mask	view-box repeat-y alpha no-clip x-end bottom  exclude url(  e  ), stroke-box x-start / cover	OK=url("e") x-end bottom repeat-y view-box no-clip exclude alpha, x-start / cover stroke-box	NO
+acc:100:mask:x-end y-end exclude view-box repeat-inline , view-box no-clip , view-box padding-box luminance repeat-inline url( e )	mask	x-end y-end  exclude view-box repeat-inline, view-box no-clip, view-box padding-box luminance repeat-inline url(  e  )	OK=x-end y-end repeat-inline view-box exclude, view-box no-clip, url("e") repeat-inline view-box padding-box luminance	NO
+acc:100:max-block-size:stretch( D )	max-block-size	StrETch(1e+20EM)	OK=stretch(100000000000000000000em)	NO
+acc:100:max-height:fit-content( D )	max-height	fit-content(0.5em)	OK=fit-content(0.5em)	NO
+acc:100:max-height:fit-content( P )	max-height	\t fit-content( 90%)\n	OK=fit-content(90%)	NO
+acc:100:max-inline-size:stretch( P )	max-inline-size	stretch(0%)	OK=stretch(0%)	NO
+acc:100:max-width:fit-content( D )	max-width	fit-content(0.5em)	OK=fit-content(0.5em)	NO
+acc:100:max-width:fit-content( P )	max-width	fit-content(10%)	OK=fit-content(10%)	NO
+acc:100:max-width:stretch( D )	max-width	stretch(0.001vw)	OK=stretch(0.001vw)	NO
+acc:100:max-width:stretch( P )	max-width	stretch(360%)	OK=stretch(360%)	NO
+acc:100:min-block-size:fit-content( P )	min-block-size	fit-content(65535%)	OK=fit-content(65535%)	NO
+acc:100:min-block-size:stretch( D )	min-block-size	\t stretch(0.001ex)	OK=stretch(0.001ex)	NO
+acc:100:min-block-size:stretch( P )	min-block-size	stretch(0%)	OK=stretch(0%)	NO
+acc:100:min-height:fit-content( D )	min-height	fit-content(0.5em)	OK=fit-content(0.5em)	NO
+acc:100:min-height:fit-content( P )	min-height	fit-content(10%)	OK=fit-content(10%)	NO
+acc:100:min-height:stretch( D )	min-height	stretch(0.001lh)	OK=stretch(0.001lh)	NO
+acc:100:min-width:fit-content( D )	min-width	fit-content(0.5em)	OK=fit-content(0.5em)	NO
+acc:100:min-width:fit-content( P )	min-width	fit-content(10%)	OK=fit-content(10%)	NO
+acc:100:min-width:stretch( D )	min-width	stretch(0.001svw)	OK=stretch(0.001svw)	NO
+acc:100:object-position:x-end top	object-position	x-end top	OK=x-end top	NO
+acc:100:object-position:x-end y-end	object-position	x-end y-end	OK=x-end y-end	NO
+acc:100:object-position:x-start	object-position	X-START	OK=x-start	NO
+acc:100:offset-anchor:left D y-start D	offset-anchor	left 1e+20cm y-start -1cqw	OK=left 100000000000000000000cm y-start -1cqw	NO
+acc:100:offset-anchor:left D y-start P	offset-anchor	left 0cm y-start 10%	OK=left 0cm y-start 10%	NO
+acc:100:offset-anchor:x-end y-end	offset-anchor	x-end y-end	OK=x-end y-end	NO
+acc:100:offset-anchor:x-start D bottom D	offset-anchor	x-start 1.5cm bottom 1.5vmin	OK=x-start 1.5cm bottom 1.5vmin	NO
+acc:100:offset-anchor:y-end D left D	offset-anchor	\t y-end  -2in  left 1000Q	OK=left 1000Q y-end -2in	NO
+acc:100:offset-anchor:y-end D x-start D	offset-anchor	y-end -0.5ch x-start -1Q	OK=x-start -1Q y-end -0.5ch	NO
+acc:100:offset-path:ray( at right D y-end D D )	offset-path	ray(at right 360cqw y-end -1e+20vh  10turn )	OK=ray(10turn at right 360cqw y-end -100000000000000000000vh)	NO
+acc:100:offset-path:ray( at right D y-end P D )	offset-path	ray(at right 0cqw y-end 1%  10turn )	OK=ray(10turn at right 0cqw y-end 1%)	NO
+acc:100:offset-path:ray( at right D y-start D D )	offset-path	\t ray(at right \n -1e+20lh\ty-start \n 10vh\t10turn\n)	OK=ray(10turn at right -100000000000000000000lh y-start 10vh)	NO
+acc:100:offset-position:top D x-end P	offset-position	top 0.5lvi x-end -1%	OK=x-end -1% top 0.5lvi	NO
+acc:100:offset:x-end	offset	x-end  	OK=x-end	NO
+acc:100:outline-color:auto	outline-color	auto	OK=auto	NO
+acc:100:outline-color:stripes( D #H , D hsl( N P P ) , #H )	outline-color	stripes(0.5mm #fff, 0.1fr hsl(120 50% 50%), #fff )	OK=stripes(rgb(255, 255, 255) 0.5mm, rgb(64, 191, 64) 0.1fr, rgb(255, 255, 255))	NO
+acc:100:outline-color:stripes( D canvas , transparent D , rgba( N , N , N , N ) )	outline-color	stripes(0in Canvas, transparent 360fr, rgba(1, 2, 3, .5) )	OK=stripes(canvas 0in, transparent 360fr, rgba(1, 2, 3, 0.5))	NO
+acc:100:outline-color:stripes( D hwb( N P P ) , #H , #H D , color( srgb N N N / P ) )	outline-color	stripes(-1fr hwb(0 10% 20%),  #ff00ff80, #ff00ff80 1fr, color(srgb 1 0 0 / 50%) )	OK=stripes(rgb(204, 26, 26) -1fr, rgba(255, 0, 255, 0.5), rgba(255, 0, 255, 0.5) 1fr, color(srgb 1 0 0 / 0.5))	NO
+acc:100:outline-color:stripes( D red , lab( N N N ) D , #H D , canvas )	outline-color	stripes(2147483648fr red, lab(50 20 30) 0.5pt, #fff 255fr,  Canvas)	OK=stripes(red 2147483648fr, lab(50 20 30) 0.5pt, rgb(255, 255, 255) 255fr, canvas)	NO
+acc:100:outline-color:stripes( D red , lab( N N N ) D , lab( N N N ) D , D hwb( N P P ) )	outline-color	STRIPES(2147483648FR RED, LAB(50 20 30) 0EM, LAB(50 20 30) 3REM, 65535FR HWB(0 10% 20%))	OK=stripes(red 2147483648fr, lab(50 20 30) 0em, lab(50 20 30) 3rem, rgb(204, 26, 26) 65535fr)	NO
+acc:100:outline-color:stripes( D red , lab( N N N ) D , lab( N N N ) D , red )	outline-color	stripes(2147483648fr red, lab(50 20 30) 0em, lab(50 20 30) 0rlh, RED )	OK=stripes(red 2147483648fr, lab(50 20 30) 0em, lab(50 20 30) 0rlh, red)	NO
+acc:100:outline-color:stripes( D red , lab( N N N ) D , rgb( N N N ) D , canvas )	outline-color	stripes(2147483648fr red, lab(50 20 30) 0vw, rgb(1 2 3) 2147483647fr,  Canvas)	OK=stripes(red 2147483648fr, lab(50 20 30) 0vw, rgb(1, 2, 3) 2147483647fr, canvas)	NO
+acc:100:outline-color:stripes( hwb( N P P ) , light-dark( red , blue ) D , rgb( N N N ) D )	outline-color	stripes( hwb(0 10% 20%), light-dark(red, blue) -1e+20fr, rgb(1 2 3) 10px)	OK=stripes(rgb(204, 26, 26), light-dark(red, blue) -100000000000000000000fr, rgb(1, 2, 3) 10px)	NO
+acc:100:outline-width:hairline	outline-width	hairline	OK=hairline	NO
+acc:100:outline:D auto stripes( lab( N N N ) D , #H , color( srgb N N N / P ) D , #H )	outline	10vmax auto stripes(lab(50 20 30) 0.5vh, #ff00ff80 , color(srgb 1 0 0 / 50%) 100fr,  #ff00ff80)	OK=stripes(lab(50 20 30) 0.5vh, rgba(255, 0, 255, 0.5), color(srgb 1 0 0 / 0.5) 100fr, rgba(255, 0, 255, 0.5)) auto 10vmax	NO
+acc:100:outline:D auto stripes( lab( N N N ) D , color-mix( in srgb , red , blue ) , hsl( N P P ) D , light-dark( red , blue ) )	outline	10vmax auto stripes(lab(50 20 30) 0pc,  color-mix(in srgb, red, blue), hsl(120 50% 50%) 2147483647fr,  light-dark(red, blue))	OK=stripes(lab(50 20 30) 0pc, color-mix(in srgb, red, blue), rgb(64, 191, 64) 2147483647fr, light-dark(red, blue)) auto 10vmax	NO
+acc:100:outline:D stripes( transparent D , currentcolor D , color( srgb N N N / P ) D , #H )	outline	0.001vh stripes(transparent -0.5fr, currentcolor 2147483647vmax, color(srgb 1 0 0 / 50%) 100fr,  #ff00ff80)	OK=stripes(transparent -0.5fr, currentcolor 2147483647vmax, color(srgb 1 0 0 / 0.5) 100fr, rgba(255, 0, 255, 0.5)) 0.001vh	NO
+acc:100:outline:N stripes( transparent D , currentcolor D , color( srgb N N N / P ) D , #H )	outline	0 stripes(transparent -0.5fr, currentcolor 2147483647vmax, color(srgb 1 0 0 / 50%) 100fr,  #ff00ff80)	OK=stripes(transparent -0.5fr, currentcolor 2147483647vmax, color(srgb 1 0 0 / 0.5) 100fr, rgba(255, 0, 255, 0.5)) 0px	NO
+acc:100:outline:auto thick stripes( P canvas )	outline	auto thick stripes(0% Canvas)	OK=stripes(canvas 0%) auto thick	NO
+acc:100:outline:ridge hairline	outline	ridge hairline	OK=ridge hairline	NO
+acc:100:outline:thin stripes( canvas , D #H )	outline	thin stripes( Canvas, 0rex #fff)	OK=stripes(canvas, rgb(255, 255, 255) 0rex) thin	NO
+acc:100:outline:thin stripes( canvas , D hsl( N P P ) ) auto	outline	THin stRiPES( /* c */CANvas, 123456789VMIN hsl(120 50% 50%)) AuTo	OK=stripes(canvas, rgb(64, 191, 64) 123456789vmin) auto thin	NO
+acc:100:perspective-origin:left y-start	perspective-origin	left y-start	OK=left y-start	NO
+acc:100:perspective-origin:x-start D top D	perspective-origin	x-start 1e+20vmin top 1000ch	OK=x-start 100000000000000000000vmin top 1000ch	NO
+acc:100:perspective-origin:y-end	perspective-origin	y-end	OK=y-end	NO
+acc:100:place-items:flow-start	place-items	flow-start	OK=flow-start	NO
+acc:100:place-items:unsafe flow-end	place-items	unsafe flow-end 	OK=unsafe flow-end	NO
+acc:100:place-self:flow-start	place-self	flow-start	OK=flow-start	NO
+acc:100:place-self:unsafe flow-end anchor-center	place-self	unsafe flow-end anchor-center	OK=unsafe flow-end anchor-center	NO
+acc:100:shape-outside:cross-fade( element( #H ) P , #H )	shape-outside	 cross-fade(element(#zz)   0%,\t#abc\n) 	OK=cross-fade(element(#zz) 0%, rgb(170, 187, 204))	NO
+acc:100:shape-outside:ellipse( D )	shape-outside	ellipse(10px)	OK=ellipse(10px)	NO
+acc:100:shape-outside:ellipse( P at P P )	shape-outside	ellipse(3% at 100% 0%)	OK=ellipse(3% at 100% 0%)	NO
+acc:100:shape-outside:ellipse( closest-side )	shape-outside	ellipse(closest-side)	OK=ellipse()	NO
+acc:100:shape-outside:ellipse( farthest-side at P P )	shape-outside	ellipse(farthest-side at 100% 0%)	OK=ellipse(farthest-side at 100% 0%)	NO
+acc:100:stroke-linejoin:crop	stroke-linejoin	crop	OK=crop	NO
+acc:100:stroke-width:hairline	stroke-width	hairline	OK=hairline	NO
+acc:100:text-decoration-thickness:hairline	text-decoration-thickness	hairline	OK=hairline	NO
+acc:100:width:fit-content( D )	width	fit-content(0.5em)	OK=fit-content(0.5em)	NO
+acc:100:width:fit-content( P )	width	fit-content(0%)	OK=fit-content(0%)	NO
+acc:100:width:stretch( D )	width	stretch(0.001em)	OK=stretch(0.001em)	NO
+acc:101:ruby-position:alternate	ruby-position	alternate	OK=alternate	NO
+acc:101:vertical-align:first	vertical-align	first	OK=first	NO
+acc:110:align-content:flow-end	align-content	flow-end	OK=flow-end	NO
+acc:110:align-content:flow-start	align-content	flow-start	OK=flow-start	NO
+acc:110:animation-duration:auto	animation-duration	auto	OK=auto	NO
+acc:110:background-image:url( S cross-origin( anonymous ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous))	NO
+acc:110:background-image:url( S cross-origin( use-credentials ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(use-credentials))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(use-credentials))	NO
+acc:110:background-image:url( S integrity( S ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" integrity(""))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" integrity(""))	NO
+acc:110:background-image:url( S referrer-policy( no-referrer ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(no-referrer))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(no-referrer))	NO
+acc:110:background-image:url( S referrer-policy( no-referrer-when-downgrade ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(no-referrer-when-downgrade))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(no-referrer-when-downgrade))	NO
+acc:110:background-image:url( S referrer-policy( origin ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(origin))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(origin))	NO
+acc:110:background-image:url( S referrer-policy( origin-when-cross-origin ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(origin-when-cross-origin))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(origin-when-cross-origin))	NO
+acc:110:background-image:url( S referrer-policy( same-origin ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/ css/ support/1x1-green.png" referrer-policy(same-origin))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/ css/ support/1x1-green.png" referrer-policy(same-origin))	NO
+acc:110:background-image:url( S referrer-policy( strict-origin ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(strict-origin))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(strict-origin))	NO
+acc:110:background-image:url( S referrer-policy( strict-origin-when-cross-origin ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(strict-origin-when-cross-origin))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(strict-origin-when-cross-origin))	NO
+acc:110:background-image:url( S referrer-policy( unsafe-url ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(unsafe-url))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(unsafe-url))	NO
+acc:110:justify-content:flow-end	justify-content	flow-end	OK=flow-end	NO
+acc:110:justify-content:flow-start	justify-content	flow-start	OK=flow-start	NO
+acc:110:place-content:flow-end	place-content	 flow-end 	OK=flow-end	NO
+acc:110:place-content:flow-start	place-content	flow-start	OK=flow-start	NO
+ser:A=B|C:-webkit-text-stroke:D	-webkit-text-stroke	0.001ic	OK=0.001ic	OK=0.001ic currentcolor
+ser:A=B|C:column-rule:D	column-rule	0.001px	OK=0.001px	OK=0.001px none currentcolor
+ser:A=B|C:text-emphasis:none	text-emphasis	none	OK=none	OK=none currentcolor
+ser:A=C|B:-webkit-text-stroke-width:D	-webkit-text-stroke-width	1e+20lh	OK=100000000000000000000lh	OK=1e+20lh
+ser:A=C|B:animation-delay:D	animation-delay	-1e+20s 	OK=-100000000000000000000s	OK=-1e+20s
+ser:A=C|B:animation-duration:D , D	animation-duration	1e+20ms, 100ms	OK=100000000000000000000ms, 100ms	OK=1e+20ms, 100ms
+ser:A=C|B:animation-iteration-count:N	animation-iteration-count	1e+20	OK=100000000000000000000	OK=1e+20
+ser:A=C|B:backdrop-filter:drop-shadow( light-dark( red , blue ) D D )	backdrop-filter	drop-shadow(light-dark(red, blue) -1e+20svw 1000ch)	OK=drop-shadow(light-dark(red, blue) -100000000000000000000svw 1000ch)	OK=drop-shadow(light-dark(red, blue) -1e+20svw 1000ch)
+ser:A=C|B:backdrop-filter:url( S ) drop-shadow( D D ) drop-shadow( hwb( N P P ) D D D ) url( e )	backdrop-filter	url("b c.png") drop-shadow( 1e+20ic 100cap) drop-shadow(hwb(0 10% 20%) 0.5mm -0.5vmin 1.5px) url(  e  )	OK=url("b c.png") drop-shadow(100000000000000000000ic 100cap) drop-shadow(rgb(204, 26, 26) 0.5mm -0.5vmin 1.5px) url("e")	OK=url("b c.png") drop-shadow(1e+20ic 100cap) drop-shadow(rgb(204, 26, 26) 0.5mm -0.5vmin 1.5px) url("e")
+ser:A=C|B:background-position-x:D	background-position-x	 -1e+20svw	OK=-100000000000000000000svw	OK=-1e+20svw
+ser:A=C|B:background-position:center top D , top left	background-position	center top -1e+20ch, top left	OK=center top -100000000000000000000ch, left top	OK=center top -1e+20ch, left top
+ser:A=C|B:background-position:left P bottom	background-position	left -1e+20% bottom	OK=left -100000000000000000000% bottom	OK=left -1e+20% bottom
+ser:A=C|B:background-size:D	background-size	1e+20px	OK=100000000000000000000px auto	OK=1e+20px auto
+ser:A=C|B:baseline-shift:D	baseline-shift	-1e+20pt	OK=-100000000000000000000pt	OK=-1e+20pt
+ser:A=C|B:baseline-shift:P	baseline-shift	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:block-size:P	block-size	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:border-block-end-width:D	border-block-end-width	1e+20pt	OK=100000000000000000000pt	OK=1e+20pt
+ser:A=C|B:border-block-end:D	border-block-end	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:border-block-start-width:D	border-block-start-width	1e+20em	OK=100000000000000000000em	OK=1e+20em
+ser:A=C|B:border-block-width:D	border-block-width	1e+20lh	OK=100000000000000000000lh	OK=1e+20lh
+ser:A=C|B:border-block:D	border-block	1e+20ch	OK=100000000000000000000ch	OK=1e+20ch
+ser:A=C|B:border-bottom-left-radius:D	border-bottom-left-radius	1e+20cqw 	OK=100000000000000000000cqw	OK=1e+20cqw
+ser:A=C|B:border-bottom-right-radius:D	border-bottom-right-radius	1e+20px 	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:border-bottom-right-radius:P P	border-bottom-right-radius	0% 1e+20%	OK=0% 100000000000000000000%	OK=0% 1e+20%
+ser:A=C|B:border-bottom-width:D	border-bottom-width	1e+20lvi	OK=100000000000000000000lvi	OK=1e+20lvi
+ser:A=C|B:border-bottom:D	border-bottom	1e+20cqw	OK=100000000000000000000cqw	OK=1e+20cqw
+ser:A=C|B:border-end-end-radius:D	border-end-end-radius	1e+20cap	OK=100000000000000000000cap	OK=1e+20cap
+ser:A=C|B:border-end-start-radius:D	border-end-start-radius	1e+20dvh 	OK=100000000000000000000dvh	OK=1e+20dvh
+ser:A=C|B:border-end-start-radius:P P	border-end-start-radius	1e+20% 1000%	OK=100000000000000000000% 1000%	OK=1e+20% 1000%
+ser:A=C|B:border-image-outset:D	border-image-outset	1e+20cm	OK=100000000000000000000cm	OK=1e+20cm
+ser:A=C|B:border-image-outset:N	border-image-outset	1e+20	OK=100000000000000000000	OK=1e+20
+ser:A=C|B:border-image-slice:N	border-image-slice	 1e+20  	OK=100000000000000000000	OK=1e+20
+ser:A=C|B:border-image-width:D	border-image-width	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:border-image-width:P N	border-image-width	1e+20% 65535	OK=100000000000000000000% 65535	OK=1e+20% 65535
+ser:A=C|B:border-image-width:auto N	border-image-width	auto 1e+20	OK=auto 100000000000000000000	OK=auto 1e+20
+ser:A=C|B:border-inline-end-width:D	border-inline-end-width	1e+20cqw	OK=100000000000000000000cqw	OK=1e+20cqw
+ser:A=C|B:border-inline-start-width:D	border-inline-start-width	1e+20ch	OK=100000000000000000000ch	OK=1e+20ch
+ser:A=C|B:border-inline-start:D	border-inline-start	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:border-inline-width:D	border-inline-width	1e+20cqw	OK=100000000000000000000cqw	OK=1e+20cqw
+ser:A=C|B:border-inline:D	border-inline	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:border-left-width:D	border-left-width	1e+20in	OK=100000000000000000000in	OK=1e+20in
+ser:A=C|B:border-left:D	border-left	1e+20cap	OK=100000000000000000000cap	OK=1e+20cap
+ser:A=C|B:border-right-width:D	border-right-width	1e+20dvh	OK=100000000000000000000dvh	OK=1e+20dvh
+ser:A=C|B:border-right:D	border-right	1e+20ch	OK=100000000000000000000ch	OK=1e+20ch
+ser:A=C|B:border-spacing:D	border-spacing	1e+20in	OK=100000000000000000000in	OK=1e+20in
+ser:A=C|B:border-start-end-radius:D	border-start-end-radius	1e+20pt	OK=100000000000000000000pt	OK=1e+20pt
+ser:A=C|B:border-start-start-radius:D	border-start-start-radius	1e+20ic 	OK=100000000000000000000ic	OK=1e+20ic
+ser:A=C|B:border-start-start-radius:P	border-start-start-radius	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:border-top-left-radius:D	border-top-left-radius	1e+20px 	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:border-top-left-radius:P P	border-top-left-radius	1.5% 1e+20%	OK=1.5% 100000000000000000000%	OK=1.5% 1e+20%
+ser:A=C|B:border-top-right-radius:D	border-top-right-radius	1e+20cm 	OK=100000000000000000000cm	OK=1e+20cm
+ser:A=C|B:border-top-width:D	border-top-width	1e+20em	OK=100000000000000000000em	OK=1e+20em
+ser:A=C|B:border-top:D	border-top	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:border-width:D	border-width	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:border:D	border	1e+20mm	OK=100000000000000000000mm	OK=1e+20mm
+ser:A=C|B:bottom:P	bottom	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:bottom:anchor-size( D )	bottom	anchor-size(-1e+20ex)	OK=anchor-size(-100000000000000000000ex)	OK=anchor-size(-1e+20ex)
+ser:A=C|B:clip-path:fill-box circle( D at top left )	clip-path	fill-box circle(1e+20in at top left)	OK=circle(100000000000000000000in at left top) fill-box	OK=circle(1e+20in at left top) fill-box
+ser:A=C|B:clip-path:rect( auto D D auto round D )	clip-path	rect(auto 1e+20svw -100dvh auto round 0.001in )	OK=rect(auto 100000000000000000000svw -100dvh auto round 0.001in)	OK=rect(auto 1e+20svw -100dvh auto round 0.001in)
+ser:A=C|B:clip-path:rect( auto P D auto )	clip-path	rect(auto -1e+20% 2svw auto )	OK=rect(auto -100000000000000000000% 2svw auto)	OK=rect(auto -1e+20% 2svw auto)
+ser:A=C|B:clip:rect( D D auto D )	clip	rect(0pt 1e+20cap auto 1ex)	OK=rect(0pt, 100000000000000000000cap, auto, 1ex)	OK=rect(0pt, 1e+20cap, auto, 1ex)
+ser:A=C|B:column-gap:D	column-gap	1e+20ex	OK=100000000000000000000ex	OK=1e+20ex
+ser:A=C|B:column-rule-width:D	column-rule-width	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:column-width:D	column-width	1e+20em	OK=100000000000000000000em	OK=1e+20em
+ser:A=C|B:contain-intrinsic-block-size:D	contain-intrinsic-block-size	 1e+20lh	OK=100000000000000000000lh	OK=1e+20lh
+ser:A=C|B:contain-intrinsic-height:D	contain-intrinsic-height	 1e+20cqw	OK=100000000000000000000cqw	OK=1e+20cqw
+ser:A=C|B:contain-intrinsic-inline-size:D	contain-intrinsic-inline-size	 1e+20cm	OK=100000000000000000000cm	OK=1e+20cm
+ser:A=C|B:contain-intrinsic-size:auto D	contain-intrinsic-size	auto 1e+20ex	OK=auto 100000000000000000000ex	OK=auto 1e+20ex
+ser:A=C|B:contain-intrinsic-size:none D	contain-intrinsic-size	 none  1e+20em	OK=none 100000000000000000000em	OK=none 1e+20em
+ser:A=C|B:contain-intrinsic-width:D	contain-intrinsic-width	 1e+20rlh	OK=100000000000000000000rlh	OK=1e+20rlh
+ser:A=C|B:cx:D	cx	-1e+20cap	OK=-100000000000000000000cap	OK=-1e+20cap
+ser:A=C|B:cx:P	cx	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:cy:D	cy	\n1e+20rem	OK=100000000000000000000rem	OK=1e+20rem
+ser:A=C|B:cy:P	cy	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:fill-opacity:N	fill-opacity	-1E+20	OK=-100000000000000000000	OK=-1e+20
+ser:A=C|B:fill-opacity:P	fill-opacity	-1e+20%	OK=-1000000000000000000	OK=-1e+18
+ser:A=C|B:flex-grow:N	flex-grow	\t 1e+20\n	OK=100000000000000000000	OK=1e+20
+ser:A=C|B:flex-shrink:N	flex-shrink	+.678E9	OK=678000000	OK=6.78e+08
+ser:A=C|B:flex:N	flex	1e+20 	OK=100000000000000000000 1 0%	OK=1e+20 1 0%
+ser:A=C|B:flood-opacity:N	flood-opacity	-1e+20	OK=-100000000000000000000	OK=-1e+20
+ser:A=C|B:flood-opacity:P	flood-opacity	0.001%	OK=0.00001	OK=1e-05
+ser:A=C|B:font-size-adjust:N	font-size-adjust	 1e+20	OK=100000000000000000000	OK=1e+20
+ser:A=C|B:font-size:D	font-size	1e+20ic	OK=100000000000000000000ic	OK=1e+20ic
+ser:A=C|B:font-size:P	font-size	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:gap:D	gap	1e+20lh 	OK=100000000000000000000lh	OK=1e+20lh
+ser:A=C|B:grid-auto-columns:D	grid-auto-columns	1e+20fr	OK=100000000000000000000fr	OK=1e+20fr
+ser:A=C|B:grid-auto-rows:D	grid-auto-rows	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:grid-template-columns:[ none-of ] minmax( max-content , max-content ) minmax( min-content , D ) [ ] repeat( N , [ _x none-of ] minmax( P , auto ) [ bar-baz _x ] )	grid-template-columns	[none-of] minmax(max-content, max-content)  minmax(min-content, 1fr) [] repeat(2, [_x none-of] minmax(1e+20%, auto) [bar-baz _x]) 	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 1fr) repeat(2, [_x none-of] minmax(100000000000000000000%, auto) [bar-baz _x])	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 1fr) repeat(2, [_x none-of] minmax(1e+20%, auto) [bar-baz _x])
+ser:A=C|B:grid-template-columns:[ none-of ] minmax( max-content , max-content ) minmax( min-content , D ) [ a1 ] repeat( N , [ _x none-of ] minmax( P , max-content ) )	grid-template-columns	[none-of] minmax(max-content, max-content)  minmax(min-content, 1e+20fr) [a1] repeat(2, [_x none-of] minmax(1.5%, max-content) ) 	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 100000000000000000000fr) [a1] repeat(2, [_x none-of] minmax(1.5%, max-content))	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 1e+20fr) [a1] repeat(2, [_x none-of] minmax(1.5%, max-content))
+ser:A=C|B:grid-template-rows:repeat( N , minmax( D , max-content ) [ _x bar-baz foo ] max-content [ _x ] ) [ ]	grid-template-rows	 repeat(1,  minmax(1e+20px, max-content) [_x bar-baz foo] max-content [_x]) []	OK=repeat(1, minmax(100000000000000000000px, max-content) [_x bar-baz foo] max-content [_x])	OK=repeat(1, minmax(1e+20px, max-content) [_x bar-baz foo] max-content [_x])
+ser:A=C|B:grid-template:S S P [ ]	grid-template	 'it''s' 1e+20% [] 	OK="it" "s" 100000000000000000000%	OK="it" "s" 1e+20%
+ser:A=C|B:grid-template:none / D [ foo x \ y ] repeat( N , [ foo ] minmax( min-content , min-content ) [ x \ y ] ) repeat( N , [ ] min-content [ bar-baz x \ y bar-baz ] D ) minmax( min-content , min-content )	grid-template	none /  1e+20mm [Foo x\\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\\ y])  repeat(1, [] min-content [bar-baz x\\ y bar-baz] 255fr )  minmax(min-content, min-content) 	OK=none / 100000000000000000000mm [Foo x\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\ y]) repeat(1, min-content [bar-baz x\ y bar-baz] 255fr) minmax(min-content, min-content)	OK=none / 1e+20mm [Foo x\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\ y]) repeat(1, min-content [bar-baz x\ y bar-baz] 255fr) minmax(min-content, min-content)
+ser:A=C|B:grid-template:none / P [ foo x \ y ] repeat( N , [ foo ] minmax( min-content , min-content ) [ x \ y ] ) repeat( N , [ bar-baz a1 a1 ] fit-content( D ) [ x \ y none-of ] fit-content( P ) [ _x ] ) fit-content( P )	grid-template	none /  1e+20% [Foo x\\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\\ y])  repeat(1, [bar-baz a1 a1] fit-content(1000ex) [x\\ y none-of] fit-content(0.5%) [_x])  fit-content(1e+20%) 	OK=none / 100000000000000000000% [Foo x\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\ y]) repeat(1, [bar-baz a1 a1] fit-content(1000ex) [x\ y none-of] fit-content(0.5%) [_x]) fit-content(100000000000000000000%)	OK=none / 1e+20% [Foo x\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\ y]) repeat(1, [bar-baz a1 a1] fit-content(1000ex) [x\ y none-of] fit-content(0.5%) [_x]) fit-content(1e+20%)
+ser:A=C|B:grid:auto-flow fit-content( D ) minmax( max-content , D ) P / subgrid	grid	 auto-flow fit-content(1e+20cqw) minmax(max-content, 0pt) 0% / subgrid 	OK=auto-flow fit-content(100000000000000000000cqw) minmax(max-content, 0pt) 0% / subgrid	OK=auto-flow fit-content(1e+20cqw) minmax(max-content, 0pt) 0% / subgrid
+ser:A=C|B:grid:none / [ foo x \ y none-of ] fit-content( D ) [ _x foo _x ] repeat( N , [ x \ y _x ] fit-content( P ) P )	grid	none / [Foo x\\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\\ y _x] fit-content(1e+20%)  1% ) 	OK=none / [Foo x\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\ y _x] fit-content(100000000000000000000%) 1%)	OK=none / [Foo x\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\ y _x] fit-content(1e+20%) 1%)
+ser:A=C|B:height:P	height	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:inline-size:P	inline-size	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:inset-block-end:D	inset-block-end	-1e+20pt	OK=-100000000000000000000pt	OK=-1e+20pt
+ser:A=C|B:inset-block-end:P	inset-block-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:inset-block-start:D	inset-block-start	-1e+20ic	OK=-100000000000000000000ic	OK=-1e+20ic
+ser:A=C|B:inset-block:D	inset-block	-1e+20vmax	OK=-100000000000000000000vmax	OK=-1e+20vmax
+ser:A=C|B:inset-inline-end:D	inset-inline-end	-1e+20ex	OK=-100000000000000000000ex	OK=-1e+20ex
+ser:A=C|B:inset-inline-end:P	inset-inline-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:inset-inline-start:D	inset-inline-start	-1e+20ch	OK=-100000000000000000000ch	OK=-1e+20ch
+ser:A=C|B:inset-inline:anchor( bottom , D ) D	inset-inline	anchor(bottom , -1e+20vh ) 0vmin	OK=anchor(bottom, -100000000000000000000vh) 0vmin	OK=anchor(bottom, -1e+20vh) 0vmin
+ser:A=C|B:inset-inline:auto anchor( P --a-b )	inset-inline	auto anchor(-1e+20%  --a-b)	OK=auto anchor(--a-b -100000000000000000000%)	OK=auto anchor(--a-b -1e+20%)
+ser:A=C|B:inset-inline:auto anchor-size( D )	inset-inline	auto anchor-size(-1e+20em)	OK=auto anchor-size(-100000000000000000000em)	OK=auto anchor-size(-1e+20em)
+ser:A=C|B:inset:anchor( --foo top , P ) D anchor-size( )	inset	anchor(--foo top , -1e+20%) 0.001pc anchor-size()	OK=anchor(--foo top, -100000000000000000000%) 0.001pc anchor-size()	OK=anchor(--foo top, -1e+20%) 0.001pc anchor-size()
+ser:A=C|B:inset:anchor-size( ) D anchor( self-start , D )	inset	anchor-size( ) 360rlh anchor( self-start , -1e+20vmin)	OK=anchor-size() 360rlh anchor(self-start, -100000000000000000000vmin)	OK=anchor-size() 360rlh anchor(self-start, -1e+20vmin)
+ser:A=C|B:inset:anchor-size( ) D auto	inset	anchor-size( ) -1e+20vmin auto	OK=anchor-size() -100000000000000000000vmin auto	OK=anchor-size() -1e+20vmin auto
+ser:A=C|B:inset:auto auto auto D	inset	auto auto auto -1e+20px	OK=auto auto auto -100000000000000000000px	OK=auto auto auto -1e+20px
+ser:A=C|B:left:D	left	-1e+20dvh	OK=-100000000000000000000dvh	OK=-1e+20dvh
+ser:A=C|B:letter-spacing:D	letter-spacing	-1e+20cm	OK=-100000000000000000000cm	OK=-1e+20cm
+ser:A=C|B:letter-spacing:P	letter-spacing	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:line-height:D	line-height	1e+20dvh	OK=100000000000000000000dvh	OK=1e+20dvh
+ser:A=C|B:line-height:P	line-height	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:margin-block-end:D	margin-block-end	-1e+20px	OK=-100000000000000000000px	OK=-1e+20px
+ser:A=C|B:margin-block-end:P	margin-block-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:margin-block-start:D	margin-block-start	-1e+20px	OK=-100000000000000000000px	OK=-1e+20px
+ser:A=C|B:margin-block-start:P	margin-block-start	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:margin-block:D	margin-block	-1e+20px	OK=-100000000000000000000px	OK=-1e+20px
+ser:A=C|B:margin-bottom:D	margin-bottom	-1e+20ex	OK=-100000000000000000000ex	OK=-1e+20ex
+ser:A=C|B:margin-bottom:anchor-size( P )	margin-bottom	anchor-size(-1e+20%)	OK=anchor-size(-100000000000000000000%)	OK=anchor-size(-1e+20%)
+ser:A=C|B:margin-inline-end:D	margin-inline-end	-1e+20mm	OK=-100000000000000000000mm	OK=-1e+20mm
+ser:A=C|B:margin-inline-end:P	margin-inline-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:margin-inline-start:D	margin-inline-start	-1e+20lh	OK=-100000000000000000000lh	OK=-1e+20lh
+ser:A=C|B:margin-inline:D	margin-inline	-1e+20px	OK=-100000000000000000000px	OK=-1e+20px
+ser:A=C|B:margin-inline:anchor-size( P )	margin-inline	anchor-size(1e+20%)	OK=anchor-size(100000000000000000000%)	OK=anchor-size(1e+20%)
+ser:A=C|B:margin-inline:auto P	margin-inline	auto -1e+20%	OK=auto -100000000000000000000%	OK=auto -1e+20%
+ser:A=C|B:margin-left:D	margin-left	-1e+20pc	OK=-100000000000000000000pc	OK=-1e+20pc
+ser:A=C|B:margin-left:P	margin-left	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:margin-right:D	margin-right	-1e+20cap	OK=-100000000000000000000cap	OK=-1e+20cap
+ser:A=C|B:margin-right:P	margin-right	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:margin-top:D	margin-top	-1e+20lh	OK=-100000000000000000000lh	OK=-1e+20lh
+ser:A=C|B:margin-top:P	margin-top	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:margin:D	margin	-1e+20px	OK=-100000000000000000000px	OK=-1e+20px
+ser:A=C|B:mask-position:center , D , right D bottom D	mask-position	center, -1e+20vw, right 1e+20rem bottom -1rex	OK=center center, -100000000000000000000vw center, right 100000000000000000000rem bottom -1rex	OK=center center, -1e+20vw center, right 1e+20rem bottom -1rex
+ser:A=C|B:mask-size:D	mask-size	1e+20px	OK=100000000000000000000px auto	OK=1e+20px auto
+ser:A=C|B:max-block-size:anchor-size( --a-b , D )	max-block-size	anchor-size(--a-b , 1e+20ic)	OK=anchor-size(--a-b, 100000000000000000000ic)	OK=anchor-size(--a-b, 1e+20ic)
+ser:A=C|B:max-block-size:anchor-size( P )	max-block-size	anchor-size(1e+20%)	OK=anchor-size(100000000000000000000%)	OK=anchor-size(1e+20%)
+ser:A=C|B:max-height:anchor-size( D )	max-height	anchor-size(1e+20in)	OK=anchor-size(100000000000000000000in)	OK=anchor-size(1e+20in)
+ser:A=C|B:max-inline-size:D	max-inline-size	1e+20vh	OK=100000000000000000000vh	OK=1e+20vh
+ser:A=C|B:max-width:D	max-width	1e+20rex	OK=100000000000000000000rex	OK=1e+20rex
+ser:A=C|B:min-block-size:D	min-block-size	1e+20em	OK=100000000000000000000em	OK=1e+20em
+ser:A=C|B:min-height:D	min-height	1e+20ic	OK=100000000000000000000ic	OK=1e+20ic
+ser:A=C|B:min-inline-size:P	min-inline-size	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:min-width:anchor-size( P )	min-width	anchor-size(1e+20%)	OK=anchor-size(100000000000000000000%)	OK=anchor-size(1e+20%)
+ser:A=C|B:offset-anchor:left D bottom D	offset-anchor	left -1e+20rlh bottom 0.1cqw	OK=left -100000000000000000000rlh bottom 0.1cqw	OK=left -1e+20rlh bottom 0.1cqw
+ser:A=C|B:offset-distance:D	offset-distance	-1e+20pc	OK=-100000000000000000000pc	OK=-1e+20pc
+ser:A=C|B:offset-distance:P	offset-distance	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:offset-path:polygon( D P , D D )	offset-path	polygon(-1e+20ic -0.5%, 0.1svw 0cm)	OK=polygon(-100000000000000000000ic -0.5%, 0.1svw 0cm)	OK=polygon(-1e+20ic -0.5%, 0.1svw 0cm)
+ser:A=C|B:offset-path:xywh( P D D D )	offset-path	xywh(360% -1e+20lvi 65535in 2dvh )	OK=xywh(360% -100000000000000000000lvi 65535in 2dvh)	OK=xywh(360% -1e+20lvi 65535in 2dvh)
+ser:A=C|B:offset-position:top P right D	offset-position	top -1e+20% right 0.5vh	OK=right 0.5vh top -100000000000000000000%	OK=right 0.5vh top -1e+20%
+ser:A=C|B:offset:auto none D	offset	auto none -1e+20vh 	OK=auto none -100000000000000000000vh	OK=auto none -1e+20vh
+ser:A=C|B:opacity:N	opacity	-1e+20	OK=-100000000000000000000	OK=-1e+20
+ser:A=C|B:opacity:P	opacity	-1e+20%	OK=-1000000000000000000	OK=-1e+18
+ser:A=C|B:outline-offset:D	outline-offset	-1e+20ic	OK=-100000000000000000000ic	OK=-1e+20ic
+ser:A=C|B:outline-width:D	outline-width	1e+20cm	OK=100000000000000000000cm	OK=1e+20cm
+ser:A=C|B:outline:D	outline	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:overflow-clip-margin:D	overflow-clip-margin	1e+20lvi	OK=100000000000000000000lvi	OK=1e+20lvi
+ser:A=C|B:padding-block-end:D	padding-block-end	1e+20ch	OK=100000000000000000000ch	OK=1e+20ch
+ser:A=C|B:padding-block-end:P	padding-block-end	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:padding-block-start:D	padding-block-start	1e+20cm	OK=100000000000000000000cm	OK=1e+20cm
+ser:A=C|B:padding-block-start:P	padding-block-start	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:padding-block:D	padding-block	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:padding-block:P P	padding-block	1e+20% 0%	OK=100000000000000000000% 0%	OK=1e+20% 0%
+ser:A=C|B:padding-bottom:D	padding-bottom	1e+20mm	OK=100000000000000000000mm	OK=1e+20mm
+ser:A=C|B:padding-bottom:P	padding-bottom	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:padding-inline-end:D	padding-inline-end	1e+20lvi	OK=100000000000000000000lvi	OK=1e+20lvi
+ser:A=C|B:padding-inline-start:D	padding-inline-start	1e+20ic	OK=100000000000000000000ic	OK=1e+20ic
+ser:A=C|B:padding-inline-start:P	padding-inline-start	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:padding-inline:D	padding-inline	1e+20ch	OK=100000000000000000000ch	OK=1e+20ch
+ser:A=C|B:padding-inline:P	padding-inline	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:padding-left:D	padding-left	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:padding-left:P	padding-left	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:padding-right:D	padding-right	1e+20em	OK=100000000000000000000em	OK=1e+20em
+ser:A=C|B:padding-right:P	padding-right	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:padding-top:D	padding-top	1e+20mm	OK=100000000000000000000mm	OK=1e+20mm
+ser:A=C|B:padding-top:P	padding-top	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:padding:D	padding	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:perspective-origin:top D left D	perspective-origin	top 0.1vw left -1e+20vw	OK=left -100000000000000000000vw top 0.1vw	OK=left -1e+20vw top 0.1vw
+ser:A=C|B:perspective-origin:top P left P	perspective-origin	top -1e+20% left 10%	OK=left 10% top -100000000000000000000%	OK=left 10% top -1e+20%
+ser:A=C|B:perspective:D	perspective	1e+20ch	OK=100000000000000000000ch	OK=1e+20ch
+ser:A=C|B:r:D	r	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:r:P	r	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:right:D	right	-1e+20em	OK=-100000000000000000000em	OK=-1e+20em
+ser:A=C|B:right:P	right	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:rotate:D	rotate	-1e+20grad	OK=-100000000000000000000grad	OK=-1e+20grad
+ser:A=C|B:row-gap:D	row-gap	1e+20vmin	OK=100000000000000000000vmin	OK=1e+20vmin
+ser:A=C|B:rx:D	rx	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:rx:P	rx	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:ry:D	ry	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:ry:P	ry	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:scale:N	scale	-1e+20	OK=-100000000000000000000	OK=-1e+20
+ser:A=C|B:scale:P	scale	-1e+20%	OK=-1000000000000000000	OK=-1e+18
+ser:A=C|B:scroll-margin-block-end:D	scroll-margin-block-end	-1e+20cm	OK=-100000000000000000000cm	OK=-1e+20cm
+ser:A=C|B:scroll-margin-block-start:D	scroll-margin-block-start	-1e+20cm	OK=-100000000000000000000cm	OK=-1e+20cm
+ser:A=C|B:scroll-margin-block:D	scroll-margin-block	-1e+20cm	OK=-100000000000000000000cm	OK=-1e+20cm
+ser:A=C|B:scroll-margin-bottom:D	scroll-margin-bottom	-1e+20cm	OK=-100000000000000000000cm	OK=-1e+20cm
+ser:A=C|B:scroll-margin-inline-end:D	scroll-margin-inline-end	-1e+20ch	OK=-100000000000000000000ch	OK=-1e+20ch
+ser:A=C|B:scroll-margin-inline-start:D	scroll-margin-inline-start	-1e+20ic	OK=-100000000000000000000ic	OK=-1e+20ic
+ser:A=C|B:scroll-margin-inline:D	scroll-margin-inline	\t -1e+20px 	OK=-100000000000000000000px	OK=-1e+20px
+ser:A=C|B:scroll-margin-left:D	scroll-margin-left	-1e+20lh	OK=-100000000000000000000lh	OK=-1e+20lh
+ser:A=C|B:scroll-margin-right:D	scroll-margin-right	-1e+20dvh	OK=-100000000000000000000dvh	OK=-1e+20dvh
+ser:A=C|B:scroll-margin-top:D	scroll-margin-top	-1e+20em	OK=-100000000000000000000em	OK=-1e+20em
+ser:A=C|B:scroll-margin:D	scroll-margin	-1e+20px	OK=-100000000000000000000px	OK=-1e+20px
+ser:A=C|B:scroll-padding-block-end:D	scroll-padding-block-end	1e+20cap	OK=100000000000000000000cap	OK=1e+20cap
+ser:A=C|B:scroll-padding-block-end:P	scroll-padding-block-end	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:scroll-padding-block-start:D	scroll-padding-block-start	1e+20in	OK=100000000000000000000in	OK=1e+20in
+ser:A=C|B:scroll-padding-block-start:P	scroll-padding-block-start	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:scroll-padding-block:D	scroll-padding-block	1e+20cap	OK=100000000000000000000cap	OK=1e+20cap
+ser:A=C|B:scroll-padding-bottom:D	scroll-padding-bottom	1e+20rlh	OK=100000000000000000000rlh	OK=1e+20rlh
+ser:A=C|B:scroll-padding-bottom:P	scroll-padding-bottom	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:scroll-padding-inline-end:D	scroll-padding-inline-end	1e+20rem	OK=100000000000000000000rem	OK=1e+20rem
+ser:A=C|B:scroll-padding-inline-end:P	scroll-padding-inline-end	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:scroll-padding-inline-start:D	scroll-padding-inline-start	1e+20em	OK=100000000000000000000em	OK=1e+20em
+ser:A=C|B:scroll-padding-inline-start:P	scroll-padding-inline-start	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:scroll-padding-inline:D P	scroll-padding-inline	1e+20mm 2%	OK=100000000000000000000mm 2%	OK=1e+20mm 2%
+ser:A=C|B:scroll-padding-inline:P P	scroll-padding-inline	0.5% 1e+20%	OK=0.5% 100000000000000000000%	OK=0.5% 1e+20%
+ser:A=C|B:scroll-padding-inline:auto D	scroll-padding-inline	auto 1e+20vmax	OK=auto 100000000000000000000vmax	OK=auto 1e+20vmax
+ser:A=C|B:scroll-padding-left:D	scroll-padding-left	1e+20vmin	OK=100000000000000000000vmin	OK=1e+20vmin
+ser:A=C|B:scroll-padding-left:P	scroll-padding-left	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:scroll-padding-right:D	scroll-padding-right	1e+20cap	OK=100000000000000000000cap	OK=1e+20cap
+ser:A=C|B:scroll-padding-right:P	scroll-padding-right	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:scroll-padding-top:D	scroll-padding-top	1e+20dvh	OK=100000000000000000000dvh	OK=1e+20dvh
+ser:A=C|B:scroll-padding-top:P	scroll-padding-top	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A=C|B:scroll-padding:D auto P	scroll-padding	1e+20vh auto 360%	OK=100000000000000000000vh auto 360%	OK=1e+20vh auto 360%
+ser:A=C|B:scroll-padding:auto D D	scroll-padding	auto 1e+20px 0cqw	OK=auto 100000000000000000000px 0cqw	OK=auto 1e+20px 0cqw
+ser:A=C|B:scroll-padding:auto P P	scroll-padding	auto 0.5% 1e+20%	OK=auto 0.5% 100000000000000000000%	OK=auto 0.5% 1e+20%
+ser:A=C|B:scroll-padding:auto P auto	scroll-padding	auto 1e+20% auto	OK=auto 100000000000000000000%	OK=auto 1e+20%
+ser:A=C|B:shape-image-threshold:N	shape-image-threshold	-1e+20	OK=-100000000000000000000	OK=-1e+20
+ser:A=C|B:shape-image-threshold:P	shape-image-threshold	-1e+20%	OK=-1000000000000000000	OK=-1e+18
+ser:A=C|B:shape-margin:D	shape-margin	1e+20cap	OK=100000000000000000000cap	OK=1e+20cap
+ser:A=C|B:shape-outside:xywh( D D D P round P D )	shape-outside	xywh(-100cm -1e+20ic 1000mm 1% round 65535% 0.5em )	OK=xywh(-100cm -100000000000000000000ic 1000mm 1% round 65535% 0.5em)	OK=xywh(-100cm -1e+20ic 1000mm 1% round 65535% 0.5em)
+ser:A=C|B:stop-opacity:N	stop-opacity	\n-1e+20  	OK=-100000000000000000000	OK=-1e+20
+ser:A=C|B:stop-opacity:P	stop-opacity	0.001%	OK=0.00001	OK=1e-05
+ser:A=C|B:stroke-dasharray:D	stroke-dasharray	1e+20vmax 	OK=100000000000000000000vmax	OK=1e+20vmax
+ser:A=C|B:stroke-dashoffset:D	stroke-dashoffset	-1e+20px	OK=-100000000000000000000px	OK=-1e+20px
+ser:A=C|B:stroke-dashoffset:P	stroke-dashoffset	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:stroke-miterlimit:N	stroke-miterlimit	1e+20	OK=100000000000000000000	OK=1e+20
+ser:A=C|B:stroke-opacity:N	stroke-opacity	-1e+20	OK=-100000000000000000000	OK=-1e+20
+ser:A=C|B:stroke-opacity:P	stroke-opacity	-1e+20%	OK=-1000000000000000000	OK=-1e+18
+ser:A=C|B:stroke-width:D	stroke-width	1e+20px	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:tab-size:D	tab-size	1e+20cm	OK=100000000000000000000cm	OK=1e+20cm
+ser:A=C|B:tab-size:N	tab-size	1e+20	OK=100000000000000000000	OK=1e+20
+ser:A=C|B:text-decoration-thickness:D	text-decoration-thickness	\t /* a b */1e+20px\n	OK=100000000000000000000px	OK=1e+20px
+ser:A=C|B:text-decoration-thickness:P	text-decoration-thickness	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:text-decoration:D blink overline	text-decoration	-1e+20mm blink overline	OK=overline blink -100000000000000000000mm	OK=overline blink -1e+20mm
+ser:A=C|B:text-decoration:grammar-error D	text-decoration	grammar-error -1e+20rlh	OK=grammar-error -100000000000000000000rlh	OK=grammar-error -1e+20rlh
+ser:A=C|B:text-decoration:spelling-error #H D	text-decoration	spelling-error #abc -1e+20ch	OK=spelling-error -100000000000000000000ch rgb(170, 187, 204)	OK=spelling-error -1e+20ch rgb(170, 187, 204)
+ser:A=C|B:text-indent:D	text-indent	-1e+20px  	OK=-100000000000000000000px	OK=-1e+20px
+ser:A=C|B:text-indent:P each-line	text-indent	-1e+20%  each-line	OK=-100000000000000000000% each-line	OK=-1e+20% each-line
+ser:A=C|B:text-underline-offset:D	text-underline-offset	-1e+20mm	OK=-100000000000000000000mm	OK=-1e+20mm
+ser:A=C|B:text-underline-offset:P	text-underline-offset	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:top:D	top	-1e+20cap	OK=-100000000000000000000cap	OK=-1e+20cap
+ser:A=C|B:transform-origin:left	transform-origin	left	OK=left center 0px	OK=left center
+ser:A=C|B:transform:skew( D ) perspective( D )	transform	skew(-1e+20grad ) perspective(2in)	OK=skew(-100000000000000000000grad) perspective(2in)	OK=skew(-1e+20grad) perspective(2in)
+ser:A=C|B:transform:translatey( D ) scalez( P )	transform	translateY(-1vmax) scaleZ(-1e+20%)	OK=translateY(-1vmax) scaleZ(-1000000000000000000)	OK=translateY(-1vmax) scaleZ(-1e+18)
+ser:A=C|B:transform:translatey( P ) skewy( D )	transform	translateY(-1e+20%) skewY(0.5grad)	OK=translateY(-100000000000000000000%) skewY(0.5grad)	OK=translateY(-1e+20%) skewY(0.5grad)
+ser:A=C|B:transition-delay:D	transition-delay	-1e+20ms	OK=-100000000000000000000ms	OK=-1e+20ms
+ser:A=C|B:transition-duration:D	transition-duration	1e+20s	OK=100000000000000000000s	OK=1e+20s
+ser:A=C|B:translate:D	translate	-1e+20cm 	OK=-100000000000000000000cm	OK=-1e+20cm
+ser:A=C|B:vertical-align:P	vertical-align	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:width:D	width	1e+20cqw	OK=100000000000000000000cqw	OK=1e+20cqw
+ser:A=C|B:word-spacing:D	word-spacing	-1e+20em	OK=-100000000000000000000em	OK=-1e+20em
+ser:A=C|B:word-spacing:P	word-spacing	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:x:D	x	-1e+20cm	OK=-100000000000000000000cm	OK=-1e+20cm
+ser:A=C|B:x:P	x	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:y:D	y	-1e+20in	OK=-100000000000000000000in	OK=-1e+20in
+ser:A=C|B:y:P	y	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
+ser:A=C|B:zoom:N	zoom	1e+20	OK=100000000000000000000	OK=1e+20
+ser:A=C|B:zoom:P	zoom	1e+20%	OK=100000000000000000000%	OK=1e+20%
+ser:A|B|C:animation:auto	animation	auto	OK=none	OK=auto ease 0s 1 normal none running none
+support:chromium+firefox:animation-delay-end	animation-delay-end	initial	OK=initial	NO
+support:chromium+firefox:animation-delay-start	animation-delay-start	initial	OK=initial	NO
+support:chromium+firefox:animation-range-center	animation-range-center	initial	OK=initial	NO
+support:chromium+firefox:background-position-block	background-position-block	initial	OK=initial	NO
+support:chromium+firefox:background-position-inline	background-position-inline	initial	OK=initial	NO
+support:chromium+firefox:background-repeat-block	background-repeat-block	initial	OK=initial	NO
+support:chromium+firefox:background-repeat-inline	background-repeat-inline	initial	OK=initial	NO
+support:chromium+firefox:background-repeat-x	background-repeat-x	initial	OK=initial	NO
+support:chromium+firefox:background-repeat-y	background-repeat-y	initial	OK=initial	NO
+support:chromium+firefox:background-tbd	background-tbd	initial	OK=initial	NO
+support:chromium+firefox:block-ellipsis	block-ellipsis	initial	OK=initial	NO
+support:chromium+firefox:block-step	block-step	initial	OK=initial	NO
+support:chromium+firefox:block-step-align	block-step-align	initial	OK=initial	NO
+support:chromium+firefox:block-step-insert	block-step-insert	initial	OK=initial	NO
+support:chromium+firefox:block-step-round	block-step-round	initial	OK=initial	NO
+support:chromium+firefox:block-step-size	block-step-size	initial	OK=initial	NO
+support:chromium+firefox:bookmark-label	bookmark-label	initial	OK=initial	NO
+support:chromium+firefox:bookmark-level	bookmark-level	initial	OK=initial	NO
+support:chromium+firefox:bookmark-state	bookmark-state	initial	OK=initial	NO
+support:chromium+firefox:border-block-clip	border-block-clip	initial	OK=initial	NO
+support:chromium+firefox:border-block-end-clip	border-block-end-clip	initial	OK=initial	NO
+support:chromium+firefox:border-block-end-radius	border-block-end-radius	initial	OK=initial	NO
+support:chromium+firefox:border-block-start-clip	border-block-start-clip	initial	OK=initial	NO
+support:chromium+firefox:border-block-start-radius	border-block-start-radius	initial	OK=initial	NO
+support:chromium+firefox:border-bottom-clip	border-bottom-clip	initial	OK=initial	NO
+support:chromium+firefox:border-bottom-radius	border-bottom-radius	initial	OK=initial	NO
+support:chromium+firefox:border-boundary	border-boundary	initial	OK=initial	NO
+support:chromium+firefox:border-clip	border-clip	initial	OK=initial	NO
+support:chromium+firefox:border-inline-clip	border-inline-clip	initial	OK=initial	NO
+support:chromium+firefox:border-inline-end-clip	border-inline-end-clip	initial	OK=initial	NO
+support:chromium+firefox:border-inline-end-radius	border-inline-end-radius	initial	OK=initial	NO
+support:chromium+firefox:border-inline-start-clip	border-inline-start-clip	initial	OK=initial	NO
+support:chromium+firefox:border-inline-start-radius	border-inline-start-radius	initial	OK=initial	NO
+support:chromium+firefox:border-left-clip	border-left-clip	initial	OK=initial	NO
+support:chromium+firefox:border-left-radius	border-left-radius	initial	OK=initial	NO
+support:chromium+firefox:border-limit	border-limit	initial	OK=initial	NO
+support:chromium+firefox:border-right-clip	border-right-clip	initial	OK=initial	NO
+support:chromium+firefox:border-right-radius	border-right-radius	initial	OK=initial	NO
+support:chromium+firefox:border-top-clip	border-top-clip	initial	OK=initial	NO
+support:chromium+firefox:border-top-radius	border-top-radius	initial	OK=initial	NO
+support:chromium+firefox:box-shadow-blur	box-shadow-blur	initial	OK=initial	NO
+support:chromium+firefox:box-shadow-color	box-shadow-color	initial	OK=initial	NO
+support:chromium+firefox:box-shadow-offset	box-shadow-offset	initial	OK=initial	NO
+support:chromium+firefox:box-shadow-position	box-shadow-position	initial	OK=initial	NO
+support:chromium+firefox:box-shadow-spread	box-shadow-spread	initial	OK=initial	NO
+support:chromium+firefox:box-snap	box-snap	initial	OK=initial	NO
+support:chromium+firefox:caret	caret	initial	OK=initial	NO
+support:chromium+firefox:continue	continue	initial	OK=initial	NO
+support:chromium+firefox:copy-into	copy-into	initial	OK=initial	NO
+support:chromium+firefox:corner	corner	initial	OK=initial	NO
+support:chromium+firefox:corner-block-end	corner-block-end	initial	OK=initial	NO
+support:chromium+firefox:corner-block-start	corner-block-start	initial	OK=initial	NO
+support:chromium+firefox:corner-bottom	corner-bottom	initial	OK=initial	NO
+support:chromium+firefox:corner-bottom-left	corner-bottom-left	initial	OK=initial	NO
+support:chromium+firefox:corner-bottom-right	corner-bottom-right	initial	OK=initial	NO
+support:chromium+firefox:corner-end-end	corner-end-end	initial	OK=initial	NO
+support:chromium+firefox:corner-end-start	corner-end-start	initial	OK=initial	NO
+support:chromium+firefox:corner-inline-end	corner-inline-end	initial	OK=initial	NO
+support:chromium+firefox:corner-inline-start	corner-inline-start	initial	OK=initial	NO
+support:chromium+firefox:corner-left	corner-left	initial	OK=initial	NO
+support:chromium+firefox:corner-right	corner-right	initial	OK=initial	NO
+support:chromium+firefox:corner-start-end	corner-start-end	initial	OK=initial	NO
+support:chromium+firefox:corner-start-start	corner-start-start	initial	OK=initial	NO
+support:chromium+firefox:corner-top	corner-top	initial	OK=initial	NO
+support:chromium+firefox:corner-top-left	corner-top-left	initial	OK=initial	NO
+support:chromium+firefox:corner-top-right	corner-top-right	initial	OK=initial	NO
+support:chromium+firefox:cue	cue	initial	OK=initial	NO
+support:chromium+firefox:cue-after	cue-after	initial	OK=initial	NO
+support:chromium+firefox:cue-before	cue-before	initial	OK=initial	NO
+support:chromium+firefox:event-trigger	event-trigger	initial	OK=initial	NO
+support:chromium+firefox:event-trigger-name	event-trigger-name	initial	OK=initial	NO
+support:chromium+firefox:event-trigger-source	event-trigger-source	initial	OK=initial	NO
+support:chromium+firefox:fill-break	fill-break	initial	OK=initial	NO
+support:chromium+firefox:fill-color	fill-color	initial	OK=initial	NO
+support:chromium+firefox:fill-image	fill-image	initial	OK=initial	NO
+support:chromium+firefox:fill-origin	fill-origin	initial	OK=initial	NO
+support:chromium+firefox:fill-position	fill-position	initial	OK=initial	NO
+support:chromium+firefox:fill-repeat	fill-repeat	initial	OK=initial	NO
+support:chromium+firefox:fill-size	fill-size	initial	OK=initial	NO
+support:chromium+firefox:fit-tolerance	fit-tolerance	initial	OK=initial	NO
+support:chromium+firefox:float-defer	float-defer	initial	OK=initial	NO
+support:chromium+firefox:float-offset	float-offset	initial	OK=initial	NO
+support:chromium+firefox:float-reference	float-reference	initial	OK=initial	NO
+support:chromium+firefox:flow-from	flow-from	initial	OK=initial	NO
+support:chromium+firefox:flow-into	flow-into	initial	OK=initial	NO
+support:chromium+firefox:footnote-display	footnote-display	initial	OK=initial	NO
+support:chromium+firefox:footnote-policy	footnote-policy	initial	OK=initial	NO
+support:chromium+firefox:hanging-punctuation	hanging-punctuation	initial	OK=initial	NO
+support:chromium+firefox:hyphenate-limit-last	hyphenate-limit-last	initial	OK=initial	NO
+support:chromium+firefox:hyphenate-limit-lines	hyphenate-limit-lines	initial	OK=initial	NO
+support:chromium+firefox:hyphenate-limit-zone	hyphenate-limit-zone	initial	OK=initial	NO
+support:chromium+firefox:image-animation	image-animation	initial	OK=initial	NO
+support:chromium+firefox:image-resolution	image-resolution	initial	OK=initial	NO
+support:chromium+firefox:initial-letter-align	initial-letter-align	initial	OK=initial	NO
+support:chromium+firefox:initial-letter-wrap	initial-letter-wrap	initial	OK=initial	NO
+support:chromium+firefox:inline-sizing	inline-sizing	initial	OK=initial	NO
+support:chromium+firefox:input-security	input-security	initial	OK=initial	NO
+support:chromium+firefox:line-clamp	line-clamp	initial	OK=initial	NO
+support:chromium+firefox:line-fit-edge	line-fit-edge	initial	OK=initial	NO
+support:chromium+firefox:line-grid	line-grid	initial	OK=initial	NO
+support:chromium+firefox:line-height-step	line-height-step	initial	OK=initial	NO
+support:chromium+firefox:line-padding	line-padding	initial	OK=initial	NO
+support:chromium+firefox:line-snap	line-snap	initial	OK=initial	NO
+support:chromium+firefox:link-parameters	link-parameters	initial	OK=initial	NO
+support:chromium+firefox:margin-break	margin-break	initial	OK=initial	NO
+support:chromium+firefox:marker-side	marker-side	initial	OK=initial	NO
+support:chromium+firefox:mask-border	mask-border	initial	OK=initial	NO
+support:chromium+firefox:mask-border-mode	mask-border-mode	initial	OK=initial	NO
+support:chromium+firefox:mask-border-outset	mask-border-outset	initial	OK=initial	NO
+support:chromium+firefox:mask-border-repeat	mask-border-repeat	initial	OK=initial	NO
+support:chromium+firefox:mask-border-slice	mask-border-slice	initial	OK=initial	NO
+support:chromium+firefox:mask-border-source	mask-border-source	initial	OK=initial	NO
+support:chromium+firefox:mask-border-width	mask-border-width	initial	OK=initial	NO
+support:chromium+firefox:max-lines	max-lines	initial	OK=initial	NO
+support:chromium+firefox:max-size	max-size	initial	OK=initial	NO
+support:chromium+firefox:min-intrinsic-sizing	min-intrinsic-sizing	initial	OK=initial	NO
+support:chromium+firefox:min-size	min-size	initial	OK=initial	NO
+support:chromium+firefox:nav-down	nav-down	initial	OK=initial	NO
+support:chromium+firefox:nav-left	nav-left	initial	OK=initial	NO
+support:chromium+firefox:nav-right	nav-right	initial	OK=initial	NO
+support:chromium+firefox:nav-up	nav-up	initial	OK=initial	NO
+support:chromium+firefox:overflow-clip-margin-block	overflow-clip-margin-block	initial	OK=initial	NO
+support:chromium+firefox:overflow-clip-margin-block-end	overflow-clip-margin-block-end	initial	OK=initial	NO
+support:chromium+firefox:overflow-clip-margin-block-start	overflow-clip-margin-block-start	initial	OK=initial	NO
+support:chromium+firefox:overflow-clip-margin-bottom	overflow-clip-margin-bottom	initial	OK=initial	NO
+support:chromium+firefox:overflow-clip-margin-inline	overflow-clip-margin-inline	initial	OK=initial	NO
+support:chromium+firefox:overflow-clip-margin-inline-end	overflow-clip-margin-inline-end	initial	OK=initial	NO
+support:chromium+firefox:overflow-clip-margin-inline-start	overflow-clip-margin-inline-start	initial	OK=initial	NO
+support:chromium+firefox:overflow-clip-margin-left	overflow-clip-margin-left	initial	OK=initial	NO
+support:chromium+firefox:overflow-clip-margin-right	overflow-clip-margin-right	initial	OK=initial	NO
+support:chromium+firefox:overflow-clip-margin-top	overflow-clip-margin-top	initial	OK=initial	NO
+support:chromium+firefox:path-length	path-length	initial	OK=initial	NO
+support:chromium+firefox:pause	pause	initial	OK=initial	NO
+support:chromium+firefox:pause-after	pause-after	initial	OK=initial	NO
+support:chromium+firefox:pause-before	pause-before	initial	OK=initial	NO
+support:chromium+firefox:pointer-timeline	pointer-timeline	initial	OK=initial	NO
+support:chromium+firefox:pointer-timeline-axis	pointer-timeline-axis	initial	OK=initial	NO
+support:chromium+firefox:pointer-timeline-name	pointer-timeline-name	initial	OK=initial	NO
+support:chromium+firefox:region-fragment	region-fragment	initial	OK=initial	NO
+support:chromium+firefox:rest	rest	initial	OK=initial	NO
+support:chromium+firefox:rest-after	rest-after	initial	OK=initial	NO
+support:chromium+firefox:rest-before	rest-before	initial	OK=initial	NO
+support:chromium+firefox:ruby-merge	ruby-merge	initial	OK=initial	NO
+support:chromium+firefox:shape-inside	shape-inside	initial	OK=initial	NO
+support:chromium+firefox:shape-padding	shape-padding	initial	OK=initial	NO
+support:chromium+firefox:slider-orientation	slider-orientation	initial	OK=initial	NO
+support:chromium+firefox:spatial-navigation-action	spatial-navigation-action	initial	OK=initial	NO
+support:chromium+firefox:spatial-navigation-contain	spatial-navigation-contain	initial	OK=initial	NO
+support:chromium+firefox:spatial-navigation-function	spatial-navigation-function	initial	OK=initial	NO
+support:chromium+firefox:speak-as	speak-as	initial	OK=initial	NO
+support:chromium+firefox:string-set	string-set	initial	OK=initial	NO
+support:chromium+firefox:stroke-align	stroke-align	initial	OK=initial	NO
+support:chromium+firefox:stroke-alignment	stroke-alignment	initial	OK=initial	NO
+support:chromium+firefox:stroke-break	stroke-break	initial	OK=initial	NO
+support:chromium+firefox:stroke-color	stroke-color	initial	OK=initial	NO
+support:chromium+firefox:stroke-dash-corner	stroke-dash-corner	initial	OK=initial	NO
+support:chromium+firefox:stroke-dash-justify	stroke-dash-justify	initial	OK=initial	NO
+support:chromium+firefox:stroke-dashadjust	stroke-dashadjust	initial	OK=initial	NO
+support:chromium+firefox:stroke-dashcorner	stroke-dashcorner	initial	OK=initial	NO
+support:chromium+firefox:stroke-image	stroke-image	initial	OK=initial	NO
+support:chromium+firefox:stroke-origin	stroke-origin	initial	OK=initial	NO
+support:chromium+firefox:stroke-position	stroke-position	initial	OK=initial	NO
+support:chromium+firefox:stroke-repeat	stroke-repeat	initial	OK=initial	NO
+support:chromium+firefox:stroke-size	stroke-size	initial	OK=initial	NO
+support:chromium+firefox:text-align-all	text-align-all	initial	OK=initial	NO
+support:chromium+firefox:text-decoration-skip	text-decoration-skip	initial	OK=initial	NO
+support:chromium+firefox:text-decoration-skip-box	text-decoration-skip-box	initial	OK=initial	NO
+support:chromium+firefox:text-decoration-skip-self	text-decoration-skip-self	initial	OK=initial	NO
+support:chromium+firefox:text-decoration-skip-spaces	text-decoration-skip-spaces	initial	OK=initial	NO
+support:chromium+firefox:text-emphasis-skip	text-emphasis-skip	initial	OK=initial	NO
+support:chromium+firefox:text-group-align	text-group-align	initial	OK=initial	NO
+support:chromium+firefox:text-spacing	text-spacing	initial	OK=initial	NO
+support:chromium+firefox:timeline-trigger-range	timeline-trigger-range	initial	OK=initial	NO
+support:chromium+firefox:voice-balance	voice-balance	initial	OK=initial	NO
+support:chromium+firefox:voice-duration	voice-duration	initial	OK=initial	NO
+support:chromium+firefox:voice-pitch	voice-pitch	initial	OK=initial	NO
+support:chromium+firefox:voice-range	voice-range	initial	OK=initial	NO
+support:chromium+firefox:voice-rate	voice-rate	initial	OK=initial	NO
+support:chromium+firefox:voice-stress	voice-stress	initial	OK=initial	NO
+support:chromium+firefox:voice-volume	voice-volume	initial	OK=initial	NO
+support:chromium+firefox:white-space-trim	white-space-trim	initial	OK=initial	NO
+support:chromium+firefox:word-space-transform	word-space-transform	initial	OK=initial	NO
+support:chromium+firefox:wrap-after	wrap-after	initial	OK=initial	NO
+support:chromium+firefox:wrap-before	wrap-before	initial	OK=initial	NO
+support:chromium+firefox:wrap-flow	wrap-flow	initial	OK=initial	NO
+support:chromium+firefox:wrap-inside	wrap-inside	initial	OK=initial	NO
+support:chromium+firefox:wrap-through	wrap-through	initial	OK=initial	NO
+support:chromium:color-adjust	color-adjust	initial	OK=initial	NO
+support:chromium:font-synthesis-position	font-synthesis-position	initial	OK=initial	NO
+support:chromium:font-width	font-width	initial	OK=initial	NO
+support:chromium:text-decoration-inset	text-decoration-inset	initial	OK=initial	NO
+support:firefox:-webkit-mask-box-image	-webkit-mask-box-image	initial	OK=initial	NO
+support:firefox:-webkit-mask-box-image-outset	-webkit-mask-box-image-outset	initial	OK=initial	NO
+support:firefox:-webkit-mask-box-image-repeat	-webkit-mask-box-image-repeat	initial	OK=initial	NO
+support:firefox:-webkit-mask-box-image-slice	-webkit-mask-box-image-slice	initial	OK=initial	NO
+support:firefox:-webkit-mask-box-image-source	-webkit-mask-box-image-source	initial	OK=initial	NO
+support:firefox:-webkit-mask-box-image-width	-webkit-mask-box-image-width	initial	OK=initial	NO
+support:firefox:animation-range	animation-range	initial	OK=initial	NO
+support:firefox:animation-range-end	animation-range-end	initial	OK=initial	NO
+support:firefox:animation-range-start	animation-range-start	initial	OK=initial	NO
+support:firefox:animation-timeline	animation-timeline	initial	OK=initial	NO
+support:firefox:animation-trigger	animation-trigger	initial	OK=initial	NO
+support:firefox:border-shape	border-shape	initial	OK=initial	NO
+support:firefox:caret-animation	caret-animation	initial	OK=initial	NO
+support:firefox:caret-shape	caret-shape	initial	OK=initial	NO
+support:firefox:column-height	column-height	initial	OK=initial	NO
+support:firefox:column-rule-break	column-rule-break	initial	OK=initial	NO
+support:firefox:column-rule-inset	column-rule-inset	initial	OK=initial	NO
+support:firefox:column-rule-inset-cap	column-rule-inset-cap	initial	OK=initial	NO
+support:firefox:column-rule-inset-cap-end	column-rule-inset-cap-end	initial	OK=initial	NO
+support:firefox:column-rule-inset-cap-start	column-rule-inset-cap-start	initial	OK=initial	NO
+support:firefox:column-rule-inset-end	column-rule-inset-end	initial	OK=initial	NO
+support:firefox:column-rule-inset-junction	column-rule-inset-junction	initial	OK=initial	NO
+support:firefox:column-rule-inset-junction-end	column-rule-inset-junction-end	initial	OK=initial	NO
+support:firefox:column-rule-inset-junction-start	column-rule-inset-junction-start	initial	OK=initial	NO
+support:firefox:column-rule-inset-start	column-rule-inset-start	initial	OK=initial	NO
+support:firefox:column-rule-visibility-items	column-rule-visibility-items	initial	OK=initial	NO
+support:firefox:column-wrap	column-wrap	initial	OK=initial	NO
+support:firefox:corner-block-end-shape	corner-block-end-shape	initial	OK=initial	NO
+support:firefox:corner-block-start-shape	corner-block-start-shape	initial	OK=initial	NO
+support:firefox:corner-bottom-left-shape	corner-bottom-left-shape	initial	OK=initial	NO
+support:firefox:corner-bottom-right-shape	corner-bottom-right-shape	initial	OK=initial	NO
+support:firefox:corner-bottom-shape	corner-bottom-shape	initial	OK=initial	NO
+support:firefox:corner-end-end-shape	corner-end-end-shape	initial	OK=initial	NO
+support:firefox:corner-end-start-shape	corner-end-start-shape	initial	OK=initial	NO
+support:firefox:corner-inline-end-shape	corner-inline-end-shape	initial	OK=initial	NO
+support:firefox:corner-inline-start-shape	corner-inline-start-shape	initial	OK=initial	NO
+support:firefox:corner-left-shape	corner-left-shape	initial	OK=initial	NO
+support:firefox:corner-right-shape	corner-right-shape	initial	OK=initial	NO
+support:firefox:corner-shape	corner-shape	initial	OK=initial	NO
+support:firefox:corner-start-end-shape	corner-start-end-shape	initial	OK=initial	NO
+support:firefox:corner-start-start-shape	corner-start-start-shape	initial	OK=initial	NO
+support:firefox:corner-top-left-shape	corner-top-left-shape	initial	OK=initial	NO
+support:firefox:corner-top-right-shape	corner-top-right-shape	initial	OK=initial	NO
+support:firefox:corner-top-shape	corner-top-shape	initial	OK=initial	NO
+support:firefox:dynamic-range-limit	dynamic-range-limit	initial	OK=initial	NO
+support:firefox:flex-line-count	flex-line-count	initial	OK=initial	NO
+support:firefox:frame-sizing	frame-sizing	initial	OK=initial	NO
+support:firefox:initial-letter	initial-letter	initial	OK=initial	NO
+support:firefox:interactivity	interactivity	initial	OK=initial	NO
+support:firefox:interest-delay	interest-delay	initial	OK=initial	NO
+support:firefox:interest-delay-end	interest-delay-end	initial	OK=initial	NO
+support:firefox:interest-delay-start	interest-delay-start	initial	OK=initial	NO
+support:firefox:interpolate-size	interpolate-size	initial	OK=initial	NO
+support:firefox:margin-trim	margin-trim	initial	OK=initial	NO
+support:firefox:object-view-box	object-view-box	initial	OK=initial	NO
+support:firefox:orphans	orphans	initial	OK=initial	NO
+support:firefox:overlay	overlay	initial	OK=initial	NO
+support:firefox:reading-flow	reading-flow	initial	OK=initial	NO
+support:firefox:reading-order	reading-order	initial	OK=initial	NO
+support:firefox:row-rule	row-rule	initial	OK=initial	NO
+support:firefox:row-rule-break	row-rule-break	initial	OK=initial	NO
+support:firefox:row-rule-color	row-rule-color	initial	OK=initial	NO
+support:firefox:row-rule-inset	row-rule-inset	initial	OK=initial	NO
+support:firefox:row-rule-inset-cap	row-rule-inset-cap	initial	OK=initial	NO
+support:firefox:row-rule-inset-cap-end	row-rule-inset-cap-end	initial	OK=initial	NO
+support:firefox:row-rule-inset-cap-start	row-rule-inset-cap-start	initial	OK=initial	NO
+support:firefox:row-rule-inset-end	row-rule-inset-end	initial	OK=initial	NO
+support:firefox:row-rule-inset-junction	row-rule-inset-junction	initial	OK=initial	NO
+support:firefox:row-rule-inset-junction-end	row-rule-inset-junction-end	initial	OK=initial	NO
+support:firefox:row-rule-inset-junction-start	row-rule-inset-junction-start	initial	OK=initial	NO
+support:firefox:row-rule-inset-start	row-rule-inset-start	initial	OK=initial	NO
+support:firefox:row-rule-style	row-rule-style	initial	OK=initial	NO
+support:firefox:row-rule-visibility-items	row-rule-visibility-items	initial	OK=initial	NO
+support:firefox:row-rule-width	row-rule-width	initial	OK=initial	NO
+support:firefox:ruby-overhang	ruby-overhang	initial	OK=initial	NO
+support:firefox:rule	rule	initial	OK=initial	NO
+support:firefox:rule-break	rule-break	initial	OK=initial	NO
+support:firefox:rule-color	rule-color	initial	OK=initial	NO
+support:firefox:rule-inset	rule-inset	initial	OK=initial	NO
+support:firefox:rule-inset-cap	rule-inset-cap	initial	OK=initial	NO
+support:firefox:rule-inset-end	rule-inset-end	initial	OK=initial	NO
+support:firefox:rule-inset-junction	rule-inset-junction	initial	OK=initial	NO
+support:firefox:rule-inset-start	rule-inset-start	initial	OK=initial	NO
+support:firefox:rule-overlap	rule-overlap	initial	OK=initial	NO
+support:firefox:rule-style	rule-style	initial	OK=initial	NO
+support:firefox:rule-visibility-items	rule-visibility-items	initial	OK=initial	NO
+support:firefox:rule-width	rule-width	initial	OK=initial	NO
+support:firefox:scroll-axis-lock	scroll-axis-lock	initial	OK=initial	NO
+support:firefox:scroll-initial-target	scroll-initial-target	initial	OK=initial	NO
+support:firefox:scroll-marker-group	scroll-marker-group	initial	OK=initial	NO
+support:firefox:scroll-target-group	scroll-target-group	initial	OK=initial	NO
+support:firefox:scroll-timeline	scroll-timeline	initial	OK=initial	NO
+support:firefox:scroll-timeline-axis	scroll-timeline-axis	initial	OK=initial	NO
+support:firefox:scroll-timeline-name	scroll-timeline-name	initial	OK=initial	NO
+support:firefox:size	size	initial	OK=initial	NO
+support:firefox:speak	speak	initial	OK=initial	NO
+support:firefox:text-fit	text-fit	initial	OK=initial	NO
+support:firefox:text-size-adjust	text-size-adjust	initial	OK=initial	NO
+support:firefox:text-spacing-trim	text-spacing-trim	initial	OK=initial	NO
+support:firefox:timeline-scope	timeline-scope	initial	OK=initial	NO
+support:firefox:timeline-trigger	timeline-trigger	initial	OK=initial	NO
+support:firefox:timeline-trigger-activation-range	timeline-trigger-activation-range	initial	OK=initial	NO
+support:firefox:timeline-trigger-activation-range-end	timeline-trigger-activation-range-end	initial	OK=initial	NO
+support:firefox:timeline-trigger-activation-range-start	timeline-trigger-activation-range-start	initial	OK=initial	NO
+support:firefox:timeline-trigger-active-range	timeline-trigger-active-range	initial	OK=initial	NO
+support:firefox:timeline-trigger-active-range-end	timeline-trigger-active-range-end	initial	OK=initial	NO
+support:firefox:timeline-trigger-active-range-start	timeline-trigger-active-range-start	initial	OK=initial	NO
+support:firefox:timeline-trigger-name	timeline-trigger-name	initial	OK=initial	NO
+support:firefox:timeline-trigger-source	timeline-trigger-source	initial	OK=initial	NO
+support:firefox:trigger-scope	trigger-scope	initial	OK=initial	NO
+support:firefox:view-timeline	view-timeline	initial	OK=initial	NO
+support:firefox:view-timeline-axis	view-timeline-axis	initial	OK=initial	NO
+support:firefox:view-timeline-inset	view-timeline-inset	initial	OK=initial	NO
+support:firefox:view-timeline-name	view-timeline-name	initial	OK=initial	NO
+support:firefox:view-transition-group	view-transition-group	initial	OK=initial	NO
+support:firefox:view-transition-scope	view-transition-scope	initial	OK=initial	NO
+support:firefox:widows	widows	initial	OK=initial	NO
+support:firefox:window-drag	window-drag	initial	OK=initial	NO

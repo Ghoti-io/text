@@ -478,6 +478,7 @@ def main(argv):
     ap.add_argument("--controls", default=CONTROLS)
     ap.add_argument("--write-list", default=None)
     ap.add_argument("--write-witnesses", default=None)
+    ap.add_argument("--rules", default=None)
     ap.add_argument("--max-ours", type=int, default=int(os.environ.get("CSS_PROP_ORACLE_MAX_OURS", "0")))
     args = ap.parse_args(argv)
     work = args.work
@@ -531,7 +532,7 @@ def main(argv):
         bad, features, listed, undecided, unanswered = gate(items, ours, answers, headers, list_path, args)
         summarize(items, ours, answers, headers, features, listed, undecided, unanswered)
         if args.write_list:
-            write_list(args.write_list, items, ours, answers, features, listed, headers, args.ours, args.write_witnesses)
+            write_list(args.write_list, items, ours, answers, features, listed, headers, args.ours, args.write_witnesses, read_rules(args.rules))
         if unanswered:
             bad.append("UNANSWERED: %d items hung an engine (first: %s)" % (len(unanswered), json.dumps(items[unanswered[0]])))
         if bad:
@@ -569,10 +570,59 @@ def support_class(key, headers, source):
     return cls, why
 
 
-def write_list(path, items, ours, answers, features, listed, headers, binary, witnesses_path):
+_NUMBER = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+
+
+def _canonical_numbers(text):
+    return _NUMBER.sub(lambda m: repr(float(m.group(0))), text)
+
+
+def cause_labels(ours, chromium, firefox):
+    """What differs in an item, named, so that a rule can say which differences it is about. A rule whose reason begins `[cause: a, b]` holds for a
+    key only when every item of the key differs from the engines in nothing but those ways: a rule that matched on the key alone would hide a defect of
+    another kind that happens to share a spelling. The labels, for an engine E (chromium, firefox), and this library's answer:
+      E-refuses     this library accepts and E refuses
+      E-accepts     this library refuses and E accepts
+      E-notation    both accept, the texts are not the same, and are the same once every number is read as a number (`1e+20` against `100000000000000000000`: an exponent that this library's text does not have)
+      E-text        both accept and the texts differ in more than that
+    """
+    labels = set()
+    for name, (ok, text) in (("chromium", chromium), ("firefox", firefox)):
+        if ours[0] != "OK":
+            if ok:
+                labels.add(name + "-accepts")
+            continue
+        if not ok:
+            labels.add(name + "-refuses")
+        elif text != ours[1]:
+            exponent = re.search(r"\d[eE][-+]?\d", text) and not re.search(r"\d[eE][-+]?\d", ours[1])
+            labels.add(name + ("-notation" if exponent and _canonical_numbers(text) == _canonical_numbers(ours[1]) else "-text"))
+    return labels
+
+
+def read_rules(path):
+    """[(compiled key expression, class, reason)] from tools/oracle/css_prop_hunt_classes.tsv: how a key that nothing lists is classified when
+    a list is written for a population of other seeds or scope (--rules). The expression matches a whole key; the first rule that matches wins."""
+    rules = []
+    if path and os.path.exists(path):
+        for n, line in enumerate(open(path, encoding="utf-8"), 1):
+            line = line.rstrip("\n")
+            if not line or line.startswith("#"):
+                continue
+            f = line.split("\t")
+            if len(f) != 3 or f[1] not in CLASSES or f[1] == "ours":
+                raise SystemExit("%s:%d: not expression, class (not ours), reason" % (path, n))
+            m = re.match(r"\[cause: ([a-z0-9, -]+)\] ", f[2])
+            rules.append((re.compile(f[0]), f[1], f[2], f[0], set(x.strip() for x in m.group(1).split(",")) if m else None))
+    return rules
+
+
+def write_list(path, items, ours, answers, features, listed, headers, binary, witnesses_path, rules=()):
     """The list as it would have to be to pass: the classes and reasons already given are kept, the `support:` keys (which the probes
-    decide) are classified, the rest are `unclassified`; and a witness for every key is written to `witnesses_path`."""
+    decide) are classified, the rest are classified by the rules (a hunt) or `unclassified`; and a witness for every key is written to
+    `witnesses_path`. A rule that matched no key is reported on stderr: it is dead, or its key has gone."""
     info = properties_info(binary)
+    used = set()
     wit = []
     with open(path, "w", encoding="utf-8") as f:
         for key in sorted(features):
@@ -582,6 +632,12 @@ def write_list(path, items, ours, answers, features, listed, headers, binary, wi
                 cls, reason = support_class(key, headers, info.get(features[key]["prop"]))
             else:
                 cls, reason = "unclassified", "TODO"
+                for rx, rcls, rreason, text, causes in rules:
+                    if rx.fullmatch(key) and (causes is None or all(
+                            cause_labels(ours[m], engine_view(answers["chromium"][m]), engine_view(answers["firefox"][m])) <= causes for m in features[key]["members"])):
+                        cls, reason = rcls, rreason
+                        used.add(text)
+                        break
             f.write("%s\t%d\t%s\t%s\t%s\n" % (key, features[key]["count"], cls, features[key]["digest"], reason))
             rep = features[key]["rep"]
             p, v, _ = items[rep]
@@ -592,6 +648,9 @@ def write_list(path, items, ours, answers, features, listed, headers, binary, wi
                 refs.append(("OK=" + s) if ok else "NO")
             ref = next((r for r in refs if r != o), refs[0])
             wit.append("%s\t%s\t%s\t%s\t%s" % (key, p, css_prop_gen.esc(v), o, ref))
+    for rx, _c, _r, text, _k in rules:
+        if text not in used:
+            print("css_prop_diff: the rule %s matched no key" % text, file=sys.stderr)
     if witnesses_path:
         with open(witnesses_path, "w", encoding="utf-8") as f:
             f.write("# tools/oracle/css_prop_diff.py: one witness for every key of css_prop_divergences.txt: the smallest item of the key, what this library\n"
