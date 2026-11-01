@@ -139,12 +139,20 @@ echo "control vector-refusal: caught"
 : > "$scratch/empty"
 expect no-lists "UNEXPLAINED FAILURES" gate "$vectors" "$scratch/empty" "$scratch/empty" "$absent" "$unextracted" "$ledger" "$depth_floor"
 # (the gate's own passing: with no exceptions the defects alone do not explain the exceptions' cases)
+# The defect list ends empty (the ceiling is 0), and the controls on its mechanism need a line to work on: a defect line is then made of the first exception's, with an owner, in
+# a copy of the list. The control that changes the answer or the stage of a listed defect has nothing to change then and is reported as skipped.
 first=$(awk -F'\t' '!/^#/ && NF >= 7 { print $1; exit }' "$exceptions")
-firstd=$(awk -F'\t' '!/^#/ && NF >= 7 { print $1; exit }' "$defects")
-[ -n "$first" ] && [ -n "$firstd" ] || { echo "control lists: the exception and defect lists are empty, so nothing about them can be shown" >&2; exit 1; }
+sample_defect=$(awk -F'\t' 'BEGIN { OFS = "\t" } !/^#/ && NF >= 7 { print; exit }' "$defects")
+defects_empty=no
+if [ -z "$sample_defect" ]; then
+	defects_empty=yes
+	sample_defect=$(awk -F'\t' 'BEGIN { OFS = "\t" } !/^#/ && NF >= 7 { $6 = "C1d"; print; exit }' "$exceptions")
+fi
+[ -n "$first" ] && [ -n "$sample_defect" ] || { echo "control lists: the exception list is empty, so nothing about the lists can be shown" >&2; exit 1; }
 for kind in exception defect; do
 	if [ "$kind" = exception ]; then list=$exceptions; other=$defects; else list=$defects; other=$exceptions; fi
 	line=$(awk -F'\t' '!/^#/ && NF >= 7 { print; exit }' "$list")
+	[ -n "$line" ] || line=$sample_defect
 	id=$(printf '%s' "$line" | cut -f1)
 	prop=$(printf '%s' "$line" | cut -f2)
 	{ cat "$list"; printf 'css/control/planted.html#0\t%s\t10px\tparse\tINVALID\tdraft-newer\tplanted: this case passes "quoted"\n' "$prop"; } > "$scratch/stale-$kind"
@@ -153,6 +161,10 @@ for kind in exception defect; do
 	else
 		sed 's/\tdraft-newer\t.*/\tC1d\tplanted: a case that does not exist at all/' "$scratch/stale-$kind" > "$scratch/stale-$kind.2"
 		expect stale-$kind "STALE EXCEPTIONS" gate "$vectors" "$exceptions" "$scratch/stale-$kind.2" "$absent" "$unextracted" "$ledger" "$depth_floor"
+	fi
+	if [ "$kind" = defect ] && [ "$defects_empty" = yes ]; then
+		echo "control listed-answer-defect and listed-stage-defect: skipped, the defect list is empty"
+		continue
 	fi
 	awk -F'\t' -v id="$id" 'BEGIN { OFS = "\t" } /^#/ || NF < 7 { print; next } $1 == id { $5 = "a planted answer" } { print }' "$list" > "$scratch/answer-$kind"
 	if [ "$kind" = exception ]; then
@@ -192,12 +204,15 @@ fi
 echo "control invalid-vector-answered-unknown: caught"
 awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done { print; next } { $6 = "browser-behavior"; done = 1 } { print }' "$exceptions" > "$scratch/class"
 expect class-not-one-of-the-four "SUITE PROBLEMS" gate "$vectors" "$scratch/class" "$defects" "$absent" "$unextracted" "$ledger" "$depth_floor"
-awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done { print; next } { $6 = ""; done = 1 } { print }' "$defects" > "$scratch/owner"
+{ cat "$defects"; [ "$defects_empty" = yes ] && printf '%s\n' "$sample_defect"; } | awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 7 || done { print; next } { $6 = ""; done = 1 } { print }' > "$scratch/owner"
 expect defect-without-owner "SUITE PROBLEMS" gate "$vectors" "$exceptions" "$scratch/owner" "$absent" "$unextracted" "$ledger" "$depth_floor"
-{ cat "$exceptions"; awk -F'\t' '!/^#/ && NF >= 7 { print; exit }' "$defects"; } > "$scratch/both"
+{ cat "$exceptions"; printf '%s\n' "$sample_defect"; } > "$scratch/both"
 expect defect-also-an-exception "SUITE PROBLEMS" gate "$vectors" "$scratch/both" "$defects" "$absent" "$unextracted" "$ledger" "$depth_floor"
 expect floor "below the floor" env CSS_PROPERTY_MIN_SCORED=999999 python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$defects" "$absent"
-expect ceiling "above the ceiling" env CSS_PROPERTY_MAX_DEFECTS=0 python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$defects" "$absent"
+# a ceiling that the listed defects exceed: 0 while some are listed, and one below the count (-1) when the list is empty and the ceiling is already 0
+ceiling_probe=0
+[ "$defects_empty" = yes ] && ceiling_probe=-1
+expect ceiling "above the ceiling" env CSS_PROPERTY_MAX_DEFECTS=$ceiling_probe python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$defects" "$absent"
 
 # The calls the extractor cannot read, and the properties the pin does not have.
 head -n -1 "$unextracted" > "$scratch/unext-short"
