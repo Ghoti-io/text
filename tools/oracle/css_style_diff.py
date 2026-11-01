@@ -311,7 +311,8 @@ def summarize(items, o, a, headers, features, listed, undecided, unanswered, tot
 # holds for a key only when every item of the key differs from the engines in nothing but those ways (a rule that matched on the key alone would hide a defect of
 # another kind that happens to share a spelling). The labels, for an engine E and this library's answer:
 #   E-drops       E refused the declaration (the element has its parent's color, `rgb(11, 22, 33)` in the color population)
-#   E-alpha8      the text is the same and the alpha differs by 0.0021 or less beyond the tolerance (an engine that keeps an 8-bit alpha)
+#   E-alpha8      the text is the same and the alpha differs by 0.0021 or less beyond the tolerance (an engine that keeps an 8-bit alpha), or by 0.00501 or less for
+#                 Firefox, which writes an alpha with two decimals (0.83 for 0.833333)
 #   E-constants   the text is the same and no number differs by more than 3e-3 of its size beyond the tolerance (conversion constants of another derivation)
 #   E-numbers     the text is the same and the numbers differ by more
 #   E-shape       the text is not the same (a keyword against a number, a function against another)
@@ -330,7 +331,7 @@ def cause_labels(ours, chromium, firefox):
         else:
             xs, ys = [float(x) for x in _NUMBER.findall(ours)], [float(x) for x in _NUMBER.findall(v)]
             diffs = [(abs(x - y), max(abs(x), abs(y))) for x, y in zip(xs, ys)]
-            last_only = (abs(xs[-1] - ys[-1]) <= 0.0021 and
+            last_only = (abs(xs[-1] - ys[-1]) <= (0.00501 if name == "firefox" else 0.0021) and
                          all(abs(x - y) <= max(TOLERANCE_ABSOLUTE, TOLERANCE_RELATIVE * max(abs(x), abs(y))) for x, y in zip(xs[:-1], ys[:-1]))) if xs else False
             if last_only:
                 labels.add(name + "-alpha8")

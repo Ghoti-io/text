@@ -25,6 +25,7 @@ ser:A=C|B:width:attr : width = initial	attribute-1	a38	width	light	OK=auto	OK=0p
 ser:A=C|B:width:attr : width = unset	attribute-1	a39	width	light	OK=auto	OK=0px
 ser:A=C|B:word-spacing:style : word-spacing : N	tree-72	e20	word-spacing	light	OK=0px	OK=1px
 ser:A|B=C:color-interpolation:attr : color-interpolation =	attribute-6	a14	color-interpolation	light	OK=sRGB	OK=srgb
+ser:A|B=C:color:style : color-scheme : normal	control-page-scheme	p1	color	light	OK=rgb(0, 0, 255)	OK=rgb(255, 0, 0)
 ser:A|B=C:d:attr : d = bogus	attribute-4	a25	d	light	OK="bogus"	OK=none
 ser:A|B=C:d:attr : d = m0 N l10 N	attribute-4	a20	d	light	OK="M0 0 L10 10"	OK=path("M 0 0 L 10 10")
 ser:A|B=C:d:attr : d = none	attribute-4	a23	d	light	OK="none"	OK=none

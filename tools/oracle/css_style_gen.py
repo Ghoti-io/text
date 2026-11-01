@@ -155,7 +155,15 @@ def controls():
              ["c6", "margin-bottom", "style: margin: 1px 2px 3px", "control"], ["c6", "padding-left", "style: padding: 4px 5px 6px 7px", "control"],
              ["c6", "padding-bottom", "style: padding: 4px 5px 6px 7px", "control"], ["c6", "margin-top", "style: margin: 1px 2px 3px", "control"],
              ["c7", "color", "style: color-scheme: dark", "control"], ["c8", "color", "style: color-scheme: light", "control"], ["c9", "color", "", "control"]]
-    return [doc("control", "h", wrap_html(body), queries, items)]
+    # the page color scheme (Color Adjust 1, 2.2: for `normal` "The element color scheme is the same as the page color scheme"): the root declares dark, so an element
+    # that says `normal` and one inheriting from it are dark in either environment, which both engines get wrong (light: a divergence of css_style_classes.tsv, and the
+    # only item of the population that this library's page_scheme() decides); one that says light is light in all three (the control)
+    page = ("<!doctype html><html style=\"color-scheme: dark\"><head><title>t</title></head><body><div id=\"wrapper\" style=\"display: none\">"
+            "<div id=\"p1\" style=\"color-scheme: normal; color: light-dark(red, blue)\"><div id=\"p2\" style=\"color: light-dark(red, blue)\"></div></div>"
+            "<div id=\"p3\" style=\"color-scheme: light; color: light-dark(red, blue)\"></div></div></body></html>")
+    page_queries = [["p1", ["color"]], ["p2", ["color"]], ["p3", ["color"]]]
+    page_items = [["p1", "color", "style: color-scheme: normal", "page-scheme"], ["p2", "color", "style: color-scheme: normal", "page-scheme"], ["p3", "color", "style: color-scheme: light", "control"]]
+    return [doc("control", "h", wrap_html(body), queries, items), doc("control-page-scheme", "h", page, page_queries, page_items)]
 
 
 CONTROL_ANSWERS = [
@@ -167,6 +175,8 @@ CONTROL_ANSWERS = [
     ("control", "c6", "padding-left", "7px"), ("control", "c6", "padding-bottom", "6px"),
     # the used color scheme: an element that says dark is dark in either environment, one that says light is light in either, and one that says nothing is light
     ("control", "c7", "color", "rgb(0, 0, 255)"), ("control", "c8", "color", "rgb(255, 0, 0)"), ("control", "c9", "color", "rgb(255, 0, 0)"),
+    # and that an element that says light is light below a root that says dark
+    ("control-page-scheme", "p3", "color", "rgb(255, 0, 0)"),
 ]
 
 
