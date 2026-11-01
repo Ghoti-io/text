@@ -17,10 +17,14 @@
 set -u
 T=${1:-1860}
 shift
-ALL="xml:fuzz_xml xml-writer:fuzz_xml_writer html-tokenizer:fuzz_html_tokenizer html-tree:fuzz_html_tree html:fuzz_html html-serialize:fuzz_html_serialize encoding:fuzz_encoding markup-tree:fuzz_markup_tree css-style:fuzz_css_style css-compute:fuzz_css_compute css-custom:fuzz_css_custom css-selector:fuzz_css_selector css-match:fuzz_css_match css-sheet:fuzz_css_sheet"
+ALL="xml:fuzz_xml xml-writer:fuzz_xml_writer html-tokenizer:fuzz_html_tokenizer html-tree:fuzz_html_tree html:fuzz_html html-serialize:fuzz_html_serialize encoding:fuzz_encoding markup-tree:fuzz_markup_tree css-style:fuzz_css_style css-compute:fuzz_css_compute css-custom:fuzz_css_custom css-selector:fuzz_css_selector css-match:fuzz_css_match css-sheet:fuzz_css_sheet css-syntax:fuzz_css_syntax css-bytes:fuzz_css_bytes css-grammar:fuzz_css_grammar css-values:fuzz_css_values css-registry:fuzz_css_registry css-cascade:fuzz_css_cascade css-condition:fuzz_css_condition css-container:fuzz_css_container css-atrule:fuzz_css_atrule"
 if [ $# -gt 0 ]; then
 	SEL=""
-	for w in "$@"; do for p in $ALL; do [ "${p%%:*}" = "$w" ] && SEL="$SEL $p"; done; done
+	for w in "$@"; do
+		found=""
+		for p in $ALL; do [ "${p%%:*}" = "$w" ] && SEL="$SEL $p" && found=1; done
+		[ -n "$found" ] || { echo "soak-job: no harness is named $w" >&2; exit 2; }
+	done
 else
 	SEL="$ALL"
 fi
