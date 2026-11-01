@@ -74,6 +74,15 @@ acc:10-:animation-timeline:view( x D D , auto , D , D ) , none , auto	animation-
 acc:10-:animation-timeline:view( x D D , auto , D D , P ) , scroll( ) , scroll( block )	animation-timeline	view(x 65535svw 0rem, auto, 2147483647rem -0.5rex, 255%), scroll(), scroll(block)	OK=view(x 65535svw 0rem, auto, 2147483647rem -0.5rex, 255%), scroll(), scroll(block)	NO
 acc:10-:animation-timeline:view( x D P , auto , D , D ) , none , auto	animation-timeline	view(x 0svw 100%, auto, 10rem, -0.5rex), none, auto	OK=view(x 0svw 100%, auto, 10rem, -0.5rex), none, auto	NO
 acc:10-:animation-timeline:view( x D P , auto , P , auto auto ) , --a-b , none	animation-timeline	 view(x\n65535svw  100%,\nauto,  0%,  auto auto),  --a-b,\tnone	OK=view(x 65535svw 100%, auto, 0%, auto auto), --a-b, none	NO
+acc:10-:border-shape:circle( at inline-end center )	border-shape	circle( at inline-end center) 	OK=circle(at center inline-end)	NO
+acc:10-:border-shape:circle( closest-corner ) ellipse( farthest-corner closest-corner )	border-shape	circle(closest-corner) ellipse(farthest-corner closest-corner)	OK=circle(closest-corner) ellipse(farthest-corner closest-corner)	NO
+acc:10-:border-shape:circle( closest-corner at D D )	border-shape	circle(closest-corner at 20px 50px)	OK=circle(closest-corner at 20px 50px)	NO
+acc:10-:border-shape:circle( closest-corner at center )	border-shape	circle(closest-corner at center)	OK=circle(closest-corner at center center)	NO
+acc:10-:border-shape:circle( farthest-corner at center )	border-shape	circle(farthest-corner at center)	OK=circle(farthest-corner at center center)	NO
+acc:10-:border-shape:ellipse( at y-end D left D )	border-shape	ellipse( at y-end -1Q left 0rex) 	OK=ellipse(at left 0rex y-end -1q)	NO
+acc:10-:border-shape:ellipse( at y-end P right P )	border-shape	ellipse( at y-end -1% right -100%) 	OK=ellipse(at right -100% y-end -1%)	NO
+acc:10-:border-shape:ellipse( closest-corner farthest-corner at D D )	border-shape	ellipse(closest-corner farthest-corner at 20px 50px)	OK=ellipse(closest-corner farthest-corner at 20px 50px)	NO
+acc:10-:border-shape:shape( evenodd from start D start D , vline by D , vline to center , arc to block-start small rotate D of P cw ) xywh( D P D P round D P D P )	border-shape	shape(evenodd from start -1rex start 100vmax, vline by 1e+20mm, vline to center, arc to block-start small rotate 0.001rad of 1% cw)  xywh(0.5px 1% 1vmax 1% round 1em 1.5% 1e+20px 1000% ) 	OK=shape(evenodd from start -1rex start 100vmax, vline by 100000000000000000000mm, vline to center, arc to block-start of 1% cw rotate 0.001rad) xywh(0.5px 1% 1vmax 1% round 1em 1.5% 100000000000000000000px 1000%)	NO
 acc:10-:dynamic-range-limit:dynamic-range-limit-mix( P constrained , P no-limit , P no-limit , P no-limit )	dynamic-range-limit	dynamic-range-limit-mix(0.001% constrained, 0% no-limit, 0% no-limit, 0% no-limit)	OK=dynamic-range-limit-mix(constrained 0.001%, no-limit 0%, no-limit 0%, no-limit 0%)	NO
 acc:10-:dynamic-range-limit:dynamic-range-limit-mix( P no-limit , standard P )	dynamic-range-limit	DyNAmIc-raNge-lImiT-MIX(100% nO-LimiT, STANdaRd 100%)	OK=dynamic-range-limit-mix(no-limit 100%, standard 100%)	NO
 acc:10-:interest-delay-end:D	interest-delay-end	-1e+20ms	OK=-100000000000000000000ms	NO
@@ -103,6 +112,8 @@ acc:10-:scroll-timeline:--foo , none , none , none , --foo , none , none , none 
 acc:10-:scroll-timeline:none , none , none , none y , block , inline	scroll-timeline	none, none, none, none y, block, inline	OK=none, none, none, none y, block, inline	NO
 acc:10-:scroll-timeline:none , none block , inline , x , x , --foo , none	scroll-timeline	none, none block, inline, x, x, --foo, none 	OK=none, none block, inline, x, x, --foo, none	NO
 acc:10-:scroll-timeline:none , none x , none , none , none , none , none , none , none x , inline , --foo , --a-b	scroll-timeline	none, none x, none, none, none, none , none, none, none x, inline, --foo, --a-b 	OK=none, none x, none, none, none, none, none, none, none x, inline, --foo, --a-b	NO
+acc:10-:size:anchor-size( )	size	anchor-size() 	OK=anchor-size()	NO
+acc:10-:size:fit-content( D )	size	fit-content(0.001px) 	OK=fit-content(0.001px)	NO
 acc:10-:speak:always	speak	always	OK=always	NO
 acc:10-:speak:auto	speak	auto	OK=auto	NO
 acc:10-:speak:never	speak	never	OK=never	NO
@@ -370,6 +381,13 @@ acc:100:float:snap-inline( D )	float	snap-inline(-1ex )	OK=snap-inline(-1ex)	NO
 acc:100:font-family:S , generic( nastaliq )	font-family	"", generic(nastaliq)	OK="", generic(nastaliq)	NO
 acc:100:font-family:random-item( auto , )	font-family	random-item(auto, )	OK=random-item(auto, )	NO
 acc:100:font-family:random-item( serif , sans-serif )	font-family	random-item(serif, sans-serif)	OK=random-item(serif, sans-serif)	NO
+acc:100:font-palette:ident( S calc( D / D ) )	font-palette	ident("--test-" calc(1em / 1px))	OK=ident("--test-" calc(1em / 1px))	NO
+acc:100:font-palette:palette-mix( P normal )	font-palette	palette-mix(0% normal)	OK=palette-mix(normal 0%)	NO
+acc:100:font-palette:palette-mix( dark , light , --foo )	font-palette	palette-mix(dark, light, --foo)	OK=palette-mix(dark, light, --foo)	NO
+acc:100:font-palette:palette-mix( in srgb , dark )	font-palette	palette-mix(in srgb,  dark)	OK=palette-mix(in srgb, dark)	NO
+acc:100:font-palette:palette-mix( light P , dark )	font-palette	palette-mix(          light 30%, dark)	OK=palette-mix(light 30%, dark 70%)	NO
+acc:100:font-palette:palette-mix( light P , light P )	font-palette	palette-mix(light 30%, light 70%)	OK=palette-mix(light 30%, light 70%)	NO
+acc:100:font-palette:palette-mix( palette-mix( in --foo , dark ) , --a-b P , dark P , dark P )	font-palette	palette-mix(palette-mix(in --foo , dark ) , --a-b 99%, dark 100%, dark 99%)	OK=palette-mix(palette-mix(in --foo, dark) 0%, --a-b 99%, dark 100%, dark 99%)	NO
 acc:100:font-style:left	font-style	left	OK=left	NO
 acc:100:font-style:right	font-style	right	OK=right	NO
 acc:100:font:D / D generic( fangsong ) , generic( fangsong ) , S , generic( kai ) , S , sans-serif , ui-rounded	font	 \n 0.001svw \n / \n 1vw \n generic(fangsong),    generic(fangsong), \n"a", \ngeneric(kai ), "\\"q\\"",   sans-serif,   ui-rounded	OK=0.001svw/1vw generic(fangsong), generic(fangsong), a, generic(kai), "\"q\"", sans-serif, ui-rounded	NO
@@ -761,6 +779,11 @@ acc:110:flex-basis:stretch	flex-basis	stretch	OK=stretch	NO
 acc:110:flex-flow:balance	flex-flow	balance	OK=balance	NO
 acc:110:flex-wrap:balance	flex-wrap	balance	OK=balance	NO
 acc:110:flex:N N stretch	flex	1 0 stretch	OK=1 0 stretch	NO
+acc:110:font-palette:palette-mix( in oklab , --foo P , normal )	font-palette	palette-mix(in oklab, --foo 30%, normal)	OK=palette-mix(--foo 30%, normal 70%)	OK=palette-mix(in oklab, --foo 30%, normal 70%)
+acc:110:font-palette:palette-mix( in oklab , P light , dark )	font-palette	palette-mix(in oklab, 30% light, dark)	OK=palette-mix(light 30%, dark 70%)	OK=palette-mix(in oklab, light 30%, dark 70%)
+acc:110:font-palette:palette-mix( in oklab , light P , light )	font-palette	palette-mix(in oklab, light 30%, light)	OK=palette-mix(light 30%, light 70%)	OK=palette-mix(in oklab, light 30%, light 70%)
+acc:110:font-palette:palette-mix( in oklab , light P , normal )	font-palette	palette-mix(in oklab, light 30%, normal)	OK=palette-mix(light 30%, normal 70%)	OK=palette-mix(in oklab, light 30%, normal 70%)
+acc:110:font-palette:palette-mix( in srgb , dark , light )	font-palette	palette-mix(in srgb, dark,           light)	OK=palette-mix(in srgb, dark, light)	NO
 acc:110:font-size:random( property-scoped , D , D )	font-size	random(property-scoped, 0px, 100px)	OK=random(property-scoped, 0px, 100px)	OK=random(ua-font-size, 0px, 100px)
 acc:110:forced-color-adjust:preserve-parent-color	forced-color-adjust	preserve-parent-color	OK=preserve-parent-color	NO
 acc:110:height:anchor-size( P )	height	anchor-size(-1%)	OK=anchor-size(-1%)	NO
@@ -808,6 +831,7 @@ acc:110:offset-path:polygon( round D , P P )	offset-path	polygon(round 1px, 1% 2
 acc:110:offset-path:shape( evenodd from D D , close )	offset-path	shape(evenodd from 0px 0px, close)	OK=shape(evenodd from 0px 0px, close)	NO
 acc:110:offset-path:shape( evenodd from D D , line to D D )	offset-path	shape(evenodd from 0px 0px, line to 10px 10px)	OK=shape(evenodd from 0px 0px, line to 10px 10px)	NO
 acc:110:offset-path:shape( nonzero from D D , line to D D )	offset-path	shape(nonzero from 0px 0px, line to 10px 10px)	OK=shape(from 0px 0px, line to 10px 10px)	NO
+acc:110:overflow-clip-margin:D	overflow-clip-margin	-100lvi	OK=-100lvi	NO
 acc:110:place-content:flow-end	place-content	 flow-end 	OK=flow-end	NO
 acc:110:place-content:flow-start	place-content	flow-start	OK=flow-start	NO
 acc:110:rotate:random( D , D )	rotate	random(25deg, 1turn)	OK=random(25deg, 360deg)	OK=random(element-scoped ua-rotate-1, 25deg, 360deg)
