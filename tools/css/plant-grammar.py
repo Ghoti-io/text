@@ -227,7 +227,7 @@ PLANTS += [
     ('canon-a-ray-keeps-closest-side', "css_property_canon.c", '        any = any || eq(tk.v[i], "closest-side");', '        any = any || 0;', ["canon"]),
     ('canon-a-palette-mix-is-not-normalized', "css_property_canon.c", '  T("font-palette", rule_palette_mix),', '', ["canon"]),
     ('canon-text-box-edge-keeps-equal-edges', "css_property_canon.c", "  if (n == 2 && sp_eq(t[0], t[1])) {\n    put_join(out, t, 1);", "  if (0 && n == 2 && sp_eq(t[0], t[1])) {\n    put_join(out, t, 1);", ["canon"]),
-    ('canon-position-try-keeps-equal-keywords', "css_property_canon.c", '  R("position-try-fallbacks", rule_pair, MODE_ITEMS),\n', '', ["canon"]),
+    ('canon-position-try-keeps-equal-keywords', "css_property_canon.c", '  R("position-try-fallbacks", rule_position_area, MODE_ITEMS),\n', '', ["canon"]),
     ('canon-pair-keeps-both', "css_property_canon.c", 'static bool rule_pair(cb * out, const sp * t, size_t n) {\n  if (n == 2 && sp_eq(t[0], t[1])) {',
      'static bool rule_pair(cb * out, const sp * t, size_t n) {\n  if (n == 2 && !sp_eq(t[0], t[1])) {', ["canon"]),
     ('canon-alpha-percent-is-not-divided', "css_property_canon.c", '  return dec_put(b, &d, 2, 6);',

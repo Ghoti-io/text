@@ -15,6 +15,7 @@ overflow-visible-kept	css_compute.c	  const bool fix_x = css_val_is_keyword(vx, 
 shape-rect-kept	css_shape_compute.c	    case 1: return fn_rect(out, inner, false);	    case 1: return false;
 shape-position-kept	css_shape_compute.c	  if (position_pair(&h, &v, t, n) && !h.fail && !v.fail) {	  if (0 && position_pair(&h, &v, t, n) && !h.fail && !v.fail) {
 shape-default-box-kept	css_shape_compute.c	        drop = box_is(tk.v[i], "margin-box");	        drop = false;
+shape-default-box-kept	css_property_canon.c	  if (n == 2 && (eq(t[0], "margin-box") || eq(t[1], "margin-box"))) {	  if (n == 2 && 0 && (eq(t[0], "margin-box") || eq(t[1], "margin-box"))) {
 image-default-size-kept	css_shape_compute.c	    const bool default_size = nsize == 1 && eq(t.v[first_size], "farthest-corner");	    const bool default_size = false;
 image-default-size-kept	css_property_canon.c	        const bool lone_default = nsize == 1 && eq(tk.v[first], "farthest-corner");	        const bool lone_default = false;
 image-double-stop-kept	css_shape_compute.c	  if (!t.fail && t.n == 3 && is_quantity(t.v[1]) && is_quantity(t.v[2]) && !is_quantity(t.v[0])) {	  if (0 && !t.fail && t.n == 3 && is_quantity(t.v[1]) && is_quantity(t.v[2]) && !is_quantity(t.v[0])) {
@@ -24,6 +25,7 @@ position-edge-kept	css_compute_algo.c	const bool at_far_edge = kw(edge, "right")
 position-x-kept	css_computed_shorthand.c	(li.name_length == 21 && memcmp(li.name, "background-position-x", 21) == 0)	(li.name_length == 21 && memcmp(li.name, "background-position-q", 21) == 0)
 shorthand-resets-skipped	css_computed_shorthand.c	for (size_t i = 0; i < info.longhand_count + info.reset_longhand_count; i++) {	for (size_t i = 0; i < info.longhand_count; i++) {
 distribute-kept	css_compute_algo.c	    return "inter-character";	    return "distribute";
+distribute-kept	css_property_canon.c	    if (ieq(t[i], "distribute")) {	    if (0 && ieq(t[i], "distribute")) {
 range-limit-not-normalized	css_shape_compute.c	        n->w[j] += cw[j] * (m->items[i].pct / sum);	        n->w[j] += cw[j] * (m->items[i].pct / 100.0);
 palette-omitted-not-shared	css_shape_compute.c	      m->items[i].pct = (100.0 - specified) / (double)omitted;	      m->items[i].pct = 100.0 / (double)omitted;
 # step-end-kept (css_shape_compute.c writing the keyword step-end where the text says steps(1)) is not here any more: the canonical form of the specified value
