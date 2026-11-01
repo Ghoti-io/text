@@ -610,26 +610,44 @@ acc:100:visibility:force-hidden	visibility	force-hidden	OK=force-hidden	NO
 acc:100:white-space-collapse:discard	white-space-collapse	discard	OK=discard	NO
 acc:100:white-space:preserve-breaks wrap discard-inner	white-space	preserve-breaks wrap discard-inner	OK=preserve-breaks wrap discard-inner	NO
 acc:100:white-space:preserve-spaces discard-after discard-before	white-space	preserve-spaces discard-after discard-before	OK=preserve-spaces discard-before discard-after	NO
+acc:100:width:env( safe-area-inset-top ( ) )	width	\t env(safe-area-inset-top \n ())\n	OK= env(safe-area-inset-top ()) 	NO
+acc:100:width:env( safe-area-inset-top( ) )	width	env(safe-area-inset-top() )	OK=env(safe-area-inset-top() )	NO
 acc:100:width:fit-content( D )	width	fit-content(0.5em)	OK=fit-content(0.5em)	NO
 acc:100:width:fit-content( P )	width	fit-content(0%)	OK=fit-content(0%)	NO
 acc:100:width:stretch( D )	width	stretch(0.001em)	OK=stretch(0.001em)	NO
+acc:100:width:var( --x ( ) )	width	var(--x () )	OK=var(--x () )	NO
+acc:100:width:var( --x( ) )	width	var(--x() )	OK=var(--x() )	NO
+acc:100:width:var( { } )	width	var({})	OK=var({})	NO
 acc:100:word-break:manual	word-break	manual	OK=manual	NO
+acc:101:align-content:last baseline	align-content	last baseline	OK=last baseline	NO
+acc:101:alignment-baseline:text-bottom	alignment-baseline	text-bottom	OK=text-bottom	NO
+acc:101:alignment-baseline:text-top	alignment-baseline	text-top	OK=text-top	NO
 acc:101:background-blend-mode:color , screen , plus-lighter , lighten	background-blend-mode	color, screen, plus-lighter, lighten	OK=color, screen, plus-lighter, lighten	NO
 acc:101:background-blend-mode:color-dodge , hard-light , plus-lighter , hue	background-blend-mode	color-dodge, hard-light, plus-lighter, hue	OK=color-dodge, hard-light, plus-lighter, hue	NO
 acc:101:background-blend-mode:lighten , plus-lighter , color-dodge , plus-lighter	background-blend-mode	lighten, plus-lighter, color-dodge, plus-lighter	OK=lighten, plus-lighter, color-dodge, plus-lighter	NO
 acc:101:background-blend-mode:normal , plus-lighter	background-blend-mode	normal, plus-lighter	OK=normal, plus-lighter	NO
 acc:101:background-blend-mode:plus-lighter , hard-light , multiply , plus-lighter	background-blend-mode	plus-lighter, hard-light, multiply, plus-lighter	OK=plus-lighter, hard-light, multiply, plus-lighter	NO
+acc:101:baseline-shift:bottom	baseline-shift	bottom	OK=bottom	NO
+acc:101:baseline-shift:center	baseline-shift	center	OK=center	NO
+acc:101:baseline-shift:top	baseline-shift	top	OK=top	NO
 acc:101:break-after:always	break-after	always	OK=always	NO
 acc:101:break-before:always	break-before	always	OK=always	NO
 acc:101:counter-reset:reversed( chapter )	counter-reset	reversed(chapter)	OK=reversed(chapter)	NO
 acc:101:counter-reset:reversed( first ) N reversed( second ) third N	counter-reset	reversed(first) -1 reversed(second) third 99	OK=reversed(first) -1 reversed(second) third 99	NO
 acc:101:counter-reset:reversed( section ) N	counter-reset	reversed(section) -1	OK=reversed(section) -1	NO
 acc:101:display:ruby-base	display	ruby-base	OK=ruby-base	NO
+acc:101:dominant-baseline:text-bottom	dominant-baseline	text-bottom	OK=text-bottom	NO
+acc:101:dominant-baseline:text-top	dominant-baseline	text-top	OK=text-top	NO
 acc:101:font-style:oblique D	font-style	oblique -90.001grad	OK=oblique -90.001grad	NO
 acc:101:font-synthesis-style:oblique-only	font-synthesis-style	oblique-only	OK=oblique-only	NO
 acc:101:font-synthesis:position	font-synthesis	position	OK=position	NO
+acc:101:font:normal oblique D x-large / D monospace , math , S , ui-serif	font	NORMAL OBLIQUE 90.001GRAD X-LARGE / 2147483648IC MONOSPACE, MATH, 'B', UI-SERIF	OK=oblique 90.001grad x-large/2147483648ic monospace, math, B, ui-serif	NO
+acc:101:hyphenate-limit-chars:N N	hyphenate-limit-chars	0 360	OK=0 360	NO
+acc:101:hyphenate-limit-chars:N auto	hyphenate-limit-chars	0 auto	OK=0 auto	NO
 acc:101:image-rendering:smooth	image-rendering	smooth	OK=smooth	NO
+acc:101:opacity:progress( no-clamp D , D , D )	opacity	progress(no-clamp 0rad, 1rad, 1rad)	OK=calc(-infinity)	NO
 acc:101:overflow-clip-margin:calc( D )	overflow-clip-margin	calc(-50px)	OK=calc(-50px)	NO
+acc:101:place-content:last baseline	place-content	last baseline	OK=last baseline start	NO
 acc:101:ruby-position:alternate	ruby-position	alternate	OK=alternate	NO
 acc:101:shape-outside:circle( closest-corner at D D )	shape-outside	circle(closest-corner at 20px 50px)	OK=circle(closest-corner at 20px 50px)	NO
 acc:101:shape-outside:circle( closest-corner at center )	shape-outside	circle(closest-corner at center)	OK=circle(closest-corner at center center)	NO
@@ -646,8 +664,20 @@ acc:101:text-overflow:S	text-overflow	""	OK=""	NO
 acc:101:text-overflow:clip clip	text-overflow	clip clip	OK=clip clip	NO
 acc:101:text-transform:full-size-kana	text-transform	full-size-kana	OK=full-size-kana	NO
 acc:101:text-transform:full-width	text-transform	full-width	OK=full-width	NO
+acc:101:vertical-align:D baseline	vertical-align	0px baseline	OK=baseline	NO
+acc:101:vertical-align:alphabetic	vertical-align	alphabetic	OK=alphabetic	NO
+acc:101:vertical-align:baseline N	vertical-align	baseline 0	OK=baseline	NO
+acc:101:vertical-align:baseline super	vertical-align	baseline super	OK=super	NO
+acc:101:vertical-align:center	vertical-align	center	OK=center	NO
+acc:101:vertical-align:central	vertical-align	central	OK=central	NO
 acc:101:vertical-align:first	vertical-align	first	OK=first	NO
+acc:101:vertical-align:ideographic	vertical-align	ideographic	OK=ideographic	NO
+acc:101:vertical-align:last	vertical-align	last	OK=last	NO
+acc:101:vertical-align:mathematical	vertical-align	mathematical	OK=mathematical	NO
+acc:101:vertical-align:middle N	vertical-align	middle 0	OK=middle	NO
 acc:101:white-space-collapse:preserve-spaces	white-space-collapse	preserve-spaces	OK=preserve-spaces	NO
+acc:101:width:calc( D * progress( no-clamp D , D , D ) )	width	calc(50px * progress(no-clamp 100px, 0px, 100px))	OK=calc(50px)	NO
+acc:101:width:calc( D * progress( no-clamp abs( P ) , ( P - P ) , P / N ) )	width	calc(1px * progress(no-clamp abs(10%), (10% - 10%), 100% / 10))	OK=calc(1px * progress(no-clamp abs(10%), 0%, 10%))	NO
 acc:110:align-content:flow-end	align-content	flow-end	OK=flow-end	NO
 acc:110:align-content:flow-start	align-content	flow-start	OK=flow-start	NO
 acc:110:animation-duration:auto	animation-duration	auto	OK=auto	NO
@@ -1277,13 +1307,7 @@ ser:A|B:timeline-trigger-active-range-start:normal , normal , D	timeline-trigger
 ser:A|B:timeline-trigger-active-range:entry-crossing P , normal , cover , contain , normal auto	timeline-trigger-active-range	entry-crossing 2147483648%, normal , cover , contain , normal auto	OK=entry-crossing 2147483648%, normal, cover, contain, normal	OK=entry-crossing 2.14748e+09%, normal, cover, contain, normal
 ser:A|B:timeline-trigger-active-range:normal , D	timeline-trigger-active-range	\t normal   ,   123456789dvh\n\n	OK=normal, 123456789dvh	OK=normal, 1.23457e+08dvh
 ser:A|B=C:-webkit-text-stroke:D oklch( P N N )	-webkit-text-stroke	0px oklch(50% 0.1 120)	OK=oklch(0.5 0.1 120)	OK=0px oklch(0.5 0.1 120)
-ser:A|B=C:background-image:conic-gradient( at bottom , red , blue )	background-image	conic-gradient(at bottom, red, blue)	OK=conic-gradient(at bottom, red, blue)	OK=conic-gradient(at center bottom, red, blue)
-ser:A|B=C:background-image:conic-gradient( at left , red , blue )	background-image	conic-gradient(at left, red, blue)	OK=conic-gradient(at left, red, blue)	OK=conic-gradient(at left center, red, blue)
-ser:A|B=C:background-image:conic-gradient( at right , red , blue )	background-image	conic-gradient(at right, red, blue)	OK=conic-gradient(at right, red, blue)	OK=conic-gradient(at right center, red, blue)
-ser:A|B=C:background-image:conic-gradient( at top , red , blue )	background-image	conic-gradient(at top, red, blue)	OK=conic-gradient(at top, red, blue)	OK=conic-gradient(at center top, red, blue)
 ser:A|B=C:background-image:none , repeating-conic-gradient( color( srgb N N N / P ) P P , color( srgb N N N / P ) ) , none , none	background-image	none, repeating-conic-gradient(color(srgb 1 0 0 / 50%) -1% -1% , color(srgb 1 0 0 / 50%) ), none, none	OK=none, repeating-conic-gradient(color(srgb 1 0 0 / 0.5) -1% -1%, color(srgb 1 0 0 / 0.5)), none, none	OK=none, repeating-conic-gradient(color(srgb 1 0 0 / 0.5) -1%, color(srgb 1 0 0 / 0.5) -1%, color(srgb 1 0 0 / 0.5)), none, none
-ser:A|B=C:background-image:radial-gradient( at left , red , blue )	background-image	radial-gradient(at left, red, blue)	OK=radial-gradient(at left, red, blue)	OK=radial-gradient(at left center, red, blue)
-ser:A|B=C:background-image:radial-gradient( at top , red , blue )	background-image	radial-gradient(at top, red, blue)	OK=radial-gradient(at top, red, blue)	OK=radial-gradient(at center top, red, blue)
 ser:A|B=C:border-image-source:image-set( S )	border-image-source	image-set("\\41 " )	OK=image-set("A")	OK=image-set(url("A") 1x)
 ser:A|B=C:clip-path:shape( from D D , arc by D D of P P cw rotate D )	clip-path	shape(from 20px 40px, arc by 20px 20px of 10% 20% cw rotate 3.14159265rad)	OK=shape(from 20px 40px, arc by 20px 20px of 10% 20% cw rotate 3.141593rad)	OK=shape(from 20px 40px, arc by 20px 20px of 10% 20% cw rotate 3.14159rad)
 ser:A|B=C:content:image-set( conic-gradient( oklch( P N N ) ) type( S ) D , S type( S ) D )	content	image-set(conic-gradient(oklch(50% 0.1 120)  ) type('b') 0.001dpi, 'b' type("\\"q\\"") 0.5x) 	OK=image-set(conic-gradient(oklch(0.5 0.1 120)) 0.001dpi type("b"), "b" 0.5x type("\"q\""))	OK=image-set(conic-gradient(oklch(0.5 0.1 120)) 0.001dpi type("b"), url("b") 0.5x type("\"q\""))
@@ -1297,7 +1321,6 @@ ser:A|B=C:list-style-image:radial-gradient( black P D , P , green P P , calc( P 
 ser:A|B=C:list-style:inside repeating-linear-gradient( hsl( N P P ) , D , rgb( N N N ) D D ) S	list-style	inside repeating-linear-gradient(hsl(120 50% 50%)  , -1rem , rgb(1 2 3) 1vh 0.5vh) 'b'	OK=inside repeating-linear-gradient(rgb(64, 191, 64), -1rem, rgb(1, 2, 3) 1vh 0.5vh) "b"	OK=inside repeating-linear-gradient(rgb(64, 191, 64), -1rem, rgb(1, 2, 3) 1vh, rgb(1, 2, 3) 0.5vh) "b"
 ser:A|B=C:mask-image:image-set( S ) , url( S ) , none , light-dark( none , repeating-radial-gradient( hsl( N P P ) P ) )	mask-image	image-set("\\"q\\"" ), url("b c.png"), none, light-dark(none, repeating-radial-gradient(hsl(120 50% 50%) -1% ))	OK=image-set("\"q\""), url("b c.png"), none, light-dark(none, repeating-radial-gradient(rgb(64, 191, 64) -1%))	OK=image-set(url("\"q\"") 1x), url("b c.png"), none, light-dark(none, repeating-radial-gradient(rgb(64, 191, 64) -1%))
 ser:A|B=C:shape-outside:radial-gradient( black P D , P , green P P , calc( P * N / N ) , white calc( P - P ) P	shape-outside	radial-gradient( black\n0%\t0.5em,\n25%, green \n 30% 60%, \n calc(100%\t*  3   /\t4),\nwhite\tcalc(100%\n- \n 20% )\t100% 	OK=radial-gradient(black 0% 0.5em, 25%, green 30% 60%, calc(75%), white calc(80%) 100%)	OK=radial-gradient(black 0%, black 0.5em, 25%, green 30%, green 60%, calc(75%), white calc(80%), white 100%)
-ser:A|B=C:shape-outside:radial-gradient( circle at calc( D + P ) , red , blue )	shape-outside	radial-gradient(circle at calc(10px + 5%), red, blue)	OK=radial-gradient(circle at calc(5% + 10px), red, blue)	OK=radial-gradient(circle at calc(5% + 10px) center, red, blue)
 ser:A|B=C:text-decoration-thickness:calc( D - D )	text-decoration-thickness	calc(0.5em - 0px)	OK=calc(0.5em + 0px)	OK=calc(0.5em - 0px)
 ser:A|B=C:text-decoration-thickness:calc( P - D )	text-decoration-thickness	calc(200% - 0px)	OK=calc(200% + 0px)	OK=calc(200% - 0px)
 ser:A|B=C:text-underline-offset:calc( D - D )	text-underline-offset	calc(0.5em - 0px)	OK=calc(0.5em + 0px)	OK=calc(0.5em - 0px)
