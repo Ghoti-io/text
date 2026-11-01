@@ -1068,4 +1068,18 @@ TEST(CssProperty, AMixOfDynamicRangeLimitsNeedsPercentagesThatCanBeNormalized) {
   EXPECT_EQ(parse(r, "dynamic-range-limit", "dynamic-range-limit-mix(standard calc(50% * sign(10em - 1px)), constrained 50%)").substr(0, 6), "valid:") << "a calculation is not a written percentage";
 }
 
+TEST(CssProperty, AStripeHasAThicknessOfANonNegativeLengthAPercentageOfAtMostOneHundredOrAFlex) {
+  const GTEXT_CSS_Registry * r = R();
+  // Images 4, 4 (served 2026-10-26): "<color-stripe> = <color> && [ <length-percentage> | <flex> ]?" with the thicknesses read as "<length [0,∞]>" ("Negative length
+  // values are invalid.") and "<percentage [0,100]>" ("Only values between 0% and 100% (inclusive) are valid."); the pin keeps the unrestricted <length-percentage>
+  EXPECT_EQ(parse(r, "border-color", "stripes(red 1px, blue 50%, green 1fr)"), "valid:stripes(red 1px, blue 50%, green 1fr)");
+  EXPECT_EQ(parse(r, "border-color", "stripes(red 100%)"), "valid:stripes(red 100%)");
+  EXPECT_EQ(parse(r, "border-color", "stripes(red 0%, blue 0px)"), "valid:stripes(red 0%, blue 0px)");
+  EXPECT_EQ(parse(r, "border-color", "stripes(red -1px)"), "invalid") << "a negative length";
+  EXPECT_EQ(parse(r, "border-color", "stripes(red -1%)"), "invalid") << "a percentage below 0%";
+  EXPECT_EQ(parse(r, "border-color", "stripes(red 100.5%)"), "invalid") << "a percentage above 100%";
+  EXPECT_EQ(parse(r, "border-color", "stripes(blue, red 1000%)"), "invalid");
+  EXPECT_EQ(parse(r, "border-color", "stripes(red calc(1px - 2px))").substr(0, 6), "valid:") << "a calculation is clamped to the range when it is computed, not refused";
+}
+
 }  // namespace
