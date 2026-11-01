@@ -54,7 +54,7 @@ typedef struct {
 static const unit_row kUnits[] = {
   LEN_ABS(CM, "cm", 9600.0, 254.0), /* 96 / 2.54 */
   LEN_ABS(MM, "mm", 960.0, 254.0), /* 96 / 25.4 */
-  LEN_ABS(Q, "Q", 960.0, 1016.0), /* 96 / 101.6 */
+  LEN_ABS(Q, "q", 960.0, 1016.0), /* 96 / 101.6 */
   LEN_ABS(IN, "in", 96.0, 1.0),
   LEN_ABS(PC, "pc", 16.0, 1.0),
   LEN_ABS(PT, "pt", 4.0, 3.0), /* 96 / 72 */
@@ -79,8 +79,8 @@ static const unit_row kUnits[] = {
   {GTEXT_CSS_UNIT_S, "s", GTEXT_CSS_UNIT_TYPE_TIME, GTEXT_CSS_UNIT_S, true, 1.0, 1.0},
   {GTEXT_CSS_UNIT_MS, "ms", GTEXT_CSS_UNIT_TYPE_TIME, GTEXT_CSS_UNIT_S, true, 1.0, 1000.0},
   /* 1kHz = 1000Hz (6.5) */
-  {GTEXT_CSS_UNIT_HZ, "Hz", GTEXT_CSS_UNIT_TYPE_FREQUENCY, GTEXT_CSS_UNIT_HZ, true, 1.0, 1.0},
-  {GTEXT_CSS_UNIT_KHZ, "kHz", GTEXT_CSS_UNIT_TYPE_FREQUENCY, GTEXT_CSS_UNIT_HZ, true, 1000.0, 1.0},
+  {GTEXT_CSS_UNIT_HZ, "hz", GTEXT_CSS_UNIT_TYPE_FREQUENCY, GTEXT_CSS_UNIT_HZ, true, 1.0, 1.0},
+  {GTEXT_CSS_UNIT_KHZ, "khz", GTEXT_CSS_UNIT_TYPE_FREQUENCY, GTEXT_CSS_UNIT_HZ, true, 1000.0, 1.0},
   /* 1dppx = 1x = 96dpi = 96/2.54 dpcm (6.6): the canonical unit is dppx */
   {GTEXT_CSS_UNIT_DPI, "dpi", GTEXT_CSS_UNIT_TYPE_RESOLUTION, GTEXT_CSS_UNIT_DPPX, true, 1.0, 96.0},
   {GTEXT_CSS_UNIT_DPCM, "dpcm", GTEXT_CSS_UNIT_TYPE_RESOLUTION, GTEXT_CSS_UNIT_DPPX, true, 254.0, 9600.0},

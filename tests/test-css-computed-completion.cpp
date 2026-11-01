@@ -133,7 +133,7 @@ TEST(CssComputedCompletionSpeech, ASemitoneOffsetNeedsTheVoiceAndIsNamed) {
     EXPECT_EQ(std::string(s.result.name).substr(0, 6), "voice-") << decl;
   }
   EXPECT_EQ(root_computed("voice-pitch: high", "voice-pitch"), "high");
-  EXPECT_EQ(root_computed("voice-pitch: 0.2kHz absolute", "voice-pitch"), "200Hz absolute");
+  EXPECT_EQ(root_computed("voice-pitch: 0.2kHz absolute", "voice-pitch"), "200hz absolute");
 }
 
 /* UI 4, 5.3.1, nav-*: "Computed value: as specified"; Animation Triggers 1, 4: the event-trigger properties' computed value is "as specified"; Speech 1: cue-before and

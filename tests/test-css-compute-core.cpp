@@ -526,7 +526,7 @@ TEST(CssComputeDump, TheDumpIsVersionedCanonicalAndEqualStylesHaveEqualHashes) {
   sb.compute(ctx, &b);
   sc.compute(ctx, &c);
   const std::string da = sa.dump();
-  const std::string head = std::string("css-computed 3\nregistry ") + gtext_css_registry_pin_commit() + "\n";
+  const std::string head = std::string("css-computed 4\nregistry ") + gtext_css_registry_pin_commit() + "\n";
   EXPECT_EQ(da.substr(0, head.size()), head) << "the version and the pin the registry comes from";
   EXPECT_EQ(da, sb.dump()) << "the order of the declarations does not change the style";
   EXPECT_NE(da, sc.dump());

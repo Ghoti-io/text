@@ -739,7 +739,7 @@ TEST(CssFunctionEngine, LengthPercentageAndTheOtherMixedTypesAreNative) {
       {"<length-percentage>", "calc(10% + 5px)", "calc(10% + 5px)"}, {"<length-percentage>", "calc(10%)", "calc(10%)"}, {"<length-percentage>", "calc(10deg)", "no match"},
       {"<length>", "calc(10% + 5px)", "no match"}, {"<length>", "calc(10px)", "calc(10px)"}, {"<angle-percentage>", "calc(10% + 5deg)", "calc(10% + 5deg)"},
       {"<angle-percentage>", "10%", "10%"}, {"<angle-percentage>", "0", "no match"}, {"<time-percentage>", "50%", "50%"}, {"<time-percentage>", "calc(1s + 50%)", "calc(50% + 1s)"},
-      {"<frequency-percentage>", "5hz", "5Hz"}, {"<length-percentage [0,100px]>", "50px", "50px"}, {"<length-percentage [0,100px]>", "150px", "no match"},
+      {"<frequency-percentage>", "5hz", "5hz"}, {"<length-percentage [0,100px]>", "50px", "50px"}, {"<length-percentage [0,100px]>", "150px", "no match"},
       {"<length-percentage [0,100px]>", "150%", "150%"}, {"<length-percentage [0%,50%]>", "60%", "no match"}, {"<length-percentage [0%,50%]>", "150px", "150px"},
       {"<length-percentage [0,∞]>", "-1px", "no match"}, {"<length-percentage [0,∞]>", "-1%", "no match"}, {"<length-percentage [0,∞]>", "calc(-1px)", "calc(-1px)"}});
 }

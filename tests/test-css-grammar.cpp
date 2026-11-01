@@ -253,7 +253,9 @@ TEST(CssGrammarNotation, LiteralCharactersAreTokensAndSeparateListItems) {
 TEST(CssGrammarNotation, KeywordsMatchWithoutRegardToCaseAndKeepTheGrammarsSpelling) {
   EXPECT_EQ(run("auto | NONE", "AUTO"), "kw:auto");
   EXPECT_EQ(run("auto | NONE", "none"), "kw:NONE");
-  EXPECT_EQ(run_text("sRGB", "SRGB"), "sRGB");
+  // the node keeps the grammar's spelling; the writer writes a keyword in lower case (Chromium and Firefox both do)
+  EXPECT_EQ(run("sRGB", "SRGB"), "kw:sRGB");
+  EXPECT_EQ(run_text("sRGB", "SRGB"), "srgb");
 }
 
 TEST(CssGrammarNotation, FunctionNotationMatchesTheNameAndItsArguments) {
@@ -371,8 +373,8 @@ TEST(CssGrammarTypes, EachNativeTypeMatchesWhatTheDraftSays) {
       {"<dimension>", "3px", "dim:3px"},
       {"<dimension>", "3", "no match"},
       {"<length>", "3PX", "dim:3px"},
-      {"<length>", "1Q", "dim:1Q"},
-      {"<length>", "1q", "dim:1Q"},
+      {"<length>", "1Q", "dim:1q"},
+      {"<length>", "1q", "dim:1q"},
       {"<length>", "2.54cm", "dim:2.54cm"},
       {"<length>", "3deg", "no match"},
       {"<length>", "3", "no match"},
@@ -381,8 +383,8 @@ TEST(CssGrammarTypes, EachNativeTypeMatchesWhatTheDraftSays) {
       {"<angle>", "1px", "no match"},
       {"<time>", "1s", "dim:1s"},
       {"<time>", "100ms", "dim:100ms"},
-      {"<frequency>", "10kHz", "dim:10kHz"},
-      {"<frequency>", "10khz", "dim:10kHz"},
+      {"<frequency>", "10kHz", "dim:10khz"},
+      {"<frequency>", "10khz", "dim:10khz"},
       {"<resolution>", "2x", "dim:2x"},
       {"<resolution>", "96dpi", "dim:96dpi"},
       {"<flex>", "1fr", "dim:1fr"},

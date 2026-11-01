@@ -423,11 +423,11 @@ TEST(CssAtrule, FontFaceDescriptorsBothBrowsersDrop) {
 }
 
 TEST(CssAtrule, PageKeepsAnImportantDescriptorAndOnlyTheMarginRulesOfItsGrammar) {
-  /* A page descriptor may be important (both browsers keep `size: A4 !important`); the block takes the margin rules, and an unknown at-rule or a name that is no
+  /* A page descriptor may be important (both browsers keep `size: A4 !important`, and write the keyword in lower case); the block takes the margin rules, and an unknown at-rule or a name that is no
    * margin rule (`@bottom`) is dropped with its contents. */
   Parsed a("@page { size: A4 !important }");
   EXPECT_TRUE(a.res.valid);
-  EXPECT_EQ(a.css(), "@page { size: A4 !important; }");
+  EXPECT_EQ(a.css(), "@page { size: a4 !important; }");
   Parsed b("@page { @foo { } margin: 1in }");
   EXPECT_EQ(b.css(), "@page { margin: 1in; }");
   Parsed c("@page { @bottom { content: \"x\" } @bottom-center { content: \"y\" } }");

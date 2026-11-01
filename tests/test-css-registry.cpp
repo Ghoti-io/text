@@ -629,7 +629,12 @@ TEST(CssRegistryPin, EveryUnitTheValuesDefinitionsListIsAUnitOfTheLibrary) {
     const char * name;
     const char * measures;
     ASSERT_TRUE(gtext_css_registry_pin_unit_at(i, &name, &measures));
-    pin.insert(name);
+    // the definitions spell Q, Hz and kHz as the standard does; the library writes a unit in lower case (Values 4: "Units are ASCII case-insensitive and serialize as lowercase")
+    std::string lower = name;
+    for (char & c : lower) {
+      c = c >= 'A' && c <= 'Z' ? (char)(c + ('a' - 'A')) : c;
+    }
+    pin.insert(lower);
     const GTEXT_CSS_Unit u = gtext_css_unit_lookup(name, strlen(name));
     ASSERT_NE(u, GTEXT_CSS_UNIT_NONE) << name;
     const GTEXT_CSS_Unit_Type t = gtext_css_unit_type(u);

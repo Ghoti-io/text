@@ -152,7 +152,7 @@ grammar <length [-10px,-1px]>
 # --- every native type ----------------------------------------------------------------------------------
 
 grammar <integer> <number> <percentage> <dimension> <length> <angle> <time> <frequency> <resolution> <flex>
-+ 1 2.5 50% 3foo 4px 5deg 6ms 7khz 8dpi 9fr => 1 2.5 50% 3foo 4px 5deg 6ms 7kHz 8dpi 9fr
++ 1 2.5 50% 3foo 4px 5deg 6ms 7khz 8dpi 9fr => 1 2.5 50% 3foo 4px 5deg 6ms 7khz 8dpi 9fr
 - 1 2.5 50% 3foo 4px 5deg 6ms 7khz 8dpi 9
 
 grammar <ratio> <zero> <string> <url> <ident> <custom-ident> <dashed-ident>

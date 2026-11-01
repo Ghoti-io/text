@@ -96,6 +96,28 @@ static void put_ident(vwriter * w, const GTEXT_CSS_String * s) {
   }
 }
 
+/// A keyword written in lower case. Keywords are ASCII case-insensitive (Values 4, 2.1), the drafts that spell one in camel case (`linearRGB`, `crispEdges`, `visiblePainted`) do
+/// not say that it is written so, and Chromium 156 and Firefox 158 both write `linearrgb`, `crispedges` and `visiblepainted`: the text is the spelling of the declaration's keyword
+/// with its upper-case letters turned to lower case.
+static void put_keyword(vwriter * w, const GTEXT_CSS_String * s) {
+  char small[64];
+  if (s->data && s->length && s->length < sizeof small) {
+    bool upper = false;
+    for (size_t i = 0; i < s->length; i++) {
+      const char c = s->data[i];
+      small[i] = c >= 'A' && c <= 'Z' ? (char)(c + ('a' - 'A')) : c;
+      upper = upper || (c >= 'A' && c <= 'Z');
+    }
+    if (upper) {
+      if (w->status == GTEXT_CSS_OK) {
+        take_status(w, gtext_css_serialize_identifier(small, s->length, &w->inner));
+      }
+      return;
+    }
+  }
+  put_ident(w, s);
+}
+
 static void put_string(vwriter * w, const GTEXT_CSS_String * s) {
   if (w->status == GTEXT_CSS_OK) {
     take_status(w, gtext_css_serialize_string(s->data, s->length, &w->inner));
@@ -142,7 +164,15 @@ static bool begins_with_comma(const GTEXT_CSS_Value * c) {
 /// What is written for `v` before its children; false if it has none to write after.
 static bool open_value(vwriter * w, const GTEXT_CSS_Value * v) {
   switch (v->kind) {
-  case GTEXT_CSS_VAL_KEYWORD: case GTEXT_CSS_VAL_CUSTOM_IDENT: case GTEXT_CSS_VAL_DASHED_IDENT:
+  case GTEXT_CSS_VAL_KEYWORD:
+    if (v->flags & GTEXT_CSS_VFLAG_IDENT) {
+      put_ident(w, &v->text);
+    }
+    else {
+      put_keyword(w, &v->text);
+    }
+    return false;
+  case GTEXT_CSS_VAL_CUSTOM_IDENT: case GTEXT_CSS_VAL_DASHED_IDENT:
     put_ident(w, &v->text);
     return false;
   case GTEXT_CSS_VAL_STRING:

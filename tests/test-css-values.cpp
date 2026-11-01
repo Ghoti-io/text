@@ -30,9 +30,11 @@
  * Normative text: CSS Values and Units Level 4 Editor's Draft (served
  * 2026-10-22, dated 24 August 2026): section 6 for the units and "Like
  * keywords, unit identifiers are ASCII case-insensitive"; CSSOM for the
- * serialization of numbers, strings and identifiers. The draft does not say
- * which case a serialized unit takes, so the spelling table in css_units.c is
- * this library's decision (lower case, except Q, Hz and kHz).
+ * serialization of numbers, strings and identifiers. The draft (served
+ * 2026-11-01) says which case a serialized unit takes: "Units are ASCII
+ * case-insensitive and serialize as lowercase, for example 1Q serializes as
+ * 1q", and the spelling table in css_units.c is that (lower case, Q, Hz and
+ * kHz included).
  */
 
 #include <cmath>
@@ -58,7 +60,7 @@ struct UnitRow {
 
 const UnitRow kUnitRows[] = {
     {"cm", GTEXT_CSS_UNIT_CM, GTEXT_CSS_UNIT_TYPE_LENGTH, true}, {"mm", GTEXT_CSS_UNIT_MM, GTEXT_CSS_UNIT_TYPE_LENGTH, true},
-    {"Q", GTEXT_CSS_UNIT_Q, GTEXT_CSS_UNIT_TYPE_LENGTH, true}, {"in", GTEXT_CSS_UNIT_IN, GTEXT_CSS_UNIT_TYPE_LENGTH, true},
+    {"q", GTEXT_CSS_UNIT_Q, GTEXT_CSS_UNIT_TYPE_LENGTH, true}, {"in", GTEXT_CSS_UNIT_IN, GTEXT_CSS_UNIT_TYPE_LENGTH, true},
     {"pc", GTEXT_CSS_UNIT_PC, GTEXT_CSS_UNIT_TYPE_LENGTH, true}, {"pt", GTEXT_CSS_UNIT_PT, GTEXT_CSS_UNIT_TYPE_LENGTH, true},
     {"px", GTEXT_CSS_UNIT_PX, GTEXT_CSS_UNIT_TYPE_LENGTH, true},
     {"em", GTEXT_CSS_UNIT_EM, GTEXT_CSS_UNIT_TYPE_LENGTH, false}, {"rem", GTEXT_CSS_UNIT_REM, GTEXT_CSS_UNIT_TYPE_LENGTH, false},
@@ -85,7 +87,7 @@ const UnitRow kUnitRows[] = {
     {"deg", GTEXT_CSS_UNIT_DEG, GTEXT_CSS_UNIT_TYPE_ANGLE, true}, {"grad", GTEXT_CSS_UNIT_GRAD, GTEXT_CSS_UNIT_TYPE_ANGLE, true},
     {"rad", GTEXT_CSS_UNIT_RAD, GTEXT_CSS_UNIT_TYPE_ANGLE, true}, {"turn", GTEXT_CSS_UNIT_TURN, GTEXT_CSS_UNIT_TYPE_ANGLE, true},
     {"s", GTEXT_CSS_UNIT_S, GTEXT_CSS_UNIT_TYPE_TIME, true}, {"ms", GTEXT_CSS_UNIT_MS, GTEXT_CSS_UNIT_TYPE_TIME, true},
-    {"Hz", GTEXT_CSS_UNIT_HZ, GTEXT_CSS_UNIT_TYPE_FREQUENCY, true}, {"kHz", GTEXT_CSS_UNIT_KHZ, GTEXT_CSS_UNIT_TYPE_FREQUENCY, true},
+    {"hz", GTEXT_CSS_UNIT_HZ, GTEXT_CSS_UNIT_TYPE_FREQUENCY, true}, {"khz", GTEXT_CSS_UNIT_KHZ, GTEXT_CSS_UNIT_TYPE_FREQUENCY, true},
     {"dpi", GTEXT_CSS_UNIT_DPI, GTEXT_CSS_UNIT_TYPE_RESOLUTION, true}, {"dpcm", GTEXT_CSS_UNIT_DPCM, GTEXT_CSS_UNIT_TYPE_RESOLUTION, true},
     {"dppx", GTEXT_CSS_UNIT_DPPX, GTEXT_CSS_UNIT_TYPE_RESOLUTION, true}, {"x", GTEXT_CSS_UNIT_X, GTEXT_CSS_UNIT_TYPE_RESOLUTION, true},
     {"fr", GTEXT_CSS_UNIT_FR, GTEXT_CSS_UNIT_TYPE_FLEX, true},
@@ -553,8 +555,8 @@ TEST(CssValueSerialize, NumbersAreCssomsShortestSixDecimalForm) {
 
 TEST(CssValueSerialize, ADimensionsUnitIsInTheCanonicalSpellingAndAnUnknownOneAsWritten) {
   check_serialization({
-      {"<length>", "10PX", "10px"}, {"<length>", "1q", "1Q"}, {"<length>", "1Q", "1Q"}, {"<frequency>", "1KHZ", "1kHz"},
-      {"<frequency>", "1hz", "1Hz"}, {"<angle>", "1TURN", "1turn"}, {"<length>", "0", "0px"}, {"<length>", "-0", "0px"},
+      {"<length>", "10PX", "10px"}, {"<length>", "1q", "1q"}, {"<length>", "1Q", "1q"}, {"<frequency>", "1KHZ", "1khz"},
+      {"<frequency>", "1hz", "1hz"}, {"<angle>", "1TURN", "1turn"}, {"<length>", "0", "0px"}, {"<length>", "-0", "0px"},
       {"<dimension>", "3Foo", "3Foo"}, {"<dimension>", "3e", "3e"}, {"<resolution>", "2X", "2x"}, {"<length>", "1DVMIN", "1dvmin"},
   });
 }
@@ -565,7 +567,7 @@ TEST(CssValueSerialize, StringsAndIdentifiersFollowCssom) {
       {"<string>", "''", "\"\""}, {"<string>", "'\\1F600'", "\"\xF0\x9F\x98\x80\""},
       {"<custom-ident>", "a\\ b", "a\\ b"}, {"<custom-ident>", "Foo", "Foo"}, {"<custom-ident>", "\\31 23", "\\31 23"},
       {"<dashed-ident>", "--Foo", "--Foo"}, {"<ident>", "\\-", "\\-"}, {"<ident>", "-a", "-a"},
-      {"auto | none", "AUTO", "auto"}, {"sRGB | display-p3", "srgb", "sRGB"}, {"<ident>", "Auto", "Auto"},
+      {"auto | none", "AUTO", "auto"}, {"sRGB | display-p3", "srgb", "srgb"}, {"<ident>", "Auto", "Auto"},
       {"<url>", "url(a.png)", "url(\"a.png\")"}, {"<url>", "url('a b')", "url(\"a b\")"}, {"<url>", "url(\"a\\\"b\")", "url(\"a\\\"b\")"},
       {"<url>", "url('a' foo)", "url(\"a\" foo)"},
   });

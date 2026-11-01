@@ -543,7 +543,7 @@ TEST(CssComputeEdges, TheRequiredPropertiesWhoseGrammarsThePinLeavesUnresolvedCo
   char * text = nullptr;
   size_t n = 0;
   ASSERT_EQ(gtext_css_serialize_value_buffer(gtext_css_value_set_root(set), nullptr, &text, &n), GTEXT_CSS_OK);
-  EXPECT_EQ(std::string(text, n), "200Hz absolute");
+  EXPECT_EQ(std::string(text, n), "200hz absolute");
   gtext_css_serialize_buffer_free(nullptr, text);
 }
 

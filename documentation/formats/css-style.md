@@ -360,7 +360,7 @@ color-mix(in srgb, red, blue) is color(srgb 0.5 0 0.5)
 
 ## The dump and the hash
 
-`gtext_css_computed_dump()` writes the style as canonical text: a first line `css-computed 3` (`GTEXT_CSS_COMPUTED_DUMP_VERSION`, which changes with any
+`gtext_css_computed_dump()` writes the style as canonical text: a first line `css-computed 4` (`GTEXT_CSS_COMPUTED_DUMP_VERSION`, which changes with any
 change of the format), a second naming the commit of the pin the registry's properties come from, then one line `name: value` for every property that has a
 value, **in the byte order of the names** (the custom properties among them, `--` sorting before the letters), each value as a computed value is serialized.
 Which declaration a value came from is not in it. `gtext_css_computed_hash()` is the SHA-256 of that text (`GTEXT_CSS_COMPUTED_HASH_LENGTH` bytes), computed
@@ -447,8 +447,8 @@ static void style_dump(void) {
 prints
 
 ```
-version 3, begins:
-css-computed 3
+version 4, begins:
+css-computed 4
 a line for each property, after the two of the header: yes
 hash of 32 bytes
 same values, same hash: yes

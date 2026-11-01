@@ -1569,13 +1569,21 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
     if (!tok(v, GTEXT_CSS_TOKEN_STRING)) {
       return false;
     }
+    /* and "A sequence of any other characters, representing a trash token" with "A trash token is a syntax error, and makes the declaration invalid": the tokens are runs of
+       ident code points (named cells), runs of "." (null cells) and white space; anything else (`:`, `,`, `"`, `\`) is trash */
+    bool cell = false;
     for (size_t i = 0; i < v->value.length; i++) {
-      const char ch = v->value.data[i];
-      if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r' && ch != '\f') {
-        return true;
+      const unsigned char ch = (unsigned char)v->value.data[i];
+      if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f') {
+        continue;
       }
+      if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch >= 0x80 || ch == '.') {
+        cell = true;
+        continue;
+      }
+      return false;
     }
-    return false;
+    return cell;
   }
   case NT_HEX_COLOR: {
     /* Color 4, 5.2: "The syntax of a <hex-color> is a <hash-token> token whose value consists of 3, 4, 6, or 8 hexadecimal digits." */
@@ -2810,7 +2818,8 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
   switch (t) {
   case NT_INTEGER:
     value_init(out, GTEXT_CSS_VAL_INTEGER, node, v);
-    out->number = v->number;
+    /* Values 4, 10.12: "CSS intentionally leaves numeric precision/range UA-defined"; the range of an <integer> is that of a 32-bit integer (see css_v_integer()) */
+    out->number = v->number > 2147483647.0 ? 2147483647.0 : v->number < -2147483648.0 ? -2147483648.0 : v->number;
     out->interp = GTEXT_CSS_INTERP_NUMBER;
     number_flags(out, v);
     return true;
@@ -2969,6 +2978,7 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
   }
   case NT_IDENT:
     value_init(out, GTEXT_CSS_VAL_KEYWORD, node, v);
+    out->flags |= GTEXT_CSS_VFLAG_IDENT;
     out->atom = gtext_css_atom_lookup(m->c->atoms, v->value.data, v->value.length);
     return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;
   case NT_CUSTOM_IDENT:

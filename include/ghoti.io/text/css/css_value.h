@@ -241,8 +241,9 @@ typedef enum {
 GTEXT_API GTEXT_CSS_Unit gtext_css_unit_lookup(const char * name, size_t length);
 
 /**
- * @brief The spelling a unit is serialized in: lower case, except `Q`, `Hz`
- *   and `kHz`.
+ * @brief The spelling a unit is serialized in: lower case (Values 4: "Units are
+ *   ASCII case-insensitive and serialize as lowercase, for example 1Q serializes
+ *   as 1q").
  *
  * @param unit Any value.
  * @return A static string, or NULL for NONE and for anything that is not a unit.
@@ -365,6 +366,9 @@ typedef enum {
 /** A calculation that is an argument of `calc-size()` (Sizing 4, 7): it is written as the inside of a `calc()`, without the `calc(` and its parenthesis
  *  (`calc-size(auto, 30% + 50px)`), and `size` is a length in it. Set with GTEXT_CSS_VFLAG_MATH; kept when the value is computed. */
 #define GTEXT_CSS_VFLAG_MATH_BARE 0x400u
+/** A KEYWORD that an author's `<ident>` matched, not one the grammar names: its text is the spelling the declaration used, and it is written so (the keywords a grammar
+ *  names are written in lower case, which Chromium and Firefox both do). */
+#define GTEXT_CSS_VFLAG_IDENT 0x800u
 /** @} */
 
 /** @brief A typed value (the struct below). */

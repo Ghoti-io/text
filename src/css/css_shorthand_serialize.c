@@ -1206,6 +1206,14 @@ static bool radius_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, s
     tb_init(&b2, &c->alloc);
     css_exact_text(&a, hv);
     css_exact_text(&b2, vv);
+    /* a radius is a <length-percentage>: the bare zero an author wrote is written 0px, as the longhand writes it (Values 4, 5: "For zero lengths the unit identifier is
+       optional") */
+    if (a.len == 1 && a.data[0] == '0') {
+      tb_puts(&a, "px");
+    }
+    if (b2.len == 1 && b2.data[0] == '0') {
+      tb_puts(&b2, "px");
+    }
     h[i] = tb_take(&a, NULL);
     v[i] = tb_take(&b2, NULL);
     ok = h[i] && v[i];
@@ -1419,7 +1427,9 @@ static bool offset_text(sctx * c, const directs * d, const lhv * v, stext * out)
     tb_puts(&b, rot);
   }
   if (!any) {
-    tb_puts(&b, "none");
+    /* every component before the `/` is its initial value: the first of them, offset-position (`normal`), is what both Chromium 156 and Firefox 158 write; Motion 1 says only
+       that "Omitted values are set to their initial values" */
+    tb_puts(&b, pos);
   }
   if (!ianc) {
     tb_puts(&b, " / ");

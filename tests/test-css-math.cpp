@@ -164,7 +164,7 @@ TEST(CssMathSerialize, TheChildrenOfASumAreSortedNumberPercentageDimensionsByUni
 
 TEST(CssMathSerialize, AbsoluteUnitsAreConvertedToTheCanonicalOne) {
   check({{"calc(1in)", "calc(96px)"}, {"calc(1cm)", "calc(37.795276px)"}, {"calc(1pt)", "calc(1.333333px)"}, {"calc(1pc)", "calc(16px)"},
-      {"calc(1turn)", "calc(360deg)"}, {"calc(100grad)", "calc(90deg)"}, {"calc(1ms)", "calc(0.001s)"}, {"calc(1khz)", "calc(1000Hz)"},
+      {"calc(1turn)", "calc(360deg)"}, {"calc(100grad)", "calc(90deg)"}, {"calc(1ms)", "calc(0.001s)"}, {"calc(1khz)", "calc(1000hz)"},
       {"calc(96dpi)", "calc(1dppx)"}, {"calc(1x)", "calc(1dppx)"}});
 }
 

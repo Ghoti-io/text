@@ -350,7 +350,7 @@ TEST(CssProperty, TheSpeechPropertiesTakeTheDecibelAndSemitoneDimensionsOfSpeech
     EXPECT_EQ(parse(r, p, "-2.5st"), "valid:-2.5st") << p;
     EXPECT_EQ(parse(r, p, "high 2st"), "valid:high 2st") << p;
     EXPECT_EQ(parse(r, p, "10% low"), "valid:low 10%") << p;
-    EXPECT_EQ(parse(r, p, "200Hz absolute"), "valid:200Hz absolute") << p;
+    EXPECT_EQ(parse(r, p, "200Hz absolute"), "valid:200hz absolute") << p;
     EXPECT_EQ(parse(r, p, "2dB"), "invalid") << p;
     EXPECT_EQ(parse(r, p, "-10Hz"), "invalid") << p << " [0Hz,∞]";
   }
@@ -464,7 +464,7 @@ TEST(CssProperty, ADescriptorIsParsedInTheContextOfItsAtRule) {
   EXPECT_EQ(parse(r, "bleed", "3mm", &page), "valid:3mm");
   // `size` names <page-size>, which the pin nests inside the descriptor's own entry (read since the nested types are)
   EXPECT_EQ(parse(r, "size", "auto", &page), "valid:auto");
-  EXPECT_EQ(parse(r, "size", "A4 landscape", &page), "valid:A4 landscape");
+  EXPECT_EQ(parse(r, "size", "A4 landscape", &page), "valid:a4 landscape");
   EXPECT_EQ(parse(r, "size", "10cm 5cm", &page), "valid:10cm 5cm");
   EXPECT_EQ(parse(r, "size", "A4 A5", &page), "invalid");
   const GTEXT_CSS_Property_Options counter = descriptor_of("@counter-style");

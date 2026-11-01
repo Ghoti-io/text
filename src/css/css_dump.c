@@ -106,9 +106,9 @@ static GTEXT_CSS_Status dump_to(const GTEXT_CSS_Computed_Style * style, const GT
   const char * pin = gtext_css_registry_pin_commit();
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
   {
-    static const char first[] = "css-computed 3\nregistry ";
+    static const char first[] = "css-computed 4\nregistry ";
     /* the version in the first line is the header's: a change of one is a change of the other */
-    _Static_assert(GTEXT_CSS_COMPUTED_DUMP_VERSION == 3, "the first line of the dump names the version");
+    _Static_assert(GTEXT_CSS_COMPUTED_DUMP_VERSION == 4, "the first line of the dump names the version");
     st = put(sink, first, sizeof first - 1);
     if (st == GTEXT_CSS_OK) {
       st = put(sink, pin ? pin : "", pin ? strlen(pin) : 0);

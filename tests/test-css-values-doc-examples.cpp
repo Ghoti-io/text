@@ -69,7 +69,7 @@ const Snippet kSnippets[] = {
     {"grammar-types.c", snippets::grammar_types,
         "\"1px, 50%, -1px\" against <length-percentage [0,\xe2\x88\x9e]>#: does not match\n<nosuch>: a type or property the definition names is not known\n<x>: a definition recurses through itself without consuming input\n"},
     {"values-units.c", snippets::values_units,
-        "1in is 96px\n1mm is 3.77953px\n1Q is 0.944882px\n1turn is 360deg\n1kHz is 1000Hz\n1em is relative: the environment decides\n1vmax is relative: the environment decides\nparsec: not a unit\n"},
+        "1in is 96px\n1mm is 3.77953px\n1q is 0.944882px\n1turn is 360deg\n1khz is 1000hz\n1em is relative: the environment decides\n1vmax is relative: the environment decides\nparsec: not a unit\n"},
     {"values-limits.c", snippets::values_limits,
         "with 100 units of work: match work or memo entries beyond max_match_work or max_memo_entries\nby default: success, matched yes, 1001 positions\nwork for 1000 tokens: 46036 units\n"},
     {"values-math.c", snippets::values_math, "calc(1px + 2px) -> calc(3px)\ncalc(20px + 2em) -> calc(2em + 20px)\ncalc(10% - 5px) -> calc(10% - 5px)\nmin(20px, 10%, 3em) -> min(20px, 10%, 3em)\ncalc(2 * 3deg) -> calc(6deg)\ncalc(1px * 2px) -> not a valid calculation\ncalc(infinity * 1px) -> calc(infinity * 1px)\nmod(-7px, 3px) -> calc(2px)\nround(up, 7px, 2px) -> calc(8px)\n"},

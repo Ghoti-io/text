@@ -130,10 +130,13 @@ void css_v_number(GTEXT_CSS_Value * v, double number) {
   v->number = number;
 }
 
+/// An <integer> is held in the range of a 32-bit integer. Values 4, 10.12 (served 2026-11-01): "CSS intentionally leaves numeric precision/range UA-defined, extremely large
+/// values (including, notably, ±∞) will clamp to the minimum/maximum value allowed"; Chromium 156 and Firefox 158 both write 2147483647 for 4294967296 in z-index, order, the
+/// grid lines, column-count, math-depth and the repeat counts, so that is the range this library defines.
 void css_v_integer(GTEXT_CSS_Value * v, double number) {
   v->kind = GTEXT_CSS_VAL_INTEGER;
   v->interp = GTEXT_CSS_INTERP_NUMBER;
-  v->number = number;
+  v->number = number > 2147483647.0 ? 2147483647.0 : number < -2147483648.0 ? -2147483648.0 : number;
 }
 
 void css_v_percentage(GTEXT_CSS_Value * v, double number) {

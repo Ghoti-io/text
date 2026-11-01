@@ -285,9 +285,9 @@ prints
 ```
 1in is 96px
 1mm is 3.77953px
-1Q is 0.944882px
+1q is 0.944882px
 1turn is 360deg
-1kHz is 1000Hz
+1khz is 1000hz
 1em is relative: the environment decides
 1vmax is relative: the environment decides
 parsec: not a unit
@@ -298,7 +298,13 @@ parsec: not a unit
 `gtext_css_serialize_value()` writes a specified value as CSSOM does: a number by
 the shortest digits that round to it, laid out in base ten with at most six
 decimals; identifiers and strings through the serializers of the syntax layer;
-`url("...")`; `", "` and `" / "` between list items. **Writing, matching the text
+`url("...")`; `", "` and `" / "` between list items. A unit and a keyword the grammar
+names are written in lower case (Values 4: "Units are ASCII case-insensitive and
+serialize as lowercase, for example 1Q serializes as 1q"; the keywords `linearRGB`
+and `crispEdges` are written `linearrgb` and `crispedges`, as Chromium and Firefox
+write them), while a name the author chose (`<ident>`, `<custom-ident>`) keeps its
+case; an `<integer>` is held in the range of a 32-bit integer (4294967296 is
+2147483647). **Writing, matching the text
 again and writing again gives the same text.**
 
 ## Limits

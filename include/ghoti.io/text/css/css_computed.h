@@ -371,11 +371,11 @@ GTEXT_API GTEXT_CSS_Status gtext_css_computed_serialize(const GTEXT_CSS_Computed
     const GTEXT_CSS_Serialize_Options * options, const GTEXT_Markup_Sink * sink);
 
 /** @brief The version of the text gtext_css_computed_dump() writes. It changes with any change of the format, and the golden files of the tests are regenerated in the same commit. */
-#define GTEXT_CSS_COMPUTED_DUMP_VERSION 3
+#define GTEXT_CSS_COMPUTED_DUMP_VERSION 4
 
 /**
  * @brief Write the whole style in a canonical, versioned text.
- * The first line is `css-computed 3` (GTEXT_CSS_COMPUTED_DUMP_VERSION), the second `registry ` and the commit of the pin the registry's generated
+ * The first line is `css-computed 4` (GTEXT_CSS_COMPUTED_DUMP_VERSION), the second `registry ` and the commit of the pin the registry's generated
  * properties come from, then one line `name: value` for every property that has a value, **in the byte order of the names** (the custom properties, whose
  * names begin with `--`, sort among the others by the same rule), each value written as a computed value is serialized (gtext_css_computed_serialize()).
  * Which declaration a value came from is not in it: two cascades with equal results give equal text, and the text of a style is the same on every host.
