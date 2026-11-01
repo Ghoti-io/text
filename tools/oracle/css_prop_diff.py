@@ -479,6 +479,7 @@ def main(argv):
     ap.add_argument("--write-list", default=None)
     ap.add_argument("--write-witnesses", default=None)
     ap.add_argument("--rules", default=None)
+    ap.add_argument("--rule-plants", action="store_true", help="for every rule of --rules, change this library's answer for an item of one key it classified and require the gate to notice")
     ap.add_argument("--max-ours", type=int, default=int(os.environ.get("CSS_PROP_ORACLE_MAX_OURS", "0")))
     args = ap.parse_args(argv)
     work = args.work
@@ -531,6 +532,8 @@ def main(argv):
         list_path = args.list
         bad, features, listed, undecided, unanswered = gate(items, ours, answers, headers, list_path, args)
         summarize(items, ours, answers, headers, features, listed, undecided, unanswered)
+        if args.rule_plants:
+            return rule_plants(items, ours, answers, headers, list_path, args, bad, listed)
         if args.write_list:
             write_list(args.write_list, items, ours, answers, features, listed, headers, args.ours, args.write_witnesses, read_rules(args.rules))
         if unanswered:
@@ -669,6 +672,34 @@ def write_list(path, items, ours, answers, features, listed, headers, binary, wi
                     "# says of it (OK=<serialization>, NO) and what an engine says that differs from that. Columns: key, property, value, ours, reference.\n"
                     "# The run asks every witness again and fails when either answer is not the one written here.\n")
             f.write("\n".join(wit) + "\n")
+
+
+def rule_plants(items, ours, answers, headers, list_path, args, baseline, listed):
+    """A rule saves writing a reason for each key; it must not make a key any harder to see change. For every rule, one key that it classified (listed with its
+    reason) has this library's answer for its smallest item changed (accepted becomes refused, refused accepted), and the gate must name that key in a problem it did
+    not already have: GONE, COUNT, DIGEST or WITNESS. Exit 0 when every rule is caught."""
+    missed = 0
+    seen = 0
+    for rx, _cls, reason, text, _causes in read_rules(args.rules):
+        key = next((k for k in sorted(listed) if rx.fullmatch(k) and listed[k][2] == reason), None)
+        if key is None:
+            print("rule %s: no listed key to plant in" % text)
+            missed += 1
+            continue
+        features, _u, _x = classify(items, ours, answers)
+        rep = features[key]["rep"]
+        planted = list(ours)
+        planted[rep] = ("NO",) if ours[rep][0] == "OK" else ("OK", items[rep][1])
+        bad, _f, _l, _u2, _x2 = gate(items, planted, answers, headers, list_path, args)
+        new = [b for b in bad if key in b and b not in baseline]
+        seen += 1
+        if not new:
+            print("rule %s: the plant in %s was NOT caught" % (text, key))
+            missed += 1
+        else:
+            print("rule %s: plant caught (%s)" % (text, new[0].split(":", 1)[0]))
+    print("css property differential: %d rule plants, %d not caught" % (seen, missed))
+    return GATE_EXIT if missed else 0
 
 
 def apply_plant(name, items, ours, answers, headers):
