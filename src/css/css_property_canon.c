@@ -554,7 +554,7 @@ static bool rule_linear_points(cb * out, sp f) {
   spv args = {out->a, NULL, 0, 0, false, &out->fail};
   top_split(&args, f.p + 7, f.n - 8, ',');
   bool done = false;
-  dec max_pos;
+  dec max_pos = {false, {NULL, 0}, {NULL, 0}};
   sp max_sp = {NULL, 0};
   bool have_max = false;
   cb tmp = {out->a, NULL, 0, 0, false, &out->fail};
