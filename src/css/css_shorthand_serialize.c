@@ -359,7 +359,9 @@ static bool zero_of_init(const char * init, const char * t) {
     return false;
   }
   const GTEXT_CSS_Unit u = gtext_css_unit_lookup(t + i, strlen(t + i));
-  return u != GTEXT_CSS_UNIT_NONE && gtext_css_unit_type(u) == want;
+  /* a zero length in a unit that is a fixed multiple of the pixel is the initial `0px` once it is read (`0pt`, `0mm`); a zero in a font- or viewport-relative unit is kept (both
+     pinned browsers write `vertical-align: 0cap` and `0vmin` as written, where they write `0pt` as the initial value) */
+  return u != GTEXT_CSS_UNIT_NONE && gtext_css_unit_type(u) == want && (want != GTEXT_CSS_UNIT_TYPE_LENGTH || gtext_css_unit_is_absolute(u));
 }
 
 /// zero_of_init() for the time `0s`.
@@ -1700,7 +1702,9 @@ static bool font_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, ste
     tb_puts(&buf, any ? " " : "");
     tb_puts(&buf, size);
     if (lh && !texteq(lh, "normal")) {
-      tb_puts(&buf, "/");
+      /* the line height follows the size after a slash with a space on each side: web-platform-tests' font-valid.html writes `size + ' / ' + lineHeight`, both pinned
+         browsers write `x-large / 3ic`, and the property parser writes the same (`italic bold 12px / 1.5 serif`) */
+      tb_puts(&buf, " / ");
       tb_puts(&buf, lh);
     }
     tb_puts(&buf, " ");

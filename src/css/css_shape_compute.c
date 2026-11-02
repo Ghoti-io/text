@@ -117,6 +117,10 @@ static void spv_push(spv * s, span x) {
     return;
   }
   if (s->n == s->cap) {
+    if (s->cap > SIZE_MAX / 2 / sizeof *s->v) { /* the size of the array has to be a size */
+      s->fail = true;
+      return;
+    }
     const size_t cap = s->cap ? s->cap * 2 : 8;
     span * grown = gtext_allocator_realloc((GTEXT_Allocator *)s->a, s->v, cap * sizeof *grown);
     if (!grown) {
@@ -1098,6 +1102,10 @@ static void mix_free(mix_state * m) {
 
 static size_t mix_new_node(mix_state * m, bool palette) {
   if (m->nn == m->capn) {
+    if (m->capn > SIZE_MAX / 2 / sizeof *m->nodes) {
+      m->fail = true;
+      return MIX_NONE;
+    }
     const size_t cap = m->capn ? m->capn * 2 : 8;
     mix_node * g = gtext_allocator_realloc((GTEXT_Allocator *)m->a, m->nodes, cap * sizeof *g);
     if (!g) {
@@ -1116,6 +1124,10 @@ static size_t mix_new_node(mix_state * m, bool palette) {
 
 static void mix_add_item(mix_state * m, size_t node, const mix_item * it) {
   if (m->ni == m->capi) {
+    if (m->capi > SIZE_MAX / 2 / sizeof *m->items) {
+      m->fail = true;
+      return;
+    }
     const size_t cap = m->capi ? m->capi * 2 : 8;
     mix_item * g = gtext_allocator_realloc((GTEXT_Allocator *)m->a, m->items, cap * sizeof *g);
     if (!g) {
@@ -1216,6 +1228,11 @@ static bool mix_read(mix_state * m, span text) {
           break;
         }
         if (nf == capf) {
+          if (capf > SIZE_MAX / 2 / sizeof *fr) {
+            m->fail = true;
+            ok = false;
+            break;
+          }
           const size_t cap = capf ? capf * 2 : 8;
           mix_frame * g = gtext_allocator_realloc((GTEXT_Allocator *)m->a, fr, cap * sizeof *g);
           if (!g) {
@@ -1446,6 +1463,10 @@ static void palette_write(mix_state * m, sb * out) {
   for (;;) {
     /* open `node` */
     if (sp == cap) {
+      if (cap > SIZE_MAX / 2 / sizeof *st) {
+        out->fail = true;
+        break;
+      }
       cap = cap ? cap * 2 : 8;
       pframe * g = gtext_allocator_realloc((GTEXT_Allocator *)m->a, st, cap * sizeof *g);
       if (!g) {

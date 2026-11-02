@@ -350,6 +350,11 @@ typedef struct {
   /** The anchor functions a calculation of the value may hold (GTEXT_CSS_MATH_ANCHOR, GTEXT_CSS_MATH_ANCHOR_SIZE, ORed; css_math.h). The property layer sets it
    *  from the property: `anchor()` is valid in the inset properties and `anchor-size()` in the sizing, inset and margin ones. Default 0. */
   unsigned anchor_functions;
+  /** The property the value is parsed as (not NUL-terminated), or NULL. The `<random-key>` of a `random()` is simplified at parse time from it (Values 5, 9.4.1: "If the
+   *  <random-key> is auto (or omitted), it's turned into element-scoped property-index-scoped", and property-scoped and property-index-scoped become
+   *  `ua-PROPERTY` and `ua-PROPERTY-INDEX`), the INDEX counting the `random()` functions of the whole value from 1. NULL (the default) simplifies nothing. Appended after the fields above. */
+  const char * property;
+  size_t property_length;                ///< The length of `property`.
 } GTEXT_CSS_Match_Options;
 
 /** @brief The defaults, spelled out. */

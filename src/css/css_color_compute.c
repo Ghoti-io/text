@@ -602,7 +602,8 @@ static GTEXT_CSS_Status finish_node(walk * w, const frame * f, bool * ok) {
     }
     const size_t n = c->item_count;
     GTEXT_Allocator a = *ctx->alloc;
-    double * pct = gtext_allocator_malloc(&a, n * sizeof *pct);
+    /* the items of a mix are in memory already, one or more bytes of the text each, so the count times eight cannot wrap; the check says so */
+    double * pct = n > SIZE_MAX / sizeof *pct ? NULL : gtext_allocator_malloc(&a, n * sizeof *pct);
     if (!pct) {
       return GTEXT_CSS_E_OOM;
     }

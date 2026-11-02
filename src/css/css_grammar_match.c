@@ -182,6 +182,9 @@ typedef struct {
   size_t max_math_depth, max_math_nodes; ///< The limits of one math function (0: the math layer's defaults).
   size_t max_color_nesting, max_function_nodes;
   unsigned anchor_functions;        ///< The anchor functions a calculation may hold (GTEXT_CSS_Match_Options::anchor_functions).
+  const char * property;            ///< The property the value is parsed as (GTEXT_CSS_Match_Options::property), or NULL.
+  size_t property_length;
+  uint32_t random_index;            ///< The random() functions the value has made so far (their INDEX).
   size_t function_nodes; ///< Functions packed into the value so far (see max_function_nodes).
   css_arena scratch;                ///< What was read of functions and colors while recognizing (freed with the match).
   bool scratch_init;
@@ -1142,7 +1145,9 @@ static bool math_item(M * m, uint32_t pos, const xinfo ** out) {
       GTEXT_CSS_Math * mp = NULL;
       bool valid = false;
       GTEXT_CSS_Math_Result res;
-      const GTEXT_CSS_Math_Context mctx = {NULL, 0, m->anchor_functions};
+      GTEXT_CSS_Math_Context mctx;
+      memset(&mctx, 0, sizeof mctx);
+      mctx.anchor_functions = m->anchor_functions;
       const GTEXT_CSS_Status st = css_math_build(&m->scratch, &m->alloc, v, &mctx, m->max_math_depth, m->max_math_nodes, &mp, &valid, &res);
       if (st != GTEXT_CSS_OK) {
         if (m->status == GTEXT_CSS_OK) {
@@ -2495,7 +2500,13 @@ static bool math_value(builder * B, uint32_t node, const GTEXT_CSS_Component_Val
   GTEXT_CSS_Math * mp = NULL;
   bool valid = false;
   GTEXT_CSS_Math_Result res;
-  const GTEXT_CSS_Math_Context mctx = {NULL, 0, m->anchor_functions};
+  /* the value as it is kept: a random() key is simplified (Values 5, 9.4.1) */
+  GTEXT_CSS_Math_Context mctx;
+  memset(&mctx, 0, sizeof mctx);
+  mctx.anchor_functions = m->anchor_functions;
+  mctx.random_property = m->property;
+  mctx.random_property_length = m->property_length;
+  mctx.random_index = &m->random_index;
   const GTEXT_CSS_Status st = css_math_build(&B->set->arena, &m->alloc, cv, &mctx, m->max_math_depth, m->max_math_nodes, &mp, &valid, &res);
   if (st != GTEXT_CSS_OK) {
     if (m->status == GTEXT_CSS_OK) {
@@ -3642,6 +3653,8 @@ GTEXT_CSS_Status gtext_css_match(const GTEXT_CSS_Compiled * compiled, const GTEX
   m.max_color_nesting = options ? options->max_color_nesting : 0;
   m.max_function_nodes = options ? options->max_function_nodes : 0;
   m.anchor_functions = options ? options->anchor_functions : 0;
+  m.property = options ? options->property : NULL;
+  m.property_length = options && options->property ? options->property_length : 0;
   GTEXT_CSS_Status status = GTEXT_CSS_OK;
   GTEXT_CSS_Value_Set * set = NULL;
   bool did_match = false;

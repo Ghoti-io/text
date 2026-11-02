@@ -301,8 +301,11 @@ static bool write_tree(obuf * b, const mnode * root, bool paren) {
       const mnode * c = n->kids[f->order[f->idx]];
       const bool first = f->idx == 0;
       f->idx++;
+      /* a term that is an infinite number, percentage or dimension is written `infinity * 1px` without parentheses beside the others (both pinned browsers write
+         `calc(-infinity * 1% + infinity * 1px)`); Values 4's serialization of a numeric value that is infinite is for the root of a calculation only */
+      const bool leaf = c->op == GTEXT_CSS_MATH_NUMBER || c->op == GTEXT_CSS_MATH_DIMENSION || c->op == GTEXT_CSS_MATH_PERCENT;
       if (first) {
-        ok = start(b, &st, c, true);
+        ok = start(b, &st, c, !leaf);
       }
       else if (c->op == GTEXT_CSS_MATH_NEGATE) {
         ok = puts_(b, " - ") && start(b, &st, c->kids[0], true);
@@ -310,15 +313,15 @@ static bool write_tree(obuf * b, const mnode * root, bool paren) {
       else if (is_negative_leaf(c)) {
         mnode neg = *c;
         neg.value = -c->value;
-        ok = puts_(b, " - ") && put_leaf(b, &neg, true);
+        ok = puts_(b, " - ") && put_leaf(b, &neg, false);
       }
       else if (css_math_is_numeric(c) && !is_finite_(c->value) && c->value < 0.0) {
         mnode neg = *c;
         neg.value = -c->value;
-        ok = puts_(b, " - ") && put_leaf(b, &neg, true);
+        ok = puts_(b, " - ") && put_leaf(b, &neg, false);
       }
       else {
-        ok = puts_(b, " + ") && start(b, &st, c, true);
+        ok = puts_(b, " + ") && start(b, &st, c, !leaf);
       }
       continue;
     }

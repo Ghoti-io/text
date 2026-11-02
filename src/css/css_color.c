@@ -389,6 +389,29 @@ typedef struct {
 
 static const GTEXT_CSS_Math_Type NUMBER_TYPE = {{0, 0, 0, 0, 0, 0, 0}, 0};
 
+/// Whether any node of the calculation has a percent hint in its type (a percentage added to a length: `0% - 0px`), walking the tree without recursion. False when the
+/// walk ran out of memory (the status is set).
+static bool math_tree_has_percent_hint(cb_t * cb, const GTEXT_CSS_Math * m, bool * hinted) {
+  *hinted = false;
+  const GTEXT_CSS_Math_Node ** stack = zalloc(cb, (m->node_count ? m->node_count : 1) * sizeof *stack);
+  if (!stack) {
+    return false;
+  }
+  size_t top = 0;
+  stack[top++] = m->root;
+  while (top > 0 && !*hinted) {
+    const GTEXT_CSS_Math_Node * n = stack[--top];
+    if (n->type.percent_hint) {
+      *hinted = true;
+      break;
+    }
+    for (size_t i = 0; i < n->kid_count && top < m->node_count; i++) {
+      stack[top++] = n->kids[i];
+    }
+  }
+  return true;
+}
+
 /// Read one component. 1: read; 0: not valid; -1: a hard failure (the status is set).
 static int read_comp(cb_t * cb, const cv_t * v, slot_t slot, const symbols_t * sym, comp_t * out) {
   memset(out, 0, sizeof *out);
@@ -468,7 +491,18 @@ static int read_comp(cb_t * cb, const cv_t * v, slot_t slot, const symbols_t * s
     const bool ok = (m->category == GTEXT_CSS_MATH_CAT_NUMBER && (slot.num || slot.hue)) ||
         (m->category == GTEXT_CSS_MATH_CAT_PERCENTAGE && slot.pct) ||
         (m->category == GTEXT_CSS_MATH_CAT_ANGLE && slot.hue);
+    /* Values 4 (served 2026-11-01), 10.9: "If, in the context in which the math function containing this calculation is placed, <percentage>s are resolved relative to another
+       type of value (such as in width, where <percentage> is resolved against a <length>), and that other type is not <number>, the type is determined as the other type, but
+       with a percent hint set to that other type." A percentage of a color channel is resolved against a number, so a calculation whose type has a percent hint (`0% - 0px`, even
+       inside sign(), whose type is "made consistent with the input calculation's type") is a type error here. */
     if (!ok || (m->has_percent && !slot.pct)) {
+      return 0;
+    }
+    bool hinted = false;
+    if (!math_tree_has_percent_hint(cb, m, &hinted)) {
+      return -1;
+    }
+    if (hinted) {
       return 0;
     }
     out->kind = GTEXT_CSS_COMP_MATH;
@@ -1015,8 +1049,8 @@ static color_t * build_function(cb_t * cb, const cv_t * v, fid f, kidlist * kids
       gtext_allocator_free(&cb->alloc, starts);
       goto done;
     }
-    const color_t ** items = zalloc(cb, groups * sizeof *items);
-    comp_t * pcts = zalloc(cb, groups * sizeof *pcts);
+    const color_t ** items = groups > SIZE_MAX / sizeof *items ? NULL : zalloc(cb, groups * sizeof *items);
+    comp_t * pcts = groups > SIZE_MAX / sizeof *pcts ? NULL : zalloc(cb, groups * sizeof *pcts);
     bool good = items && pcts;
     for (size_t g = 0; good && g < groups; g++) {
       const size_t len = ends[g] - starts[g];

@@ -367,7 +367,7 @@ static bool ser_relative(obuf * b, const color_t * c, const char * origin_text) 
   return put_relative_alpha(b, c) && puts_(b, ")");
 }
 
-static bool ser_srgb(obuf * b, const color_t * c) {
+static bool ser_srgb(obuf * b, const color_t * c, bool as_origin) {
   const bool hex_or_name = c->kind == GTEXT_CSS_COLOR_HEX || c->kind == GTEXT_CSS_COLOR_KEYWORD;
   const GTEXT_CSS_Color_Function f = hex_or_name ? GTEXT_CSS_COLOR_FN_RGB : c->function;
   if (c->has_unresolved) {
@@ -396,6 +396,20 @@ static bool ser_srgb(obuf * b, const color_t * c) {
     return put_alpha(b, c, false) && puts_(b, ")");
   }
   if (c->has_missing) {
+    if (f == GTEXT_CSS_COLOR_FN_RGB && as_origin) {
+      /* Color 5, 11.2 (served 2026-11-01), "Serializing Origin Colors": for rgb() "the string identifying the canonical color function ... followed by a space separated list
+         of the non-alpha components as specified ... followed by ' / ' and the alpha component as specified"; a missing component is the keyword none */
+      if (!puts_(b, "rgb(")) {
+        return false;
+      }
+      for (size_t i = 0; i < 3; i++) {
+        const comp_t * k = &c->components[i];
+        if ((i && !puts_(b, " ")) || (k->kind == GTEXT_CSS_COMP_NONE ? !puts_(b, "none") : (!put_num(b, k->value) || (k->kind == GTEXT_CSS_COMP_PERCENT && !puts_(b, "%"))))) {
+          return false;
+        }
+      }
+      return put_alpha(b, c, false) && puts_(b, ")");
+    }
     if (f == GTEXT_CSS_COLOR_FN_RGB) {
       if (!puts_(b, "color(srgb")) {
         return false;
@@ -569,7 +583,7 @@ static bool ser_mix(obuf * b, const color_t * c, const char * const * kid_text) 
 }
 
 /// Write one node, given the text of the colors it holds.
-static bool ser_one(obuf * b, const color_t * c, const char * const * kid_text) {
+static bool ser_one(obuf * b, const color_t * c, const char * const * kid_text, bool as_origin) {
   switch (c->kind) {
   case GTEXT_CSS_COLOR_KEYWORD:
     if (c->keyword == GTEXT_CSS_COLOR_KW_NAMED || c->keyword == GTEXT_CSS_COLOR_KW_TRANSPARENT || c->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR ||
@@ -578,13 +592,13 @@ static bool ser_one(obuf * b, const color_t * c, const char * const * kid_text) 
     }
     return false;
   case GTEXT_CSS_COLOR_HEX:
-    return ser_srgb(b, c);
+    return ser_srgb(b, c, false);
   case GTEXT_CSS_COLOR_FUNCTION:
     if (c->origin) {
       return ser_relative(b, c, kid_text[0]);
     }
     if (c->function == GTEXT_CSS_COLOR_FN_RGB || c->function == GTEXT_CSS_COLOR_FN_HSL || c->function == GTEXT_CSS_COLOR_FN_HWB) {
-      return ser_srgb(b, c);
+      return ser_srgb(b, c, as_origin);
     }
     return ser_modern(b, c);
   case GTEXT_CSS_COLOR_ALPHA:
@@ -608,6 +622,7 @@ typedef struct {
   const color_t * c;
   size_t kids;       ///< Index into `kidx` of the first of this node's children (post order numbers).
   char * text;
+  bool origin;       ///< The origin color of the node that holds it.
 } snode;
 
 typedef struct {
@@ -681,6 +696,7 @@ GTEXT_CSS_Status css_color_serialize_to(const GTEXT_CSS_Color * color, const GTE
     nodes[nn].c = F->c;
     nodes[nn].kids = F->kids;
     nodes[nn].text = NULL;
+    nodes[nn].origin = nf > 1 && fs[nf - 2].c->origin == F->c;
     const size_t my = nn++;
     nf--;
     if (nf > 0) {
@@ -707,7 +723,7 @@ GTEXT_CSS_Status css_color_serialize_to(const GTEXT_CSS_Color * color, const GTE
     memset(&b, 0, sizeof b);
     b.alloc = a;
     b.max = max_bytes;
-    const bool ok = ser_one(&b, c, kt);
+    const bool ok = ser_one(&b, c, kt, nodes[i].origin);
     gtext_allocator_free(&a, kt);
     if (!ok) {
       st = b.status != GTEXT_CSS_OK ? b.status : GTEXT_CSS_E_INTERNAL;

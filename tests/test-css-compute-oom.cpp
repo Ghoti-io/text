@@ -102,6 +102,11 @@ const char * const kShorthands[] = {
     "margin: var(--x); all: inherit; place-content: baseline",
     "margin: 1px; margin-top: inherit; border: 1px solid red; border-top-color: var(--y)",
     "mask: content-box; grid-row: 2 / first; grid-column: a; grid-area: 1 / 2",
+    /* the random() key simplified at parse time (Values 5, 9.4.1), a linear() with positions to split (Easing 2, 2.1.1), an image-set() string made a url(), a gradient stop with two
+       positions made two, and the original text of a value that holds a substitution function */
+    "width: random(0px, 100px); height: calc(random(auto, 1px, 2px) + random(--k property-scoped element-scoped, 3px, 4px) + random(fixed calc(0.5), 5px, 6px));"
+    " transition-timing-function: linear(0 20%, 0.5 10% 30%, 1), linear(0, 1); background-image: image-set(\"a\" type(\"b\"), url(c) 2x), linear-gradient(red 10% 20%, blue);"
+    " content: attr(x)  'b'  var(--y)",
     "--a: 1; --b: 2; --a: 3; box-shadow: 1px 2px 0 red, inset 0 0 1px blue; text-shadow: 1px 1px",
 };
 

@@ -427,6 +427,25 @@ static bool num_is(cb * owner, sp t, const char * canonical) {
   return num_norm(owner, t, buf, sizeof buf) && strcmp(buf, canonical) == 0;
 }
 
+static bool is_zero_dim(sp t);
+
+/** A zero length in a unit that is a fixed multiple of the pixel (`0px`, `0mm`, `0pt`), or a bare zero: the initial length `0px` once it is read. A zero in a relative unit is not (the
+ *  pinned browsers write `border-box 0em` as written and `border-box 0mm` as `border-box`). */
+static bool is_zero_absolute_length(sp t) {
+  if (!is_zero_dim(t)) {
+    return false;
+  }
+  size_t i = 0;
+  while (i < t.n && ((t.p[i] >= '0' && t.p[i] <= '9') || t.p[i] == '.' || t.p[i] == '+' || t.p[i] == '-')) {
+    i++;
+  }
+  if (i == t.n) {
+    return true;
+  }
+  const GTEXT_CSS_Unit u = gtext_css_unit_lookup(t.p + i, t.n - i);
+  return u != GTEXT_CSS_UNIT_NONE && gtext_css_unit_is_absolute(u);
+}
+
 /** A zero length or number: `0`, `0px`, `0.0em` (a percentage is not). */
 static bool is_zero_dim(sp t) {
   size_t i = 0;
@@ -1070,9 +1089,19 @@ static bool rule_font_size_adjust(cb * out, const sp * t, size_t n) {
   return false;
 }
 
-/* Fonts 4: `oblique 0deg` is `normal`. */
+/** The last `n` bytes of a token (all of it when it is shorter). */
+static sp sp_suffix(sp t, size_t n) {
+  if (t.n <= n) {
+    return t;
+  }
+  return (sp){t.p + (t.n - n), n};
+}
+
+/* Fonts 4 (served 2026-11-01), font-style: the computed value is "the keyword specified, plus angle in degrees if specified", so the text does not make `oblique 0deg` and
+ * `normal` one value; it is silent on the specified value, and the pinned browsers write `oblique 0deg` as `normal` both, and disagree on any other unit (Chromium writes
+ * `oblique 0rad` and `oblique 0turn` as `normal`, Firefox as written): only the zero in degrees is `normal`, the rest is kept as written. */
 static bool rule_font_style(cb * out, const sp * t, size_t n) {
-  if (n == 2 && eq(t[0], "oblique") && is_zero_dim(t[1])) {
+  if (n == 2 && eq(t[0], "oblique") && is_zero_dim(t[1]) && (!(t[1].n && ((t[1].p[t[1].n - 1] | 0x20) >= 'a' && (t[1].p[t[1].n - 1] | 0x20) <= 'z')) || ieq(sp_suffix(t[1], 3), "deg"))) {
     cb_puts(out, "normal");
     return true;
   }
@@ -1722,21 +1751,39 @@ static bool rule_cursor(cb * out, const sp * t, size_t n) {
         if (k) {
           cb_puts(out, ", ");
         }
-        if (opts.v[k].n && opts.v[k].p[0] == '"') {
-          const char * end = opts.v[k].p + 1;
-          const char * stop = opts.v[k].p + opts.v[k].n;
-          while (end < stop && *end != '"') {
-            end += (*end == '\\' && end + 1 < stop) ? 2 : 1;
+        /* "Each <string> inside image-set() represents a <url>", and an option with no resolution "behaves as 1x" (Images 4, 2.4; UI 4, cursor): both pinned browsers
+           write `image-set("a")` here as `image-set(url("a") 1x)` */
+        spv tk = {out->a, NULL, 0, 0, false, &out->fail};
+        top_split(&tk, opts.v[k].p, opts.v[k].n, ' ');
+        if (tk.n >= 1 && !tk.fail) {
+          bool has_resolution = false;
+          for (size_t j = 1; j < tk.n; j++) {
+            const char c0 = tk.v[j].n ? tk.v[j].p[0] : '\0';
+            has_resolution = has_resolution || (c0 >= '0' && c0 <= '9') || c0 == '.' || c0 == '+' || c0 == '-';
           }
-          if (end < stop) {
-            cb_puts(out, "url(");
-            cb_put(out, opts.v[k].p, (size_t)(end - opts.v[k].p) + 1);
-            cb_putc(out, ')');
-            cb_put(out, end + 1, (size_t)(stop - end - 1));
+          const bool is_string = tk.v[0].n >= 2 && (tk.v[0].p[0] == '"' || tk.v[0].p[0] == '\'');
+          if (is_string || !has_resolution) {
+            if (is_string) {
+              cb_puts(out, "url(");
+              put_sp(out, tk.v[0]);
+              cb_putc(out, ')');
+            }
+            else {
+              put_sp(out, tk.v[0]);
+            }
+            if (!has_resolution) {
+              cb_puts(out, " 1x");
+            }
+            for (size_t j = 1; j < tk.n; j++) {
+              cb_putc(out, ' ');
+              put_sp(out, tk.v[j]);
+            }
+            gtext_allocator_free(out->a, tk.v);
             changed = true;
             continue;
           }
         }
+        gtext_allocator_free(out->a, tk.v);
         put_sp(out, opts.v[k]);
       }
       cb_putc(out, ')');
@@ -2475,7 +2522,88 @@ static bool gradient_function(cb * out, sp f) {
  * `image-set(radial-gradient(farthest-corner, red, blue) 1x)` as `image-set(radial-gradient(red, blue) 1x)`). The nesting that is followed is bounded; a deeper one is left as it is. */
 #define IMAGE_NEST_MAX 8u
 
+/* Whether a token can be a position of a color stop: a number with a unit or a percentage, or a math function. */
+static bool stop_position(sp t) {
+  if (!t.n) {
+    return false;
+  }
+  const char c = t.p[0];
+  if ((c >= '0' && c <= '9') || c == '.' || c == '+' || c == '-') {
+    return !(t.n >= 2 && c == '-' && t.p[1] == '-');
+  }
+  return t.p[t.n - 1] == ')' && (ieq((sp){t.p, t.n >= 5 ? 5 : t.n}, "calc(") || (t.n > 4 && ieq((sp){t.p, 4}, "min(")) || (t.n > 4 && ieq((sp){t.p, 4}, "max(")) || (t.n > 6 && ieq((sp){t.p, 6}, "clamp(")));
+}
+
+/* Images 4 (served 2026-11-01), 3.5.3: "A color stop with two positions is equivalent to specifying two color stops with the same color", and both pinned browsers write the
+ * two stops (`repeating-conic-gradient(color(srgb 1 0 0 / 50%) 2% 3%)` as `... 2%, color(srgb 1 0 0 / 50%) 3%)`). The text of the function with every such stop written as two. */
+static bool gradient_stops(cb * out, sp f) {
+  const char * open = memchr(f.p, '(', f.n);
+  if (!open || f.p[f.n - 1] != ')') {
+    return false;
+  }
+  const sp name = {f.p, (size_t)(open - f.p)};
+  if (!(ieq(name, "linear-gradient") || ieq(name, "repeating-linear-gradient") || ieq(name, "radial-gradient") || ieq(name, "repeating-radial-gradient") ||
+        ieq(name, "conic-gradient") || ieq(name, "repeating-conic-gradient"))) {
+    return false;
+  }
+  const sp inner = {open + 1, f.n - name.n - 2};
+  spv args = {out->a, NULL, 0, 0, false, &out->fail};
+  top_split(&args, inner.p, inner.n, ',');
+  bool changed = false;
+  cb tmp = {out->a, NULL, 0, 0, false, &out->fail};
+  cb_put(&tmp, f.p, name.n + 1);
+  for (size_t i = 0; !args.fail && i < args.n; i++) {
+    if (i) {
+      cb_puts(&tmp, ", ");
+    }
+    spv tk = {out->a, NULL, 0, 0, false, &out->fail};
+    top_split(&tk, args.v[i].p, args.v[i].n, ' ');
+    static const char * const config[] = {"at", "from", "to", "in", "circle", "ellipse", "closest-side", "farthest-side", "closest-corner", "farthest-corner"};
+    bool is_config = false;
+    for (size_t k = 0; tk.n && k < sizeof config / sizeof *config; k++) {
+      is_config = is_config || ieq(tk.v[0], config[k]);
+    }
+    if (!tk.fail && tk.n == 3 && !is_config && !stop_position(tk.v[0]) && stop_position(tk.v[1]) && stop_position(tk.v[2])) {
+      put_sp(&tmp, tk.v[0]);
+      cb_putc(&tmp, ' ');
+      put_sp(&tmp, tk.v[1]);
+      cb_puts(&tmp, ", ");
+      put_sp(&tmp, tk.v[0]);
+      cb_putc(&tmp, ' ');
+      put_sp(&tmp, tk.v[2]);
+      changed = true;
+    }
+    else {
+      put_sp(&tmp, args.v[i]);
+    }
+    if (tk.fail) {
+      args.fail = true;
+    }
+    gtext_allocator_free(out->a, tk.v);
+  }
+  cb_putc(&tmp, ')');
+  const bool done = changed && !args.fail && !tmp.fail;
+  if (done) {
+    cb_put(out, tmp.d, tmp.n);
+  }
+  gtext_allocator_free(out->a, tmp.d);
+  gtext_allocator_free(out->a, args.v);
+  return done;
+}
+
 static bool image_function(cb * out, sp f, unsigned depth) {
+  cb split = {out->a, NULL, 0, 0, false, &out->fail};
+  if (gradient_stops(&split, f) && !split.fail && split.d) {
+    /* the stops of the gradient are written first; the rest of the rewriting reads that text */
+    const sp g = {split.d, split.n};
+    const bool again = gradient_function(out, g);
+    if (!again) {
+      cb_put(out, split.d, split.n);
+    }
+    gtext_allocator_free(out->a, split.d);
+    return true;
+  }
+  gtext_allocator_free(out->a, split.d);
   if (gradient_function(out, f)) {
     return true;
   }
@@ -2502,12 +2630,26 @@ static bool image_function(cb * out, sp f, unsigned depth) {
     }
     spv tk = {out->a, NULL, 0, 0, false, &out->fail};
     top_split(&tk, args.v[i].p, args.v[i].n, ' ');
+    /* Images 4, 2.4 (served 2026-11-01): "Each <string> inside image-set() represents a <url>", and an option with no resolution "behaves as 1x"; both pinned browsers
+       write `image-set("a" type("image/png"))` as `image-set(url("a") 1x type("image/png"))`. */
+    const bool is_set = !ieq(name, "light-dark");
+    bool has_resolution = false;
+    for (size_t j = 1; is_set && j < tk.n; j++) {
+      const char c0 = tk.v[j].n ? tk.v[j].p[0] : '\0';
+      has_resolution = has_resolution || (c0 >= '0' && c0 <= '9') || c0 == '.' || c0 == '+' || c0 == '-';
+    }
     for (size_t j = 0; !tk.fail && j < tk.n; j++) {
       if (j) {
         cb_putc(&tmp, ' ');
       }
       cb sub = {out->a, NULL, 0, 0, false, &out->fail};
-      if (memchr(tk.v[j].p, '(', tk.v[j].n) && image_function(&sub, tk.v[j], depth + 1)) {
+      if (is_set && j == 0 && tk.v[j].n >= 2 && (tk.v[j].p[0] == '"' || tk.v[j].p[0] == '\'')) {
+        cb_puts(&tmp, "url(");
+        put_sp(&tmp, tk.v[j]);
+        cb_putc(&tmp, ')');
+        changed = true;
+      }
+      else if (memchr(tk.v[j].p, '(', tk.v[j].n) && image_function(&sub, tk.v[j], depth + 1)) {
         cb_put(&tmp, sub.d, sub.n);
         changed = true;
       }
@@ -2515,6 +2657,10 @@ static bool image_function(cb * out, sp f, unsigned depth) {
         put_sp(&tmp, tk.v[j]);
       }
       gtext_allocator_free(out->a, sub.d);
+      if (is_set && j == 0 && !has_resolution && tk.n >= 1) {
+        cb_puts(&tmp, " 1x");
+        changed = true;
+      }
     }
     if (tk.fail) {
       args.fail = true;
@@ -2660,7 +2806,7 @@ static bool rule_clip_margin(cb * out, const sp * t, size_t n) {
     return false;
   }
   const bool keep_box = box != n && !ieq(t[box], "padding-box");
-  const bool keep_len = len != n && !(t[len].n == 3 && memcmp(t[len].p, "0px", 3) == 0);
+  const bool keep_len = len != n && !is_zero_absolute_length(t[len]);
   if (!keep_box && !keep_len) {
     cb_puts(out, "0px");
     return true;

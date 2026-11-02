@@ -134,14 +134,26 @@ static unsigned anchor_functions_of(const char * name, size_t length) {
   return 0;
 }
 
+static bool is_logical_inset_longhand(const GTEXT_CSS_Property_Info * info) {
+  static const char * const names[] = {"inset-block-start", "inset-block-end", "inset-inline-start", "inset-inline-end"};
+  for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
+    if (strlen(names[i]) == info->name_length && memcmp(names[i], info->name, info->name_length) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static GTEXT_CSS_Status run_match(const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Compiled * compiled,
     const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Property_Options * options, bool unitless, bool name_is_clip,
-    unsigned anchors, GTEXT_CSS_Property_Value * out) {
+    unsigned anchors, const char * property, size_t property_length, GTEXT_CSS_Property_Value * out) {
   GTEXT_CSS_Match_Options mo = options && options->match ? *options->match : *css_registry_match_options(registry);
   mo.allocator = options && options->allocator ? options->allocator : css_registry_allocator(registry);
   mo.unitless_length = unitless || (options && options->unitless_lengths); /* attribute mode: every property that takes a length */
   mo.unitless_length_nested = unitless && name_is_clip;
   mo.anchor_functions = anchors;
+  mo.property = property;
+  mo.property_length = property_length;
   bool matched = false;
   GTEXT_CSS_Value_Set * set = NULL;
   const GTEXT_CSS_Status st = gtext_css_match(compiled, values, count, &mo, &matched, &set, &out->match);
@@ -370,7 +382,7 @@ static GTEXT_CSS_Status parse_pending(const GTEXT_CSS_Registry * registry, const
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  st = run_match(registry, pending, values, count, options, false, false, 0, out);
+  st = run_match(registry, pending, values, count, options, false, false, 0, NULL, 0, out);
   if (st == GTEXT_CSS_OK && out->outcome == GTEXT_CSS_PROP_RESULT_VALID) {
     out->outcome = GTEXT_CSS_PROP_RESULT_PENDING;
   }
@@ -425,7 +437,7 @@ static GTEXT_CSS_Status parse_descriptor(const GTEXT_CSS_Registry * registry, co
   if (state != GTEXT_CSS_GRAMMAR_OK) {
     return GTEXT_CSS_E_UNSUPPORTED;
   }
-  return run_match(registry, compiled, values, count, options, false, false, 0, out);
+  return run_match(registry, compiled, values, count, options, false, false, 0, NULL, 0, out);
 }
 
 /// Whether a property writes a bare `0` as a number although its grammar offers a length first: the outsets of a border image and of a mask border
@@ -656,7 +668,17 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
   }
   GTEXT_CSS_Grammar_State state;
   const GTEXT_CSS_Compiled * compiled = NULL;
-  st = css_registry_property_compiled(registry, target, &state, &compiled, NULL);
+  /* Anchor Positioning 1 (served 2026-11-01): "It is only allowed in the inset properties", and "These are only usable in the inset properties ... or the logical
+     inset properties that refer to the horizontal axis"; the pinned data gives the four logical inset longhands `auto | <length-percentage>` (its Position 3 entry has no
+     extension), where `inset`, `inset-block` and `inset-inline` take `<'top'>`. The longhands are read with the grammar of `top`, which is the one the pin gives the physical ones. */
+  GTEXT_CSS_Property_Id grammar_of = target;
+  if (is_logical_inset_longhand(&info)) {
+    const GTEXT_CSS_Property_Id top = gtext_css_registry_find_property(registry, "top", 3);
+    if (top) {
+      grammar_of = top;
+    }
+  }
+  st = css_registry_property_compiled(registry, grammar_of, &state, &compiled, NULL);
   if (st != GTEXT_CSS_OK) {
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
     return st;
@@ -666,7 +688,7 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
     return GTEXT_CSS_E_UNSUPPORTED;
   }
   st = run_match(registry, compiled, values, count, options, options->quirks && (info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, info.name_length == 4 && memcmp(info.name, "clip", 4) == 0,
-      anchor_functions_of(info.name, info.name_length), out);
+      anchor_functions_of(info.name, info.name_length), info.name, info.name_length, out);
   if (st != GTEXT_CSS_OK) {
     gtext_css_property_value_free(out);
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
@@ -846,6 +868,26 @@ GTEXT_CSS_Status gtext_css_parse_property_text(const GTEXT_CSS_Registry * regist
   }
   st = gtext_css_parse_property(registry, name, name_length, first, kept, options, out);
   gtext_css_tree_free(tree);
+  if (st == GTEXT_CSS_OK && out->outcome == GTEXT_CSS_PROP_RESULT_PENDING) {
+    /* Values 5 (served 2026-11-01): "the shorthand property must serialize to that original (arbitrary substitution function-containing) value", and both pinned browsers
+       write the text of a value that holds a substitution function as it was written (white space inside it, the quotes of its strings), trimmed at both ends. */
+    const char * t = text ? text : "";
+    size_t tl = text_length;
+    css_trim_value_text(&t, &tl);
+    /* only a text the tokenizer reads back as itself: a control character (a NUL, a form feed, a carriage return ...) is changed by the preprocessing of the input stream
+       (CSS Syntax 3, "preprocess the input stream"), and the text of the tokens is the one that is stable */
+    bool plain = true;
+    for (size_t i = 0; plain && i < tl; i++) {
+      const unsigned char ch = (unsigned char)t[i];
+      plain = ch >= 0x20 || ch == '\t' || ch == '\n';
+      plain = plain && ch != 0x7f;
+    }
+    st = plain ? use_custom_text(out, t, tl) : GTEXT_CSS_OK;
+    if (st != GTEXT_CSS_OK) {
+      gtext_css_property_value_free(out);
+      out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+    }
+  }
   if (st == GTEXT_CSS_OK && name_length >= 2 && name[0] == '-' && name[1] == '-') {
     /* a custom property's value is its text "exactly as specified by the author": comments and the spelling of its numbers are kept (Variables 1, 4.1) */
     const char * t = text ? text : "";

@@ -65,6 +65,31 @@ static bool push_tok(const GTEXT_Allocator * a, gtoks * t, const char * p, size_
   return true;
 }
 
+static bool is_hex(char c) {
+  return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+/// The length of the escape that starts at the backslash `s[0]`, `end` being the end of the text (CSS Syntax 4, "consume an escaped code point": up to six hex digits and
+/// the one white space that ends them, or any other single code point). An escaped space is part of the name it is in: `x\ ` ends a name that has a space in it.
+static size_t escape_length(const char * s, const char * end) {
+  if (s + 1 >= end) {
+    return 1;
+  }
+  const char * q = s + 1;
+  if (is_hex(*q)) {
+    size_t digits = 0;
+    while (q < end && digits < 6 && is_hex(*q)) {
+      q++;
+      digits++;
+    }
+    if (q < end && is_ws(*q)) {
+      q++;
+    }
+    return (size_t)(q - s);
+  }
+  return 2;
+}
+
 /// Cut `text` into tokens. False on memory; `*ok` false when the text is not made of the four kinds (an unbalanced quote, bracket or parenthesis).
 static bool tokenize(const GTEXT_Allocator * a, const char * text, gtoks * t, bool * ok) {
   memset(t, 0, sizeof *t);
@@ -84,7 +109,7 @@ static bool tokenize(const GTEXT_Allocator * a, const char * text, gtoks * t, bo
     else if (*s == '[') {
       kind = '[';
       while (*s && *s != ']') {
-        s++;
+        s += (*s == '\\' && s[1]) ? escape_length(s, s + strlen(s)) : 1;
       }
       if (*s != ']') {
         *ok = false;
@@ -163,7 +188,11 @@ static void put_toks(tbuf * b, const gtok * v, size_t from, size_t to) {
         }
         const size_t s = k;
         while (k + 1 < v[i].n && !is_ws(v[i].p[k])) {
-          k++;
+          /* an escaped space or bracket does not end the name, and the white space that ends a hex escape is the escape's own */
+          k += v[i].p[k] == '\\' ? escape_length(v[i].p + k, v[i].p + v[i].n - 1) : 1;
+          if (k > v[i].n - 1) {
+            k = v[i].n - 1;
+          }
         }
         if (k > s) {
           if (any) {

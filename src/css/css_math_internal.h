@@ -61,6 +61,7 @@ typedef struct {
   bool saw_percent;            ///< A percentage token was read.
   const mnode ** stk;          ///< Scratch: operands, in regions per open frame.
   size_t nstk, capstk;
+  const GTEXT_CSS_Math_Context * ctx; ///< What the calculation is read in, or NULL (random() keys are simplified from it).
 } mbuilder;
 
 /// Set a status once (the first wins).

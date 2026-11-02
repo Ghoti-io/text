@@ -284,6 +284,8 @@ static bool finish_argument(mbuilder * mb, pframe * F) {
   return true;
 }
 
+static bool read_random_key(mbuilder * mb, pframe * F);
+
 static bool open_frame(fstack * fs, mbuilder * mb, const GTEXT_CSS_Component_Value * cv, GTEXT_CSS_Math_Op op) {
   if (fs->n >= mb->max_depth) {
     mb_fail(mb, GTEXT_CSS_E_LIMIT_DEPTH);
@@ -310,130 +312,308 @@ static bool open_frame(fstack * fs, mbuilder * mb, const GTEXT_CSS_Component_Val
   F->expect_value = true;
   F->round = GTEXT_CSS_MATH_ROUND_NEAREST;
   if (op == GTEXT_CSS_MATH_RANDOM) {
-    /* a random key (auto, fixed <number>, a dashed identifier, element-scoped ...) comes before the first comma and is not a calculation */
-    size_t comma = 0;
-    while (comma < F->n && !(F->items[comma].kind == GTEXT_CSS_VALUE_TOKEN && F->items[comma].type == GTEXT_CSS_TOKEN_COMMA)) {
-      comma++;
+    return read_random_key(mb, F);
+  }
+  return true;
+}
+
+/* Whether an identifier is a <random-ua-ident>: Values 5, 9.2, "It is a <custom-ident> that must start with the prefix ua-, or else it is invalid." */
+static bool is_ua_ident(const GTEXT_CSS_Component_Value * c) {
+  return c->value.length >= 3 && c->value.data[0] == 'u' && c->value.data[1] == 'a' && c->value.data[2] == '-';
+}
+
+/* The key text of one identifier or keyword, written as the serializer writes a component value. */
+static GTEXT_CSS_Status key_part_text(mbuilder * mb, const GTEXT_CSS_Component_Value * c, char ** buf, size_t * len) {
+  GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+  so.allocator = &mb->alloc;
+  return gtext_css_serialize_values_buffer(c, 1, &so, buf, len);
+}
+
+/* Read the <random-key> of a random() whose frame `F` was just opened: Values 5, 9.2, "<random-key> = auto | <random-cache-key> | fixed <number [0,1]>",
+   "<random-cache-key> = <dashed-ident> || element-scoped || [ property-scoped | property-index-scoped | <random-ua-ident> ]". The key is written in that order
+   (the browsers write `element-scoped ua-width-1` whatever order it came in), and when the calculation is read for a property (the context names it) it is simplified at
+   parse time, 9.4.1: "If the <random-key> is auto (or omitted), it's turned into element-scoped property-index-scoped", and "If the <random-key> contains
+   property-scoped or property-index-scoped, that keyword is replaced by a <random-ua-ident>: either ua-PROPERTY with PROPERTY being the property the value was parsed
+   as, or ua-PROPERTY-INDEX with PROPERTY as the previous and INDEX being the 1-indexed integer index of this random function among all random functions being used in
+   the declaration." */
+static bool read_random_key(mbuilder * mb, pframe * F) {
+  const GTEXT_CSS_Math_Context * ctx = mb->ctx;
+  const bool simplify = ctx && ctx->random_property && ctx->random_property_length && ctx->random_index;
+  /* every random() takes the next index, whatever its key */
+  uint32_t index = 0;
+  if (simplify) {
+    if (*ctx->random_index < UINT32_MAX) {
+      (*ctx->random_index)++;
     }
-    bool key = comma < F->n;
-    size_t parts = 0, dashed = 0, element = 0, property = 0, fixed = 0, autos = 0, numbers = 0, fixed_at = 0, number_at = 0;
-    double fixed_value = 0.0;
-    char * fixed_canon = NULL;
-    size_t fixed_canon_len = 0;
-    GTEXT_CSS_Serialize_Options fixed_so = gtext_css_serialize_options_default();
-    fixed_so.allocator = &mb->alloc;
-    for (size_t i = 0; key && i < comma; i++) {
-      const GTEXT_CSS_Component_Value * c = &F->items[i];
-      if (is_ws(c)) {
-        continue;
+    index = *ctx->random_index;
+  }
+  /* a random key comes before the first comma and is not a calculation */
+  size_t comma = 0;
+  while (comma < F->n && !(F->items[comma].kind == GTEXT_CSS_VALUE_TOKEN && F->items[comma].type == GTEXT_CSS_TOKEN_COMMA)) {
+    comma++;
+  }
+  bool key = comma < F->n;
+  size_t parts = 0, dashed = 0, element = 0, property = 0, fixed = 0, autos = 0, numbers = 0, fixed_at = 0, number_at = 0;
+  const GTEXT_CSS_Component_Value * dashed_cv = NULL;
+  const GTEXT_CSS_Component_Value * third_cv = NULL; /* property-scoped, property-index-scoped or a <random-ua-ident> */
+  bool third_index = false;                          /* property-index-scoped */
+  bool third_property = false;                       /* property-scoped */
+  double fixed_value = 0.0;
+  char * fixed_canon = NULL;
+  size_t fixed_canon_len = 0;
+  GTEXT_CSS_Serialize_Options fixed_so = gtext_css_serialize_options_default();
+  fixed_so.allocator = &mb->alloc;
+  for (size_t i = 0; key && i < comma; i++) {
+    const GTEXT_CSS_Component_Value * c = &F->items[i];
+    if (is_ws(c)) {
+      continue;
+    }
+    parts++;
+    if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_IDENT) {
+      if (name_is(&c->value, "fixed")) {
+        fixed++;
+        fixed_at = parts;
       }
-      parts++;
-      if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_IDENT) {
-        if (name_is(&c->value, "fixed")) {
-          fixed++;
-          fixed_at = parts;
-        }
-        else if (name_is(&c->value, "auto")) {
-          autos++;
-        }
-        else if (name_is(&c->value, "element-scoped")) {
-          element++;
-        }
-        else if (name_is(&c->value, "property-scoped") || name_is(&c->value, "property-index-scoped")) {
-          property++;
-        }
-        else if (c->value.length >= 2 && c->value.data[0] == '-' && c->value.data[1] == '-') {
-          dashed++;
-        }
-        else {
-          key = false;
-        }
+      else if (name_is(&c->value, "auto")) {
+        autos++;
       }
-      else if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_NUMBER) {
-        numbers++;
-        number_at = parts;
-        fixed_value = c->number;
+      else if (name_is(&c->value, "element-scoped")) {
+        element++;
       }
-      else if (c->kind == GTEXT_CSS_VALUE_FUNCTION && fixed == 1 && parts == 2 && gtext_css_math_is_function(c->value.data, c->value.length)) {
-        /* Values 5, 9.2: `fixed <number [0,1]>`, and Values 4 lets a math function stand where a <number> is allowed (`fixed calc(0.5)`) */
-        bool oom = false;
-        if (css_random_key_number(c, &mb->alloc, &fixed_value, &oom, &fixed_canon, &fixed_canon_len)) {
-          numbers++;
-          number_at = parts;
-        }
-        else if (oom) {
-          mb_fail(mb, GTEXT_CSS_E_OOM);
-          return false;
-        }
-        else {
-          key = false;
-        }
+      else if (name_is(&c->value, "property-scoped") || name_is(&c->value, "property-index-scoped")) {
+        property++;
+        third_cv = c;
+        third_property = name_is(&c->value, "property-scoped");
+        third_index = !third_property;
+      }
+      else if (c->value.length >= 2 && c->value.data[0] == '-' && c->value.data[1] == '-') {
+        dashed++;
+        dashed_cv = c;
+      }
+      else if (is_ua_ident(c)) {
+        property++;
+        third_cv = c;
+        third_property = third_index = false;
       }
       else {
         key = false;
       }
     }
-    /* <random-key> = auto | <random-cache-key> | fixed <number [0,1]>; <random-cache-key> = <dashed-ident> || element-scoped || [ property-scoped | property-index-scoped ] */
-    if (key) {
-      if (fixed) {
-        key = fixed == 1 && numbers == 1 && parts == 2 && fixed_at == 1 && number_at == 2 && fixed_value >= 0.0 && fixed_value <= 1.0;
-      }
-      else if (autos) {
-        key = autos == 1 && parts == 1;
-      }
-      else {
-        key = numbers == 0 && dashed <= 1 && element <= 1 && property <= 1;
-      }
+    else if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_NUMBER) {
+      numbers++;
+      number_at = parts;
+      fixed_value = c->number;
     }
-    if (fixed_canon && !(key && parts > 0)) {
-      gtext_css_serialize_buffer_free(&fixed_so, fixed_canon);
-      fixed_canon = NULL;
-    }
-    if (key && parts > 0) {
-      GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
-      so.allocator = &mb->alloc;
-      char * buf = NULL;
-      size_t len = 0;
-      GTEXT_CSS_Status st = GTEXT_CSS_OK;
-      if (fixed_canon) {
-        /* `fixed calc(2 / 4)` is written `fixed calc(0.5)`: the calculation as a specified value is serialized (Values 4, 10.13) */
-        const size_t total = 6 + fixed_canon_len;
-        buf = (char *)gtext_allocator_malloc(&mb->alloc, total + 1);
-        if (!buf) {
-          st = GTEXT_CSS_E_OOM;
-        }
-        else {
-          memcpy(buf, "fixed ", 6);
-          memcpy(buf + 6, fixed_canon, fixed_canon_len);
-          buf[total] = '\0';
-          len = total;
-        }
-        gtext_css_serialize_buffer_free(&fixed_so, fixed_canon);
-        fixed_canon = NULL;
+    else if (c->kind == GTEXT_CSS_VALUE_FUNCTION && fixed == 1 && parts == 2 && gtext_css_math_is_function(c->value.data, c->value.length)) {
+      /* Values 5, 9.2: `fixed <number [0,1]>`, and Values 4 lets a math function stand where a <number> is allowed (`fixed calc(0.5)`) */
+      bool oom = false;
+      if (css_random_key_number(c, &mb->alloc, &fixed_value, &oom, &fixed_canon, &fixed_canon_len)) {
+        numbers++;
+        number_at = parts;
       }
-      else {
-        st = gtext_css_serialize_values_buffer(F->items, comma, &so, &buf, &len);
-      }
-      if (st != GTEXT_CSS_OK) {
-        mb_fail(mb, st);
-        return false;
-      }
-      size_t b = 0, e = len;
-      while (b < e && buf[b] == ' ') {
-        b++;
-      }
-      while (e > b && buf[e - 1] == ' ') {
-        e--;
-      }
-      F->key = css_arena_strdup(mb->arena, buf + b, e - b);
-      F->key_len = e - b;
-      gtext_css_serialize_buffer_free(&so, buf);
-      if (!F->key) {
+      else if (oom) {
         mb_fail(mb, GTEXT_CSS_E_OOM);
         return false;
       }
-      F->i = comma + 1;
+      else {
+        key = false;
+      }
     }
+    else {
+      key = false;
+    }
+  }
+  if (key) {
+    if (fixed) {
+      key = fixed == 1 && numbers == 1 && parts == 2 && fixed_at == 1 && number_at == 2 && fixed_value >= 0.0 && fixed_value <= 1.0;
+    }
+    else if (autos) {
+      key = autos == 1 && parts == 1;
+    }
+    else {
+      key = numbers == 0 && dashed <= 1 && element <= 1 && property <= 1;
+    }
+  }
+  if (fixed_canon && !(key && parts > 0)) {
+    gtext_css_serialize_buffer_free(&fixed_so, fixed_canon);
+    fixed_canon = NULL;
+  }
+  /* the pieces of the key, in the order of the grammar: the name, element-scoped, the third; a key that is omitted or auto is element-scoped property-index-scoped */
+  const bool have_key = key && parts > 0;
+  const bool defaulted = simplify && (!have_key || (autos && !fixed));
+  if (!have_key && !defaulted) {
+    return true; /* the first argument is no key, and nothing is simplified: the arguments start at the first item */
+  }
+  if (defaulted) {
+    element = 1;
+    third_index = true;
+    third_property = false;
+    third_cv = NULL;
+    dashed_cv = NULL;
+  }
+  char * pieces[3] = {NULL, NULL, NULL};
+  size_t plen[3] = {0, 0, 0};
+  const GTEXT_Allocator * al = &mb->alloc;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  size_t total = 0;
+  size_t npieces = 0;
+  if (fixed_canon) {
+    /* `fixed calc(2 / 4)` is written `fixed calc(0.5)`: the calculation as a specified value is serialized (Values 4, 10.13) */
+    pieces[0] = (char *)gtext_allocator_malloc(al, 6 + fixed_canon_len + 1);
+    if (!pieces[0]) {
+      st = GTEXT_CSS_E_OOM;
+    }
+    else {
+      memcpy(pieces[0], "fixed ", 6);
+      memcpy(pieces[0] + 6, fixed_canon, fixed_canon_len);
+      plen[0] = 6 + fixed_canon_len;
+      npieces = 1;
+    }
+    gtext_css_serialize_buffer_free(&fixed_so, fixed_canon);
+    fixed_canon = NULL;
+  }
+  else if (fixed) {
+    /* `fixed 0.5`: the tokens as the serializer writes them */
+    GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+    so.allocator = al;
+    st = gtext_css_serialize_values_buffer(F->items, comma, &so, &pieces[0], &plen[0]);
+    npieces = 1;
+  }
+  else if (autos && !defaulted) {
+    /* `auto` is written as it is when nothing is simplified (a calculation read without the property it is a value of) */
+    pieces[0] = (char *)gtext_allocator_malloc(al, sizeof "auto");
+    if (!pieces[0]) {
+      st = GTEXT_CSS_E_OOM;
+    }
+    else {
+      memcpy(pieces[0], "auto", sizeof "auto");
+      plen[0] = sizeof "auto" - 1;
+      npieces = 1;
+    }
+  }
+  else {
+    if (dashed_cv && st == GTEXT_CSS_OK) {
+      st = key_part_text(mb, dashed_cv, &pieces[npieces], &plen[npieces]);
+      npieces++;
+    }
+    if (element && st == GTEXT_CSS_OK) {
+      pieces[npieces] = (char *)gtext_allocator_malloc(al, sizeof "element-scoped");
+      if (!pieces[npieces]) {
+        st = GTEXT_CSS_E_OOM;
+      }
+      else {
+        memcpy(pieces[npieces], "element-scoped", sizeof "element-scoped");
+        plen[npieces] = sizeof "element-scoped" - 1;
+        npieces++;
+      }
+    }
+    if ((third_cv || third_index || third_property) && st == GTEXT_CSS_OK) {
+      if (simplify && (third_index || third_property)) {
+        /* ua-PROPERTY or ua-PROPERTY-INDEX, the property being the one the value is parsed as */
+        const size_t pl = ctx->random_property_length;
+        char * name = (char *)gtext_allocator_malloc(al, pl + 32);
+        if (!name) {
+          st = GTEXT_CSS_E_OOM;
+        }
+        else {
+          size_t n = 0;
+          memcpy(name, "ua-", 3);
+          n = 3;
+          for (size_t k = 0; k < pl; k++) {
+            const char ch = ctx->random_property[k];
+            name[n++] = (ch >= 'A' && ch <= 'Z') ? (char)(ch + ('a' - 'A')) : ch;
+          }
+          if (third_index) {
+            name[n++] = '-';
+            char digits[16];
+            size_t d = 0;
+            for (uint32_t v = index; v; v /= 10) {
+              digits[d++] = (char)('0' + v % 10);
+            }
+            while (d) {
+              name[n++] = digits[--d];
+            }
+          }
+          GTEXT_CSS_Component_Value synth;
+          memset(&synth, 0, sizeof synth);
+          synth.kind = GTEXT_CSS_VALUE_TOKEN;
+          synth.type = GTEXT_CSS_TOKEN_IDENT;
+          synth.value.data = name;
+          synth.value.length = n;
+          st = key_part_text(mb, &synth, &pieces[npieces], &plen[npieces]);
+          gtext_allocator_free(al, name);
+          npieces++;
+        }
+      }
+      else if (third_cv && (third_property || third_index)) {
+        /* nothing to simplify with: the keyword, in lower case */
+        const char * kw = third_index ? "property-index-scoped" : "property-scoped";
+        const size_t kl = strlen(kw);
+        pieces[npieces] = (char *)gtext_allocator_malloc(al, kl + 1);
+        if (!pieces[npieces]) {
+          st = GTEXT_CSS_E_OOM;
+        }
+        else {
+          memcpy(pieces[npieces], kw, kl + 1);
+          plen[npieces] = kl;
+          npieces++;
+        }
+      }
+      else if (third_cv) {
+        st = key_part_text(mb, third_cv, &pieces[npieces], &plen[npieces]);
+        npieces++;
+      }
+      else {
+        /* only reached when defaulted without a property: cannot happen (defaulted needs simplify) */
+        st = GTEXT_CSS_E_INTERNAL;
+      }
+    }
+  }
+  char * joined = NULL;
+  if (st == GTEXT_CSS_OK) {
+    size_t begin[3] = {0, 0, 0}, end[3] = {0, 0, 0};
+    for (size_t k = 0; k < npieces; k++) {
+      size_t b = 0, e = plen[k];
+      while (b < e && pieces[k][b] == ' ') {
+        b++;
+      }
+      while (e > b && pieces[k][e - 1] == ' ') {
+        e--;
+      }
+      begin[k] = b;
+      end[k] = e;
+      total += (e - b) + (k ? 1 : 0);
+    }
+    joined = css_arena_alloc(mb->arena, total + 1);
+    if (!joined) {
+      st = GTEXT_CSS_E_OOM;
+    }
+    else {
+      size_t at = 0;
+      for (size_t k = 0; k < npieces; k++) {
+        if (k) {
+          joined[at++] = ' ';
+        }
+        memcpy(joined + at, pieces[k] + begin[k], end[k] - begin[k]);
+        at += end[k] - begin[k];
+      }
+      joined[at] = '\0';
+    }
+  }
+  for (size_t k = 0; k < 3; k++) {
+    if (pieces[k]) {
+      /* the serializer's buffers and the ones made here are both the scratch allocator's */
+      gtext_allocator_free(al, pieces[k]);
+    }
+  }
+  if (st != GTEXT_CSS_OK) {
+    mb_fail(mb, st);
+    return false;
+  }
+  F->key = joined;
+  F->key_len = total;
+  if (have_key) {
+    F->i = comma + 1;
   }
   return true;
 }
@@ -1077,6 +1257,7 @@ GTEXT_CSS_Status css_math_build(css_arena * arena, const GTEXT_Allocator * scrat
   mb.max_depth = max_depth ? max_depth : DEFAULT_MAX_DEPTH;
   mb.max_nodes = max_nodes ? max_nodes : DEFAULT_MAX_NODES;
   mb.status = GTEXT_CSS_OK;
+  mb.ctx = ctx;
   bool has_symbols = false;
   *valid = false;
   *out = NULL;

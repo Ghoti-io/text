@@ -305,4 +305,150 @@ TEST(CssHuntMath, ATermThatRoundsToZeroIsWrittenAsAPositiveZero) {
   EXPECT_EQ(P("width", "calc(6em - 0.1px)"), "valid:calc(6em - 0.1px)");
 }
 
+/* Values 5 (served 2026-11-01), 9.4.1 "Simplification of <random-key>": "At parse time, certain transformations are performed on the <random-key> of a random function:
+   If the <random-key> is auto (or omitted), it's turned into element-scoped property-index-scoped." and "If the <random-key> contains property-scoped or
+   property-index-scoped, that keyword is replaced by a <random-ua-ident>: either ua-PROPERTY with PROPERTY being the property the value was parsed as, or
+   ua-PROPERTY-INDEX with PROPERTY as the previous and INDEX being the 1-indexed integer index of this random function among all random functions being used in the
+   declaration." Chromium writes the same (`random(element-scoped ua-width-1, 0px, 100px)`). */
+TEST(CssHuntRandom, TheKeyIsSimplifiedAtParseTime) {
+  EXPECT_EQ(P("width", "random(0px, 100px)"), "valid:random(element-scoped ua-width-1, 0px, 100px)");
+  EXPECT_EQ(P("height", "random(auto, 0px, 100px)"), "valid:random(element-scoped ua-height-1, 0px, 100px)");
+  EXPECT_EQ(P("font-size", "random(property-scoped, 0px, 100px)"), "valid:random(ua-font-size, 0px, 100px)");
+  EXPECT_EQ(P("font-size", "random(--foo property-scoped, 0px, 100px)"), "valid:random(--foo ua-font-size, 0px, 100px)");
+  EXPECT_EQ(P("width", "random(property-index-scoped, 0px, 100px)"), "valid:random(ua-width-1, 0px, 100px)");
+  EXPECT_EQ(P("width", "RANDOM(PROPERTY-INDEX-SCOPED, 0px, 100px)"), "valid:random(ua-width-1, 0px, 100px)");
+  EXPECT_EQ(P("rotate", "random(25deg, 1turn)"), "valid:random(element-scoped ua-rotate-1, 25deg, 360deg)");
+  EXPECT_EQ(P("transition-delay", "random(25ms, 50s)"), "valid:random(element-scoped ua-transition-delay-1, 0.025s, 50s)");
+  // the key is written in the order of the grammar, whichever order it came in
+  EXPECT_EQ(P("height", "random(--foo property-scoped element-scoped, 0px, 100px)"), "valid:random(--foo element-scoped ua-height, 0px, 100px)");
+  // a key that names its own cache is not touched, nor is a fixed one
+  EXPECT_EQ(P("width", "random(--foo, 0px, 100px)"), "valid:random(--foo, 0px, 100px)");
+  EXPECT_EQ(P("width", "random(fixed 0.5, 0px, 100px)"), "valid:random(fixed 0.5, 0px, 100px)");
+  // every random() of the declaration takes the next index, in the order the functions begin
+  EXPECT_EQ(P("width", "calc(random(1px, 2px) + random(property-index-scoped, 3px, 4px) + random(--k, 5px, 6px) + random(7px, 8px))"),
+            "valid:calc(random(element-scoped ua-width-1, 1px, 2px) + random(ua-width-2, 3px, 4px) + random(--k, 5px, 6px) + random(element-scoped ua-width-4, 7px, 8px))");
+}
+
+/* Values 5 (served 2026-11-01), 9.2: "<random-cache-key> = <dashed-ident> || element-scoped || [ property-scoped | property-index-scoped | <random-ua-ident> ]" and
+   "It is a <custom-ident> that must start with the prefix ua-, or else it is invalid." A key the user agent wrote is a key. */
+TEST(CssHuntRandom, ARandomUaIdentIsAKey) {
+  EXPECT_EQ(P("width", "random(element-scoped ua-width-1, 0px, 100px)"), "valid:random(element-scoped ua-width-1, 0px, 100px)");
+  EXPECT_EQ(P("width", "random(ua-x element-scoped, 10px, 20%)"), "valid:random(element-scoped ua-x, 10px, 20%)");
+  EXPECT_EQ(P("width", "random(--foo ua-width, 0px, 100px, 3px)"), "valid:random(--foo ua-width, 0px, 100px, 3px)");
+  EXPECT_EQ(P("width", "random(element-scoped width-1, 0px, 100px)"), "invalid");
+  EXPECT_EQ(P("width", "random(ua-a ua-b, 0px, 100px)"), "invalid");
+  EXPECT_EQ(P("width", "random(property-scoped ua-width, 0px, 100px)"), "invalid");
+  // and what it wrote reads back as the same text
+  const std::string once = P("width", "random(0px, 100px)");
+  EXPECT_EQ(P("width", once.substr(6)), once);
+}
+
+/* Grid 2: a line name is an identifier, and an identifier may end in an escaped space (CSS Syntax 3, "consume an escaped code point"): `x\ ` followed by white space and
+   `y` is the name "x " and the name "y", and the text that is written has to keep them two (it was written `x\ y`, which reads as the one name "x y"). */
+TEST(CssHuntGridTemplate, ANameThatEndsInAnEscapedSpaceKeepsItsSeparator) {
+  const std::string once = B("grid-template", "none / [x\\ \n y] 1px");
+  EXPECT_EQ(once, "valid:none / [x\\  y] 1px");
+  EXPECT_EQ(B("grid-template", once.substr(6)), once);
+  EXPECT_EQ(B("grid-template", "none / [a\\ \t\t b] 1px [c]"), "valid:none / [a\\  b] 1px [c]");
+  // a single space after the backslash is part of the one name
+  EXPECT_EQ(B("grid-template", "none / [x\\ y] 1px"), "valid:none / [x\\ y] 1px");
+  // the white space that ends a hex escape is part of the escape, not a separator
+  EXPECT_EQ(B("grid-template", "none / [\\41  b] 1px"), "valid:none / [A b] 1px");
+}
+
+/* Images 4 (served 2026-11-01), 2.4: "Each <string> inside image-set() represents a <url>", and an option without a resolution "behaves as 1x"; both pinned browsers write
+   the url() and the default resolution. */
+TEST(CssHuntImageSet, AStringIsAUrlAndTheDefaultResolutionIsWritten) {
+  EXPECT_EQ(P("background-image", "image-set(\"a\" type(\"b\"), url(c) 2x, linear-gradient(red, blue))"),
+            "valid:image-set(url(\"a\") 1x type(\"b\"), url(\"c\") 2x, linear-gradient(red, blue) 1x)");
+  EXPECT_EQ(P("list-style-image", "image-set('a b')"), "valid:image-set(url(\"a b\") 1x)");
+  EXPECT_EQ(P("cursor", "image-set(\"a\", url(b) 2x, url(c) type(\"x\")) 1 2, auto"), "valid:image-set(url(\"a\") 1x, url(\"b\") 2x, url(\"c\") 1x type(\"x\")) 1 2, auto");
+  EXPECT_EQ(P("mask-image", "light-dark(image-set(\"a\"), none)"), "valid:light-dark(image-set(url(\"a\") 1x), none)");
+  EXPECT_EQ(P("background-image", "image-set(url(a) 1.5dppx)"), "valid:image-set(url(\"a\") 1.5dppx)");
+}
+
+/* Backgrounds-style shorthands leave out the initial value; the initial `0px` of vertical-align's baseline-shift is a zero in a unit that is a fixed multiple of the pixel
+   once it is read (`0pt`), and a zero in a relative unit is a value of its own: both pinned browsers write `vertical-align: 0cap` and `0vmin` as written and `0pt` as
+   `baseline`. The same for the length of overflow-clip-margin. */
+TEST(CssHuntZero, AZeroInARelativeUnitIsNotTheInitialValue) {
+  EXPECT_EQ(B("vertical-align", "0cap"), "valid:0cap");
+  EXPECT_EQ(B("vertical-align", "0vmin"), "valid:0vmin");
+  EXPECT_EQ(B("vertical-align", "0pt"), "valid:baseline");
+  EXPECT_EQ(B("vertical-align", "0"), "valid:baseline");
+  EXPECT_EQ(B("overflow-clip-margin", "border-box 0mm"), "valid:border-box");
+  EXPECT_EQ(B("overflow-clip-margin", "border-box 0em"), "valid:border-box 0em");
+}
+
+/* Anchor Positioning 1 (served 2026-11-01): "It is only allowed in the inset properties", "These are only usable in the inset properties ... or the logical inset properties that
+   refer to the horizontal axis": the logical inset longhands take anchor() and anchor-size() as `top` does, and `inset-inline` with two equal values writes one. */
+TEST(CssHuntInset, TheLogicalInsetLonghandsTakeAnchorFunctions) {
+  EXPECT_EQ(P("inset-inline-start", "anchor-size()"), "valid:anchor-size()");
+  EXPECT_EQ(P("inset-block-end", "anchor(left)"), "valid:anchor(left)");
+  EXPECT_EQ(B("inset-inline", "anchor-size() anchor-size()"), "valid:anchor-size()");
+  EXPECT_EQ(P("inset-inline-end", "anchor(foo)"), "invalid");
+}
+
+/* Fonts 4 (served 2026-11-01), font-style: the computed value is "the keyword specified, plus angle in degrees if specified"; the text does not say that an oblique angle of
+   zero is `normal`. The pinned browsers write `oblique 0deg` as `normal` both and disagree on the other units (Chromium `normal`, Firefox as written): only degrees are
+   `normal`, the rest is kept as written. */
+TEST(CssHuntFontStyle, OnlyAZeroAngleInDegreesIsNormal) {
+  EXPECT_EQ(P("font-style", "oblique 0deg"), "valid:normal");
+  EXPECT_EQ(P("font-style", "oblique 0rad"), "valid:oblique 0rad");
+  EXPECT_EQ(P("font-style", "oblique 0turn"), "valid:oblique 0turn");
+  EXPECT_EQ(P("font-style", "oblique 10deg"), "valid:oblique 10deg");
+}
+
+/* Color 5 (served 2026-11-01), 11.2 "Serializing Origin Colors": for rgb() "followed by a space separated list of the non-alpha components as specified ... followed by ' / '
+   and the alpha component as specified"; a missing component stays none (the color() form of Color 4, 16.2.2, is that of a color that is not an origin). */
+TEST(CssHuntColor, AnOriginWithAMissingComponentKeepsNone) {
+  EXPECT_EQ(P("color", "alpha(from rgb(0 none 0) / alpha)"), "valid:alpha(from rgb(0 none 0) / alpha)");
+  EXPECT_EQ(P("color", "alpha(from rgb(none none none) / alpha)"), "valid:alpha(from rgb(none none none) / alpha)");
+  EXPECT_EQ(P("color", "rgb(none 2 3)"), "valid:color(srgb none 0.007843 0.011765)");
+}
+
+/* Values 5 (served 2026-11-01): "the shorthand property must serialize to that original (arbitrary substitution function-containing) value"; the text of a value that holds a
+   substitution function is the text it was written as, trimmed (both pinned browsers keep the white space and the quotes inside it). */
+TEST(CssHuntPending, AValueWithASubstitutionFunctionKeepsItsText) {
+  EXPECT_EQ(P("width", "calc(var(--x)   +   1px)"), "pending:calc(var(--x)   +   1px)");
+  EXPECT_EQ(P("content", "  attr(x)  'b'  "), "pending:attr(x)  'b'");
+  EXPECT_EQ(P("width", "var(--x)"), "pending:var(--x)");
+}
+
+/* Values 4 (served 2026-11-01), 10.9: "If, in the context in which the math function containing this calculation is placed, <percentage>s are resolved relative to another type
+   of value (such as in width, where <percentage> is resolved against a <length>), and that other type is not <number>, the type is determined as the other type, but with a
+   percent hint set to that other type." A percentage of a color channel is resolved against a number, so `0% - 0px` is a type error there, in sign() as well. */
+TEST(CssHuntColor, ASumOfAPercentageAndALengthIsNotAChannelEvenInSign) {
+  EXPECT_EQ(P("color", "rgb(sign(0% - 0px), 0, 0)"), "invalid");
+  EXPECT_EQ(P("color", "rgb(calc(0% - 0px), 0, 0)"), "invalid");
+  EXPECT_EQ(P("color", "rgb(sign(1% - 1%), 0, 0)"), "valid:rgb(sign(0%) 0 0)");
+  EXPECT_EQ(P("width", "calc(sign(1% - 1px) * 1px)"), "valid:calc(1px * sign(1% - 1px))");
+}
+
+/* Images 4 (served 2026-11-01), 3.5.3: "A color stop with two positions is equivalent to specifying two color stops with the same color"; both pinned browsers write the two
+   stops, whatever the gradient. */
+TEST(CssHuntGradients, AColorStopWithTwoPositionsIsWrittenAsTwoStops) {
+  EXPECT_EQ(P("background-image", "conic-gradient(red 10% 20%, blue)"), "valid:conic-gradient(red 10%, red 20%, blue)");
+  EXPECT_EQ(P("background-image", "linear-gradient(to right, red 10% 20%, blue)"), "valid:linear-gradient(to right, red 10%, red 20%, blue)");
+  EXPECT_EQ(P("background-image", "radial-gradient(at 10px 20px, red 1px 2px, blue)"), "valid:radial-gradient(at 10px 20px, red 1px, red 2px, blue)");
+  // a configuration with two numbers is not a stop
+  EXPECT_EQ(P("background-image", "radial-gradient(ellipse 10px 20px, red, blue)"), "valid:radial-gradient(10px 20px, red, blue)");
+  EXPECT_EQ(P("background-image", "radial-gradient(at 10px 20px, red, blue)"), "valid:radial-gradient(at 10px 20px, red, blue)");
+}
+
+/* Values 4 (served 2026-11-01), 10.13, serialization of a Sum: its children are written one after the other; an infinite term is `infinity * 1px`, and both pinned browsers
+   write `calc(-infinity * 1% + infinity * 1px)` with no parentheses around the terms. */
+TEST(CssHuntMath, AnInfiniteTermOfASumIsWrittenWithoutParentheses) {
+  EXPECT_EQ(P("width", "calc(infinity * 1px - infinity * 1%)"), "valid:calc(-infinity * 1% + infinity * 1px)");
+  EXPECT_EQ(P("width", "calc(1px + infinity * 1%)"), "valid:calc(infinity * 1% + 1px)");
+  EXPECT_EQ(P("width", "calc(2 * (infinity * 1px))"), "valid:calc(infinity * 1px)");
+}
+
+/* The font shorthand writes the line height after the size with a space on each side (web-platform-tests' font-valid.html: `size + ' / ' + lineHeight`; both pinned browsers
+   write `x-large / 3ic`), and leaves out a line height of `normal`. */
+TEST(CssHuntFont, TheLineHeightFollowsTheSizeAfterASpacedSlash) {
+  EXPECT_EQ(B("font", "12px/1.5 serif"), "valid:12px / 1.5 serif");
+  EXPECT_EQ(B("font", "italic bold x-large/3ic serif"), "valid:italic bold x-large / 3ic serif");
+  EXPECT_EQ(B("font", "12px/normal serif"), "valid:12px serif");
+}
+
 } // namespace

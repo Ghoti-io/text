@@ -138,7 +138,7 @@ TEST(CssComputedShorthand, FontWritesWeightAsANumberAndWidthAsItsKeyword) {
   expect_all("font", {
       {"bold 12px serif", "700 12px serif"},
       {"400 12px serif", "12px serif"},
-      {"italic bold 12px/1.5 serif", "italic 700 12px/1.5 serif"},
+      {"italic bold 12px/1.5 serif", "italic 700 12px / 1.5 serif"},
       {"condensed 12px serif", "condensed 12px serif"},
       {"ultra-condensed bold 12px serif", "700 ultra-condensed 12px serif"},
       {"small-caps 12px serif", "small-caps 12px serif"},
@@ -183,7 +183,7 @@ TEST(CssComputedShorthand, FontWritesTheKeywordOfAComputedWidth) {
   expect_all("font", {
       {"12px serif", "12px serif"},
       {"semi-condensed 12px serif", "semi-condensed 12px serif"},
-      {"ultra-expanded bold 12px/2 serif", "700 ultra-expanded 12px/2 serif"},
+      {"ultra-expanded bold 12px/2 serif", "700 ultra-expanded 12px / 2 serif"},
   });
   // a width that no keyword names has no text in the shorthand
   EXPECT_EQ(shorthand_text("font: 12px serif; font-width: 90%", "font"), "");

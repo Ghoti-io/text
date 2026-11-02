@@ -349,7 +349,7 @@ property	clear	1	1	1	1
 property	clip	1	1	1	1	
 property	clip-path	1	1	1	0	
 property	clip-rule	1	1	1	1	
-property	color	1	1	1	0	
+property	color	1	1	1	1	
 property	color-adjust	1	1	1	1	
 property	color-interpolation	1	1	1	0	
 property	color-interpolation-filters	1	1	1	1	
@@ -478,7 +478,7 @@ property	font-kerning	1	1	1	1
 property	font-language-override	1	1	1	1	
 property	font-optical-sizing	1	1	1	1	
 property	font-palette	1	1	1	1	
-property	font-size	1	1	1	0	
+property	font-size	1	1	1	1	
 property	font-size-adjust	1	1	1	1	
 property	font-stretch	1	1	1	0	alias of font-width
 property	font-style	1	1	1	1	
@@ -523,7 +523,7 @@ property	grid-template-areas	1	1	1	1
 property	grid-template-columns	1	1	1	1	
 property	grid-template-rows	1	1	1	1	
 property	hanging-punctuation	1	1	1	0	
-property	height	1	1	1	0	
+property	height	1	1	1	1	
 property	hyphenate-character	1	1	1	1	
 property	hyphenate-limit-chars	1	1	1	0	
 property	hyphenate-limit-last	1	1	1	0	
@@ -715,7 +715,7 @@ property	rest	1	1	1	0
 property	rest-after	1	1	1	0	
 property	rest-before	1	1	1	0	
 property	right	1	1	1	1	
-property	rotate	1	1	1	0	
+property	rotate	1	1	1	1	
 property	row-gap	1	1	1	1	
 property	row-rule	1	1	1	0	
 property	row-rule-break	1	1	1	0	
@@ -887,7 +887,7 @@ property	transform-origin	1	1	1	1
 property	transform-style	1	1	1	0	
 property	transition	1	1	1	1	
 property	transition-behavior	1	1	1	1	
-property	transition-delay	1	1	1	0	
+property	transition-delay	1	1	1	1	
 property	transition-duration	1	1	1	1	
 property	transition-property	1	1	1	1	
 property	transition-timing-function	1	1	1	1	

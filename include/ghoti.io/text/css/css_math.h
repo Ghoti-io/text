@@ -215,6 +215,14 @@ typedef struct {
   /** The anchor functions the calculation may hold: @ref GTEXT_CSS_MATH_ANCHOR for `anchor()` and @ref GTEXT_CSS_MATH_ANCHOR_SIZE for `anchor-size()`, ORed. Anchor
    *  Positioning 1: `anchor()` is valid in the inset properties, `anchor-size()` in the sizing, inset and margin ones; zero (the default) allows neither. */
   unsigned anchor_functions;
+  /** The property the calculation is a value of, or NULL (the default). Given with @ref random_index, the `<random-key>` of a `random()` is simplified as Values 5, 9.4.1
+   *  says at parse time: "If the <random-key> is auto (or omitted), it's turned into element-scoped property-index-scoped", and "If the <random-key> contains
+   *  property-scoped or property-index-scoped, that keyword is replaced by a <random-ua-ident>: either ua-PROPERTY ... or ua-PROPERTY-INDEX". Not NUL-terminated. */
+  const char * random_property;
+  size_t random_property_length;           ///< The length of @ref random_property.
+  /** The count of `random()` functions read so far in the declaration; NULL (the default) simplifies nothing. Every `random()` read takes the next number (1 for the first), in
+   *  the order the functions begin in the value, and the number is the INDEX of `ua-PROPERTY-INDEX`. The caller keeps it across the calculations of one declaration. */
+  uint32_t * random_index;
 } GTEXT_CSS_Math_Context;
 
 /** @brief Bits of @ref GTEXT_CSS_Math_Context::anchor_functions. */
