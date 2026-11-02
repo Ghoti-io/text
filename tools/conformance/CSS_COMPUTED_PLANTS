@@ -19,6 +19,7 @@ shape-default-box-kept	css_property_canon.c	  if (n == 2 && (eq(t[0], "margin-bo
 image-default-size-kept	css_shape_compute.c	    const bool default_size = nsize == 1 && eq(t.v[first_size], "farthest-corner");	    const bool default_size = false;
 image-default-size-kept	css_property_canon.c	        const bool lone_default = nsize == 1 && eq(tk.v[first], "farthest-corner");	        const bool lone_default = false;
 image-double-stop-kept	css_shape_compute.c	  if (!t.fail && t.n == 3 && is_quantity(t.v[1]) && is_quantity(t.v[2]) && !is_quantity(t.v[0])) {	  if (0 && !t.fail && t.n == 3 && is_quantity(t.v[1]) && is_quantity(t.v[2]) && !is_quantity(t.v[0])) {
+image-double-stop-kept	css_property_canon.c	    if (!tk.fail && tk.n == 3 && !is_config && !stop_position(tk.v[0]) && stop_position(tk.v[1]) && stop_position(tk.v[2])) {	    if (0 && !tk.fail && tk.n == 3 && !is_config && !stop_position(tk.v[0]) && stop_position(tk.v[1]) && stop_position(tk.v[2])) {
 filter-percent-kept	css_shape_compute.c	    m /= 100.0;	    m /= 1.0;
 filter-default-kept	css_shape_compute.c	      if (t.n == 0 || amount_value(t.v[0], &v)) {	      if (t.n != 0 && amount_value(t.v[0], &v)) {
 position-edge-kept	css_compute_algo.c	const bool at_far_edge = kw(edge, "right") || kw(edge, "bottom") || kw(edge, "end");	const bool at_far_edge = false;
