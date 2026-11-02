@@ -278,8 +278,10 @@ static bool start(obuf * b, sstack * st, const mnode * n, bool paren) {
   return true;
 }
 
+/* A term written with a minus sign: negative, and not so small that the six decimals a number is written with make it the zero (`- 0px` reads back as `+ 0px`: the
+ * simplification negates 0px as 0 - value, a positive zero, so the text would not be a fixed point). */
 static bool is_negative_leaf(const mnode * n) {
-  return css_math_is_numeric(n) && n->value < 0.0;
+  return css_math_is_numeric(n) && n->value <= -0.0000005;
 }
 
 static bool write_tree(obuf * b, const mnode * root, bool paren) {

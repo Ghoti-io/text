@@ -294,4 +294,15 @@ TEST(CssHuntPositionArea, ASpanAllBesideAKeywordThatNamesItsAxisIsNotWritten) {
   EXPECT_EQ(P("position-area", "center center"), "valid:center");
 }
 
+/* Values 4, 10.13 (served 2026-11-01): a calculation is written so that it reads back as the same calculation. A term whose magnitude is below what a number is written with
+   (six decimals) is written as the zero it is: `calc(6em - 5e-70px)` was written `calc(6em - 0px)`, which reads back as `6em + 0px` (the simplification negates 0px as
+   0 - value, a positive zero), so a second pass wrote another text (found by the css-values fuzz run). */
+TEST(CssHuntMath, ATermThatRoundsToZeroIsWrittenAsAPositiveZero) {
+  const std::string once = P("width", "calc(6em - 5e-70px)");
+  EXPECT_EQ(once, "valid:calc(6em + 0px)");
+  EXPECT_EQ(P("width", once.substr(6)), once);
+  EXPECT_EQ(P("width", "min(1px, 2em * 3 - 5px / 999999999999999999999999999999999999999999999999999999999999999999999)"), "valid:min(1px, 6em + 0px)");
+  EXPECT_EQ(P("width", "calc(6em - 0.1px)"), "valid:calc(6em - 0.1px)");
+}
+
 } // namespace
