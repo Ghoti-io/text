@@ -2379,12 +2379,15 @@ check-cssom: ## Fail if the CSSOM tables (the IDL attribute names) are not what 
 # exactly the derived ones, and a hand edit of a generated file each fail the gate, and --controls makes each mistake in a copy and requires the report. The second half is the interface
 # ledger (tools/css/cssom_ledger.tsv, tools/css/check-cssom-ledger.py): every member of the CSSOM family of the pinned WebIDL has a row, an `implemented` row names functions of the installed
 # headers and a test that calls the first, `binding` and `out` rows give their reason, and the browsers' record of which members they have (tools/oracle/css_cssom_idl_probe.json) covers the rows.
+# The third is the cost ceiling: tools/conformance/CSS_CSSOM_KNOWN_COST against the instructions callgrind counted for each shape of tests/test-cssom-instructions.cpp at two sizes (the measurement is
+# tools/conformance/css_cssom_cost_measured.json; tools/css/cssom-instructions.py measures again), with the controls that make it fail.
 check-cssom:
 	@$(REQUIRE_PYTHON3); \
 	$(call REQUIRE_DATA,$(CSS_DATA_DIR)/webref/ed/css,tools/css/fetch.sh); \
 	python3 tools/css/gen-cssom-tables.py --check && python3 tools/css/gen-cssom-tables.py --controls && \
 	$(call REQUIRE_DATA,$(CSS_DATA_DIR)/webref-idl/ed/idl,tools/css/fetch.sh) && \
-	python3 tools/css/check-cssom-ledger.py --controls && python3 tools/oracle/css_cssom_idl_probe.py --check
+	python3 tools/css/check-cssom-ledger.py --controls && python3 tools/oracle/css_cssom_idl_probe.py --check && \
+	python3 tools/css/cssom-instructions.py --replay tools/conformance/css_cssom_cost_measured.json --controls
 
 check-css-selector-plants: ## Plant a defect in the selector layer and show the tests that must see it fail
 # tools/css/plant-selectors.py and tools/conformance/CSS_SELECTOR_PLANTS: each edit is compiled alone and linked ahead of the library into the test programs it names, which
