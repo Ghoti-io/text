@@ -45,7 +45,7 @@
  *
  * gtext_cssom_object_set_user() stores the binding's wrapper. Replacing the pair runs the old finalizer first; clearing it runs it; the finalizer also runs once
  * when the object is freed, called with `(pointer, kind)`. A finalizer must not call any `gtext_cssom_*` function on the dying object. It may release and
- * `set_user` other objects and free its own memory; a mutation attempted from it, or from an observer, is refused with GTEXT_CSS_E_REENTRANT. Counts are
+ * `set_user` other objects and free its own memory; a mutation attempted from it, or from an observer, is refused with GTEXT_CSS_E_REENTRANT. The objects of a graph that dies together are freed parent first, so the finalizer of a rule must not call into the sheet or the rule that held it: they may be gone. Counts are
  * non-atomic: `retain`, `release`, `set_user` and every finalizer run on the document's writer thread, and a binding whose collector finalizes elsewhere
  * queues the release to the writer. Every error is a GTEXT_CSS_Status; nothing is communicated through a global, `errno` or a longjmp.
  *

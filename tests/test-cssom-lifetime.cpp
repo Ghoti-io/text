@@ -387,22 +387,19 @@ TEST(CssomLifetimeRules, TheUserSlotOfARuleAndOfASheetAndTheFinalizerRules) {
   struct Ctx {
     int * calls;
     GTEXT_CSSOM_Object_Kind * kind;
-    GTEXT_CSSOM_Sheet * sheet;
+    GTEXT_CSSOM_Decl * other;   // a live object that is not dying: the finalizer may not mutate even that
     GTEXT_CSS_Status * mutated;
   };
-  GTEXT_CSSOM_Sheet * raw_sheet = nullptr;
-  Ctx rc{&rule_calls, &rule_kind, nullptr, &mutated}, sc{&sheet_calls, &sheet_kind, nullptr, &mutated};
+  Decl other(doc);
+  Ctx rc{&rule_calls, &rule_kind, other.d, &mutated}, sc{&sheet_calls, &sheet_kind, other.d, &mutated};
   {
     Sheet s(doc, "a{}");
-    raw_sheet = s.s;
-    rc.sheet = s.s;
-    sc.sheet = s.s;
     Rule a = at(s.rules(), 0);
     ASSERT_EQ(gtext_cssom_object_set_user(a.r, &rc, [](void * p, GTEXT_CSSOM_Object_Kind k) {
       Ctx * c = static_cast<Ctx *>(p);
       (*c->calls)++;
       *c->kind = k;
-      *c->mutated = gtext_cssom_sheet_set_disabled(c->sheet, true, nullptr);
+      *c->mutated = gtext_cssom_decl_set_property(c->other, "color", 5, "red", 3, "", 0, nullptr);
     }), GTEXT_CSS_OK);
     ASSERT_EQ(gtext_cssom_object_set_user(s.s, &sc, [](void * p, GTEXT_CSSOM_Object_Kind k) {
       Ctx * c = static_cast<Ctx *>(p);
@@ -414,12 +411,11 @@ TEST(CssomLifetimeRules, TheUserSlotOfARuleAndOfASheetAndTheFinalizerRules) {
     EXPECT_EQ(gtext_cssom_object_kind(s.s), GTEXT_CSSOM_OBJECT_SHEET);
     EXPECT_EQ(rule_calls, 0);
   }
-  (void)raw_sheet;
   EXPECT_EQ(rule_calls, 1);
   EXPECT_EQ(sheet_calls, 1);
   EXPECT_EQ(rule_kind, GTEXT_CSSOM_OBJECT_RULE);
   EXPECT_EQ(sheet_kind, GTEXT_CSSOM_OBJECT_SHEET);
-  EXPECT_EQ(mutated, GTEXT_CSS_E_REENTRANT) << "a finalizer cannot mutate the sheet that is being freed";
+  EXPECT_EQ(mutated, GTEXT_CSS_E_REENTRANT) << "a finalizer cannot mutate";
 }
 
 // The identity of the object survives the death of its wrapper: clear the slot, ask again, and it is the same rule.
