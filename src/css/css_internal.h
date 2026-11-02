@@ -355,6 +355,9 @@ void css_trim_value_text(const char ** s, size_t * n);
 /// Whether a name is one the parser could have read as a custom property: `--` and then the code points of an identifier or escapes, as it was written (css_registry.c).
 bool css_custom_name_ok(const char * name, size_t length);
 
+/// "Serialize an identifier" with the text read as UTF-8 or WTF-8 (css_serialize.c; css_cssom_util.h).
+GTEXT_CSS_Status css_serialize_identifier_text(const char * text, size_t length, bool wtf8, const GTEXT_Markup_Sink * sink);
+
 /// Keep the members of every `||` of a compiled grammar in the order they were written: the grammar of a property whose order is its value (css_grammar_link.c;
 /// it is declared here and not in css_grammar_internal.h, whose RANGE_CLASS_NONE a Windows header defines too).
 struct GTEXT_CSS_Compiled;

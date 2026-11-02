@@ -249,7 +249,7 @@ static void begin(writer * w, unsigned column) {
 }
 
 /* Decode one code point of well-formed-or-not UTF-8 (ill-formed: U+FFFD). */
-static uint32_t next_cp(const unsigned char * s, size_t n, size_t * i) {
+static uint32_t next_cp_x(const unsigned char * s, size_t n, size_t * i, bool wtf8) {
   const unsigned char b = s[*i];
   if (b < 0x80) {
     (*i)++;
@@ -268,7 +268,7 @@ static uint32_t next_cp(const unsigned char * s, size_t n, size_t * i) {
     if (b == 0xE0) {
       lo = 0xA0;
     }
-    else if (b == 0xED) {
+    else if (b == 0xED && !wtf8) {
       hi = 0x9F;
     }
   }
@@ -364,14 +364,19 @@ enum {
   ID_UNRESTRICTED = 2  ///< an unrestricted hash's name: no first-character rules
 };
 
-/* CSSOM's "serialize an identifier", with the two variants above. */
-static void put_ident(writer * w, const char * text, size_t len, int mode) {
+static uint32_t next_cp(const unsigned char * s, size_t n, size_t * i) {
+  return next_cp_x(s, n, i, false);
+}
+
+/* CSSOM's "serialize an identifier", with the two variants above. With `wtf8` the text is read as WTF-8: a lone surrogate is one code point, and is written as it is
+   (a non-ASCII code point is an identifier code point), as a script engine's string with a lone surrogate is. */
+static void put_ident_x(writer * w, const char * text, size_t len, int mode, bool wtf8) {
   const unsigned char * s = (const unsigned char *)text;
   size_t i = 0;
   size_t index = 0;
   uint32_t first = 0;
   while (i < len) {
-    const uint32_t c = next_cp(s, len, &i);
+    const uint32_t c = next_cp_x(s, len, &i, wtf8);
     if (index == 0) {
       first = c;
     }
@@ -410,6 +415,10 @@ static void put_ident(writer * w, const char * text, size_t len, int mode) {
     }
     index++;
   }
+}
+
+static void put_ident(writer * w, const char * text, size_t len, int mode) {
+  put_ident_x(w, text, len, mode, false);
 }
 
 /* CSSOM's "serialize a string". */
@@ -1157,6 +1166,15 @@ GTEXT_CSS_Status gtext_css_serialize_identifier(const char * text, size_t length
     return GTEXT_CSS_E_INVALID;
   }
   put_ident(&w, text, length, ID_PLAIN);
+  return w.status;
+}
+
+GTEXT_CSS_Status css_serialize_identifier_text(const char * text, size_t length, bool wtf8, const GTEXT_Markup_Sink * sink) {
+  writer w;
+  if ((!text && length > 0) || !writer_init(&w, NULL, sink)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  put_ident_x(&w, text, length, ID_PLAIN, wtf8);
   return w.status;
 }
 

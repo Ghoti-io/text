@@ -1,0 +1,16 @@
+# tools/css/plant-cssom.py: planted defects of the CSSOM layer (C5a), each seen to fail. Columns (tab separated): name, file under src/css/, the text (exactly once, \n is a line feed), what replaces it, the test programs that must fail (comma separated keys of PROGRAMS).
+set-appends-instead-of-replacing	css_block.c	    if (slots[i]) {\n      item_replace(	    if (0) {\n      item_replace(	block,decl
+unchanged-set-counts-as-a-change	css_block.c	    if (slots[i] && same[i]) {\n      continue;	    if (0) {\n      continue;	block,decl
+priority-matched-case-sensitively	cssom_decl.c	    if (c >= 'A' && c <= 'Z') {\n      c = (char)(c - 'A' + 'a');	    if (0) {\n      c = (char)(c - 'A' + 'a');	decl
+remove-of-a-shorthand-leaves-its-longhands	css_block.c	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(block->registry, id)) {\n      if (!css_shorthand_leaves	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && 0) {\n      if (!css_shorthand_leaves	block,decl
+unknown-property-checked-after-the-value	cssom_decl.c	  if (!p.known) {\n    ignore(out, GTEXT_CSSOM_IGNORED_UNKNOWN_PROPERTY, 0, "not a supported property");\n    return GTEXT_CSS_OK;\n  }\n  /* 3.	  if (!p.known && value_length) {\n    ignore(out, GTEXT_CSSOM_IGNORED_UNKNOWN_PROPERTY, 0, "not a supported property");\n    return GTEXT_CSS_OK;\n  }\n  /* 3.	decl
+inline-validated-per-call	cssom_inline.c	  if (d->validated && !d->stale) {	  if (0) {	inline
+computed-declaration-writable	cssom_decl.c	  d->readonly = owner_kind == GTEXT_CSSOM_DECL_COMPUTED;	  d->readonly = false;	decl
+reentrant-mutation-accepted	cssom_core.c	  if (core->in_callback || core->in_finalizer) {	  if (0) {	decl,lifetime
+finalizer-may-mutate	cssom_core.c	  if (core->in_callback || core->in_finalizer) {	  if (core->in_callback) {	lifetime
+held-child-does-not-keep-its-parent	cssom_object.c	    o = o->parent;\n  }\n}\n\nvoid css_obj_release_external	    break;\n  }\n}\n\nvoid css_obj_release_external	lifetime
+escape-leading-digit-unescaped	css_serialize.c	    else if (mode != ID_UNRESTRICTED && index == 0 && c >= '0' && c <= '9') {	    else if (0) {	util
+generation-limit-ignored	cssom_core.c	  if (core->generation == UINT64_MAX) {	  if (0) {	decl
+block-index-not-used	css_block.c	  GTEXT_CSS_Declaration_Block * b = (GTEXT_CSS_Declaration_Block *)cb;\n  if (b->index) {	  GTEXT_CSS_Declaration_Block * b = (GTEXT_CSS_Declaration_Block *)cb;\n  if (0) {	block,cost
+cssText-set-keeps-the-old-declarations	cssom_decl.c	  decl->block = neu;\n  /* the names	  gtext_css_block_free(neu);\n  /* the names	decl
+invalid-value-reaches-the-block	cssom_decl.c	  if (pv.outcome == GTEXT_CSS_PROP_RESULT_UNKNOWN || pv.outcome == GTEXT_CSS_PROP_RESULT_INVALID) {\n    const bool unknown	  if (pv.outcome == GTEXT_CSS_PROP_RESULT_UNKNOWN) {\n    const bool unknown	decl

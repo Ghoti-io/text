@@ -84,6 +84,8 @@ typedef struct {
   GTEXT_CSS_Value_Set * set;   ///< Retained.
   GTEXT_CSS_Property_Id shorthand;
   size_t declaration;
+  bool dead;                   ///< Removed (gtext_css_block_remove()): a slot that every reader skips until the next compaction. Its set and name are released.
+  size_t prev;                 ///< With the index: the slot + 1 of the previous item of the same property or custom name (0: none); the chain is what a removal kills whole.
 } blk_item;
 
 struct GTEXT_CSS_Declaration_Block {
@@ -91,9 +93,46 @@ struct GTEXT_CSS_Declaration_Block {
   GTEXT_Allocator alloc;
   GTEXT_CSS_Declaration_Options options;
   blk_item * items;
-  size_t count, cap;
+  size_t count, cap;           ///< Slots used (live and dead) and allocated.
+  size_t live;                 ///< Slots that are not dead: what gtext_css_block_count() answers.
   size_t next_declaration;
+  /* The index (css_block.c): open addressing over the property id, or the case-sensitive name of a custom property, to the last item of that key. It is built by the first
+     operation that needs it (set, remove, find on a mutable block) and kept from then on, so a block that only adds and is read (the cascade's) pays nothing for it. */
+  size_t * index;              ///< NULL, or `index_cap` entries: 0 empty, SIZE_MAX a tombstone, else the slot + 1 of the last item of a key.
+  size_t index_cap;            ///< A power of two.
+  size_t index_used;           ///< Entries that are not empty (tombstones included).
+  size_t index_tombs;          ///< Tombstones.
+  uint64_t probes;             ///< Entries looked at by the index since the block was made (the counter the cost tests assert).
 };
+
+/// A mutable block's items as css_block.c keeps them, for the writer of cssText and the shorthand text: slot `i` is dead when `b->items[i].dead`.
+/// The properties and custom names a shorthand sets (its longhands and the properties it resets, nested shorthands followed); false when there are more than `cap`.
+/// Squeeze out the slots that removals left dead (the order of the rest is kept). Nothing is allocated.
+void css_block_compact(GTEXT_CSS_Declaration_Block * block);
+/// The block's cssText into a buffer (css_shorthand_serialize.c).
+GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf * out);
+
+/// gtext_css_block_set() and _set_custom() with the rule of a list of declarations: `keep_important` leaves an important declaration of the property alone when the new one is not.
+GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Property_Value * value, bool important, bool keep_important,
+    GTEXT_CSS_Block_Change * change, GTEXT_CSS_Shorthand_Result * result);
+GTEXT_CSS_Status css_block_set_custom_ex(GTEXT_CSS_Declaration_Block * block, const char * name, size_t name_length, const GTEXT_CSS_Property_Value * value,
+    bool important, bool keep_important, GTEXT_CSS_Block_Change * change);
+/// Build the block's index now (the first operation that needs it does anyway): the only step of a find that can fail.
+GTEXT_CSS_Status css_block_prepare(GTEXT_CSS_Declaration_Block * block);
+
+/// How two blocks differ, declaration by declaration: the longhands (ascending by id, without repeats) and custom properties (ascending by name) whose last declaration
+/// is in one block only or says something else in the other. The custom names point into the blocks' memory.
+typedef struct {
+  GTEXT_Allocator alloc;
+  GTEXT_CSS_Property_Id * ids;
+  size_t id_count;
+  GTEXT_CSS_String * customs;
+  size_t custom_count;
+} css_block_delta;
+GTEXT_CSS_Status css_block_diff(GTEXT_CSS_Declaration_Block * from, GTEXT_CSS_Declaration_Block * to, css_block_delta * diff);
+void css_block_diff_free(css_block_delta * diff);
+
+bool css_shorthand_leaves(const GTEXT_CSS_Registry * registry, GTEXT_CSS_Property_Id shorthand, GTEXT_CSS_Property_Id * out, size_t cap, size_t * n);
 
 /// Parse text as the value of a property. A VALID, WIDE or PENDING outcome fills `pv`; any other (INVALID, UNKNOWN) is OK with that outcome.
 GTEXT_CSS_Status css_parse_longhand(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * alloc, GTEXT_CSS_Property_Id property,

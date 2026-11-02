@@ -85,15 +85,192 @@ void gtext_css_block_free(GTEXT_CSS_Declaration_Block * block) {
     gtext_allocator_free(&a, block->items[i].custom_name);
   }
   gtext_allocator_free(&a, block->items);
+  gtext_allocator_free(&a, block->index);
   gtext_allocator_free(&a, block);
 }
 
+/* ---- the index ------------------------------------------------------------------------------------------------------------ */
+
+#define INDEX_TOMB SIZE_MAX
+
+static uint64_t mix64(uint64_t x) {
+  x += 0x9e3779b97f4a7c15ull;
+  x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ull;
+  x = (x ^ (x >> 27)) * 0x94d049bb133111ebull;
+  return x ^ (x >> 31);
+}
+
+/// The hash of a key: a custom property's name (case-sensitive bytes), else the property id. Fixed constants, no address: the same on every host.
+static uint64_t key_hash(GTEXT_CSS_Property_Id property, const char * name, size_t length) {
+  if (!name) {
+    return mix64((uint64_t)property);
+  }
+  uint64_t h = 0xcbf29ce484222325ull;
+  for (size_t i = 0; i < length; i++) {
+    h = (h ^ (unsigned char)name[i]) * 0x100000001b3ull;
+  }
+  return mix64(h ^ (uint64_t)length);
+}
+
+static bool key_equal(const blk_item * it, GTEXT_CSS_Property_Id property, const char * name, size_t length) {
+  if (name) {
+    return it->custom_name && it->custom_length == length && memcmp(it->custom_name, name, length) == 0;
+  }
+  return !it->custom_name && it->property == property;
+}
+
+/// The entry of a key: the position in the table of the entry that names it, or of the place a new one goes (the first tombstone passed, else the empty entry that ended
+/// the probe). `found` says which.
+static size_t index_probe(GTEXT_CSS_Declaration_Block * b, GTEXT_CSS_Property_Id property, const char * name, size_t length, bool * found) {
+  const size_t mask = b->index_cap - 1;
+  size_t pos = (size_t)key_hash(property, name, length) & mask;
+  size_t tomb = SIZE_MAX;
+  *found = false;
+  for (size_t step = 0; step < b->index_cap; step++) {
+    b->probes++;
+    const size_t e = b->index[pos];
+    if (e == 0) {
+      return tomb != SIZE_MAX ? tomb : pos;
+    }
+    if (e == INDEX_TOMB) {
+      if (tomb == SIZE_MAX) {
+        tomb = pos;
+      }
+    }
+    else if (key_equal(&b->items[e - 1], property, name, length)) {
+      *found = true;
+      return pos;
+    }
+    pos = (pos + 1) & mask;
+  }
+  return tomb;   /* the table is full of tombstones and entries but one: the caller keeps it below three quarters, so a free place always exists */
+}
+
+/// Make the entry of the item in slot `slot` (a live one) name it, chaining the item to the one the key named before.
+static void index_put(GTEXT_CSS_Declaration_Block * b, size_t slot) {
+  blk_item * it = &b->items[slot];
+  bool found = false;
+  const size_t pos = index_probe(b, it->custom_name ? 0 : it->property, it->custom_name, it->custom_length, &found);
+  if (found) {
+    it->prev = b->index[pos];
+  }
+  else {
+    it->prev = 0;
+    if (b->index[pos] == INDEX_TOMB) {
+      b->index_tombs--;
+    }
+    else {
+      b->index_used++;
+    }
+  }
+  b->index[pos] = slot + 1;
+}
+
+/// Build the table afresh over the live items, with room for `extra` more keys. Only the table is allocated, so this is the one step of the index that can fail.
+static GTEXT_CSS_Status index_build(GTEXT_CSS_Declaration_Block * b, size_t extra, bool force) {
+  size_t need = b->live + extra;
+  size_t cap = 16;
+  while (cap / 4 * 3 < need + 1) {
+    if (cap > SIZE_MAX / 4) {
+      return GTEXT_CSS_E_OOM;
+    }
+    cap *= 2;
+  }
+  if (!force && b->index && cap <= b->index_cap && b->index_cap / 4 * 3 >= b->index_used + extra + 1) {
+    return GTEXT_CSS_OK;
+  }
+  if (b->index && cap <= b->index_cap) {
+    cap = b->index_cap;   /* rebuilding in place keeps the size: the tombstones go, nothing is allocated */
+    memset(b->index, 0, cap * sizeof *b->index);
+  }
+  else {
+    size_t * table = gtext_allocator_calloc(&b->alloc, cap, sizeof *table);
+    if (!table) {
+      return GTEXT_CSS_E_OOM;
+    }
+    gtext_allocator_free(&b->alloc, b->index);
+    b->index = table;
+  }
+  b->index_cap = cap;
+  b->index_used = 0;
+  b->index_tombs = 0;
+  for (size_t i = 0; i < b->count; i++) {
+    if (!b->items[i].dead) {
+      index_put(b, i);
+    }
+  }
+  return GTEXT_CSS_OK;
+}
+
+/// The index, built if it is not, with room for `extra` more keys.
+static GTEXT_CSS_Status index_ready(GTEXT_CSS_Declaration_Block * b, size_t extra) {
+  if (!b->index) {
+    return index_build(b, extra, true);
+  }
+  return index_build(b, extra, false);
+}
+
+/// The slot + 1 of the last live item of a key; 0 for none. Without an index it is a scan from the end.
+static size_t block_lookup(const GTEXT_CSS_Declaration_Block * cb, GTEXT_CSS_Property_Id property, const char * name, size_t length) {
+  GTEXT_CSS_Declaration_Block * b = (GTEXT_CSS_Declaration_Block *)cb;
+  if (b->index) {
+    bool found = false;
+    const size_t pos = index_probe(b, property, name, length, &found);
+    return found ? b->index[pos] : 0;
+  }
+  for (size_t i = b->count; i-- > 0;) {
+    b->probes++;
+    if (!b->items[i].dead && key_equal(&b->items[i], property, name, length)) {
+      return i + 1;
+    }
+  }
+  return 0;
+}
+
+/// Squeeze the dead slots out, keeping the order of the rest, and rebuild the index in the table it has (nothing is allocated).
+static void block_compact(GTEXT_CSS_Declaration_Block * b) {
+  if (b->live == b->count) {
+    return;
+  }
+  size_t to = 0;
+  for (size_t i = 0; i < b->count; i++) {
+    if (!b->items[i].dead) {
+      if (to != i) {
+        b->items[to] = b->items[i];
+      }
+      to++;
+    }
+  }
+  b->count = to;
+  if (b->index) {
+    index_build(b, 0, true);
+  }
+}
+
+void css_block_compact(GTEXT_CSS_Declaration_Block * block) {
+  if (block) {
+    block_compact(block);
+  }
+}
+
 static GTEXT_CSS_Status block_reserve(GTEXT_CSS_Declaration_Block * b, size_t more) {
-  if (more > b->options.max_declarations || b->count > b->options.max_declarations - more) {
+  if (more > b->options.max_declarations || b->live > b->options.max_declarations - more) {
     return GTEXT_CSS_E_LIMIT_DECLARATIONS;
+  }
+  if (b->index) {
+    GTEXT_CSS_Status st = index_ready(b, more);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
   }
   if (b->count + more <= b->cap) {
     return GTEXT_CSS_OK;
+  }
+  if (b->count != b->live && b->count + more > b->cap) {
+    block_compact(b);   /* room that the dead slots hold, before the array grows */
+    if (b->count + more <= b->cap) {
+      return GTEXT_CSS_OK;
+    }
   }
   size_t cap = b->cap ? b->cap : 8;
   while (cap < b->count + more) {
@@ -106,6 +283,14 @@ static GTEXT_CSS_Status block_reserve(GTEXT_CSS_Declaration_Block * b, size_t mo
   b->items = grown;
   b->cap = cap;
   return GTEXT_CSS_OK;
+}
+
+/// A slot that was just filled by an append (count already advanced): count it, and name it in the index when there is one. block_reserve() made room for both.
+static void block_appended(GTEXT_CSS_Declaration_Block * b) {
+  b->live++;
+  if (b->index) {
+    index_put(b, b->count - 1);
+  }
 }
 
 static void fill_result(GTEXT_CSS_Shorthand_Result * r, GTEXT_CSS_Status st) {
@@ -167,6 +352,7 @@ GTEXT_CSS_Status gtext_css_block_add(GTEXT_CSS_Declaration_Block * block, const 
     it->wide = value->wide;
     it->set = gtext_css_value_set_retain(value->set);
     it->declaration = block->next_declaration++;
+    block_appended(block);
     return GTEXT_CSS_OK;
   }
   GTEXT_CSS_Longhand_List * list = NULL;
@@ -194,6 +380,7 @@ GTEXT_CSS_Status gtext_css_block_add(GTEXT_CSS_Declaration_Block * block, const 
     it->set = gtext_css_value_set_retain(lh.set);
     it->shorthand = prop;
     it->declaration = decl;
+    block_appended(block);
   }
   gtext_css_longhand_list_free(list);
   return GTEXT_CSS_OK;
@@ -228,6 +415,7 @@ GTEXT_CSS_Status gtext_css_block_add_custom(GTEXT_CSS_Declaration_Block * block,
   it->wide = value->wide;
   it->set = gtext_css_value_set_retain(value->set);
   it->declaration = block->next_declaration++;
+  block_appended(block);
   return GTEXT_CSS_OK;
 }
 
@@ -261,6 +449,7 @@ GTEXT_CSS_Status css_block_push(GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_P
   if (declaration >= block->next_declaration) {
     block->next_declaration = declaration + 1;
   }
+  block_appended(block);
   return GTEXT_CSS_OK;
 }
 
@@ -315,14 +504,10 @@ GTEXT_CSS_Status gtext_css_block_add_text(GTEXT_CSS_Declaration_Block * block, c
 }
 
 size_t gtext_css_block_count(const GTEXT_CSS_Declaration_Block * block) {
-  return block ? block->count : 0;
+  return block ? block->live : 0;
 }
 
-bool gtext_css_block_item(const GTEXT_CSS_Declaration_Block * block, size_t index, GTEXT_CSS_Declaration_Item * out) {
-  if (!block || !out || index >= block->count) {
-    return false;
-  }
-  const blk_item * it = &block->items[index];
+static void item_out(const blk_item * it, GTEXT_CSS_Declaration_Item * out) {
   out->property = it->property;
   out->custom_name.data = it->custom_name;
   out->custom_name.length = it->custom_length;
@@ -332,7 +517,549 @@ bool gtext_css_block_item(const GTEXT_CSS_Declaration_Block * block, size_t inde
   out->set = it->set;
   out->shorthand = it->shorthand;
   out->declaration = it->declaration;
+}
+
+bool gtext_css_block_item(const GTEXT_CSS_Declaration_Block * block, size_t index, GTEXT_CSS_Declaration_Item * out) {
+  if (!block || !out || index >= block->live) {
+    return false;
+  }
+  if (block->live != block->count) {
+    /* dead slots are in the way (a block that had declarations removed and has not been compacted): the index-th live one */
+    size_t seen = 0;
+    for (size_t i = 0; i < block->count; i++) {
+      if (!block->items[i].dead && seen++ == index) {
+        item_out(&block->items[i], out);
+        return true;
+      }
+    }
+    return false;
+  }
+  item_out(&block->items[index], out);
   return true;
+}
+
+/* ---- editing: set, remove, find, clone ---------------------------------------------------------------------------------------- */
+
+static void change_reset(GTEXT_CSS_Block_Change * change) {
+  if (change) {
+    gtext_css_block_change_free(change);
+    memset(change, 0, sizeof *change);
+  }
+}
+
+void gtext_css_block_change_free(GTEXT_CSS_Block_Change * change) {
+  if (change && change->ids) {
+    GTEXT_Allocator a = change->alloc;
+    gtext_allocator_free(&a, change->ids);
+    change->ids = NULL;
+    change->count = 0;
+  }
+}
+
+uint64_t gtext_css_block_probes(const GTEXT_CSS_Declaration_Block * block) {
+  return block ? block->probes : 0;
+}
+
+/// Room for `n` changed ids in the change (allocated from the block's allocator before anything is altered).
+static GTEXT_CSS_Status change_reserve(const GTEXT_CSS_Declaration_Block * b, GTEXT_CSS_Block_Change * change, size_t n) {
+  if (!change || n == 0) {
+    return GTEXT_CSS_OK;
+  }
+  change->alloc = b->alloc;
+  GTEXT_Allocator a = b->alloc;
+  change->ids = gtext_allocator_malloc(&a, n * sizeof *change->ids);
+  return change->ids ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+}
+
+static void change_note(GTEXT_CSS_Block_Change * change, GTEXT_CSS_Property_Id id) {
+  if (change) {
+    change->changed = true;
+    if (change->ids && id) {
+      change->ids[change->count++] = id;
+    }
+  }
+}
+
+/// Whether the item says exactly what the new declaration would: the same kind of value, the same text, the same importance.
+static GTEXT_CSS_Status item_same(const GTEXT_CSS_Declaration_Block * b, const blk_item * it, GTEXT_CSS_Property_Outcome outcome,
+    GTEXT_CSS_Wide_Keyword wide, const GTEXT_CSS_Value_Set * set, bool important, bool * same) {
+  *same = false;
+  if (it->important != important || it->outcome != outcome) {
+    return GTEXT_CSS_OK;
+  }
+  if (outcome == GTEXT_CSS_PROP_RESULT_WIDE) {
+    *same = it->wide == wide;
+    return GTEXT_CSS_OK;
+  }
+  if (it->set == set) {
+    *same = true;
+    return GTEXT_CSS_OK;
+  }
+  if (!it->set || !set) {
+    return GTEXT_CSS_OK;
+  }
+  if (it->custom_name || outcome == GTEXT_CSS_PROP_RESULT_PENDING) {
+    const GTEXT_CSS_Value * x = gtext_css_value_set_root(it->set);
+    const GTEXT_CSS_Value * y = gtext_css_value_set_root(set);
+    const size_t xl = x && x->text.data ? x->text.length : 0;
+    const size_t yl = y && y->text.data ? y->text.length : 0;
+    *same = xl == yl && (xl == 0 || memcmp(x->text.data, y->text.data, xl) == 0);
+    return GTEXT_CSS_OK;
+  }
+  char *a = NULL, *c = NULL;
+  size_t al = 0, cl = 0;
+  const GTEXT_Allocator * da = &b->alloc;
+  GTEXT_CSS_Status st = css_item_text(b->registry, da, it->property, it->outcome, it->wide, it->set, &a, &al);
+  if (st == GTEXT_CSS_OK) {
+    st = css_item_text(b->registry, da, it->property, outcome, wide, set, &c, &cl);
+  }
+  if (st == GTEXT_CSS_OK) {
+    *same = al == cl && memcmp(a, c, al) == 0;
+  }
+  GTEXT_Allocator al_ = b->alloc;
+  gtext_allocator_free(&al_, a);
+  gtext_allocator_free(&al_, c);
+  return st;
+}
+
+/// Overwrite an item in place: its value, importance and provenance; its place in the order, its key and its chain stay.
+static void item_replace(blk_item * it, GTEXT_CSS_Property_Outcome outcome, GTEXT_CSS_Wide_Keyword wide, const GTEXT_CSS_Value_Set * set, bool important,
+    GTEXT_CSS_Property_Id shorthand, size_t declaration) {
+  GTEXT_CSS_Value_Set * old = it->set;
+  it->set = gtext_css_value_set_retain(set);
+  gtext_css_value_set_free(old);
+  it->outcome = outcome;
+  it->wide = wide;
+  it->important = important;
+  it->shorthand = shorthand;
+  it->declaration = declaration;
+}
+
+static bool value_usable(const GTEXT_CSS_Property_Value * value) {
+  return value && (value->outcome == GTEXT_CSS_PROP_RESULT_VALID || value->outcome == GTEXT_CSS_PROP_RESULT_WIDE ||
+      value->outcome == GTEXT_CSS_PROP_RESULT_PENDING);
+}
+
+GTEXT_CSS_Status gtext_css_block_set(GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Property_Value * value, bool important,
+    GTEXT_CSS_Block_Change * change, GTEXT_CSS_Shorthand_Result * result) {
+  return css_block_set_ex(block, value, important, false, change, result);
+}
+
+GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Property_Value * value, bool important, bool keep_important,
+    GTEXT_CSS_Block_Change * change, GTEXT_CSS_Shorthand_Result * result) {
+  if (result) {
+    memset(result, 0, sizeof *result);
+    fill_result(result, GTEXT_CSS_OK);
+  }
+  change_reset(change);
+  if (!block || !value_usable(value)) {
+    fill_result(result, GTEXT_CSS_E_INVALID);
+    return GTEXT_CSS_E_INVALID;
+  }
+  const GTEXT_CSS_Registry * reg = block->registry;
+  const GTEXT_CSS_Property_Id prop = value->property;
+  GTEXT_CSS_Property_Info info;
+  if (!prop || !gtext_css_registry_property_info(reg, prop, &info) || (info.flags & GTEXT_CSS_PROP_CUSTOM)) {
+    if (result && prop && (info.flags & GTEXT_CSS_PROP_CUSTOM)) {
+      result->detail = "a custom property is set with gtext_css_block_set_custom()";
+    }
+    fill_result(result, GTEXT_CSS_E_INVALID);
+    return GTEXT_CSS_E_INVALID;
+  }
+  const bool shorthand = (info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(reg, prop);
+  GTEXT_CSS_Longhand_List * list = NULL;
+  size_t n = 1;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  if (shorthand) {
+    st = gtext_css_shorthand_expand(reg, value, &block->alloc, &list, result);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+    n = gtext_css_longhand_list_count(list);
+  }
+  /* everything that can fail comes first: the index, the places of the existing declarations, whether each differs, room for the new ones, the change list */
+  size_t * slots = NULL;
+  unsigned char * same = NULL;
+  size_t fresh = 0;
+  st = index_ready(block, n);
+  if (st == GTEXT_CSS_OK && n) {
+    slots = gtext_allocator_calloc(&block->alloc, n, sizeof *slots + 1);
+    if (!slots) {
+      st = GTEXT_CSS_E_OOM;
+    }
+    else {
+      same = (unsigned char *)(slots + n);
+    }
+  }
+  for (size_t i = 0; st == GTEXT_CSS_OK && i < n; i++) {
+    GTEXT_CSS_Longhand lh;
+    if (shorthand) {
+      gtext_css_longhand_list_at(list, i, &lh);
+    }
+    else {
+      memset(&lh, 0, sizeof lh);
+      lh.property = prop;
+      lh.outcome = value->outcome;
+      lh.wide = value->wide;
+      lh.set = value->set;
+    }
+    slots[i] = block_lookup(block, lh.property, NULL, 0);
+    if (!slots[i]) {
+      fresh++;
+      continue;
+    }
+    bool is_same = false;
+    if (keep_important && !important && block->items[slots[i] - 1].important) {
+      is_same = true;   /* a list of declarations: a later declaration does not override an earlier important one of the same property */
+    }
+    else {
+      st = item_same(block, &block->items[slots[i] - 1], lh.outcome, lh.wide, lh.set, important, &is_same);
+    }
+    same[i] = is_same;
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = block_reserve(block, fresh);   /* may squeeze out dead slots: the places are asked again, the comparisons stand */
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = change_reserve(block, change, n);
+  }
+  for (size_t i = 0; st == GTEXT_CSS_OK && i < n; i++) {
+    GTEXT_CSS_Longhand lh;
+    if (shorthand) {
+      gtext_css_longhand_list_at(list, i, &lh);
+    }
+    else {
+      lh.property = prop;
+    }
+    slots[i] = block_lookup(block, lh.property, NULL, 0);
+  }
+  if (st != GTEXT_CSS_OK) {
+    gtext_allocator_free(&block->alloc, slots);
+    gtext_css_longhand_list_free(list);
+    change_reset(change);
+    fill_result(result, st);
+    return st;
+  }
+  /* nothing below can fail */
+  size_t decl = 0;
+  bool numbered = false;
+  for (size_t i = 0; i < n; i++) {
+    GTEXT_CSS_Longhand lh;
+    if (shorthand) {
+      gtext_css_longhand_list_at(list, i, &lh);
+    }
+    else {
+      memset(&lh, 0, sizeof lh);
+      lh.property = prop;
+      lh.outcome = value->outcome;
+      lh.wide = value->wide;
+      lh.set = value->set;
+    }
+    if (slots[i] && same[i]) {
+      continue;
+    }
+    if (!numbered) {
+      decl = block->next_declaration++;
+      numbered = true;
+    }
+    if (slots[i]) {
+      item_replace(&block->items[slots[i] - 1], lh.outcome, lh.wide, lh.set, important, shorthand ? prop : 0, decl);
+    }
+    else {
+      blk_item * it = &block->items[block->count++];
+      memset(it, 0, sizeof *it);
+      it->property = lh.property;
+      it->important = important;
+      it->outcome = lh.outcome;
+      it->wide = lh.wide;
+      it->set = gtext_css_value_set_retain(lh.set);
+      it->shorthand = shorthand ? prop : 0;
+      it->declaration = decl;
+      block_appended(block);
+    }
+    change_note(change, lh.property);
+  }
+  gtext_allocator_free(&block->alloc, slots);
+  gtext_css_longhand_list_free(list);
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_css_block_set_custom(GTEXT_CSS_Declaration_Block * block, const char * name, size_t name_length,
+    const GTEXT_CSS_Property_Value * value, bool important, GTEXT_CSS_Block_Change * change) {
+  return css_block_set_custom_ex(block, name, name_length, value, important, false, change);
+}
+
+GTEXT_CSS_Status css_block_set_custom_ex(GTEXT_CSS_Declaration_Block * block, const char * name, size_t name_length, const GTEXT_CSS_Property_Value * value,
+    bool important, bool keep_important, GTEXT_CSS_Block_Change * change) {
+  change_reset(change);
+  if (!block || !value_usable(value) || !name || name_length < 3 || name[0] != '-' || name[1] != '-') {
+    return GTEXT_CSS_E_INVALID;
+  }
+  GTEXT_CSS_Status st = index_ready(block, 1);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  const size_t at = block_lookup(block, 0, name, name_length);
+  if (at) {
+    bool is_same = false;
+    if (keep_important && !important && block->items[at - 1].important) {
+      return GTEXT_CSS_OK;
+    }
+    st = item_same(block, &block->items[at - 1], value->outcome, value->wide, value->set, important, &is_same);
+    if (st != GTEXT_CSS_OK || is_same) {
+      return st;
+    }
+    item_replace(&block->items[at - 1], value->outcome, value->wide, value->set, important, 0, block->next_declaration++);
+    change_note(change, 0);
+    return GTEXT_CSS_OK;
+  }
+  st = block_reserve(block, 1);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  char * copy = gtext_allocator_malloc(&block->alloc, name_length + 1);
+  if (!copy) {
+    return GTEXT_CSS_E_OOM;
+  }
+  memcpy(copy, name, name_length);
+  copy[name_length] = '\0';
+  blk_item * it = &block->items[block->count++];
+  memset(it, 0, sizeof *it);
+  it->property = gtext_css_registry_find_property(block->registry, "--x", 3);
+  it->custom_name = copy;
+  it->custom_length = name_length;
+  it->important = important;
+  it->outcome = value->outcome;
+  it->wide = value->wide;
+  it->set = gtext_css_value_set_retain(value->set);
+  it->declaration = block->next_declaration++;
+  block_appended(block);
+  change_note(change, 0);
+  return GTEXT_CSS_OK;
+}
+
+/// Kill every live item of a key (the whole chain), release what they hold, and unname the key. True when there was one.
+static bool kill_key(GTEXT_CSS_Declaration_Block * b, GTEXT_CSS_Property_Id property, const char * name, size_t length) {
+  bool found = false;
+  const size_t pos = index_probe(b, property, name, length, &found);
+  if (!found) {
+    return false;
+  }
+  size_t s = b->index[pos];
+  b->index[pos] = INDEX_TOMB;
+  b->index_tombs++;
+  while (s) {
+    blk_item * it = &b->items[s - 1];
+    const size_t next = it->prev;
+    gtext_css_value_set_free(it->set);
+    gtext_allocator_free(&b->alloc, it->custom_name);
+    it->set = NULL;
+    it->custom_name = NULL;
+    it->custom_length = 0;
+    it->prev = 0;
+    it->dead = true;
+    b->live--;
+    s = next;
+  }
+  return true;
+}
+
+GTEXT_CSS_Status gtext_css_block_remove(GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Property_Id property, const char * name, size_t name_length,
+    GTEXT_CSS_Block_Change * change) {
+  change_reset(change);
+  if (!block || (name ? name_length < 3 || name[0] != '-' || name[1] != '-' : !property)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  GTEXT_CSS_Property_Id leaves[256];
+  size_t nleaf = 1;
+  if (name) {
+    leaves[0] = 0;
+  }
+  else {
+    const GTEXT_CSS_Property_Id id = gtext_css_registry_resolve_alias(block->registry, property);
+    GTEXT_CSS_Property_Info info;
+    if (!id || !gtext_css_registry_property_info(block->registry, id, &info) || (info.flags & GTEXT_CSS_PROP_CUSTOM)) {
+      return GTEXT_CSS_E_INVALID;
+    }
+    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(block->registry, id)) {
+      if (!css_shorthand_leaves(block->registry, id, leaves, 256, &nleaf)) {
+        return GTEXT_CSS_E_UNSUPPORTED;
+      }
+    }
+    else {
+      leaves[0] = id;
+    }
+  }
+  GTEXT_CSS_Status st = index_ready(block, 0);
+  if (st == GTEXT_CSS_OK) {
+    st = change_reserve(block, change, nleaf);
+  }
+  if (st != GTEXT_CSS_OK) {
+    change_reset(change);
+    return st;
+  }
+  for (size_t i = 0; i < nleaf; i++) {
+    if (kill_key(block, name ? 0 : leaves[i], name, name_length)) {
+      change_note(change, name ? 0 : leaves[i]);
+    }
+  }
+  if (block->count - block->live > block->count / 2 && block->count >= 16) {
+    block_compact(block);
+  }
+  return GTEXT_CSS_OK;
+}
+
+bool gtext_css_block_find(const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Property_Id property, const char * name, size_t name_length,
+    GTEXT_CSS_Declaration_Item * out) {
+  if (!block || !out || (name ? name_length == 0 : !property)) {
+    return false;
+  }
+  const GTEXT_CSS_Property_Id id = name ? 0 : gtext_css_registry_resolve_alias(block->registry, property);
+  const size_t at = block_lookup(block, id, name, name_length);
+  if (!at) {
+    return false;
+  }
+  item_out(&block->items[at - 1], out);
+  return true;
+}
+
+GTEXT_CSS_Status gtext_css_block_clone(const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Declaration_Block ** out) {
+  if (!block || !out) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  GTEXT_CSS_Declaration_Options o = block->options;
+  o.allocator = &block->alloc;
+  GTEXT_CSS_Declaration_Block * c = NULL;
+  GTEXT_CSS_Status st = gtext_css_block_new(block->registry, &o, &c);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  st = block_reserve(c, block->live);
+  for (size_t i = 0; st == GTEXT_CSS_OK && i < block->count; i++) {
+    const blk_item * it = &block->items[i];
+    if (it->dead) {
+      continue;
+    }
+    st = css_block_push(c, it->property, it->custom_name, it->custom_length, it->important, it->outcome, it->wide, it->set, it->shorthand, it->declaration);
+  }
+  if (st != GTEXT_CSS_OK) {
+    gtext_css_block_free(c);
+    return st;
+  }
+  c->next_declaration = block->next_declaration;
+  *out = c;
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status css_block_prepare(GTEXT_CSS_Declaration_Block * block) {
+  return index_ready(block, 0);
+}
+
+/// Whether the live item at `a` of `x` and the one at `b` of `y` are the same declaration: the same value text and importance.
+static GTEXT_CSS_Status items_equal(const GTEXT_CSS_Declaration_Block * x, const blk_item * a, const GTEXT_CSS_Declaration_Block * y, const blk_item * b, bool * same) {
+  if (a->outcome != b->outcome || a->important != b->important || (a->outcome == GTEXT_CSS_PROP_RESULT_WIDE && a->wide != b->wide)) {
+    *same = false;
+    return GTEXT_CSS_OK;
+  }
+  if (a->outcome == GTEXT_CSS_PROP_RESULT_WIDE) {
+    *same = true;
+    return GTEXT_CSS_OK;
+  }
+  /* item_same() reads the first block's registry and allocator, which are the second's too (a block is cloned or made from one document) */
+  (void)y;
+  return item_same(x, a, b->outcome, b->wide, b->set, b->important, same);
+}
+
+static int cust_name_cmp(const void * a, const void * b) {
+  const GTEXT_CSS_String * x = a;
+  const GTEXT_CSS_String * y = b;
+  const size_t m = x->length < y->length ? x->length : y->length;
+  const int c = m ? memcmp(x->data, y->data, m) : 0;
+  if (c) {
+    return c;
+  }
+  return x->length < y->length ? -1 : x->length > y->length ? 1 : 0;
+}
+
+static int id_cmp(const void * a, const void * b) {
+  const GTEXT_CSS_Property_Id x = *(const GTEXT_CSS_Property_Id *)a;
+  const GTEXT_CSS_Property_Id y = *(const GTEXT_CSS_Property_Id *)b;
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+void css_block_diff_free(css_block_delta * diff) {
+  if (diff) {
+    GTEXT_Allocator a = diff->alloc;
+    gtext_allocator_free(&a, diff->ids);
+    gtext_allocator_free(&a, diff->customs);
+    memset(diff, 0, sizeof *diff);
+  }
+}
+
+GTEXT_CSS_Status css_block_diff(GTEXT_CSS_Declaration_Block * from, GTEXT_CSS_Declaration_Block * to, css_block_delta * diff) {
+  memset(diff, 0, sizeof *diff);
+  diff->alloc = from->alloc;
+  GTEXT_CSS_Status st = index_ready(from, 0);
+  if (st == GTEXT_CSS_OK) {
+    st = index_ready(to, 0);
+  }
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  const size_t cap = from->live + to->live;
+  GTEXT_Allocator a = from->alloc;
+  if (cap) {
+    diff->ids = gtext_allocator_malloc(&a, cap * sizeof *diff->ids);
+    diff->customs = gtext_allocator_malloc(&a, cap * sizeof *diff->customs);
+    if (!diff->ids || !diff->customs) {
+      css_block_diff_free(diff);
+      return GTEXT_CSS_E_OOM;
+    }
+  }
+  for (int pass = 0; pass < 2 && st == GTEXT_CSS_OK; pass++) {
+    GTEXT_CSS_Declaration_Block * x = pass == 0 ? from : to;
+    GTEXT_CSS_Declaration_Block * y = pass == 0 ? to : from;
+    for (size_t i = 0; i < x->count && st == GTEXT_CSS_OK; i++) {
+      const blk_item * it = &x->items[i];
+      if (it->dead) {
+        continue;
+      }
+      const GTEXT_CSS_Property_Id key = it->custom_name ? 0 : it->property;
+      if (block_lookup(x, key, it->custom_name, it->custom_length) != i + 1) {
+        continue;   /* the last declaration of each key counts on both sides */
+      }
+      const size_t at = block_lookup(y, key, it->custom_name, it->custom_length);
+      bool same = false;
+      if (at) {
+        if (pass == 1) {
+          continue;   /* a key both blocks have was judged in the first pass */
+        }
+        st = items_equal(x, it, y, &y->items[at - 1], &same);
+      }
+      if (st != GTEXT_CSS_OK || same) {
+        continue;
+      }
+      if (it->custom_name) {
+        diff->customs[diff->custom_count].data = it->custom_name;
+        diff->customs[diff->custom_count].length = it->custom_length;
+        diff->custom_count++;
+      }
+      else {
+        diff->ids[diff->id_count++] = it->property;   /* one per key: only the last declaration of a property is judged */
+      }
+    }
+  }
+  if (st != GTEXT_CSS_OK) {
+    css_block_diff_free(diff);
+    return st;
+  }
+  if (diff->id_count > 1) {
+    qsort(diff->ids, diff->id_count, sizeof *diff->ids, id_cmp);
+  }
+  if (diff->custom_count > 1) {
+    qsort(diff->customs, diff->custom_count, sizeof *diff->customs, cust_name_cmp);
+  }
+  return GTEXT_CSS_OK;
 }
 
 /* ---- serialization ------------------------------------------------------------------------------------------------- */
@@ -375,27 +1102,24 @@ GTEXT_CSS_Status gtext_css_block_get_property_value(const GTEXT_CSS_Declaration_
   if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(block->registry, id)) {
     return gtext_css_block_shorthand_value(block, id, out, out_length, important);
   }
-  for (size_t i = block->count; i-- > 0;) {
-    const blk_item * it = &block->items[i];
-    if (it->property != id || it->custom_name) {
-      continue;
-    }
+  const size_t at = block_lookup(block, id, NULL, 0);
+  if (at) {
+    const blk_item * it = &block->items[at - 1];
     if (important) {
       *important = it->important;
     }
-    if (it->outcome == GTEXT_CSS_PROP_RESULT_PENDING) {
-      break;
+    if (it->outcome != GTEXT_CSS_PROP_RESULT_PENDING) {
+      char * t = NULL;
+      size_t n = 0;
+      const GTEXT_Allocator * da = gtext_allocator_default();
+      GTEXT_CSS_Status st = css_item_text(block->registry, da, id, it->outcome, it->wide, it->set, &t, &n);
+      if (st != GTEXT_CSS_OK) {
+        return st;
+      }
+      *out = t;
+      *out_length = n;
+      return GTEXT_CSS_OK;
     }
-    char * t = NULL;
-    size_t n = 0;
-    const GTEXT_Allocator * da = gtext_allocator_default();
-    GTEXT_CSS_Status st = css_item_text(block->registry, da, id, it->outcome, it->wide, it->set, &t, &n);
-    if (st != GTEXT_CSS_OK) {
-      return st;
-    }
-    *out = t;
-    *out_length = n;
-    return GTEXT_CSS_OK;
   }
   GTEXT_Allocator a = *gtext_allocator_default();
   char * empty = gtext_allocator_malloc(&a, 1);

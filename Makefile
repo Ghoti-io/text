@@ -616,7 +616,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-encoding-tables check-encoding-transcription check-conformance-vectors \
 	check-html-quadratic check-fuzz-plant-anchors check-css-numbers check-css-libm check-css-grammar-plants \
 	check-css-tables check-css-package check-css-grammars check-css-depth check-css-table-objects \
-	check-size-shifts check-css-compute check-css-color check-css-color-plants check-css-color-cross check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules
+	check-size-shifts check-css-compute check-css-color check-css-color-plants check-css-color-cross check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules check-cssom check-cssom-plants
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -1005,7 +1005,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: conformance-css-selector-queries conformance-css-selectors conformance-css-conditions conformance-css-atrules conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-css-style-oracle check-css-sheet-oracle check-css-cond-oracle check-css-rule-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-color check-css-color-plants check-css-color-cross check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: conformance-css-cssom conformance-css-selector-queries conformance-css-selectors conformance-css-conditions conformance-css-atrules conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-css-style-oracle check-css-sheet-oracle check-css-cond-oracle check-css-rule-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-color check-css-color-plants check-css-color-cross check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1157,6 +1157,12 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_atrule_set.c \
 	src/css/css_at_property.c \
 	src/css/css_block.c \
+	src/css/cssom_core.c \
+	src/css/cssom_decl.c \
+	src/css/cssom_decl_idl.c \
+	src/css/cssom_inline.c \
+	src/css/cssom_object.c \
+	src/css/cssom_util.c \
 	src/css/css_cascade.c \
 	src/css/css_color.c \
 	src/css/css_color_names.c \
@@ -2152,6 +2158,7 @@ $(eval $(call fuzz-rule,fuzz_css_style,css-style))
 $(eval $(call fuzz-rule,fuzz_css_selector,css-selector))
 $(eval $(call fuzz-rule,fuzz_css_match,css-match))
 $(eval $(call fuzz-rule,fuzz_css_sheet,css-sheet))
+$(eval $(call fuzz-rule,fuzz_cssom_decl,cssom-decl))
 $(eval $(call fuzz-rule,fuzz_css_condition,css-condition))
 $(eval $(call fuzz-rule,fuzz_css_container,css-container))
 $(eval $(call fuzz-rule,fuzz_css_atrule,css-atrule))
@@ -2337,6 +2344,15 @@ check-css-atrules:
 	$(call REQUIRE_DATA,$(CSS_DATA_DIR)/webref/ed/css,tools/css/fetch.sh); \
 	python3 tools/css/gen-atrule-tables.py --check && python3 tools/css/gen-atrule-tables.py --controls
 
+check-cssom: ## Fail if the CSSOM tables (the IDL attribute names) are not what the generator writes from the pinned data and the algorithm, and show it refuse each mistake
+# tools/css/gen-cssom-tables.py: tools/css/cssom_idl_names.tsv and src/css/cssom_tables.h are the "CSS property to IDL attribute" algorithm run over the properties of the pin. Every
+# property has exactly one camel-cased attribute, no two properties share an attribute, the dashed attribute is the property's name, the names the pin lists for a property are
+# exactly the derived ones, and a hand edit of a generated file each fail the gate, and --controls makes each mistake in a copy and requires the report.
+check-cssom:
+	@$(REQUIRE_PYTHON3); \
+	$(call REQUIRE_DATA,$(CSS_DATA_DIR)/webref/ed/css,tools/css/fetch.sh); \
+	python3 tools/css/gen-cssom-tables.py --check && python3 tools/css/gen-cssom-tables.py --controls
+
 check-css-selector-plants: ## Plant a defect in the selector layer and show the tests that must see it fail
 # tools/css/plant-selectors.py and tools/conformance/CSS_SELECTOR_PLANTS: each edit is compiled alone and linked ahead of the library into the test programs it names, which
 # must fail; the unedited control must pass. No container engine is needed, so it is one of the gates of `make test`.
@@ -2348,6 +2364,13 @@ check-css-atrule-plants: ## Plant a defect in the at-rule layer and show the tes
 check-css-atrule-plants: $(APP_DIR)/$(STATIC_TARGET)
 	@$(REQUIRE_PYTHON3); \
 	PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" python3 tools/css/plant-atrules.py
+
+check-cssom-plants: ## Plant a defect in the CSSOM layer and show the tests that must see it fail
+# tools/css/plant-cssom.py and tools/conformance/CSS_CSSOM_PLANTS: each edit is compiled alone and linked ahead of the library's archive into the test programs it names, which must fail; the
+# unedited control must pass. No container engine is needed.
+check-cssom-plants: $(APP_DIR)/$(STATIC_TARGET)
+	@$(REQUIRE_PYTHON3); \
+	PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" python3 tools/css/plant-cssom.py
 
 check-css-condition-plants: ## Plant a defect in the media query layer and show the tests that must see it fail
 # tools/css/plant-conditions.py and tools/conformance/CSS_CONDITIONS_PLANTS: each edit is compiled alone and linked ahead of the library's archive into the test programs it names, which
@@ -2560,6 +2583,7 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=0
 # scored is listed (UNSCORED_COMPUTED), and the gate is made to fail (--controls). tools/conformance/run-css-computed.sh --regenerate writes the lists.
 CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4532 CSS_COMPUTED_MAX_DEFECTS=0
 CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=240
+CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=141 CSS_CSSOM_MIN_PAGES=48 CSS_CSSOM_MAX_DEFECTS=12
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
 conformance-css-computed: $(CONFORMANCE_LIB)
@@ -2578,6 +2602,15 @@ conformance-css-selectors: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/selectors,tools/css/fetch.sh)
 	@$(CONFORMANCE_ENV) tools/conformance/run-css-selectors.sh && \
 	$(CONFORMANCE_ENV) tools/conformance/run-css-selectors.sh --controls
+
+conformance-css-cssom: ## Score the declaration object against the pinned WPT pages that touch the CSSOM IDL, list the pages not read, and show the gate fails
+# tools/conformance/run-css-cssom.sh: every page of web-platform-tests' css/ that touches the CSSOM IDL (tools/css/extract-wpt-cssom.py) is read: the tests whose every statement is a
+# recognized call become a program for the op interpreter (tools/conformance/css_cssom_suite.c) and are scored by tools/conformance/css_cssom_suite.py; every other page or test is a
+# line of UNSCORED_CSSOM with its number of tests and its reason. Every failure is a line of CSS_CSSOM_EXCEPTIONS with a class and a reason; --controls makes the gate fail.
+conformance-css-cssom: $(CONFORMANCE_LIB)
+	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/cssom,tools/css/fetch.sh)
+	@$(CONFORMANCE_ENV) $(CSS_CSSOM_FLOOR) tools/conformance/run-css-cssom.sh && \
+	$(CONFORMANCE_ENV) $(CSS_CSSOM_FLOOR) tools/conformance/run-css-cssom.sh --controls
 
 conformance-css-atrules: ## Score the at-rule layer against the pinned WPT at-rule parsing vectors
 conformance-css-atrules: $(CONFORMANCE_LIB)

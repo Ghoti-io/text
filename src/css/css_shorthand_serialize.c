@@ -132,7 +132,7 @@ static bool sctx_init(sctx * c, const GTEXT_CSS_Declaration_Block * b) {
   }
   for (size_t i = 0; i < b->count; i++) {
     const blk_item * it = &b->items[i];
-    if (it->property && it->property <= c->nprops && !it->custom_name) {
+    if (!it->dead && it->property && it->property <= c->nprops && !it->custom_name) {
       c->last[it->property] = (uint32_t)(i + 1);
     }
   }
@@ -271,6 +271,13 @@ static bool leaves_under(const sctx * c, GTEXT_CSS_Property_Id sh, GTEXT_CSS_Pro
     }
   }
   return true;
+}
+
+bool css_shorthand_leaves(const GTEXT_CSS_Registry * registry, GTEXT_CSS_Property_Id shorthand, GTEXT_CSS_Property_Id * out, size_t cap, size_t * n) {
+  sctx c;
+  memset(&c, 0, sizeof c);
+  c.reg = registry;
+  return leaves_under(&c, shorthand, out, cap, n);
 }
 
 /// The shorthands under `sh` in an order where each comes after those it holds (post-order), `sh` last.
@@ -2144,7 +2151,7 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
   }
   /* custom properties: the last declaration of a name counts */
   for (size_t i = 0; status == GTEXT_CSS_OK && i < n; i++) {
-    if (block->items[i].custom_name) {
+    if (!block->items[i].dead && block->items[i].custom_name) {
       customs[ncust].name = block->items[i].custom_name;
       customs[ncust].length = block->items[i].custom_length;
       customs[ncust].index = i;
@@ -2162,6 +2169,9 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
   bool first = true;
   for (size_t i = 0; i < n && status == GTEXT_CSS_OK; i++) {
     const blk_item * it = &block->items[i];
+    if (it->dead) {
+      continue;
+    }
     if (it->custom_name) {
       if (shadow[i]) {
         continue;

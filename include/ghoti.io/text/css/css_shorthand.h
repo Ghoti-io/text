@@ -261,17 +261,90 @@ GTEXT_API GTEXT_CSS_Status gtext_css_block_add_text(GTEXT_CSS_Declaration_Block 
     const char * text, size_t text_length, bool important, const GTEXT_CSS_Property_Options * options,
     GTEXT_CSS_Property_Outcome * outcome, GTEXT_CSS_Shorthand_Result * result);
 
-/** @brief How many declarations the block holds. NULL is 0. */
+/** @brief How many declarations the block holds (removed ones are not counted). NULL is 0. */
 GTEXT_API size_t gtext_css_block_count(const GTEXT_CSS_Declaration_Block * block);
 
-/** @brief The `index`th declaration, in the order they were added; false past the end. */
+/** @brief The `index`th declaration, in the order they were added (a replaced one keeps its place); false past the end. O(1) unless declarations were removed and the block has not yet squeezed them out. */
 GTEXT_API bool gtext_css_block_item(const GTEXT_CSS_Declaration_Block * block, size_t index, GTEXT_CSS_Declaration_Item * out);
+
+/**
+ * @brief What an edit of a block changed. A zeroed struct is the starting state; gtext_css_block_set(), _set_custom() and _remove() reset it first, so one may be reused.
+ */
+typedef struct {
+  bool changed;                      ///< The block is different: a declaration was added, removed, or replaced by one that says something else.
+  size_t count;                      ///< The entries of `ids`.
+  GTEXT_CSS_Property_Id * ids;       ///< The properties whose declarations changed, in the order they were applied (a shorthand contributes its longhands, `all` itself, a custom property nothing: the caller knows its name). Owned: free the struct with gtext_css_block_change_free().
+  GTEXT_Allocator alloc;             ///< Private: the allocator `ids` came from.
+} GTEXT_CSS_Block_Change;
+
+/** @brief Free what a change holds (`ids`) and clear it; a zeroed or NULL change is ignored. */
+GTEXT_API void gtext_css_block_change_free(GTEXT_CSS_Block_Change * change);
+
+/**
+ * @brief CSSOM's "set a CSS declaration" for a parsed value: the declaration replaces the block's declaration of the same property **in its place**, else it is appended.
+ *
+ * A shorthand does this for each of its longhands in turn. A replacement that says exactly what the declaration already says (same value text, same importance) changes nothing and is not
+ * a change. All or nothing: on any failure, `E_OOM` included, the block is as it was. Amortized O(1) per longhand through the block's index (built by the first call).
+ *
+ * @param block The block. Not NULL.
+ * @param value What gtext_css_parse_property() returned (VALID, WIDE or PENDING) for a property that is not a custom property. Not NULL.
+ * @param important `!important`.
+ * @param change NULL, or a zeroed or reused struct that receives what changed.
+ * @param result NULL, or filled.
+ * @return As gtext_css_block_add().
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_block_set(GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Property_Value * value, bool important,
+    GTEXT_CSS_Block_Change * change, GTEXT_CSS_Shorthand_Result * result);
+
+/** @brief gtext_css_block_set() for a custom property: its name as written (case-sensitive, beginning `--`). @return As gtext_css_block_add_custom(). */
+GTEXT_API GTEXT_CSS_Status gtext_css_block_set_custom(GTEXT_CSS_Declaration_Block * block, const char * name, size_t name_length,
+    const GTEXT_CSS_Property_Value * value, bool important, GTEXT_CSS_Block_Change * change);
+
+/**
+ * @brief CSSOM's `removeProperty()` for the block: every declaration of the property goes; for a shorthand, every declaration of each longhand it maps to (and resets).
+ *
+ * The slots of the removed declarations are left in the block and skipped until more than half of the block is such slots, then squeezed out (amortized O(1) per removal);
+ * count and item() never show them.
+ *
+ * @param block The block. Not NULL.
+ * @param property The property (an alias is followed), or 0 with `name`.
+ * @param name NULL, or a custom property's name as written (case-sensitive).
+ * @param name_length Its length.
+ * @param change NULL, or a zeroed or reused struct that receives what was removed (`changed` is false when the block held nothing of it).
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_UNSUPPORTED (a shorthand whose longhands are too many to list); GTEXT_CSS_E_OOM (the index or the change could not be made; nothing was removed).
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_block_remove(GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Property_Id property, const char * name, size_t name_length,
+    GTEXT_CSS_Block_Change * change);
+
+/**
+ * @brief The last declaration of a property (or of a custom property by its case-sensitive name).
+ *
+ * Through the index when the block has one (a block that has been edited), else a scan from the end. The item is valid until the block is changed.
+ *
+ * @param block The block. Not NULL.
+ * @param property The property (an alias is followed), or 0 with `name`.
+ * @param name NULL, or a custom property's name.
+ * @param name_length Its length.
+ * @param out Receives the declaration; NULL if not wanted.
+ * @return Whether the block has one.
+ */
+GTEXT_API bool gtext_css_block_find(const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Property_Id property, const char * name, size_t name_length,
+    GTEXT_CSS_Declaration_Item * out);
+
+/** @brief A copy of a block with the same declarations in the same order (values are shared, not copied). @return GTEXT_CSS_OK, GTEXT_CSS_E_INVALID or GTEXT_CSS_E_OOM. */
+GTEXT_API GTEXT_CSS_Status gtext_css_block_clone(const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Declaration_Block ** out);
+
+/** @brief How many entries of its index the block has looked at since it was made: the work counter of set, remove and find. NULL is 0. */
+GTEXT_API uint64_t gtext_css_block_probes(const GTEXT_CSS_Declaration_Block * block);
 
 /**
  * @brief The value of a shorthand as the block's longhands serialize it (CSSOM `getPropertyValue(shorthand)`).
  *
- * All the shorthand's longhands (and the properties it resets) must be in the block with equal importance and none pending, else the answer is
- * the empty string; the last declaration of each property counts. A shorthand whose longhands cannot be written as one value (they are not
+ * All the shorthand's longhands (and the properties it resets) must be in the block with equal importance, else the answer is the empty string; the last
+ * declaration of each property counts. Longhands that are all the same CSS-wide keyword are that keyword. Longhands that are all **pending** and all from one
+ * declaration of this shorthand (`margin: var(--x)`) are that declaration's value as it was written, trimmed (CSSOM "serialize a CSS value": the shorthand
+ * "must serialize to that original (arbitrary substitution function-containing) value"); a pending longhand of any other kind (one that was replaced, or
+ * declared by itself) has no shorthand text, so the answer is the empty string. A shorthand whose longhands cannot be written as one value (they are not
  * a value of its grammar: `margin-top` auto and the others differ is fine, `font-style: italic` with `font-variant-caps: all-small-caps` is not)
  * is the empty string.
  *
