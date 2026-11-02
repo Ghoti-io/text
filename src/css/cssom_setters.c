@@ -105,11 +105,13 @@ GTEXT_CSS_Status css_own_typed(css_rule * rule, const css_own * own, bool shallo
   return css_rule_typed(rule->obj.core, &tmp, shallow, out);
 }
 
-void css_rule_replaced(css_rule * rule, GTEXT_CSSOM_Outcome * outcome) {
+void css_rule_replaced(css_rule * rule, GTEXT_CSS_Selector_List * before, bool before_failed, GTEXT_CSSOM_Outcome * outcome) {
   css_core * core = rule->obj.core;
   css_cssom_event ev;
   memset(&ev, 0, sizeof ev);
   ev.kind = GTEXT_CSSOM_EVENT_RULE_REPLACED;
+  ev.selectors_before = before;
+  ev.before_failed = before_failed;
   ev.rule = rule;
   ev.rule_id = rule->obj.id;
   css_sheet * sheet = css_rule_sheet(rule);
@@ -256,9 +258,21 @@ GTEXT_CSS_Status css_rule_replace_own(css_rule * rule, const char * header, size
       return st;
     }
   }
+  /* the selector list as it is now is what the event says it was: read while the rule still holds it. Running out of memory here is the call's failure, with nothing changed; a prelude
+     that no longer reads as a selector list (it did when the rule was made) is the event's (`summary_complete`) */
+  GTEXT_CSS_Selector_List * before = NULL;
+  bool before_failed = false;
+  if (style && rule->node && css_events_wanted(core) && css_rule_sheet(rule)) {
+    st = css_rule_selector_list(rule, &before);
+    if (st == GTEXT_CSS_E_OOM || st == GTEXT_CSS_E_LIMIT_WORK) {
+      css_own_discard(&own);   /* a resource failure here is before the change, so it is a failure of the call and nothing changed */
+      return st;
+    }
+    before_failed = st != GTEXT_CSS_OK;
+  }
   css_own_commit(rule, &own);
   st = css_typed_refresh(rule);
-  css_rule_replaced(rule, outcome);
+  css_rule_replaced(rule, before, before_failed, outcome);
   return st;
 }
 

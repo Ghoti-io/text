@@ -77,7 +77,8 @@ GTEXT_CSS_Status css_rule_replace_own(css_rule * rule, const char * header, size
     bool * ignored, GTEXT_CSSOM_Outcome * outcome);
 
 /// A rule changed as a whole: the sheet's version moves and the event is sent. `outcome` may be NULL.
-void css_rule_replaced(css_rule * rule, GTEXT_CSSOM_Outcome * outcome);
+/// The one event of a rule whose own text changed. `before` (taken) is its selector list before the change, if the caller could read it; `before_failed`: it could not.
+void css_rule_replaced(css_rule * rule, GTEXT_CSS_Selector_List * before, bool before_failed, GTEXT_CSSOM_Outcome * outcome);
 
 /* ---- media lists (cssom_media.c) ---------------------------------------------------------------------------------------------------------- */
 

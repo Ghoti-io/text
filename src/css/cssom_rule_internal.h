@@ -210,6 +210,10 @@ GTEXT_CSS_Status css_rule_create(css_core * core, GTEXT_CSSOM_Rule_Kind kind, cs
 /// The sheet at the top of the chain of parents, or NULL.
 css_sheet * css_rule_sheet(const css_rule * rule);
 
+/// The selector list of a style rule as the rule reads it now (a new list the caller frees), for the affected-set summary of an event. GTEXT_CSS_E_INTERNAL when the prelude no longer
+/// reads as one (it did when the rule was made); any other status is a resource failure.
+GTEXT_CSS_Status css_rule_selector_list(const css_rule * rule, GTEXT_CSS_Selector_List ** out);
+
 /// The span of the rule in its source.
 GTEXT_CSS_Span css_rule_span(const css_rule * rule);
 
@@ -278,6 +282,9 @@ css_sheet * css_sheet_from_obj(css_obj * o);
 
 /// A change of the sheet or of anything in it: its version moves and it gets a new stamp, greater than every stamp given before (so the greatest stamp among a sheet and the sheets it imports changes whenever anything in them does).
 void css_sheet_bump(css_sheet * sheet);
+
+/// Replace the sheet's title (`title` NULL: none; the Markup binding follows a `title` attribute). False if memory ran out, with the title as it was. No version, no event: the cascade does not read it.
+bool css_sheet_set_title(css_sheet * sheet, const char * title, size_t length);
 
 
 /// Where an inserted rule goes: what its text is read in.

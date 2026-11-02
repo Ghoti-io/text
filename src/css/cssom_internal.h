@@ -52,6 +52,7 @@ typedef struct css_core css_core;
 typedef struct css_obj css_obj;
 typedef struct css_cssom_event css_cssom_event;
 struct css_text_cache;
+struct css_qevent;
 struct GTEXT_CSSOM_Scope;
 struct GTEXT_CSSOM_Media_Query_List;
 
@@ -88,6 +89,15 @@ typedef struct {
 /// The test tap and, from C5c3, the observers: the one function every event goes through.
 typedef GTEXT_CSS_Status (*css_cssom_tap_fn)(void * user, const css_cssom_event * event);
 
+/// A registered observer (cssom_events.c).
+typedef struct {
+  uint64_t handle;
+  GTEXT_CSSOM_Observer_Fn fn;
+  void * user;
+  uint64_t since;                      ///< The generation when it was registered: it is called for the events after that.
+  bool dead;                           ///< Removed during a delivery; taken out when the outermost delivery ends.
+} css_observer;
+
 /// The document core: reference counted by the objects and the document handle, not atomic.
 struct css_core {
   size_t refs;
@@ -108,8 +118,17 @@ struct css_core {
   size_t inline_cap, inline_used, inline_live;
   struct css_text_cache * cache_head, * cache_tail;   ///< The cached `cssText` of leaf rules, the entry added first at the head.
   size_t cache_bytes;
-  css_cssom_tap_fn tap;                ///< Where events go (a test, and the observer registry of C5c3).
+  css_cssom_tap_fn tap;                ///< A test's hook: called at the mutation, never deferred by a batch. The observers are the registry below.
   void * tap_user;
+  /* observers, batches (cssom_events.c) */
+  css_observer * observers;
+  size_t nobservers, capobservers;     ///< Entries, dead ones included.
+  size_t live_observers;
+  uint64_t next_observer;
+  unsigned delivering;                 ///< Deliveries running (nesting depth, for the compaction).
+  unsigned batch_depth;
+  struct css_qevent * queue;           ///< The events of the open batch, in the order they were made.
+  size_t qcount, qcap, qdone;
   /* the document (cssom_document.c, cssom_scope.c, cssom_index.c, cssom_mql.c) */
   GTEXT_CSS_Conditions * conditions;   ///< Retained; never NULL while the core lives.
   uint64_t conditions_epoch;           ///< Advances when the conditions object is replaced by another.
@@ -140,6 +159,13 @@ struct css_cssom_event {
   void * scope;                        ///< The tree scope of a sheet-list or adopted-list event, or NULL.
   void * rule;                         ///< The rule, or NULL.
   bool silent;                         ///< The mutation changed an object that no sheet holds: no generation, no event.
+  /* the rule's place when a rule was taken out (it is not in its list any more): the rule it was in (NULL: the sheet) and the index */
+  bool has_position;
+  const void * position_parent;        ///< The rule the removed rule was in, or NULL for the sheet's own list.
+  size_t position_index;
+  /* a replace: the rule's selector list before the change (owned by the event: the commit takes it), and whether making it failed */
+  void * selectors_before;
+  bool before_failed;
   const void * element;                ///< The owner element of an inline style.
   const GTEXT_CSS_Property_Id * properties;   ///< The longhands whose declarations changed, ascending, without repeats.
   size_t property_count;
@@ -192,7 +218,20 @@ GTEXT_CSS_Status css_cssom_enter(css_core * core);
 /// After a mutation is complete and consistent: advance the generation, deliver the event, and report the first failure of an observer. `outcome` may be NULL.
 void css_cssom_commit(css_core * core, css_cssom_event * event, GTEXT_CSSOM_Outcome * outcome);
 
-/// Set the tap (NULL to clear). For tests; the observers of C5c3 are delivered through it.
+/// Deliver the event to the observers, or queue it in the open batch (cssom_events.c). Takes `event->selectors_before`.
+void css_events_emit(css_core * core, const css_cssom_event * event, GTEXT_CSSOM_Outcome * outcome);
+
+/// Make room for `n` more events in the open batch (nothing when there is none, or no observer): GTEXT_CSS_E_OOM, GTEXT_CSS_E_LIMIT_CSSOM. A mutator that sends more than one event calls it
+/// before it changes anything; css_cssom_enter() reserves one.
+GTEXT_CSS_Status css_cssom_reserve_events(css_core * core, size_t n);
+
+/// Whether an observer is registered: the mutators that need to capture state for the summary (a replace's selector list) ask. The test tap reads none of it.
+bool css_events_wanted(const css_core * core);
+
+/// The end of the document handle: the batch is dropped undelivered and the observers go.
+void css_events_teardown(css_core * core);
+
+/// Set the tap (NULL to clear). For tests: it sees every event at the mutation, a batch notwithstanding.
 void css_cssom_set_tap(css_core * core, css_cssom_tap_fn fn, void * user);
 
 /// The core of any object.

@@ -159,6 +159,28 @@ static GTEXT_CSS_Status sheet_make(GTEXT_CSSOM_Document * document, const char *
   return GTEXT_CSS_OK;
 }
 
+bool css_sheet_set_title(css_sheet * sheet, const char * title, size_t length) {
+  css_core * core = sheet->obj.core;
+  char * copy = NULL;
+  if (title) {
+    if (!css_obj_charge(&sheet->obj, length + 1)) {
+      return false;
+    }
+    copy = css_core_dup(core, title, length);
+    if (!copy) {
+      css_obj_credit(&sheet->obj, length + 1);
+      return false;
+    }
+  }
+  if (sheet->title) {
+    css_obj_credit(&sheet->obj, strlen(sheet->title) + 1);
+  }
+  GTEXT_Allocator a = core->alloc;
+  gtext_allocator_free(&a, sheet->title);
+  sheet->title = copy;
+  return true;
+}
+
 GTEXT_CSS_Status gtext_cssom_sheet_new_parsed(GTEXT_CSSOM_Document * document, const char * text, size_t length, const GTEXT_CSSOM_Sheet_Options * options,
     GTEXT_CSSOM_Sheet ** out) {
   return sheet_make(document, text, length, options, false, out);

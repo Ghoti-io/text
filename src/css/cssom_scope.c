@@ -283,6 +283,11 @@ GTEXT_CSS_Status gtext_cssom_scope_remove(GTEXT_CSSOM_Scope * scope, GTEXT_CSSOM
   if (!scope->home) {
     return GTEXT_CSS_OK;   /* UNCHANGED */
   }
+  /* one event for each owner sheet and one for the adopted list: their places in an open batch are taken before anything changes */
+  st = css_cssom_reserve_events(core, scope->nsheets + (scope->nadopted ? 1 : 0));
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
   /* nothing below can fail: the lists leave the scope first, and the events are about sheets held until the end */
   css_obj_retain_external(&scope->obj);
   css_sheet ** sheets = scope->sheets;

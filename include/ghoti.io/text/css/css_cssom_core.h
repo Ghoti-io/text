@@ -217,6 +217,8 @@ typedef struct {
   size_t max_scopes;                    ///< Most tree scopes registered with the document, its own included. Default 65,536. One more is GTEXT_CSS_E_LIMIT_CSSOM.
   size_t max_adopted;                   ///< Most sheets one scope adopts, a sheet listed twice counted twice. Default 1,048,576. One more is GTEXT_CSS_E_LIMIT_CSSOM.
   size_t max_media_query_lists;         ///< Most `MediaQueryList` objects alive at once. Default 1,048,576. One more is GTEXT_CSS_E_LIMIT_CSSOM.
+  size_t max_observers;                 ///< Most observers registered at once (gtext_cssom_document_observe()). Default 1,024. One more is GTEXT_CSS_E_LIMIT_CSSOM.
+  size_t max_queued_events;             ///< Most events a batch holds (gtext_cssom_document_begin_batch()). Default 1,048,576. A mutation that would queue one more is GTEXT_CSS_E_LIMIT_CSSOM and changes nothing.
 } GTEXT_CSSOM_Config;
 
 /** @brief The defaults, spelled out: `size` set, the registry and allocator NULL, the counters at 0 and 1, the limits as documented. */
@@ -254,6 +256,10 @@ typedef struct {
   uint64_t import_refused;          ///< Sheets the callback gave that were refused (owned, a cycle), and requests refused for their nesting.
   uint64_t mql_evaluations;         ///< Media query lists evaluated by an environment change or a `matches` that found its answer stale.
   uint64_t mql_notifications;       ///< Listener calls made because an answer changed.
+  uint64_t events_delivered;        ///< Events handed to the observers (an event with no observer is not built, and is not counted).
+  uint64_t event_calls;             ///< Calls of observer functions.
+  uint64_t events_degraded;         ///< Events whose affected-set summary could not be made (an allocation failed after the mutation was complete): delivered with `summary_complete` false.
+  uint64_t events_lost;             ///< Events that could not be queued in a batch although room was reserved. Always 0; a test asserts it.
   size_t live_scopes;               ///< Tree scopes registered with the document, its own included.
 } GTEXT_CSSOM_Counters;
 

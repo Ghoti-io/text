@@ -69,6 +69,9 @@
 #include <ghoti.io/text/css/css_condition.h>
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_cssom_core.h>
+#include <ghoti.io/text/css/css_cssom_decl.h>
+#include <ghoti.io/text/css/css_selector.h>
+#include <ghoti.io/text/css/css_property.h>
 #include <ghoti.io/text/css/css_cssom_media.h>
 #include <ghoti.io/text/css/css_cssom_rule.h>
 #include <ghoti.io/text/css/css_cssom_sheet.h>
@@ -249,6 +252,106 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_document_index(GTEXT_CSSOM_Document * doc
 
 /** @brief The same, with an owner for the caller: release it with gtext_css_rule_index_free(). This is what a reader thread takes while the writer goes on. */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_document_index_retained(GTEXT_CSSOM_Document * document, GTEXT_CSS_Rule_Index ** out);
+
+/* ---- observers and events ------------------------------------------------------------------------------------------------------------------------------ */
+
+/**
+ * @brief The dependency bits of an event whose selectors the library does not list: every `GTEXT_CSS_DEP_*` there is. A rule that holds rules (a group), a whole sheet, a sheet-list or
+ *   adopted-list change and a finished import affect rules whose selectors the event does not name, so the summary says "anything".
+ */
+#define GTEXT_CSSOM_DEP_ALL 0x7ffffu
+
+/**
+ * @struct GTEXT_CSSOM_Event
+ * @brief One notification, as an observer sees it: valid for the call only.
+ *
+ * Each mutation that changed something produces **one** event, after the mutation is complete and consistent and before the call returns (or, in a batch, at the end of the outermost
+ * batch, in the order the mutations were made). The object pointers are **borrowed**: the document holds them for the delivery even if a later event of the same batch removed or freed them
+ * for everyone else, so a binding can queue a record for the object's wrapper. Take your own reference to keep one.
+ *
+ * **The affected set** is data computed from what the mutation already touched; nothing in it walks the sheet.
+ * - A rule event (`RULE_INSERTED`, `RULE_REMOVED`, `RULE_REPLACED`) and a declaration event of a rule's block (`DECLARATIONS_CHANGED`) carry, for a style rule, its selector list
+ *   (`selectors`, parsed as the rule reads it, and `selectors_before` for a replace) with the dependency summary of each (`GTEXT_CSS_DEP_*` in `kinds`, the state bits and the attribute
+ *   names), and, for `@media`, `@import` and `@supports`, the condition dependency summary of C4 (`has_condition`). A rule that holds rules lists no selector (its `descendants` count says how
+ *   many it holds), and its `selector_dependencies.kinds` is GTEXT_CSSOM_DEP_ALL; so is the summary of a whole-sheet event.
+ * - A declaration event lists the changed properties ascending without repeats (a shorthand contributes its longhands), the names of the changed custom properties ascending by bytes, and
+ *   whether `all` is among them. An inline-style event also carries the element.
+ * - **`summary_complete` false** says the summary could not be made (an allocation failed after the mutation was complete): treat everything as affected.
+ */
+typedef struct {
+  size_t size;                       ///< `sizeof` this struct.
+  GTEXT_CSSOM_Event_Kind kind;
+  uint64_t generation;               ///< The document's generation after the mutation this event is about.
+  uint64_t sheet_id;                 ///< The sheet's id, or 0 for none (a user-agent or user sheet, a declaration of no sheet).
+  uint64_t rule_id;                  ///< The rule's id, or 0 for none.
+  GTEXT_CSSOM_Sheet * sheet;         ///< Borrowed. NULL for none.
+  GTEXT_CSSOM_Rule * rule;           ///< Borrowed. NULL for none (a whole sheet replaced).
+  GTEXT_CSSOM_Decl * declaration;    ///< Borrowed. The declaration block of a declaration or inline-style event.
+  GTEXT_CSSOM_Scope * scope;         ///< Borrowed. The tree scope of a sheet-list or adopted-list event.
+  const void * element;              ///< The owner element of an inline style (the caller's handle).
+  /** The rule's place when the event happened: the indexes from the sheet's `cssRules` down to the rule (a removed rule: where it was). In a batch the graph may have moved on; ids and
+   *  pointers are the reliable pair. `has_path` is false for an event with no rule, and when the path could not be made. */
+  const size_t * path;
+  size_t path_length;
+  bool has_path;
+  /** The rule is not attached to a sheet now, at delivery: this event removed it, or a later event of the batch did. */
+  bool detached_since;
+  bool attribute_written;            ///< An inline-style event: the element's `style` attribute was written.
+  bool summary_complete;
+  size_t descendants;                ///< The rules inside the rule.
+  const GTEXT_CSS_Selector_List * selectors;          ///< The rule's selector list after the event, or NULL.
+  const GTEXT_CSS_Selector_List * selectors_before;   ///< ... and before it (a replace), or NULL.
+  GTEXT_CSS_Selector_Dependencies selector_dependencies;          ///< Of `selectors`; GTEXT_CSSOM_DEP_ALL in `kinds` where they are not listed; 0 where selectors are not affected.
+  GTEXT_CSS_Selector_Dependencies selector_dependencies_before;   ///< Of `selectors_before`.
+  bool has_condition;                ///< `condition_dependencies` is filled.
+  GTEXT_CSS_Condition_Dependencies condition_dependencies;
+  const GTEXT_CSS_Property_Id * properties;           ///< Changed properties (longhands), ascending.
+  size_t property_count;
+  bool all_changed;                  ///< `all` is among them.
+  const GTEXT_CSS_String * custom_names;              ///< Changed custom properties, ascending by bytes.
+  size_t custom_count;
+} GTEXT_CSSOM_Event;
+
+/**
+ * @brief An observer: called for each event after the mutation is complete. Callbacks are synchronous, run in registration order, may read any object, and may **not** mutate: a mutation
+ *   from inside is GTEXT_CSS_E_REENTRANT (so is begin/end of a batch). Registering and removing observers is allowed. A status other than GTEXT_CSS_OK is reported as the call's
+ *   `observer_status` (the first one), the mutation stays, and the others are called.
+ */
+typedef GTEXT_CSS_Status (*GTEXT_CSSOM_Observer_Fn)(void * user, const GTEXT_CSSOM_Event * event);
+
+/** @brief An observer's handle: a number the document never reuses. */
+typedef uint64_t GTEXT_CSSOM_Observer_Handle;
+
+/**
+ * @brief Register an observer. It is called for the events made **after** this call (one registered during a delivery, or between the mutations of a batch, is not called for the events
+ *   already made).
+ *
+ * @param handle Receives the handle; written only on success. May be NULL for an observer that stays until the document goes.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (NULL document or function); GTEXT_CSS_E_LIMIT_CSSOM (`max_observers`); GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_document_observe(GTEXT_CSSOM_Document * document, GTEXT_CSSOM_Observer_Fn fn, void * user, GTEXT_CSSOM_Observer_Handle * handle);
+
+/** @brief Remove an observer; it is not called again, not even for an event being delivered. @return GTEXT_CSS_OK; GTEXT_CSS_E_NOT_FOUND (never registered, or removed); GTEXT_CSS_E_INVALID. */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_document_unobserve(GTEXT_CSSOM_Document * document, GTEXT_CSSOM_Observer_Handle handle);
+
+/** @brief How many observers are registered. 0 for NULL. */
+GTEXT_API size_t gtext_cssom_document_observer_count(const GTEXT_CSSOM_Document * document);
+
+/**
+ * @brief Begin a batch (an editor transaction): delivery of the events is deferred to the end of the outermost batch, in the order the mutations were made, while versions and the generation
+ *   still move with each mutation. Batches nest. A mutation that finds the batch full (`max_queued_events`), or cannot make room, is refused with nothing changed.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_REENTRANT (from an observer); GTEXT_CSS_E_LIMIT_CSSOM (the depth would pass 2^32 - 1).
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_document_begin_batch(GTEXT_CSSOM_Document * document);
+
+/**
+ * @brief End a batch. At the end of the outermost one the queued events are delivered; `outcome->observer_status` is the first failure of an observer.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID_STATE (no batch is open); GTEXT_CSS_E_REENTRANT.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_document_end_batch(GTEXT_CSSOM_Document * document, GTEXT_CSSOM_Outcome * outcome);
+
+/** @brief How many batches are open. 0 for NULL. */
+GTEXT_API size_t gtext_cssom_document_batch_depth(const GTEXT_CSSOM_Document * document);
 
 /* ---- imports ---------------------------------------------------------------------------------------------------------------------------- */
 

@@ -534,6 +534,9 @@ static GTEXT_CSS_Status delete_at(place * pl, size_t index, GTEXT_CSSOM_Outcome 
   css_cssom_event ev;
   memset(&ev, 0, sizeof ev);
   ev.kind = GTEXT_CSSOM_EVENT_RULE_REMOVED;
+  ev.has_position = true;   /* the rule is out of its list: its path is where it was */
+  ev.position_parent = pl->list->owner->kind == GTEXT_CSSOM_OBJECT_RULE ? (const void *)pl->list->owner : NULL;
+  ev.position_index = index;
   settle(pl, old, removed, false, &ev);
   css_rule_touch(old);
   if (new_env) {

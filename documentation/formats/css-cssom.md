@@ -731,6 +731,193 @@ change: matches yes
 after the resize: 3 records, the sheet is the same object
 ```
 
+## Observers, events and batches
+
+`gtext_cssom_document_observe(document, fn, user, &handle)` registers an observer; `gtext_cssom_document_unobserve()` removes it by the handle (a number the document never reuses). At most `max_observers` (default 1,024) may be registered; one more is `GTEXT_CSS_E_LIMIT_CSSOM`.
+
+**One event for each mutation that changed something**, delivered after the mutation is complete and consistent and before the call returns: the state an observer reads is the state after the mutation, and `event->generation` is the generation the mutation made. A mutation that changes nothing (a byte-identical `setProperty`, a value that is ignored, a rule that no sheet holds) sends nothing. The kinds are `SHEET_ADDED`, `SHEET_REMOVED`, `SHEET_DISABLED_CHANGED`, `SHEET_MEDIA_CHANGED`, `RULE_INSERTED`, `RULE_REMOVED`, `RULE_REPLACED` (a selector, a condition or a descriptor text changed, or a whole sheet was replaced), `DECLARATIONS_CHANGED`, `INLINE_STYLE_CHANGED`, `ADOPTED_CHANGED`, `IMPORT_COMPLETED` and `CONDITIONS_CHANGED`.
+
+**What an event holds.** Ids and pointers (`sheet`, `rule`, `declaration`, `scope`, the `element` of an inline style) that are **borrowed**: the document holds them for the delivery, even if a later event of the same batch removed them for everybody else, so that a binding can queue a record for an object's wrapper; take your own reference to keep one. The `path` of the rule, the indexes from the sheet's `cssRules` down to it, **as of that event** (a removed rule: where it was), and `detached_since`, whether the rule is out of its sheet by the time of delivery. In a batch the graph may have moved on: ids and pointers are the reliable pair.
+
+**The affected set** is data computed from what the mutation already touched, never a walk of the sheet. A style rule's event carries its selector list (`selectors`, and `selectors_before` for a replace) with the dependency summary of each (`GTEXT_CSS_DEP_*`, the state bits, the attribute names); `@media`, `@import` and `@supports` carry the condition summary of the media layer; a declaration event carries the changed properties, ascending and without repeats, a shorthand contributing its longhands, the names of the changed custom properties, and whether `all` is among them. What the library does not list it says as *anything*: a rule that holds rules, a whole sheet, a finished import and a change of the sheet list have `selector_dependencies.kinds` equal to `GTEXT_CSSOM_DEP_ALL`. `summary_complete` is false when the summary could not be made (an allocation failed after the mutation was complete, which cannot be undone): treat everything as affected. The mutation itself never fails for it.
+
+**Delivery** is synchronous and in registration order. An observer may read any object and may not mutate: every mutator, `begin_batch` and `end_batch` return `GTEXT_CSS_E_REENTRANT` from inside one. It may register and remove observers; one registered during a delivery is not called for the events already made, one removed is not called again. A status other than `GTEXT_CSS_OK` is `outcome->observer_status` (the first one), the mutation stays, and the other observers are called.
+
+**Batches** are an editor's transaction: `gtext_cssom_document_begin_batch()` defers delivery to the end of the outermost `end_batch()`, in the order the mutations were made, while versions and the generation still move with each mutation. The place of an event in the queue is taken before the mutation changes anything, so a batch that is full (`max_queued_events`) or cannot grow refuses the mutation, with nothing changed. A batch with no observer queues nothing. The handle going away with a batch open drops what was queued.
+
+```c
+#include <ghoti.io/text/css.h>
+#include <stdio.h>
+#include <string.h>
+
+static const char * kind_name(GTEXT_CSSOM_Event_Kind kind) {
+  switch (kind) {
+  case GTEXT_CSSOM_EVENT_RULE_INSERTED: return "rule inserted";
+  case GTEXT_CSSOM_EVENT_RULE_REMOVED: return "rule removed";
+  case GTEXT_CSSOM_EVENT_RULE_REPLACED: return "rule replaced";
+  case GTEXT_CSSOM_EVENT_DECLARATIONS_CHANGED: return "declarations changed";
+  default: return "other";
+  }
+}
+
+/* What an invalidation set needs, read from the event: where the rule is, its selectors before and after, and which properties changed. */
+static GTEXT_CSS_Status observe(void * user, const GTEXT_CSSOM_Event * event) {
+  const GTEXT_Allocator * allocator = (const GTEXT_Allocator *)user;
+  printf("%s", kind_name(event->kind));
+  if (event->has_path) {
+    printf(" at");
+    for (size_t i = 0; i < event->path_length; i++) {
+      printf(" %zu", event->path[i]);
+    }
+  }
+  char * text = NULL;
+  size_t length = 0;
+  if (event->selectors_before && gtext_css_selector_serialize_buffer(event->selectors_before, allocator, &text, &length) == GTEXT_CSS_OK) {
+    printf(", was %s", text);
+    gtext_css_selector_buffer_free(allocator, text);
+  }
+  if (event->selectors && gtext_css_selector_serialize_buffer(event->selectors, allocator, &text, &length) == GTEXT_CSS_OK) {
+    printf(", selectors %s (class %s, attribute %s)", text, (event->selector_dependencies.kinds & GTEXT_CSS_DEP_CLASS) ? "yes" : "no",
+        (event->selector_dependencies.kinds & GTEXT_CSS_DEP_ATTR) ? "yes" : "no");
+    gtext_css_selector_buffer_free(allocator, text);
+  }
+  if (event->property_count) {
+    printf(", %zu properties", event->property_count);
+  }
+  printf(", detached %s\n", event->detached_since ? "yes" : "no");
+  return GTEXT_CSS_OK;
+}
+
+/* Observers: one event for each mutation that changed something, after the state is consistent; a batch defers them to its end. */
+static void cssom_events(void) {
+  GTEXT_CSS_Registry * registry = NULL;
+  gtext_css_registry_new(NULL, &registry);
+  GTEXT_CSSOM_Config config = gtext_cssom_config_default();
+  config.registry = registry;
+  GTEXT_CSSOM_Document * document = NULL;
+  gtext_cssom_document_new(&config, &document);
+  const GTEXT_Allocator * allocator = gtext_cssom_document_allocator(document);
+
+  const char * text = "a { color: red } @media screen { b { width: 1px } }";
+  GTEXT_CSSOM_Sheet * sheet = NULL;
+  gtext_cssom_sheet_new_parsed(document, text, strlen(text), NULL, &sheet);
+  GTEXT_CSSOM_Observer_Handle handle = 0;
+  gtext_cssom_document_observe(document, observe, (void *)allocator, &handle);
+
+  gtext_cssom_sheet_insert_rule(sheet, "ul > li.on[title] { margin: 0 }", 31, 0, NULL, NULL);
+  const GTEXT_CSSOM_Rule_List * rules = NULL;
+  gtext_cssom_sheet_rules(sheet, &rules);
+  GTEXT_CSSOM_Rule * first = gtext_cssom_rule_list_at(rules, 0);
+  gtext_cssom_rule_set_selector_text(first, "p, q", 4, NULL);
+
+  /* a batch: nothing is delivered until the outermost one ends, in the order the mutations were made */
+  gtext_cssom_document_begin_batch(document);
+  gtext_cssom_sheet_delete_rule(sheet, 0, NULL);
+  GTEXT_CSSOM_Decl * style = NULL;
+  GTEXT_CSSOM_Rule * second = gtext_cssom_rule_list_at(rules, 0);
+  gtext_cssom_rule_style(second, &style);
+  gtext_cssom_decl_set_property(style, "color", 5, "blue", 4, "", 0, NULL);
+  printf("in the batch: nothing yet\n");
+  gtext_cssom_document_end_batch(document, NULL);
+
+  gtext_cssom_decl_release(style);
+  gtext_cssom_rule_release(second);
+  gtext_cssom_rule_release(first);
+  gtext_cssom_document_unobserve(document, handle);
+  gtext_cssom_sheet_release(sheet);
+  gtext_cssom_document_release(document);
+  gtext_css_registry_free(registry);
+}
+```
+
+prints
+
+```
+rule inserted at 0, selectors ul > li.on[title] (class yes, attribute yes), detached no
+rule replaced at 0, was ul > li.on[title], selectors p, q (class no, attribute no), detached no
+in the batch: nothing yet
+rule removed at 0, selectors p, q (class no, attribute no), detached yes
+declarations changed at 0, selectors a (class no, attribute no), 1 properties, detached no
+```
+
+## The Markup binding
+
+`css_cssom_markup.h` connects a Markup document to a tree scope. `gtext_cssom_markup_sync()` makes the scope's `styleSheets` say what the document's elements say, with the HTML Standard's rules: an HTML or SVG `style` element that is connected, whose `type` is absent, empty or, whole, an ASCII case-insensitive `text/css` (`text/css; charset=utf-8` and ` text/css` are not: the browsers do not trim or parse it), has a sheet made from its child text content, with its `media`, its `title` and the element as `owner_node`; an HTML `link` with `rel` `stylesheet` and an `href` is asked of the **link callback**, which gives the text (the library never fetches), says the link is pending (`gtext_cssom_markup_link_complete()` gives it later) or says it failed.
+
+**What a change does.** A change of a `<style>` element's text removes the sheet and makes a new one, with a new `sheet_id`: the rules the object model had added are gone and the element's text is not changed by them (`insertRule` on a `<style>` sheet changes only the sheet, and the next sync keeps it, because the text did not change). An element that moved is a new sheet and the others are kept, snapshots and all. An element that left the tree takes its sheet out of `styleSheets` and the index (`SHEET_REMOVED`), and **the sheet stays a valid, mutable object** with `owner_node` NULL: `insertRule` on it works and affects nothing. `media` and `title` are changed in place. Both browsers agree on every one of these but the last two and on text set to the value it already had; where they differ the library is on the side of Chromium (the same sheet), and Firefox makes a new one.
+
+**`sync` is cheap when nothing changed.** The Markup document's generation counts every change of the tree. A sync that finds it unchanged since the last one returns with no walk; otherwise it walks the tree once, compares each style element's text with the text its sheet was made from (length, then bytes) and keeps what is unchanged. A caller that is told which element changed calls `gtext_cssom_markup_style_element_changed()` and pays for that element. A sync is not atomic as a whole, but every step is: one that fails stops with the document consistent and the next call goes on. The events of one sync are one batch.
+
+```c
+#include <ghoti.io/text/css.h>
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* A Markup document's <style> elements are the owner sheets of the scope: one sync makes the list say what the elements say, and an unchanged tree costs no walk. */
+static void cssom_markup(void) {
+  const char * html = "<!DOCTYPE html><html><head><style>p { color: red }</style><style type=\"text/plain\">q { }</style></head><body><style>div { width: 1px }</style></body></html>";
+  GTEXT_Markup_Document * markup = NULL;
+  GTEXT_HTML_Result result;
+  memset(&result, 0, sizeof result);
+  gtext_html_parse(html, strlen(html), NULL, &markup, &result);
+  gtext_html_result_free(&result);
+
+  GTEXT_CSS_Registry * registry = NULL;
+  gtext_css_registry_new(NULL, &registry);
+  GTEXT_CSSOM_Config config = gtext_cssom_config_default();
+  config.registry = registry;
+  config.tree_version = gtext_cssom_markup_tree_version;   /* the Markup document's generation: an edit of an element's style attribute is seen */
+  config.tree_version_user = markup;
+  GTEXT_CSSOM_Document * document = NULL;
+  gtext_cssom_document_new(&config, &document);
+  GTEXT_CSSOM_Scope * scope = gtext_cssom_document_scope(document);
+
+  GTEXT_CSSOM_Markup_Binding * binding = NULL;
+  gtext_cssom_markup_binding_new(document, scope, markup, NULL, &binding);
+  gtext_cssom_markup_sync(binding, NULL);
+  printf("sheets: %zu (the style with type text/plain has none)\n", gtext_cssom_scope_sheet_count(scope));
+
+  GTEXT_CSSOM_Markup_Counters before, after;
+  gtext_cssom_markup_binding_counters(binding, &before);
+  gtext_cssom_markup_sync(binding, NULL);
+  gtext_cssom_markup_binding_counters(binding, &after);
+  printf("sync of an unchanged tree: walks %llu\n", (unsigned long long)(after.walks - before.walks));
+
+  /* a change of an element's text is a new sheet; the other is kept */
+  GTEXT_Markup_Node * root = gtext_markup_document_root(markup);
+  GTEXT_Markup_Node * node = gtext_markup_node_next_in_order(root, root, false);
+  while (node && !gtext_markup_element_is(node, GTEXT_MARKUP_NS_HTML, "style")) {
+    node = gtext_markup_node_next_in_order(root, node, false);
+  }
+  GTEXT_CSSOM_Sheet * old_sheet = gtext_cssom_markup_sheet_of(binding, node);
+  GTEXT_Markup_Node * old_text = gtext_markup_node_first_child(node);
+  gtext_markup_node_set_data(old_text, "p { color: blue }", 17);
+  GTEXT_CSSOM_Outcome outcome;
+  gtext_cssom_markup_sync(binding, &outcome);
+  GTEXT_CSSOM_Sheet * new_sheet = gtext_cssom_markup_sheet_of(binding, node);
+  printf("after the text change: %s sheet, the old sheet has %s owner, outcome %s\n", new_sheet != old_sheet ? "a new" : "the same", gtext_cssom_sheet_owner_node(old_sheet) ? "an" : "no",
+      outcome.kind == GTEXT_CSSOM_CHANGED ? "changed" : "unchanged");
+
+  gtext_cssom_sheet_release(new_sheet);
+  gtext_cssom_sheet_release(old_sheet);
+  gtext_cssom_markup_binding_free(binding);
+  gtext_cssom_document_release(document);
+  gtext_css_registry_free(registry);
+  gtext_markup_document_free(markup);
+}
+```
+
+prints
+
+```
+sheets: 2 (the style with type text/plain has none)
+sync of an unchanged tree: walks 0
+after the text change: a new sheet, the old sheet has no owner, outcome changed
+```
+
+`gtext_cssom_markup_inline_binding()` is the attribute binding of the previous section for a Markup element, and `gtext_cssom_markup_tree_version()` the config's `tree_version` hook for a Markup document, so that a declaration notices a `setAttribute('style', ...)` made through the Markup API on its next call.
+
 ## Utilities
 
 `gtext_cssom_escape()` is `CSS.escape()`: CSSOM's "serialize an identifier" of well-formed UTF-8 (or WTF-8, where a lone surrogate is one code point). The empty text is the empty text, a NUL is U+FFFD, and the result always reads back as the text. A character from U+0080 up is written as it is only where it is a non-ASCII ident code point of CSS Syntax; otherwise it is escaped, which is what the served text says and what the browsers do not do for every such character.

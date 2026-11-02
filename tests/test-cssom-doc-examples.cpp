@@ -52,6 +52,8 @@ namespace snippets {
 #include "doc-snippets/css/cssom-setters.c"
 #include "doc-snippets/css/cssom-snapshot.c"
 #include "doc-snippets/css/cssom-document.c"
+#include "doc-snippets/css/cssom-events.c"
+#include "doc-snippets/css/cssom-markup.c"
 } // namespace snippets
 
 namespace {
@@ -73,6 +75,8 @@ const Snippet kSnippets[] = {
         "records: 2, imports: 0\nafter the import: records 2, imports 1, imported records 1\nasked again: the same object\nafter a change in the import: a new object, imported records 2; the second still has 1\n"},
     {"cssom-document.c", snippets::cssom_document,
         "index: 1 records, asked again: the same object\nafter adopting: 2 records in 2 sheets (the old index is not the new one: yes)\nchange: matches yes\nafter the resize: 3 records, the sheet is the same object\n"},
+    {"cssom-events.c", snippets::cssom_events, "rule inserted at 0, selectors ul > li.on[title] (class yes, attribute yes), detached no\nrule replaced at 0, was ul > li.on[title], selectors p, q (class no, attribute no), detached no\nin the batch: nothing yet\nrule removed at 0, selectors p, q (class no, attribute no), detached yes\ndeclarations changed at 0, selectors a (class no, attribute no), 1 properties, detached no\n"},
+    {"cssom-markup.c", snippets::cssom_markup, "sheets: 2 (the style with type text/plain has none)\nsync of an unchanged tree: walks 0\nafter the text change: a new sheet, the old sheet has no owner, outcome changed\n"},
     {"cssom-sheet.c", snippets::cssom_sheet, "rules: 2, dropped: 1\nCSSStyleRule (type 1) at line 1\nCSSMediaRule (type 4) at line 2\nstyle: width: 2px; (sheet version 1, owner is the sheet: yes)\nafter the release: 2 rules\n"},
 };
 

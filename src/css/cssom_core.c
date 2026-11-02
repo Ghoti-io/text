@@ -51,6 +51,8 @@
 #define DEFAULT_MAX_SCOPES ((size_t)1 << 16)
 #define DEFAULT_MAX_ADOPTED ((size_t)1 << 20)
 #define DEFAULT_MAX_MEDIA_QUERY_LISTS ((size_t)1 << 20)
+#define DEFAULT_MAX_OBSERVERS ((size_t)1024)
+#define DEFAULT_MAX_QUEUED_EVENTS ((size_t)1 << 20)
 
 struct GTEXT_CSSOM_Document {
   css_core * core;
@@ -76,6 +78,8 @@ GTEXT_CSSOM_Config gtext_cssom_config_default(void) {
   c.max_scopes = DEFAULT_MAX_SCOPES;
   c.max_adopted = DEFAULT_MAX_ADOPTED;
   c.max_media_query_lists = DEFAULT_MAX_MEDIA_QUERY_LISTS;
+  c.max_observers = DEFAULT_MAX_OBSERVERS;
+  c.max_queued_events = DEFAULT_MAX_QUEUED_EVENTS;
   return c;
 }
 
@@ -122,6 +126,13 @@ static void config_fill(GTEXT_CSSOM_Config * out, const GTEXT_CSSOM_Config * in)
   if (!out->max_scopes) out->max_scopes = d.max_scopes;
   if (!out->max_adopted) out->max_adopted = d.max_adopted;
   if (!out->max_media_query_lists) out->max_media_query_lists = d.max_media_query_lists;
+  /* the observers' fields: a caller built against the header of C5c2 has none of them */
+  if (n < offsetof(GTEXT_CSSOM_Config, max_queued_events) + sizeof in->max_queued_events) {
+    out->max_observers = 0;
+    out->max_queued_events = 0;
+  }
+  if (!out->max_observers) out->max_observers = d.max_observers;
+  if (!out->max_queued_events) out->max_queued_events = d.max_queued_events;
 }
 
 GTEXT_CSS_Status gtext_cssom_document_new(const GTEXT_CSSOM_Config * config, GTEXT_CSSOM_Document ** out) {
@@ -186,6 +197,8 @@ void css_core_release(css_core * core) {
   css_index_teardown(core);
   gtext_css_conditions_free(core->conditions);
   GTEXT_Allocator a = core->alloc;
+  gtext_allocator_free(&a, core->observers);
+  gtext_allocator_free(&a, core->queue);
   gtext_allocator_free(&a, core->regs);
   gtext_allocator_free(&a, core->scopes);
   gtext_allocator_free(&a, core);
@@ -201,6 +214,7 @@ void gtext_cssom_document_release(GTEXT_CSSOM_Document * document) {
   core->tap = NULL;
   core->tap_user = NULL;
   gtext_allocator_free(&a, document);
+  css_events_teardown(core);
   css_scope_teardown_all(core);
   css_index_teardown(core);
   css_core_release(core);
@@ -254,7 +268,8 @@ GTEXT_CSS_Status css_cssom_enter(css_core * core) {
   if (core->generation == UINT64_MAX) {
     return GTEXT_CSS_E_LIMIT_CSSOM;
   }
-  return GTEXT_CSS_OK;
+  /* in a batch the event this mutation sends has its place before anything changes */
+  return css_cssom_reserve_events(core, 1);
 }
 
 void css_cssom_commit(css_core * core, css_cssom_event * event, GTEXT_CSSOM_Outcome * outcome) {
@@ -263,6 +278,7 @@ void css_cssom_commit(css_core * core, css_cssom_event * event, GTEXT_CSSOM_Outc
     if (outcome) {
       outcome->generation = core->generation;
     }
+    gtext_css_selector_list_free((GTEXT_CSS_Selector_List *)event->selectors_before);
     return;
   }
   core->generation++;
@@ -285,6 +301,12 @@ void css_cssom_commit(css_core * core, css_cssom_event * event, GTEXT_CSSOM_Outc
     if (held) {
       css_obj_release_external(held);
     }
+  }
+  if (core->live_observers > 0) {
+    css_events_emit(core, event, outcome);
+  }
+  else {
+    gtext_css_selector_list_free((GTEXT_CSS_Selector_List *)event->selectors_before);
   }
 }
 

@@ -32,6 +32,7 @@
 #include <ghoti.io/text/css/css_cssom_core.h>
 #include <ghoti.io/text/css/css_cssom_decl.h>
 #include <ghoti.io/text/css/css_cssom_document.h>
+#include <ghoti.io/text/css/css_cssom_markup.h>
 #include <ghoti.io/text/css/css_cssom_media.h>
 #include <ghoti.io/text/css/css_cssom_rule.h>
 #include <ghoti.io/text/css/css_cssom_sheet.h>

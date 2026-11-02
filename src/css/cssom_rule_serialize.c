@@ -276,6 +276,37 @@ static GTEXT_CSS_Status write_selectors(sw * w, const css_rule * rule) {
   return w->st != GTEXT_CSS_OK ? w->st : st;
 }
 
+GTEXT_CSS_Status css_rule_selector_list(const css_rule * rule, GTEXT_CSS_Selector_List ** out) {
+  css_core * core = rule->obj.core;
+  *out = NULL;
+  GTEXT_CSS_Namespace_Map map;
+  css_ns_env_map(rule->source ? rule->source->ns : NULL, &map);
+  bool relative = false, in_scope = false;
+  selector_context(rule, &relative, &in_scope);
+  const GTEXT_CSS_Selector_Options so = gtext_css_selector_options_default();
+  GTEXT_CSS_Selector_List * list = NULL;
+  GTEXT_CSS_Status st;
+  if (in_scope || (relative && !rule->nested)) {
+    /* a style rule directly in an `@scope`: read relative to it */
+    st = css_sheet_selector_prelude(&core->alloc, &so, &map, rule->node->prelude, rule->node->prelude_count, true, true, &list);
+  }
+  else {
+    st = css_sheet_selector_prelude(&core->alloc, &so, &map, rule->node->prelude, rule->node->prelude_count, rule->nested, false, &list);
+    if (st == GTEXT_CSS_OK && !list) {
+      /* a rule that left its parent has lost the context it was read in: read it as relative */
+      st = css_sheet_selector_prelude(&core->alloc, &so, &map, rule->node->prelude, rule->node->prelude_count, true, true, &list);
+    }
+  }
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (!list) {
+    return GTEXT_CSS_E_INTERNAL;   /* it was valid when the rule was made */
+  }
+  *out = list;
+  return GTEXT_CSS_OK;
+}
+
 /// The text of a style rule's or a nested-declarations rule's own declarations, in `out`; empty when there are none.
 static GTEXT_CSS_Status declarations_text(css_rule * rule, tbuf * out) {
   css_core * core = rule->obj.core;
