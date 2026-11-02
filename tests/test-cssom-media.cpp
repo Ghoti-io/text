@@ -167,10 +167,21 @@ TEST(CssomMedia, AppendAndDeleteCompareBySerialization) {
   EXPECT_EQ(append(m.m, "  SCREEN ").o.kind, GTEXT_CSSOM_UNCHANGED) << "already in the list";
   EXPECT_EQ(append(m.m, "print and (min-width:1px)").o.kind, GTEXT_CSSOM_CHANGED);
   EXPECT_EQ(text(m.m), "screen, print and (min-width: 1px)");
-  EXPECT_EQ(append(m.m, "screen, print").o.kind, GTEXT_CSSOM_IGNORED_INVALID_VALUE) << "one medium";
-  EXPECT_EQ(append(m.m, "(bogus: 1) and").o.kind, GTEXT_CSSOM_IGNORED_INVALID_VALUE);
-  EXPECT_EQ(append(m.m, "").o.kind, GTEXT_CSSOM_IGNORED_INVALID_VALUE);
+  // CSSOM 4.1: "To parse a media query for a given string s means to follow the parse a media query list steps and return null if more than one media query is returned", and
+  // appendMedium(): "Let m be the result of parsing the given value. If m is null, then return."
+  EXPECT_EQ(append(m.m, "screen, print").o.kind, GTEXT_CSSOM_UNCHANGED) << "two media: null, nothing happens";
+  EXPECT_EQ(append(m.m, "").o.kind, GTEXT_CSSOM_UNCHANGED) << "none: null as well";
   EXPECT_EQ(text(m.m), "screen, print and (min-width: 1px)");
+  // "A media query that ends up being 'ignored' will turn into 'not all'": it is a medium, and it is appended
+  EXPECT_EQ(append(m.m, "(bogus: 1) and").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(m.m), "screen, print and (min-width: 1px), not all");
+  EXPECT_EQ(append(m.m, "bogus!!").o.kind, GTEXT_CSSOM_UNCHANGED) << "and `not all` is already there";
+  EXPECT_EQ(del(m.m, "screen, print").st, GTEXT_CSS_OK) << "deleteMedium(): \"If m is null, then return.\" (two media)";
+  EXPECT_EQ(del(m.m, "").st, GTEXT_CSS_OK) << "(none)";
+  EXPECT_EQ(text(m.m), "screen, print and (min-width: 1px), not all");
+  EXPECT_EQ(del(m.m, "(bogus: 1) and").st, GTEXT_CSS_OK) << "an ignored query is `not all`, which the list holds";
+  EXPECT_EQ(text(m.m), "screen, print and (min-width: 1px)");
+  EXPECT_EQ(del(m.m, "bogus!!").st, GTEXT_CSS_E_NOT_FOUND) << "and now it holds none";
   EXPECT_EQ(del(m.m, "print and (min-width:1px)").st, GTEXT_CSS_OK);
   EXPECT_EQ(text(m.m), "screen");
   EXPECT_EQ(del(m.m, "tv").st, GTEXT_CSS_E_NOT_FOUND) << "\"throw a NotFoundError\"";

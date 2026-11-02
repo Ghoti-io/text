@@ -492,3 +492,46 @@ TEST(CssomSetters, TheDescriptorsOfAColorProfileAreItsAttributes) {
   EXPECT_TRUE(gtext_cssom_rule_has_attribute(r.r, "renderingIntent", 15, &writable));
   EXPECT_FALSE(writable);
 }
+
+TEST(CssomSetters, ATypedBlocksCssTextIsWhatTheDeclarationBlockSaysOfIt) {
+  // the browsers agree (the differential, css_cssom_gen.py): `style.cssText = "margin: 1px; margin-top: 2px"` of an @page or a keyframe is `margin: 2px 1px 1px`, and a later
+  // declaration does not replace an important one; CSSOM, "update a CSS declaration block": the declarations are set one by one
+  Doc doc;
+  Sheet s(doc, "@page { margin: 1px } @keyframes k { from { opacity: 0 } }");
+  Rule page = path(s, {0});
+  Decl d = style_of(page.r);
+  ASSERT_NE(d.d, nullptr);
+  ASSERT_EQ(set_text(d.d, "margin: 1px; margin-top: 2px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(css(page.r), "@page { margin: 2px 1px 1px; }");
+  EXPECT_EQ(length(d.d), 4u);
+  ASSERT_EQ(set_text(d.d, "color: red !important; color: blue").st, GTEXT_CSS_OK);
+  EXPECT_EQ(css(page.r), "@page { color: red !important; }");
+  Rule frame = path(s, {1, 0});
+  Decl f = style_of(frame.r);
+  ASSERT_NE(f.d, nullptr);
+  ASSERT_EQ(set_text(f.d, "margin: 1px; margin-top: 2px; margin-left: 3px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(css(frame.r), "0% { margin: 2px 1px 1px 3px; }");
+}
+
+TEST(CssomSetters, APageAndItsMarginBoxesTakeTheListsOfAppendixA) {
+  // Paged Media 3, 4.3: "The @page rule can only contain page properties and margin at-rules. The margin at-rules can only contain page-margin properties." and Appendix A, which lists
+  // the properties of each context one by one (the prefixes of the categories it names are not the list)
+  Doc doc;
+  Sheet s(doc, "@page { direction: rtl; unicode-bidi: embed; background-clip: content-box; border-radius: 1px; font-kerning: none; display: block; min-height: 1px; --x: 1; text-shadow: none;"
+               " @top-left { unicode-bidi: embed; content: \"x\"; z-index: 1; background-clip: content-box; display: block; --y: 2 } }");
+  // custom properties: in no category of the appendix; kept in the page context (Chromium drops and Firefox keeps: the draft is silent, the browsers differ), dropped in a margin box
+  // (Chromium drops; Firefox 158 has no margin boxes to ask)
+  EXPECT_EQ(css(path(s, {0}).r),
+      "@page {\n  direction: rtl; min-height: 1px; --x: 1;\n  @top-left { unicode-bidi: embed; content: \"x\"; z-index: 1; }\n}");
+}
+
+TEST(CssomSetters, APseudoPageIsAKeywordAndIsWrittenInLowerCase) {
+  // the pinned css/cssom/cssom-pagerule.html: "named:First" is "named:first"; the page name keeps its case
+  Doc doc;
+  Sheet s(doc, "@page Named:First:LEFT { }");
+  Rule r = path(s, {0});
+  EXPECT_EQ(selector_text(r.r), "Named:first:left");
+  ASSERT_EQ(set_selector(r.r, "other:First").st, GTEXT_CSS_OK);
+  EXPECT_EQ(selector_text(r.r), "other:first");
+  EXPECT_EQ(css(r.r), "@page other:first { }");
+}

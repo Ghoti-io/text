@@ -725,6 +725,11 @@ GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTE
       fresh++;
       continue;
     }
+    if (block->parse_mode && !(keep_important && !important && block->items[slots[i] - 1].important)) {
+      moved[i] = 1;   /* a parsed list: the later declaration goes after everything before it, and the earlier one is gone */
+      fresh++;
+      continue;
+    }
     bool is_same = false;
     if (keep_important && !important && block->items[slots[i] - 1].important) {
       is_same = true;   /* a list of declarations: a later declaration does not override an earlier important one of the same property */
@@ -824,7 +829,11 @@ GTEXT_CSS_Status css_block_set_custom_ex(GTEXT_CSS_Declaration_Block * block, co
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  const size_t at = block_lookup(block, 0, name, name_length);
+  size_t at = block_lookup(block, 0, name, name_length);
+  if (at && block->parse_mode && !(keep_important && !important && block->items[at - 1].important)) {
+    kill_key(block, 0, name, name_length);   /* a parsed list: the later declaration is appended, the earlier one goes */
+    at = 0;
+  }
   if (at) {
     bool is_same = false;
     if (keep_important && !important && block->items[at - 1].important) {
@@ -1067,7 +1076,11 @@ GTEXT_CSS_Status css_block_set_opaque_ex(GTEXT_CSS_Declaration_Block * block, GT
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  const size_t at = block_lookup(block, id, NULL, 0);
+  size_t at = block_lookup(block, id, NULL, 0);
+  if (at && block->parse_mode && !(keep_important && !important && block->items[at - 1].important)) {
+    kill_key(block, id, NULL, 0);   /* a parsed list: the later declaration is appended, the earlier one goes */
+    at = 0;
+  }
   if (at) {
     blk_item * it = &block->items[at - 1];
     if (keep_important && !important && it->important) {

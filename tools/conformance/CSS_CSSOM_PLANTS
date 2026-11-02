@@ -94,7 +94,8 @@ descriptors-are-not-listed-with-the-length	cssom_decl.c	  *out = gtext_css_block
 a-descriptor-is-not-written-in-css-text	cssom_decl.c	  if (st == GTEXT_CSS_OK && decl->ndescs) {\n    st = css_typed_desc_text(decl, &b);\n  }	  if (0) {\n    st = css_typed_desc_text(decl, &b);\n  }	setters
 selector-block-is-built-after-the-swap	cssom_setters.c	  if (style) {\n    /* the block, not the syntax	  if (0) {\n    /* the block, not the syntax	setters
 an-unchanged-media-text-is-a-change	cssom_media.c	  if (same) {\n    if (outcome) {\n      outcome->kind = GTEXT_CSSOM_UNCHANGED;\n    }\n    return GTEXT_CSS_OK;\n  }	  if (0) {\n    return GTEXT_CSS_OK;\n  }	media
-an-invalid-medium-is-appended	cssom_media.c	  if (st == GTEXT_CSS_OK && (queries != 1 || !clean)) {	  if (st == GTEXT_CSS_OK && (queries != 1)) {	media
+an-ambiguous-medium-is-appended	cssom_media.c	  if (st == GTEXT_CSS_OK && queries != 1) {\n    /* CSSOM, 4.1	  if (st == GTEXT_CSS_OK && 0) {\n    /* CSSOM, 4.1	media
+delete-of-two-media-is-not-found	cssom_media.c	  if (st == GTEXT_CSS_OK && queries != 1) {\n    out->kind = GTEXT_CSSOM_UNCHANGED;   /* CSSOM: "Let m	  if (0) {\n    out->kind = GTEXT_CSSOM_UNCHANGED;   /* CSSOM: "Let m	media
 a-medium-already-there-is-appended-again	cssom_media.c	          present = present || (all[i].length == one.len && memcmp(all[i].data, one.data, one.len) == 0);	          present = false;	media
 deleting-a-medium-that-is-not-there-succeeds	cssom_media.c	        st = GTEXT_CSS_E_NOT_FOUND;   /* "If nothing was removed, then throw a NotFoundError exception." */	        st = GTEXT_CSS_OK;	media
 the-import-prefix-is-lost-from-a-media-change	cssom_media.c	    if (!tb_puts(&header, "@import ") || !tb_put(&header, p, from) || (n && !tb_put(&header, canon, n))) {	    if (!tb_puts(&header, "@import ") || !tb_put(&header, p, 0) || (n && !tb_put(&header, canon, n))) {	media
@@ -305,3 +306,7 @@ feature-map-empty-sequence-accepted	cssom_feature_map.c	  if (value_count == 0 |
 feature-map-unchanged-set-counts-as-a-change	cssom_feature_map.c	        memcmp(en->values, values, value_count * sizeof *values) == 0) {\n      view_release(&v);	        0) {\n      view_release(&v);	featuremap
 family-set-drops-the-feature-blocks	cssom_setters.c	  if (rule->kind == GTEXT_CSSOM_RULE_FONT_FEATURE_VALUES) {\n    return css_feature_values_body(rule, out);	  if (0) {\n    return css_feature_values_body(rule, out);	featuremap
 invalid-access-named-as-syntax	css_core.c	  case GTEXT_CSS_E_INVALID_ACCESS: return "InvalidAccessError";	  case GTEXT_CSS_E_INVALID_ACCESS: return "SyntaxError";	decl,featuremap
+parsed-list-replaces-in-place	css_block.c	    if (block->parse_mode && !(keep_important && !important && block->items[slots[i] - 1].important)) {	    if (0) {	decl
+typed-css-text-is-not-the-declaration-blocks	cssom_typed.c	  if (v.ndescs == 0) {\n    tbuf canon;	  if (0) {\n    tbuf canon;	setters
+a-margin-box-takes-every-property	css_atrule.c	(c->a->kind == GTEXT_CSS_ATRULE_PAGE_MARGIN ? "page-margin" : at_name)	at_name	setters
+a-pseudo-page-keeps-its-case	css_atrule.c	    if (kind == GTEXT_CSS_ATRULE_PAGE) {\n      /* a pseudo-page	    if (0) {\n      /* a pseudo-page	setters

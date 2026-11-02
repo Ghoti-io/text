@@ -528,6 +528,7 @@ GTEXT_CSS_Status css_decl_block_from_declarations(css_core * core, const GTEXT_C
   memset(&pro, 0, sizeof pro);
   pro.allocator = &core->alloc;
   pro.quirks = quirks;
+  block->parse_mode = true;
   for (size_t i = 0; st == GTEXT_CSS_OK && i < count; i++) {
     const GTEXT_CSS_Declaration * d = &declarations[i];
     GTEXT_CSS_Property_Value pv;
@@ -555,6 +556,7 @@ GTEXT_CSS_Status css_decl_block_from_declarations(css_core * core, const GTEXT_C
     }
     gtext_css_property_value_free(&pv);
   }
+  block->parse_mode = false;
   if (st != GTEXT_CSS_OK) {
     gtext_css_block_free(block);
     return st;

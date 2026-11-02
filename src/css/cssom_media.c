@@ -532,17 +532,17 @@ GTEXT_CSS_Status gtext_cssom_media_append(GTEXT_CSSOM_Media_List * list, const c
   tb_init(&one, &core->alloc);
   tb_init(&now, &core->alloc);
   size_t queries = 0;
-  bool clean = true;
-  st = canonical(core, medium ? medium : "", length, &one, &queries, &clean);
+  st = canonical(core, medium ? medium : "", length, &one, &queries, NULL);
   if (st == GTEXT_CSS_OK) {
     st = owner_text(list, &now);
   }
   if (st == GTEXT_CSS_OK && (one.oom || now.oom)) {
     st = GTEXT_CSS_E_OOM;
   }
-  if (st == GTEXT_CSS_OK && (queries != 1 || !clean)) {
-    out->kind = GTEXT_CSSOM_IGNORED_INVALID_VALUE;
-    out->detail = "Media Queries 4: the medium is not one valid media query";
+  if (st == GTEXT_CSS_OK && queries != 1) {
+    /* CSSOM, 4.1: "To parse a media query for a given string s means to follow the parse a media query list steps and return null if more than one media query is returned", and the
+       empty text returns none: "If m is null, then return." A query that is merely not valid is not null: it "ends up being 'ignored'" and "will turn into 'not all'". */
+    out->kind = GTEXT_CSSOM_UNCHANGED;
   }
   else if (st == GTEXT_CSS_OK) {
     const size_t count = split_queries(now.data, now.len, NULL, 0);
@@ -606,7 +606,10 @@ GTEXT_CSS_Status gtext_cssom_media_delete(GTEXT_CSSOM_Media_List * list, const c
   if (st == GTEXT_CSS_OK && (one.oom || now.oom)) {
     st = GTEXT_CSS_E_OOM;
   }
-  if (st == GTEXT_CSS_OK) {
+  if (st == GTEXT_CSS_OK && queries != 1) {
+    out->kind = GTEXT_CSSOM_UNCHANGED;   /* CSSOM: "Let m be the result of parsing the given value. If m is null, then return." (none, or more than one, query) */
+  }
+  else if (st == GTEXT_CSS_OK) {
     const size_t count = split_queries(now.data, now.len, NULL, 0);
     span *all = count ? gtext_allocator_malloc(&core->alloc, count * sizeof *all) : NULL;
     if (count && !all) {

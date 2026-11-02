@@ -37,7 +37,7 @@ static void cssom_setters(void) {
   status = gtext_cssom_rule_css_text(a, &css, &length);
   show("cssText", status, css, document);
 
-  /* media.mediaText, appendMedium(), deleteMedium(): a text always parses, a medium that is not valid is ignored, a medium that is not there is a NotFoundError */
+  /* media.mediaText, appendMedium(), deleteMedium(): a text always parses, a medium that is not valid is `not all`, a text that is not one query does nothing, a medium that is not there is a NotFoundError */
   GTEXT_CSSOM_Rule * media = gtext_cssom_rule_list_at(rules, 1);
   GTEXT_CSSOM_Media_List * list = NULL;
   gtext_cssom_rule_media(media, &list);

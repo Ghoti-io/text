@@ -1318,8 +1318,9 @@ static bool read_block(ctx * c, const GTEXT_CSS_Rule * rule, block_mode mode, co
         break;
       case BLOCK_PROPERTIES:
       case BLOCK_KEYFRAME: {
-        if (!css_atrule_property_taken(mode == BLOCK_KEYFRAME ? "keyframes" : at_name, d->name.data, d->name.length)) {
+        if (!css_atrule_property_taken(mode == BLOCK_KEYFRAME ? "keyframes" : (c->a->kind == GTEXT_CSS_ATRULE_PAGE_MARGIN ? "page-margin" : at_name), d->name.data, d->name.length)) {
           ok = diag(c, GTEXT_CSS_ATRULE_DIAG_NOT_ALLOWED, d->span, mode == BLOCK_KEYFRAME ? "Animations 1, 3.1: the animation properties are ignored in a keyframe" :
+                                                                   c->a->kind == GTEXT_CSS_ATRULE_PAGE_MARGIN ? "Paged Media 3, 4.3: the margin at-rules can only contain page-margin properties (Appendix A)" :
                                                                    "Anchor Positioning 1, 6.4: @position-try only accepts the accepted @position-try properties");
         }
         else if (d->important && (mode == BLOCK_KEYFRAME || c->a->kind == GTEXT_CSS_ATRULE_POSITION_TRY)) {
@@ -1912,6 +1913,19 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
     if (!a->prelude) {
       atrule_destroy(a);
       return cx.st != GTEXT_CSS_OK ? cx.st : fail(&cx, GTEXT_CSS_E_OOM, NULL, NULL);
+    }
+    if (kind == GTEXT_CSS_ATRULE_PAGE) {
+      /* a pseudo-page (`:first`, `:left`, `:right`, `:blank`) is a keyword and ASCII case-insensitive, and is written in lower case (the pinned css/cssom/cssom-pagerule.html: `named:First`
+         is `named:first`); the page name before it keeps its case */
+      for (size_t i = 0; i < a->prelude_len; i++) {
+        if (a->prelude[i] == ':') {
+          for (size_t k = i + 1; k < a->prelude_len && ((a->prelude[k] >= 'A' && a->prelude[k] <= 'Z') || (a->prelude[k] >= 'a' && a->prelude[k] <= 'z')); k++) {
+            if (a->prelude[k] >= 'A' && a->prelude[k] <= 'Z') {
+              ((char *)(uintptr_t)a->prelude)[k] = (char)(a->prelude[k] + 32);
+            }
+          }
+        }
+      }
     }
   }
   if (pn && !bad_prelude && (kind == GTEXT_CSS_ATRULE_MEDIA || kind == GTEXT_CSS_ATRULE_CONTAINER)) {

@@ -744,3 +744,26 @@ TEST(CssomDeclArguments, NullAndMisuseAreInvalidAndNeverAContentError) {
 }
 
 } // namespace
+
+// CSSOM leaves the place of a repeated property in a parsed list open; the recorded answers of Chromium 156 and Firefox 158 (css_cssom_gen.py, tools/oracle/css_cssom_divergences.txt) are the
+// same: the later declaration is appended and the earlier one is gone, where setProperty() replaces in place.
+TEST(CssomDecl, AParsedListAppendsTheLaterDeclarationAndDropsTheEarlierOne) {
+  Doc doc;
+  Decl d(doc);
+  ASSERT_EQ(set_text(d.d, "color:red;margin:1px;color:blue").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin: 1px; color: blue;");
+  ASSERT_EQ(set_text(d.d, "padding-top:1px;margin-left:2px;padding-top:3px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin-left: 2px; padding-top: 3px;");
+  ASSERT_EQ(set_text(d.d, "color:red;margin:1px;color:blue;margin-left:3px;color:green").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin: 1px 1px 1px 3px; color: green;");
+  ASSERT_EQ(set_text(d.d, "margin-top:1px;color:red;margin:2px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "color: red; margin: 2px;") << "a shorthand after a longhand it sets: the group goes to the end";
+  ASSERT_EQ(set_text(d.d, "--a:1;color:red;--a:2").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "color: red; --a: 2;");
+  ASSERT_EQ(set_text(d.d, "color:red !important;margin:1px;color:blue").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "color: red !important; margin: 1px;") << "an important declaration is not replaced by one that is not, and keeps its place (Firefox's; Chromium moves it: browsers-differ)";
+  // setProperty() is the other algorithm: it replaces in place
+  ASSERT_EQ(set_text(d.d, "color:red;margin:1px").st, GTEXT_CSS_OK);
+  ASSERT_EQ(set(d.d, "color", "blue").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "color: blue; margin: 1px;");
+}

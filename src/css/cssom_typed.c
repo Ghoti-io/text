@@ -138,6 +138,7 @@ static GTEXT_CSS_Status view_from_typed(css_core * core, const GTEXT_CSS_Atrule 
   GTEXT_CSS_Property_Options po;
   memset(&po, 0, sizeof po);
   po.allocator = &core->alloc;
+  v->block->parse_mode = true;
   const size_t n = gtext_css_atrule_descriptor_count(a);
   if (n > core->config.max_work) {
     view_free(core, v);
@@ -150,13 +151,26 @@ static GTEXT_CSS_Status view_from_typed(css_core * core, const GTEXT_CSS_Atrule 
       st = descs_push(core, &v->descs, &v->ndescs, &v->capdescs, d.name, d.name_length, d.text.data, d.text.length, d.important);
       continue;
     }
-    GTEXT_CSS_Property_Outcome outcome;
-    GTEXT_CSS_Shorthand_Result sr;
-    const GTEXT_CSS_Status add = gtext_css_block_add_text(v->block, d.name, d.name_length, d.text.data, d.text.length, d.important, &po, &outcome, &sr);
+    /* a list of declarations is read as CSSOM's declaration block is: a later one of a property replaces the earlier in its place (a shorthand its longhands), and an important one is not
+       replaced by one that is not (`margin: 1px; margin-top: 2px` is `margin: 2px 1px 1px` in both browsers) */
+    GTEXT_CSS_Property_Value pv;
+    memset(&pv, 0, sizeof pv);
+    GTEXT_CSS_Status add = gtext_css_parse_property_text(core->registry, d.name, d.name_length, d.text.data, d.text.length, &po, &pv);
+    if (add == GTEXT_CSS_OK && pv.outcome != GTEXT_CSS_PROP_RESULT_UNKNOWN && pv.outcome != GTEXT_CSS_PROP_RESULT_INVALID) {
+      if (d.name_length >= 2 && d.name[0] == '-' && d.name[1] == '-') {
+        add = css_custom_name_ok(d.name, d.name_length) ? css_block_set_custom_ex(v->block, d.name, d.name_length, &pv, d.important, true, NULL) : GTEXT_CSS_OK;
+      }
+      else {
+        GTEXT_CSS_Shorthand_Result sr;
+        add = css_block_set_ex(v->block, &pv, d.important, true, NULL, &sr);
+      }
+    }
+    gtext_css_property_value_free(&pv);
     if (add == GTEXT_CSS_E_OOM || add == GTEXT_CSS_E_LIMIT_DECLARATIONS || add == GTEXT_CSS_E_LIMIT_WORK) {
       st = add;   /* anything else is a declaration the block cannot hold: it is not in the view */
     }
   }
+  v->block->parse_mode = false;
   if (st != GTEXT_CSS_OK) {
     view_free(core, v);
   }
@@ -500,6 +514,47 @@ GTEXT_CSS_Status css_typed_remove_descriptor(GTEXT_CSSOM_Decl * decl, const char
   return GTEXT_CSS_OK;
 }
 
+/// The declaration block a text says for this rule: the text is read as a list of declarations, each one the rule's context refuses is dropped (a property it does not take; `!important` in
+/// a keyframe or `@position-try`), and what is left is set one by one as CSSOM's declaration block sets them (a later one replaces the earlier in its place, an important one stays).
+static GTEXT_CSS_Status block_of_text(css_core * core, const css_rule * rule, const char * text, size_t length, GTEXT_CSS_Declaration_Block ** out) {
+  if (length > core->config.max_input_bytes) {
+    return GTEXT_CSS_E_LIMIT_INPUT;
+  }
+  GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+  po.allocator = &core->alloc;
+  po.max_input_bytes = core->config.max_input_bytes;
+  po.count_errors_only = true;
+  GTEXT_CSS_Tree * tree = NULL;
+  GTEXT_CSS_Status st = gtext_css_parse_declaration_list(text ? text : "", length, &po, &tree, NULL);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  GTEXT_CSS_Declaration * kept = tree->declaration_count ? gtext_allocator_malloc(&core->alloc, tree->declaration_count * sizeof *kept) : NULL;
+  if (tree->declaration_count && !kept) {
+    gtext_css_tree_free(tree);
+    return GTEXT_CSS_E_OOM;
+  }
+  size_t n = 0;
+  for (size_t i = 0; i < tree->declaration_count; i++) {
+    const GTEXT_CSS_Declaration * d = &tree->declarations[i];
+    bool ok = false;
+    switch ((GTEXT_CSSOM_Rule_Kind)rule->kind) {
+    case GTEXT_CSSOM_RULE_KEYFRAME: ok = !d->important && css_atrule_property_taken("keyframes", d->name.data, d->name.length); break;
+    case GTEXT_CSSOM_RULE_POSITION_TRY: ok = !d->important && css_atrule_property_taken("position-try", d->name.data, d->name.length); break;
+    case GTEXT_CSSOM_RULE_PAGE: ok = css_atrule_property_taken("page", d->name.data, d->name.length); break;
+    case GTEXT_CSSOM_RULE_PAGE_MARGIN: ok = css_atrule_property_taken("page-margin", d->name.data, d->name.length); break;
+    default: break;
+    }
+    if (ok) {
+      kept[n++] = *d;
+    }
+  }
+  st = css_decl_block_from_declarations(core, kept, n, false, out);
+  gtext_allocator_free(&core->alloc, kept);
+  gtext_css_tree_free(tree);
+  return st;
+}
+
 GTEXT_CSS_Status css_typed_set_css_text(GTEXT_CSSOM_Decl * decl, const char * text, size_t length, GTEXT_CSSOM_Outcome * out) {
   css_core * core = decl->obj.core;
   css_rule * rule = decl_rule(decl);
@@ -517,6 +572,35 @@ GTEXT_CSS_Status css_typed_set_css_text(GTEXT_CSSOM_Decl * decl, const char * te
   if (refused) {
     /* text that closes the block (`}`) or opens another rule is not a declaration list: the list is read as the parser reads a declaration list, and what is not one is empty */
     return css_typed_set_css_text(decl, "", 0, out);
+  }
+  /* The rule keeps the text it is given, and a rule writes its declarations as it holds them: so the text is first made what the declaration block says (`margin: 1px; margin-top: 2px`
+     is `margin: 2px 1px 1px`, and a later declaration does not replace an important one), and the rule is read again from that. A text that mixes properties with descriptors keeps the
+     order it was written in, which a block of properties followed by the descriptors would not (the rule keeps the text as given: a limit listed in the CSSOM manual). */
+  if (v.ndescs == 0) {
+    tbuf canon;
+    tb_init(&canon, &core->alloc);
+    GTEXT_CSS_Declaration_Block * parsed = NULL;
+    st = block_of_text(core, rule, text, length, &parsed);
+    if (st == GTEXT_CSS_OK) {
+      st = css_block_text(parsed, &canon);
+    }
+    gtext_css_block_free(parsed);
+    if (st == GTEXT_CSS_OK && canon.oom) {
+      st = GTEXT_CSS_E_OOM;
+    }
+    const bool same_text = st == GTEXT_CSS_OK && canon.len == length && (length == 0 || memcmp(canon.data, text, length) == 0);
+    if (st == GTEXT_CSS_OK && !same_text) {
+      view_free(core, &v);
+      css_own_discard(&own);
+      st = read_candidate(rule, canon.data ? canon.data : "", canon.len, &own, &v, &refused);
+      if (st == GTEXT_CSS_OK && refused) {
+        st = GTEXT_CSS_E_INTERNAL;   /* a canonical list is always one */
+      }
+    }
+    tb_free(&canon);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
   }
   GTEXT_CSS_Status cmp = GTEXT_CSS_OK;
   if (same_view(core, decl->block, decl->descs, decl->ndescs, v.block, v.descs, v.ndescs, &cmp) && cmp == GTEXT_CSS_OK) {

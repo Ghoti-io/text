@@ -161,7 +161,7 @@ def build(pin, kinds, required, props, counter_names, kind_set):
             problems.append("atrule_properties.tsv:%d: %d fields, 4 wanted" % (n, len(f)))
             continue
         at, mode, pat, source = f
-        if at not in pin:
+        if at not in pin and at != "page-margin":   # the margin boxes are many at-rules in the pin and one kind here
             problems.append("atrule_properties.tsv:%d: @%s is not an at-rule of the pin" % (n, at))
         if mode not in ("allow", "ignore", "keep"):
             problems.append("atrule_properties.tsv:%d: mode %r is not allow, ignore or keep" % (n, mode))

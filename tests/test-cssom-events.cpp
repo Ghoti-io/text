@@ -137,6 +137,12 @@ const std::vector<Row> & table() {
           [](Ctx & c) { return gtext_cssom_rule_set_key_text(c.rules[1], "10%", 3, nullptr); }, "RULE_REPLACED"},
       {"gtext_cssom_rule_set_attribute", [](Ctx & c) { c.owned("@keyframes k{from{color:red}}"); c.rule_at(c.sheets[0], 0); },
           [](Ctx & c) { return gtext_cssom_rule_set_attribute(c.rules[0], "name", 4, "j", 1, nullptr); }, "RULE_REPLACED"},
+      {"gtext_cssom_feature_map_set", [](Ctx & c) { c.owned("@font-feature-values F{@swash{a:1}}"); c.rule_at(c.sheets[0], 0); },
+          [](Ctx & c) { const uint32_t v[1] = {2}; return gtext_cssom_feature_map_set(c.rules[0], GTEXT_CSS_FEATURE_SWASH, "a", 1, v, 1, nullptr); }, "RULE_REPLACED"},
+      {"gtext_cssom_feature_map_delete", [](Ctx & c) { c.owned("@font-feature-values F{@swash{a:1}}"); c.rule_at(c.sheets[0], 0); },
+          [](Ctx & c) { return gtext_cssom_feature_map_delete(c.rules[0], GTEXT_CSS_FEATURE_SWASH, "a", 1, nullptr, nullptr); }, "RULE_REPLACED"},
+      {"gtext_cssom_feature_map_clear", [](Ctx & c) { c.owned("@font-feature-values F{@swash{a:1}}"); c.rule_at(c.sheets[0], 0); },
+          [](Ctx & c) { return gtext_cssom_feature_map_clear(c.rules[0], GTEXT_CSS_FEATURE_SWASH, nullptr); }, "RULE_REPLACED"},
       {"gtext_cssom_import_rule_complete",
           [](Ctx & c) {
             c.imp.table["a.css"] = "pending";

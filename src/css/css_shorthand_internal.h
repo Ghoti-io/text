@@ -108,6 +108,8 @@ struct GTEXT_CSS_Declaration_Block {
   uint32_t * covered;          ///< NULL, or one count per property id: the live opaque shorthands whose longhands include it (built by the first opaque shorthand).
   size_t opaque_shorthands;    ///< Live opaque items whose property is a shorthand.
   uint64_t probes;             ///< Entries looked at by the index since the block was made (the counter the cost tests assert).
+  bool parse_mode;             ///< The block is being built from a parsed list of declarations (css_decl_block_from_declarations): a later declaration of a property **removes** the earlier one and is appended
+                               ///< (both browsers write `color:red;margin:1px;color:blue` as `margin: 1px; color: blue;`), where setProperty() replaces in place. An important one is still kept.
 };
 
 /// A mutable block's items as css_block.c keeps them, for the writer of cssText and the shorthand text: slot `i` is dead when `b->items[i].dead`.
