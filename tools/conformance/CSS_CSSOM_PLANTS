@@ -299,3 +299,9 @@ auto-caret-color-kept	cssom_resolved.c	  return (info->name_length == 11 && memc
 nested-currentcolor-not-computed	cssom_resolved.c	  return v->text.data && find_currentcolor(v->text.data, v->text.length, 0) != SIZE_MAX;	  return 0;	computed
 adapter-class-cache-survives-an-edit	css_markup.c	static bool classes_of(struct GTEXT_CSS_Markup_Adapter * a, Node * el) {\n  caches_fresh(a);	static bool classes_of(struct GTEXT_CSS_Markup_Adapter * a, Node * el) {	wptcomputed,match
 loose-element-answered-as-connected	cssom_computed.c	    if (top != core->match.root) {	    if (0) {	computed,wptcomputed
+feature-map-set-appends-instead-of-replacing	cssom_feature_map.c	    placed = placed || same;	    placed = placed;	featuremap
+feature-map-limit-not-enforced	cssom_feature_map.c	  if (value_count == 0 || value_count > most_values(type)) {	  if (value_count == 0 || 0) {	featuremap
+feature-map-empty-sequence-accepted	cssom_feature_map.c	  if (value_count == 0 || value_count > most_values(type)) {	  if (value_count > most_values(type)) {	featuremap
+feature-map-unchanged-set-counts-as-a-change	cssom_feature_map.c	        memcmp(en->values, values, value_count * sizeof *values) == 0) {\n      view_release(&v);	        0) {\n      view_release(&v);	featuremap
+family-set-drops-the-feature-blocks	cssom_setters.c	  if (rule->kind == GTEXT_CSSOM_RULE_FONT_FEATURE_VALUES) {\n    return css_feature_values_body(rule, out);	  if (0) {\n    return css_feature_values_body(rule, out);	featuremap
+invalid-access-named-as-syntax	css_core.c	  case GTEXT_CSS_E_INVALID_ACCESS: return "InvalidAccessError";	  case GTEXT_CSS_E_INVALID_ACCESS: return "SyntaxError";	decl,featuremap

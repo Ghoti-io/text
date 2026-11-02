@@ -161,7 +161,7 @@ typedef enum {
   GTEXT_CSS_E_LIMIT_CONTAINER,    ///< Containers: more distinct container requests than `max_container_requests`.
   GTEXT_CSS_E_LIMIT_DESCRIPTORS,  ///< At-rules: more descriptors, sources, ranges, settings, blocks or margin rules than the limit.
   /* The web platform's exceptions that CSSOM's algorithms throw, one status each (css_cssom_core.h); gtext_cssom_exception_name() gives the
-     DOMException name of the first eight. GTEXT_CSS_E_INVALID is never one of them: it is a misuse of the API. */
+     DOMException name of the first eight and of GTEXT_CSS_E_INVALID_ACCESS. GTEXT_CSS_E_INVALID is never one of them: it is a misuse of the API. */
   GTEXT_CSS_E_SYNTAX,             ///< CSSOM: SyntaxError. The text is not what the call takes (not one rule, an invalid rule, nothing valid in a declaration block).
   GTEXT_CSS_E_HIERARCHY,          ///< CSSOM: HierarchyRequestError. The rule cannot be placed there by the constraints of the standards.
   GTEXT_CSS_E_INDEX_SIZE,         ///< CSSOM: IndexSizeError. An index past the end of a list.
@@ -172,6 +172,7 @@ typedef enum {
   GTEXT_CSS_E_SECURITY,           ///< CSSOM: SecurityError. The sheet is not origin-clean.
   GTEXT_CSS_E_REENTRANT,          ///< CSSOM: a mutation was attempted from inside a notification callback or a finalizer; a binding must queue it.
   GTEXT_CSS_E_LIMIT_CSSOM,        ///< CSSOM: more live objects, bytes, inline styles, observers, cached entries than the limit, or the generation counter is spent.
+  GTEXT_CSS_E_INVALID_ACCESS,     ///< CSSOM: InvalidAccessError. A value map of `@font-feature-values` was given more values than its block takes, or none (CSS Fonts 4, 12.2).
   GTEXT_CSS_STATUS_COUNT          ///< The number of statuses; not a status.
 } GTEXT_CSS_Status;
 
@@ -188,8 +189,8 @@ GTEXT_API const char * gtext_css_status_string(GTEXT_CSS_Status status);
  *
  * @param status Any value.
  * @return `"SyntaxError"`, `"HierarchyRequestError"`, `"IndexSizeError"`, `"InvalidStateError"`, `"NotAllowedError"`,
- *   `"NoModificationAllowedError"`, `"NotFoundError"` or `"SecurityError"` for GTEXT_CSS_E_SYNTAX, _HIERARCHY, _INDEX_SIZE, _INVALID_STATE,
- *   _NOT_ALLOWED, _NO_MODIFICATION, _NOT_FOUND and _SECURITY; NULL for every other status (a binding throws nothing for them). Static.
+ *   `"NoModificationAllowedError"`, `"NotFoundError"`, `"SecurityError"` or `"InvalidAccessError"` for GTEXT_CSS_E_SYNTAX, _HIERARCHY, _INDEX_SIZE, _INVALID_STATE,
+ *   _NOT_ALLOWED, _NO_MODIFICATION, _NOT_FOUND, _SECURITY and _INVALID_ACCESS; NULL for every other status (a binding throws nothing for them). Static.
  */
 GTEXT_API const char * gtext_cssom_exception_name(GTEXT_CSS_Status status);
 

@@ -135,6 +135,21 @@ const Scenario kScenarios[] = {
        Decl d = style_of(r.r);
        return d.d ? remove(d.d, "size").st : GTEXT_CSS_E_OOM;
      }},
+    {"set() of a feature value map", "@font-feature-values F { @swash { a: 1 } @styleset { b: 2 3 } }", [](Sheet & s) {
+       const uint32_t v[2] = {4, 5};
+       GTEXT_CSSOM_Outcome o;
+       return gtext_cssom_feature_map_set(path(s, {0}).r, GTEXT_CSS_FEATURE_STYLESET, "c", 1, v, 2, &o);
+     }},
+    {"delete() of a feature value map", "@font-feature-values F { @swash { a: 1; b: 2 } }", [](Sheet & s) {
+       GTEXT_CSSOM_Outcome o;
+       bool deleted = false;
+       return gtext_cssom_feature_map_delete(path(s, {0}).r, GTEXT_CSS_FEATURE_SWASH, "a", 1, &deleted, &o);
+     }},
+    {"clear() of a feature value map", "@font-feature-values F { @swash { a: 1; b: 2 } @ornaments { o: 1 } }", [](Sheet & s) {
+       GTEXT_CSSOM_Outcome o;
+       return gtext_cssom_feature_map_clear(path(s, {0}).r, GTEXT_CSS_FEATURE_SWASH, &o);
+     }},
+    {"fontFamily keeps the feature blocks", "@font-feature-values F { @swash { a: 1 } }", [](Sheet & s) { return attr_set(s, {0}, "fontFamily", "G, H"); }},
 };
 
 TEST(CssomSettersOom, EveryMutatorIsAllOrNothing) {

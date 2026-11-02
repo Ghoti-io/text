@@ -686,14 +686,15 @@ TEST(CssomDeclOwner, PrepareMayRefuseBeforeAnythingChangesAndCommitSeesTheEvent)
 
 /* ---- the exception names -------------------------------------------------------------------------------------------------------------------------------- */
 
-TEST(CssomStatus, TheEightContentStatusesHaveTheirDomExceptionNamesAndNoOtherDoes) {
+TEST(CssomStatus, TheNineContentStatusesHaveTheirDomExceptionNamesAndNoOtherDoes) {
   struct Row {
     GTEXT_CSS_Status st;
     const char * name;
   };
   const Row rows[] = {{GTEXT_CSS_E_SYNTAX, "SyntaxError"}, {GTEXT_CSS_E_HIERARCHY, "HierarchyRequestError"}, {GTEXT_CSS_E_INDEX_SIZE, "IndexSizeError"},
       {GTEXT_CSS_E_INVALID_STATE, "InvalidStateError"}, {GTEXT_CSS_E_NOT_ALLOWED, "NotAllowedError"},
-      {GTEXT_CSS_E_NO_MODIFICATION, "NoModificationAllowedError"}, {GTEXT_CSS_E_NOT_FOUND, "NotFoundError"}, {GTEXT_CSS_E_SECURITY, "SecurityError"}};
+      {GTEXT_CSS_E_NO_MODIFICATION, "NoModificationAllowedError"}, {GTEXT_CSS_E_NOT_FOUND, "NotFoundError"}, {GTEXT_CSS_E_SECURITY, "SecurityError"},
+      {GTEXT_CSS_E_INVALID_ACCESS, "InvalidAccessError"}};
   for (const Row & r : rows) {
     ASSERT_NE(gtext_cssom_exception_name(r.st), nullptr);
     EXPECT_STREQ(gtext_cssom_exception_name(r.st), r.name);

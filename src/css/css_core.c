@@ -94,6 +94,7 @@ static const char * const status_names[GTEXT_CSS_STATUS_COUNT] = {
   [GTEXT_CSS_E_SECURITY] = "the style sheet is not origin-clean (SecurityError)",
   [GTEXT_CSS_E_REENTRANT] = "a mutation from inside a callback",
   [GTEXT_CSS_E_LIMIT_CSSOM] = "a CSSOM limit (live objects or bytes, inline styles, observers, cached entries, generation) is exceeded",
+  [GTEXT_CSS_E_INVALID_ACCESS] = "a value map was given more values than its block takes, or none",
 };
 
 const char * gtext_css_status_string(GTEXT_CSS_Status status) {
@@ -113,6 +114,7 @@ const char * gtext_cssom_exception_name(GTEXT_CSS_Status status) {
   case GTEXT_CSS_E_NO_MODIFICATION: return "NoModificationAllowedError";
   case GTEXT_CSS_E_NOT_FOUND: return "NotFoundError";
   case GTEXT_CSS_E_SECURITY: return "SecurityError";
+  case GTEXT_CSS_E_INVALID_ACCESS: return "InvalidAccessError";
   default: return NULL;
   }
 }

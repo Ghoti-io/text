@@ -478,3 +478,17 @@ TEST(CssomSetters, ASetterIsRefusedFromInsideACallback) {
   EXPECT_EQ(inner_attr.st, GTEXT_CSS_E_REENTRANT);
   EXPECT_EQ(selector_text(r.r), "a");
 }
+
+TEST(CssomSetters, TheDescriptorsOfAColorProfileAreItsAttributes) {
+  // css-color-5.idl (CSSColorProfileRule): name, src, renderingIntent, components, all readonly.
+  Doc doc;
+  Sheet s(doc, "@color-profile --swop5c { src: url(\"swop5c.icc\"); rendering-intent: perceptual; components: cyan, magenta, yellow, black }");
+  Rule r = path(s, {0});
+  EXPECT_EQ(attr(r.r, "name"), "--swop5c");
+  EXPECT_EQ(attr(r.r, "src"), "url(\"swop5c.icc\")");
+  EXPECT_EQ(attr(r.r, "renderingIntent"), "perceptual");
+  EXPECT_EQ(attr(r.r, "components"), "cyan, magenta, yellow, black");
+  bool writable = true;
+  EXPECT_TRUE(gtext_cssom_rule_has_attribute(r.r, "renderingIntent", 15, &writable));
+  EXPECT_FALSE(writable);
+}

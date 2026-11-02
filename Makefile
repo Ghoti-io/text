@@ -1160,6 +1160,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/cssom_computed.c \
 	src/css/cssom_core.c \
 	src/css/cssom_events.c \
+	src/css/cssom_feature_map.c \
 	src/css/cssom_markup.c \
 	src/css/cssom_decl.c \
 	src/css/cssom_index.c \

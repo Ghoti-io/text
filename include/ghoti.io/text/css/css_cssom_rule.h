@@ -62,6 +62,7 @@
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_cssom_core.h>
 #include <ghoti.io/text/css/css_cssom_decl.h>
+#include <ghoti.io/text/css/css_font_rules.h>
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/markup/markup_escape.h>
 #include <stdbool.h>
@@ -285,7 +286,8 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_condition_text(GTEXT_CSSOM_Rule * ru
  * | `@font-feature-values` | `fontFamily` w |
  * | `@view-transition` | `navigation`, `types` |
  * | `@keyframes` | `name` w |
- * | `@position-try`, `@color-profile` | `name` |
+ * | `@position-try` | `name` |
+ * | `@color-profile` | `name`, `src`, `renderingIntent`, `components` | |
  * | margin rules | `name` (`top-left`) |
  *
  * An attribute that a rule does not have holds the empty string, or null (`*is_null`) where the IDL says nullable. @return GTEXT_CSS_E_UNSUPPORTED for a name the kind does not have.
@@ -302,6 +304,51 @@ GTEXT_API bool gtext_cssom_rule_has_attribute(const GTEXT_CSSOM_Rule * rule, con
  */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_set_attribute(GTEXT_CSSOM_Rule * rule, const char * name, size_t name_length, const char * value, size_t value_length,
     GTEXT_CSSOM_Outcome * outcome);
+
+/* ---- CSSFontFeatureValuesMap ----------------------------------------------------------------------------------------------------------------- */
+
+/**
+ * @brief An entry of a `CSSFontFeatureValuesMap`: a feature value name and its integers, in one block the caller releases with `gtext_cssom_buffer_free(allocator, block)`.
+ *   The pointers are valid until then, and are a copy: a later edit of the rule does not change them.
+ */
+typedef struct {
+  const char * name;           ///< The feature value name (not terminated by the length; also followed by a NUL byte).
+  size_t name_length;
+  const uint32_t * values;     ///< `value_count` integers, at least one.
+  size_t value_count;
+  void * block;                ///< What to release.
+} GTEXT_CSSOM_Feature_Entry;
+
+/**
+ * @brief Whether `name` is the IDL attribute of a value map of `CSSFontFeatureValuesRule` (`annotation`, `ornaments`, `stylistic`, `swash`, `characterVariant`, `styleset`,
+ *   `historicalForms`) and which map it is. `type` may be NULL.
+ */
+GTEXT_API bool gtext_cssom_feature_map_type(const char * name, size_t length, GTEXT_CSS_Feature_Type * type);
+
+/**
+ * @brief The maps of an `@font-feature-values` rule (CSS Fonts 4, 12.2). A map is a view of the rule: it **reflects the values defined via the feature value block** of its type, so two
+ *   retrievals are the same data, a map of another rule (or of an identical sheet) is not touched, and an edit is an edit of the rule (the rule keeps its identity, its version and its
+ *   sheet's version move once, and one GTEXT_CSSOM_EVENT_RULE_REPLACED is sent). Blocks of one type are one map, a later definition of a name replacing the earlier; the rule is
+ *   written back with one block per type holding only the last-defined value of each name (CSS Fonts 4, 13.2), and a name that is set again keeps its place.
+ *
+ * `size` and `at` are the map's `size` and its entries in order (`keys()`, `values()`, `entries()`, iteration); `get` is `get()` and `has()` (`*found`); `set` is `set()` (a single
+ * `unsigned long` is a sequence of one); `delete` is `delete()` (`*deleted`); `clear` is `clear()`. A name is the identifier's text (not escaped).
+ *
+ * **Errors:** GTEXT_CSS_E_INVALID_ACCESS (`InvalidAccessError`) from `set` when the sequence is empty or longer than the block takes: one value for `stylistic`, `historical-forms`,
+ * `swash`, `ornaments` and `annotation`, up to two for `character-variant`, any number for `styleset` ("multi-valued feature value definitions"). The empty sequence is "an invalid
+ * number of values" in the draft's words. A name that the rule's syntax cannot carry (the empty name) is ignored: GTEXT_CSSOM_IGNORED_INVALID_VALUE, nothing changed. GTEXT_CSS_E_UNSUPPORTED
+ * for a rule that is not an `@font-feature-values`; GTEXT_CSS_E_INVALID for a NULL rule or a `type` out of range; GTEXT_CSS_E_INDEX_SIZE from `at`; GTEXT_CSS_E_REENTRANT and
+ * GTEXT_CSS_E_LIMIT_CSSOM as for any mutator. A write that says what the map already says is GTEXT_CSSOM_UNCHANGED. Atomic.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_feature_map_size(GTEXT_CSSOM_Rule * rule, GTEXT_CSS_Feature_Type type, size_t * size);
+GTEXT_API GTEXT_CSS_Status gtext_cssom_feature_map_at(GTEXT_CSSOM_Rule * rule, GTEXT_CSS_Feature_Type type, size_t index, GTEXT_CSSOM_Feature_Entry * entry);
+GTEXT_API GTEXT_CSS_Status gtext_cssom_feature_map_get(GTEXT_CSSOM_Rule * rule, GTEXT_CSS_Feature_Type type, const char * name, size_t name_length, GTEXT_CSSOM_Feature_Entry * entry,
+    bool * found);
+GTEXT_API GTEXT_CSS_Status gtext_cssom_feature_map_set(GTEXT_CSSOM_Rule * rule, GTEXT_CSS_Feature_Type type, const char * name, size_t name_length, const uint32_t * values,
+    size_t value_count, GTEXT_CSSOM_Outcome * outcome);
+GTEXT_API GTEXT_CSS_Status gtext_cssom_feature_map_delete(GTEXT_CSSOM_Rule * rule, GTEXT_CSS_Feature_Type type, const char * name, size_t name_length, bool * deleted,
+    GTEXT_CSSOM_Outcome * outcome);
+GTEXT_API GTEXT_CSS_Status gtext_cssom_feature_map_clear(GTEXT_CSSOM_Rule * rule, GTEXT_CSS_Feature_Type type, GTEXT_CSSOM_Outcome * outcome);
 
 /**
  * @brief Give an `@import` rule the sheet it loaded (the library never fetches), or take it away with NULL.

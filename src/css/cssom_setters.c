@@ -192,6 +192,9 @@ GTEXT_CSS_Status css_rule_header_text(css_rule * rule, tbuf * out) {
 
 /// The declarations of a typed rule's own block as text: `name: value;` each, from the typed model.
 static GTEXT_CSS_Status own_body(css_rule * rule, tbuf * out) {
+  if (rule->kind == GTEXT_CSSOM_RULE_FONT_FEATURE_VALUES) {
+    return css_feature_values_body(rule, out);   /* the feature blocks are part of the body: a new family list must not drop them */
+  }
   if (!css_typed_kind((GTEXT_CSSOM_Rule_Kind)rule->kind) && rule->kind != GTEXT_CSSOM_RULE_PROPERTY && rule->kind != GTEXT_CSSOM_RULE_COUNTER_STYLE) {
     return GTEXT_CSS_OK;
   }
@@ -497,6 +500,9 @@ static const attr_row attr_rows[] = {
   A(KEYFRAMES, "name", SRC_NAME, NULL, true),
   A(POSITION_TRY, "name", SRC_NAME, NULL, false),
   A(COLOR_PROFILE, "name", SRC_NAME, NULL, false),
+  A(COLOR_PROFILE, "src", SRC_DESC, "src", false),
+  A(COLOR_PROFILE, "renderingIntent", SRC_DESC, "rendering-intent", false),
+  A(COLOR_PROFILE, "components", SRC_DESC, "components", false),
   A(PAGE_MARGIN, "name", SRC_MARGIN_NAME, NULL, false),
 };
 #undef A

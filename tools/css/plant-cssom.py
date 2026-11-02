@@ -47,6 +47,7 @@ PROGRAMS = {
     "document": "test-cssom-document.cpp", "imports": "test-cssom-imports.cpp", "mediaquery": "test-cssom-media-query.cpp", "documentoom": "test-cssom-document-oom.cpp",
     "documentcost": "test-cssom-document-cost.cpp", "multidoc": "test-cssom-multidoc.cpp", "threads": "test-cssom-threads.cpp", "wptdocument": "test-cssom-wpt-document.cpp",
     "events": "test-cssom-events.cpp", "eventsoom": "test-cssom-events-oom.cpp", "markup": "test-cssom-markup.cpp", "markupoom": "test-cssom-markup-oom.cpp", "documentseeds": "test-cssom-document-fuzz-seeds.cpp",
+    "featuremap": "test-cssom-feature-map.cpp",
 }
 EXTRA_PROGRAMS = os.path.join(ROOT, "tools", "conformance", "CSS_CSSOM_PROGRAMS")
 

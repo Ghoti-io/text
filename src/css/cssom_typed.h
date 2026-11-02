@@ -67,6 +67,9 @@ void css_own_swap(css_rule * rule, css_own * own);
 /// The typed model of the candidate (as css_rule_typed() gives it for the rule), for reading what the text came to.
 GTEXT_CSS_Status css_own_typed(css_rule * rule, const css_own * own, bool shallow, GTEXT_CSS_Atrule ** out);
 
+/// The body of an `@font-feature-values` rule as text: its descriptors and one block per feature type (cssom_feature_map.c).
+GTEXT_CSS_Status css_feature_values_body(css_rule * rule, tbuf * out);
+
 /// The header of the rule as text, up to and not including its block: `@page :first`, `0%, 100%`, a style rule's selectors, `@counter-style foo`.
 GTEXT_CSS_Status css_rule_header_text(css_rule * rule, tbuf * out);
 
