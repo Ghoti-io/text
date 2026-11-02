@@ -18,5 +18,5 @@ calc-size-bare-form-is-wrapped	css_math_serialize.c	    ok = bare ? write_tree(&
 transition-first-time-may-be-negative	css_property.c	((first_time_is_negative(values, count) && (info.name_length == 10	((false && (info.name_length == 10
 param-type-name-is-not-checked	css_grammar_match.c	  return known && (n == 3 || (n == 4 && (cv_delim(&a[3], '#') || cv_delim(&a[3], '+'))));	  return known || true;
 param-single-type-keeps-type-function	css_grammar_match.c	  const bool wrap = ps.is_fn && !ps.single;	  const bool wrap = ps.is_fn;
-nan-steps-count-is-a-count	css_property.c	 || steps_count_is_nan(values, count))) {	 || false)) {
+nan-steps-count-is-a-count	css_property.c	 || steps_count_is_nan(values, count) ||	 || false ||
 
