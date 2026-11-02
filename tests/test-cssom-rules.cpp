@@ -451,10 +451,10 @@ TEST(CssomRuleStyle, IsBuiltWhenAskedForAndIsTheSameObject) {
   EXPECT_EQ(gtext_cssom_decl_document(a.d), doc.d);
 }
 
-// A kind that holds typed descriptors and not a block of properties does not answer `style` with a guess.
-TEST(CssomRuleStyle, AKindWithoutAPropertyBlockIsUnsupportedNotGuessed) {
+// A kind that has no declaration block does not answer `style` with a guess. (The kinds whose block is typed descriptors answer: test-cssom-setters.cpp.)
+TEST(CssomRuleStyle, AKindWithoutABlockIsUnsupportedNotGuessed) {
   Doc doc;
-  Sheet s(doc, "@import url(a.css); @font-face{font-family:x;src:url(a)} @media print{}");
+  Sheet s(doc, "@import url(a.css); @namespace x url(u); @media print{}");
   ASSERT_EQ(s.status, GTEXT_CSS_OK);
   for (size_t i = 0; i < 3; i++) {
     Rule r = at(s.rules(), i);

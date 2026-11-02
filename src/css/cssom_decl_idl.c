@@ -31,6 +31,7 @@
 #include "css_registry_internal.h"
 #include "css_shorthand_internal.h"
 #include "cssom_internal.h"
+#include "cssom_typed.h"
 #include "cssom_tables.h"
 
 static int row_compare(const char * attribute, size_t length, const char * name) {
@@ -74,11 +75,36 @@ bool gtext_cssom_idl_property(const char * attribute, size_t length, const char 
   return css_idl_lookup(attribute, length, property, property_length);
 }
 
+/// A descriptor of a typed rule's block is an attribute too (`pageOrientation`, `unicodeRange`): the dashed name of its camel-cased attribute.
+static bool descriptor_attribute(const GTEXT_CSSOM_Decl * decl, const char * attribute, size_t length, char * buf, size_t cap, const char ** property, size_t * n) {
+  if (!decl->typed || !css_typed_idl_name(attribute, length, buf, cap, n) || !css_typed_is_descriptor(decl, buf, *n)) {
+    return false;
+  }
+  *property = buf;
+  return true;
+}
+
+bool gtext_cssom_decl_has_attribute(const GTEXT_CSSOM_Decl * decl, const char * attribute, size_t length) {
+  if (!decl || !attribute) {
+    return false;
+  }
+  if (decl->typed) {
+    return css_typed_has_attribute(decl, attribute, length);
+  }
+  return css_idl_lookup(attribute, length, NULL, NULL);
+}
+
 GTEXT_CSS_Status gtext_cssom_decl_idl_get(GTEXT_CSSOM_Decl * decl, const char * attribute, size_t length, char ** out, size_t * out_length) {
   const char * property = NULL;
   size_t n = 0;
-  if (!decl || !css_idl_lookup(attribute, length, &property, &n)) {
+  char dashed[64];
+  if (!decl || (!css_idl_lookup(attribute, length, &property, &n) && !descriptor_attribute(decl, attribute, length, dashed, sizeof dashed, &property, &n))) {
     return GTEXT_CSS_E_INVALID;
+  }
+  size_t m = 0;
+  if (decl->typed && css_typed_idl_name(attribute, length, dashed, sizeof dashed, &m) && css_typed_is_descriptor(decl, dashed, m)) {
+    property = dashed;
+    n = m;
   }
   return gtext_cssom_decl_get_property_value(decl, property, n, out, out_length);
 }
@@ -87,8 +113,14 @@ GTEXT_CSS_Status gtext_cssom_decl_idl_set(GTEXT_CSSOM_Decl * decl, const char * 
     GTEXT_CSSOM_Outcome * outcome) {
   const char * property = NULL;
   size_t n = 0;
-  if (!decl || !css_idl_lookup(attribute, length, &property, &n)) {
+  char dashed[64];
+  if (!decl || (!css_idl_lookup(attribute, length, &property, &n) && !descriptor_attribute(decl, attribute, length, dashed, sizeof dashed, &property, &n))) {
     return GTEXT_CSS_E_INVALID;
+  }
+  size_t m = 0;
+  if (decl->typed && css_typed_idl_name(attribute, length, dashed, sizeof dashed, &m) && css_typed_is_descriptor(decl, dashed, m)) {
+    property = dashed;
+    n = m;
   }
   return gtext_cssom_decl_set_property(decl, property, n, value, value_length, "", 0, outcome);
 }

@@ -745,3 +745,44 @@ GTEXT_CSS_Status gtext_cssom_sheet_serialize(const GTEXT_CSSOM_Sheet * sheet, co
   }
   return GTEXT_CSS_OK;
 }
+
+/* ---- what the setters and the typed declaration block read ------------------------------------------------------------------------------------ */
+
+GTEXT_CSS_Status css_rule_typed(css_core * core, const css_rule * rule, bool shallow, GTEXT_CSS_Atrule ** out) {
+  if (!(css_kind((GTEXT_CSSOM_Rule_Kind)rule->kind)->flags & CSS_KIND_LIST_ANY)) {
+    shallow = false;   /* only a rule that has rules inside it can be read without them; `@property` is not valid without its descriptors */
+  }
+  if (rule->kind == GTEXT_CSSOM_RULE_KEYFRAME) {
+    GTEXT_CSS_Atrule * a = NULL;
+    GTEXT_CSS_Status st = css_atrule_parse_keyframe(core->registry, rule->node, &core->alloc, &a);
+    if (st == GTEXT_CSS_OK && !a) {
+      st = GTEXT_CSS_E_INTERNAL;
+    }
+    *out = a;
+    return st;
+  }
+  return typed_rule(core, rule, shallow, out);
+}
+
+GTEXT_CSS_Status css_rule_selector_text(css_rule * rule, tbuf * out) {
+  sw w;
+  memset(&w, 0, sizeof w);
+  w.core = rule->obj.core;
+  collect c;
+  tb_init(&c.b, &w.core->alloc);
+  GTEXT_Markup_Sink sink;
+  memset(&sink, 0, sizeof sink);
+  sink.user = &c;
+  sink.write = collect_write;
+  w.sink = &sink;
+  w.st = GTEXT_CSS_OK;
+  GTEXT_CSS_Status st = write_selectors(&w, rule);
+  if (st == GTEXT_CSS_OK && c.b.oom) {
+    st = GTEXT_CSS_E_OOM;
+  }
+  if (st == GTEXT_CSS_OK && !tb_put(out, c.b.data, c.b.len)) {
+    st = GTEXT_CSS_E_OOM;
+  }
+  tb_free(&c.b);
+  return st;
+}

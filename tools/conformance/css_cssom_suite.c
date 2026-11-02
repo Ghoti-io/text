@@ -778,7 +778,7 @@ static char * run_op(world * w, const op * o, int * failed_status) {
     st = gtext_cssom_decl_set_css_text(d, o->f[2], o->l[2], NULL);
   }
   else if (strcmp(name, "attr") == 0 && o->n == 4) {
-    if (gtext_cssom_idl_property(o->f[2], o->l[2], NULL, NULL)) {
+    if (gtext_cssom_decl_has_attribute(d, o->f[2], o->l[2])) {
       st = gtext_cssom_decl_idl_set(d, o->f[2], o->l[2], o->f[3], o->l[3], NULL);
     }
     /* an attribute that is no CSS property's is an ordinary property of the script object: nothing happens to the declaration */
@@ -827,7 +827,7 @@ static char * run_op(world * w, const op * o, int * failed_status) {
       }
     }
     else if (strcmp(base, "assert_attr") == 0 && o->n == 4) {
-      if (!gtext_cssom_idl_property(o->f[2], o->l[2], NULL, NULL)) {
+      if (!gtext_cssom_decl_has_attribute(d, o->f[2], o->l[2])) {
         is_undefined = 1;   /* an expando: undefined */
         got = dups("");
       }

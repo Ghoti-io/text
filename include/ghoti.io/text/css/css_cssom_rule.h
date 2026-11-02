@@ -193,8 +193,10 @@ GTEXT_API const GTEXT_CSSOM_Rule_List * gtext_cssom_rule_css_rules(const GTEXT_C
 /**
  * @brief `style`: the rule's declaration block (CSSStyleDeclaration), built the first time it is asked for. The same object every time, returned retained.
  *
- * Available for a style rule and for a nested-declarations rule. The other kinds that have a declaration block hold typed descriptors, which are not exposed as a
- * CSSStyleDeclaration by this call.
+ * Available for a style rule, a nested-declarations rule and the rules whose block the typed model reads: a keyframe, `@page` and its margin rules, `@font-face`, `@position-try`,
+ * `@view-transition`, `@counter-style`, `@font-palette-values`, `@color-profile`. The block of those is a view of the rule (cssom_typed.c): the declarations that are properties
+ * (`margin: auto` is four) first, then the descriptors that are not (`src`, `size`); every edit is made on a copy and **kept only if the rule reads again with what was set**, so a
+ * property the rule does not take (`animation-name` in a keyframe) or a descriptor value that is not valid is ignored with nothing changed.
  *
  * @param rule The rule. Not NULL.
  * @param out Receives the declaration with an external reference of the caller's; written only on success. Not NULL.
@@ -233,6 +235,73 @@ GTEXT_API GTEXT_CSSOM_Rule * gtext_cssom_rule_list_next(const GTEXT_CSSOM_Rule_L
 
 /** @brief The index of `rule` in the list. O(log n). @return false when the rule is not in this list. */
 GTEXT_API bool gtext_cssom_rule_list_index_of(const GTEXT_CSSOM_Rule_List * list, const GTEXT_CSSOM_Rule * rule, size_t * index);
+
+/* ---- the attributes of a rule and their setters ------------------------------------------------------------------------------------------ */
+
+/**
+ * @brief `selectorText` of a style rule (the selector list as CSSOM serializes it) and of a page rule (its page selector list, empty for none), in a new buffer (gtext_cssom_buffer_free()).
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (NULL); GTEXT_CSS_E_UNSUPPORTED (another kind); GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_selector_text(GTEXT_CSSOM_Rule * rule, char ** out, size_t * length);
+
+/**
+ * @brief The `selectorText` setter: "parse a group of selectors" in the place the rule stands in (a nested rule's are relative); a text that does not parse is **ignored**, as CSSOM says
+ *   (GTEXT_CSS_OK, `*outcome` says GTEXT_CSSOM_IGNORED_INVALID_SELECTOR, nothing changes). The rule is replaced as a whole: its identity, place, declarations and the rules inside it stay; its
+ *   source becomes `MODIFIED`; the version of the rule and of its sheet moves once and one `RULE_REPLACED` event is sent. A text that makes no change still counts as one (the rule is
+ *   re-read), as the standard has no no-op elision here. Atomic, including on out of memory.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_UNSUPPORTED (a kind that has no `selectorText`); GTEXT_CSS_E_REENTRANT; the limits; GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_set_selector_text(GTEXT_CSSOM_Rule * rule, const char * text, size_t length, GTEXT_CSSOM_Outcome * outcome);
+
+/** @brief `keyText` of a keyframe: `0%, 100%` for `from, to`. Same returns as gtext_cssom_rule_selector_text(). */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_key_text(GTEXT_CSSOM_Rule * rule, char ** out, size_t * length);
+
+/**
+ * @brief The `keyText` setter. A key list that does not parse is **GTEXT_CSS_E_SYNTAX** (CSS Animations 1: "throw a SyntaxError"; the pinned web-platform-tests page and both browsers
+ *   agree), with nothing changed; this overrides the C5 plan's "ignored", which the standard does not say. Otherwise as gtext_cssom_rule_set_selector_text().
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_set_key_text(GTEXT_CSSOM_Rule * rule, const char * text, size_t length, GTEXT_CSSOM_Outcome * outcome);
+
+/**
+ * @brief `conditionText` of `@media`, `@supports`, `@container`, `@when` and `@else`. **Read-only**: CSS Conditional 3 declares the attribute `readonly` and the pinned
+ *   `css/cssom/CSSConditionRule-conditionText.html` asserts that assigning to it changes nothing; the plan's "readers and setters" is overturned by both.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_condition_text(GTEXT_CSSOM_Rule * rule, char ** out, size_t * length);
+
+/**
+ * @brief Any other attribute of a rule that CSSOM names, by its IDL name (a table, `gtext_cssom_rule_has_attribute()` answers membership):
+ *
+ * | kind | attributes (writable ones marked w) |
+ * |---|---|
+ * | `@import` | `href`, `layerName`, `supportsText` |
+ * | `@namespace` | `namespaceURI`, `prefix` |
+ * | `@layer` | `name` (block), `nameList` (statement; the comma list as written canonically) |
+ * | `@scope` | `start`, `end` (null when absent) |
+ * | `@container` | `containerName`, `containerQuery`, `conditionText` |
+ * | `@media`, `@supports`, `@when`, `@else` | `conditionText` |
+ * | `@property` | `name`, `syntax` (unquoted), `inherits`, `initialValue` (null when absent) |
+ * | `@counter-style` | `name` w, `system` w, `symbols` w, `additiveSymbols` w, `negative` w, `prefix` w, `suffix` w, `range` w, `pad` w, `speakAs` w, `fallback` w |
+ * | `@font-palette-values` | `name`, `fontFamily`, `basePalette`, `overrideColors` |
+ * | `@font-feature-values` | `fontFamily` w |
+ * | `@view-transition` | `navigation`, `types` |
+ * | `@keyframes` | `name` w |
+ * | `@position-try`, `@color-profile` | `name` |
+ * | margin rules | `name` (`top-left`) |
+ *
+ * An attribute that a rule does not have holds the empty string, or null (`*is_null`) where the IDL says nullable. @return GTEXT_CSS_E_UNSUPPORTED for a name the kind does not have.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_get_attribute(GTEXT_CSSOM_Rule * rule, const char * name, size_t name_length, char ** out, size_t * length, bool * is_null);
+
+/** @brief Whether the kind has the attribute, and whether it can be set. */
+GTEXT_API bool gtext_cssom_rule_has_attribute(const GTEXT_CSSOM_Rule * rule, const char * name, size_t name_length, bool * writable);
+
+/**
+ * @brief Set an attribute. A readonly attribute is **ignored** (WebIDL: nothing happens; `*outcome` says GTEXT_CSSOM_IGNORED_NOT_ALLOWED_HERE). The writable ones replace the rule as a
+ *   whole (see gtext_cssom_rule_set_selector_text()): a value the rule's grammar refuses is ignored (GTEXT_CSSOM_IGNORED_INVALID_VALUE) and the empty string removes a descriptor.
+ *   A `@keyframes` or `@counter-style` name is written as an identifier (escaped as needed).
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_set_attribute(GTEXT_CSSOM_Rule * rule, const char * name, size_t name_length, const char * value, size_t value_length,
+    GTEXT_CSSOM_Outcome * outcome);
 
 /* ---- insertRule, deleteRule, cssText ------------------------------------------------------------------------------------------------------ */
 

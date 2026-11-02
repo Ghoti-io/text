@@ -38,6 +38,7 @@
 #include "css_sheet_internal.h"
 #include "cssom_kind_tables.h"
 #include "cssom_rule_internal.h"
+#include "cssom_typed.h"
 
 /* ---- the place a rule is inserted into ------------------------------------------------------------------------------------------------------------- */
 
@@ -97,6 +98,44 @@ static void place_for_rule(css_rule * target, place * pl) {
   pl->ctx.ns = pl->sheet ? pl->sheet->ns : (target->source ? target->source->ns : NULL);
   pl->sheet_total = pl->sheet ? pl->sheet->rule_total : top->descendants + 1;
   pl->place = target->kind == GTEXT_CSSOM_RULE_PAGE ? CSSOM_PARENT_PAGE : (pl->ctx.in_style ? CSSOM_PARENT_STYLE : CSSOM_PARENT_GROUP);
+}
+
+void css_rule_own_ctx(const css_rule * rule, css_insert_ctx * ctx, GTEXT_CSSOM_Rule_Kind * parent_kind, GTEXT_CSS_Rule * synthetic) {
+  place pl;
+  *parent_kind = GTEXT_CSSOM_RULE_UNKNOWN;
+  if (rule->list) {
+    if (rule->list->owner->kind == GTEXT_CSSOM_OBJECT_SHEET) {
+      place_for_sheet((css_sheet *)(uintptr_t)rule->list->owner, &pl);
+    }
+    else {
+      css_rule * owner = (css_rule *)(uintptr_t)rule->list->owner;
+      place_for_rule(owner, &pl);
+      *parent_kind = (GTEXT_CSSOM_Rule_Kind)owner->kind;
+    }
+    *ctx = pl.ctx;
+    return;
+  }
+  /* in no list: the place is rebuilt from the kind (a keyframe is read in a `@keyframes`, a margin rule in a `@page`) */
+  memset(ctx, 0, sizeof *ctx);
+  memset(synthetic, 0, sizeof *synthetic);
+  ctx->ns = rule->source ? rule->source->ns : NULL;
+  if (rule->kind == GTEXT_CSSOM_RULE_KEYFRAME || rule->kind == GTEXT_CSSOM_RULE_PAGE_MARGIN) {
+    const bool key = rule->kind == GTEXT_CSSOM_RULE_KEYFRAME;
+    synthetic->kind = GTEXT_CSS_RULE_AT;
+    synthetic->name.data = key ? "keyframes" : "page";
+    synthetic->name.length = key ? 9 : 4;
+    synthetic->has_block = true;
+    ctx->parent_node = synthetic;
+    ctx->at_in_place = !key;
+    *parent_kind = key ? GTEXT_CSSOM_RULE_KEYFRAMES : GTEXT_CSSOM_RULE_PAGE;
+    return;
+  }
+  ctx->top = !rule->nested;
+  ctx->in_style = rule->nested;
+  ctx->relative = rule->nested;
+  if (rule->nested) {
+    *parent_kind = GTEXT_CSSOM_RULE_STYLE;
+  }
 }
 
 /* ---- the order constraints of the top of a sheet ---------------------------------------------------------------------------------------------------- */

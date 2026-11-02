@@ -218,6 +218,13 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_decl_value_set(GTEXT_CSSOM_Decl * decl, c
 GTEXT_API bool gtext_cssom_idl_property(const char * attribute, size_t length, const char ** property, size_t * property_length);
 
 /** @brief `style[attribute]` for a property attribute: gtext_cssom_decl_get_property_value() of the property. @return GTEXT_CSS_E_INVALID if the attribute is not a CSS property's. */
+/**
+ * @brief Whether the declaration has the IDL attribute: any CSS property's for a style rule's, an element's, a computed and a free-standing block; for the block of a keyframe, a
+ *   page rule, `@font-face` ... the descriptors of the rule (`pageOrientation`, `fontDisplay`) and the properties the rule takes (a page has `marginTop` and `size` and no `cssFloat`).
+ *   A binding that makes the attributes of a script object asks this.
+ */
+GTEXT_API bool gtext_cssom_decl_has_attribute(const GTEXT_CSSOM_Decl * decl, const char * attribute, size_t length);
+
 GTEXT_API GTEXT_CSS_Status gtext_cssom_decl_idl_get(GTEXT_CSSOM_Decl * decl, const char * attribute, size_t length, char ** out, size_t * out_length);
 
 /** @brief `style[attribute] = value`: gtext_cssom_decl_set_property() with the empty priority (the empty string removes the property). @return GTEXT_CSS_E_INVALID if the attribute is not a CSS property's. */

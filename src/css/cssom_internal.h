@@ -188,6 +188,15 @@ typedef struct {
   void (*commit)(css_obj * owner, struct GTEXT_CSSOM_Decl * decl, css_cssom_event * event);
 } css_decl_owner_ops;
 
+/// One descriptor of a typed rule's block (a `src` of `@font-face`, the `size` of `@page`): its name (lower case), its value as the typed model writes it, its importance.
+typedef struct {
+  char * name;
+  size_t name_length;
+  char * text;
+  size_t text_length;
+  bool important;
+} css_desc;
+
 struct GTEXT_CSSOM_Decl {
   css_obj obj;
   GTEXT_CSS_Declaration_Block * block;
@@ -209,6 +218,13 @@ struct GTEXT_CSSOM_Decl {
   bool validated;                      ///< Validated at least once.
   uint64_t validated_epoch, validated_tree;
   bool stale;                          ///< gtext_cssom_inline_style_attribute_changed() was called.
+  /* the block of a typed rule (cssom_typed.c): a keyframe, a page or margin rule, a font-face, a position-try ... The declarations that are properties are in `block`; the
+     descriptors that are not are in `descs`, after them in every listing. Every mutation is made on a copy and accepted only if the rule, read again from the text it makes,
+     still holds what was set. */
+  bool typed;
+  unsigned typed_bypass;               ///< Greater than 0 while the typed code calls the block code of the untyped declaration.
+  css_desc * descs;
+  size_t ndescs, capdescs;
 };
 
 /// Make a declaration object of an owner; the block is empty. Counts as css_obj_init() says.

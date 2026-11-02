@@ -132,7 +132,7 @@ typedef struct {
   const char * pattern;
 } css_atrule_property_rule;
 
-#define CSS_ATRULE_PROPERTY_RULE_COUNT 42
+#define CSS_ATRULE_PROPERTY_RULE_COUNT 62
 static const css_atrule_property_rule css_atrule_property_rules[CSS_ATRULE_PROPERTY_RULE_COUNT] = {
   {"position-try", 0, "top"},
   {"position-try", 0, "right"},
@@ -176,6 +176,26 @@ static const css_atrule_property_rule css_atrule_property_rules[CSS_ATRULE_PROPE
   {"keyframes", 1, "animation*"},
   {"keyframes", 2, "animation-timing-function"},
   {"keyframes", 2, "animation-composition"},
+  {"page", 0, "direction"},
+  {"page", 0, "unicode-bidi"},
+  {"page", 0, "background*"},
+  {"page", 0, "border*"},
+  {"page", 0, "counter-*"},
+  {"page", 0, "color"},
+  {"page", 0, "font*"},
+  {"page", 0, "height"},
+  {"page", 0, "line-height"},
+  {"page", 0, "margin*"},
+  {"page", 0, "outline*"},
+  {"page", 0, "padding*"},
+  {"page", 0, "quotes"},
+  {"page", 0, "text-*"},
+  {"page", 0, "letter-spacing"},
+  {"page", 0, "word-spacing"},
+  {"page", 0, "white-space"},
+  {"page", 0, "visibility"},
+  {"page", 0, "width"},
+  {"page", 0, "--*"},
 };
 
 /* the predefined counter style names, sorted: ASCII lowercased on parse wherever they are used as counter styles */

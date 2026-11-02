@@ -38,6 +38,7 @@
 #include "css_registry_internal.h"
 #include "css_shorthand_internal.h"
 #include "cssom_internal.h"
+#include "cssom_typed.h"
 
 #define SIZEOF_DECL sizeof(GTEXT_CSSOM_Decl)
 
@@ -52,6 +53,7 @@ static void decl_destroy(css_obj * o) {
   }
   gtext_allocator_free(&a, d->remembered);
   gtext_css_block_free(d->block);
+  css_typed_free(d);
   gtext_allocator_free(&a, d);
 }
 
@@ -223,7 +225,7 @@ GTEXT_CSS_Status gtext_cssom_decl_length(GTEXT_CSSOM_Decl * decl, size_t * out) 
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  *out = gtext_css_block_count(decl->block);
+  *out = gtext_css_block_count(decl->block) + css_typed_desc_count(decl);
   return GTEXT_CSS_OK;
 }
 
@@ -239,6 +241,18 @@ GTEXT_CSS_Status gtext_cssom_decl_item(GTEXT_CSSOM_Decl * decl, size_t index, ch
   css_block_compact(decl->block);
   GTEXT_CSS_Declaration_Item it;
   size_t n = 0;
+  const size_t in_block = gtext_css_block_count(decl->block);
+  if (css_typed_desc_count(decl) && index >= in_block && index - in_block < decl->ndescs) {
+    const css_desc * d = &decl->descs[index - in_block];
+    *out = css_core_dup(core, d->name, d->name_length);
+    if (!*out) {
+      return GTEXT_CSS_E_OOM;
+    }
+    if (out_length) {
+      *out_length = d->name_length;
+    }
+    return GTEXT_CSS_OK;
+  }
   if (!gtext_css_block_item(decl->block, index, &it)) {
     st = empty_string(core, out, &n);
   }
@@ -298,6 +312,18 @@ GTEXT_CSS_Status gtext_cssom_decl_get_property_value(GTEXT_CSSOM_Decl * decl, co
   if (st != GTEXT_CSS_OK) {
     return st;
   }
+  if (css_typed_is_descriptor(decl, name, name_length)) {
+    char lower[48];
+    for (size_t i = 0; i < name_length; i++) {
+      lower[i] = (char)(name[i] >= 'A' && name[i] <= 'Z' ? name[i] + 32 : name[i]);
+    }
+    const css_desc * d = css_typed_desc_find(decl, lower, name_length);
+    *out = css_core_dup(decl->obj.core, d ? d->text : "", d ? d->text_length : 0);
+    if (out_length) {
+      *out_length = d ? d->text_length : 0;
+    }
+    return *out ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  }
   pref p;
   pref_resolve(decl->obj.core, name, name_length, &p);
   return value_of(decl, &p, out, out_length);
@@ -313,6 +339,17 @@ GTEXT_CSS_Status gtext_cssom_decl_get_property_priority(GTEXT_CSSOM_Decl * decl,
     return st;
   }
   *out = "";
+  if (css_typed_is_descriptor(decl, name, name_length)) {
+    char lower[48];
+    for (size_t i = 0; i < name_length; i++) {
+      lower[i] = (char)(name[i] >= 'A' && name[i] <= 'Z' ? name[i] + 32 : name[i]);
+    }
+    const css_desc * d = css_typed_desc_find(decl, lower, name_length);
+    if (d && d->important) {
+      *out = "important";
+    }
+    return GTEXT_CSS_OK;
+  }
   pref p;
   pref_resolve(core, name, name_length, &p);
   if (!p.known) {
@@ -358,6 +395,9 @@ GTEXT_CSS_Status gtext_cssom_decl_value_set(GTEXT_CSSOM_Decl * decl, const char 
   pref p;
   pref_resolve(decl->obj.core, name, name_length, &p);
   *found = false;
+  if (css_typed_is_descriptor(decl, name, name_length)) {
+    return GTEXT_CSS_OK;   /* a descriptor is not a property: it has no typed value here */
+  }
   GTEXT_CSS_Declaration_Item it;
   if (!p.known || p.shorthand || !gtext_css_block_find(decl->block, p.id, p.custom ? p.name : NULL, p.length, &it) || it.opaque) {
     return GTEXT_CSS_OK;   /* a declaration kept as written has no typed value */
@@ -387,6 +427,9 @@ GTEXT_CSS_Status gtext_cssom_decl_css_text(GTEXT_CSSOM_Decl * decl, char ** out,
   tbuf b;
   tb_init(&b, &core->alloc);
   st = css_block_text(decl->block, &b);
+  if (st == GTEXT_CSS_OK && decl->ndescs) {
+    st = css_typed_desc_text(decl, &b);
+  }
   if (st == GTEXT_CSS_OK && b.len > core->config.max_output_bytes) {
     st = GTEXT_CSS_E_LIMIT_OUTPUT;
   }
@@ -625,6 +668,13 @@ static void finish_change(GTEXT_CSSOM_Decl * d, GTEXT_CSS_Property_Id * ids, siz
   css_cssom_commit(core, &ev, out);
 }
 
+static void ignore(GTEXT_CSSOM_Outcome * out, GTEXT_CSSOM_Outcome_Kind kind, GTEXT_CSS_Property_Id property, const char * detail);
+
+void css_decl_finish_change(GTEXT_CSSOM_Decl * d, GTEXT_CSS_Property_Id * ids, size_t id_count, const GTEXT_CSS_String * customs, size_t custom_count, bool attribute_written,
+    GTEXT_CSSOM_Outcome * out) {
+  finish_change(d, ids, id_count, customs, custom_count, attribute_written, out);
+}
+
 /// Apply one edit: to the block in place, or for an element-owned declaration to a clone that is written to the attribute first.
 static GTEXT_CSS_Status apply_edit(GTEXT_CSSOM_Decl * d, const edit * e, GTEXT_CSSOM_Outcome * out) {
   css_core * core = d->obj.core;
@@ -635,6 +685,30 @@ static GTEXT_CSS_Status apply_edit(GTEXT_CSSOM_Decl * d, const edit * e, GTEXT_C
   custom.data = e->name;
   custom.length = e->length;
   GTEXT_CSS_Status st;
+  if (d->typed) {
+    /* a typed rule's block: the edit is made on a copy, and kept only if the rule reads again with what the copy says */
+    GTEXT_CSS_Declaration_Block * copy = NULL;
+    st = gtext_css_block_clone(d->block, &copy);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+    st = run_edit(copy, e, &change, out);
+    if (st != GTEXT_CSS_OK || !change.changed) {
+      gtext_css_block_free(copy);
+      gtext_css_block_change_free(&change);
+      return st;
+    }
+    bool accepted = false;
+    st = css_typed_commit_block(d, copy, &accepted, out);
+    if (st == GTEXT_CSS_OK && accepted) {
+      finish_change(d, change.ids, change.count, is_custom ? &custom : NULL, is_custom ? 1 : 0, false, out);
+    }
+    else if (st == GTEXT_CSS_OK) {
+      ignore(out, GTEXT_CSSOM_IGNORED_INVALID_VALUE, e->id, "the rule does not take this declaration");
+    }
+    gtext_css_block_change_free(&change);
+    return st;
+  }
   if (!element_live(d)) {
     st = run_edit(d->block, e, &change, out);
     if (st == GTEXT_CSS_OK && change.changed) {
@@ -745,6 +819,23 @@ GTEXT_CSS_Status gtext_cssom_decl_remove_property(GTEXT_CSSOM_Decl * decl, const
   if (st != GTEXT_CSS_OK) {
     return st;
   }
+  if (css_typed_is_descriptor(decl, name, name_length)) {
+    char * value = NULL;
+    size_t value_length = 0;
+    st = gtext_cssom_decl_get_property_value(decl, name, name_length, &value, &value_length);
+    if (st == GTEXT_CSS_OK) {
+      st = css_typed_remove_descriptor(decl, name, name_length, out);
+    }
+    if (st != GTEXT_CSS_OK || !old_value) {
+      gtext_cssom_buffer_free(&decl->obj.core->alloc, value);
+      return st;
+    }
+    *old_value = value;
+    if (old_length) {
+      *old_length = value_length;
+    }
+    return GTEXT_CSS_OK;
+  }
   pref p;
   pref_resolve(decl->obj.core, name, name_length, &p);
   return remove_after_begin(decl, &p, old_value, old_length, out);
@@ -765,6 +856,19 @@ GTEXT_CSS_Status gtext_cssom_decl_set_property(GTEXT_CSSOM_Decl * decl, const ch
   }
   /* 2. "If property is not a custom property: let property be property converted to ASCII lowercase. If property is not a case-sensitive match for a supported CSS
         property, then return." */
+  if (css_typed_is_descriptor(decl, name, name_length)) {
+    if (value_length == 0) {
+      return css_typed_remove_descriptor(decl, name, name_length, out);
+    }
+    if (priority_length != 0 && !ascii_ci_important(priority, priority_length)) {
+      ignore(out, GTEXT_CSSOM_IGNORED_BAD_PRIORITY, 0, "the priority is neither empty nor important");
+      return GTEXT_CSS_OK;
+    }
+    if (value_length > core->config.max_input_bytes) {
+      return GTEXT_CSS_E_LIMIT_INPUT;
+    }
+    return css_typed_set_descriptor(decl, name, name_length, value, value_length, priority_length != 0, out);
+  }
   pref p;
   pref_resolve(core, name, name_length, &p);
   if (!p.known) {
@@ -833,6 +937,9 @@ GTEXT_CSS_Status gtext_cssom_decl_set_css_text(GTEXT_CSSOM_Decl * decl, const ch
   GTEXT_CSS_Status st = mutate_begin(decl, out);
   if (st != GTEXT_CSS_OK) {
     return st;
+  }
+  if (decl->typed) {
+    return css_typed_set_css_text(decl, text, length, out);
   }
   /* "2. Empty the declarations. 3. Parse the given value and, if the return value is not the empty list, insert the items in the list into the declarations, in specified order." */
   GTEXT_CSS_Declaration_Block * neu = NULL;
@@ -966,10 +1073,28 @@ GTEXT_CSS_Status gtext_cssom_decl_dump(const GTEXT_CSSOM_Decl * decl, const GTEX
       st = puts_(sink, "\n");
     }
   }
+  for (size_t i = 0; st == GTEXT_CSS_OK && i < decl->ndescs; i++) {
+    st = puts_(sink, "desc ");
+    if (st == GTEXT_CSS_OK) {
+      st = put(sink, decl->descs[i].name, decl->descs[i].name_length);
+    }
+    if (st == GTEXT_CSS_OK) {
+      st = puts_(sink, decl->descs[i].important ? " important " : " normal ");
+    }
+    if (st == GTEXT_CSS_OK) {
+      st = put(sink, decl->descs[i].text, decl->descs[i].text_length);
+    }
+    if (st == GTEXT_CSS_OK) {
+      st = puts_(sink, "\n");
+    }
+  }
   if (st == GTEXT_CSS_OK) {
     tbuf b;
     tb_init(&b, &core->alloc);
     st = css_block_text(decl->block, &b);
+    if (st == GTEXT_CSS_OK) {
+      st = css_typed_desc_text(decl, &b);
+    }
     if (st == GTEXT_CSS_OK) {
       st = puts_(sink, "cssText ");
     }

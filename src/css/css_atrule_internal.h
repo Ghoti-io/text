@@ -99,6 +99,8 @@ GTEXT_CSS_Status css_page_selectors_parse(const GTEXT_Allocator * alloc, css_are
     GTEXT_CSS_Page_Selector ** out, size_t * n, bool * valid);
 
 /// Parse one keyframe block of a `@keyframes` rule (a qualified rule) on its own. `*out` is NULL when the block is not valid.
+/// Whether a block of the at-rule (its name without the `@`; `keyframes` for a keyframe) takes a declaration of the property: the generated allow / ignore / keep rows.
+bool css_atrule_property_taken(const char * atrule, const char * name, size_t len);
 GTEXT_CSS_Status css_atrule_parse_keyframe(const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Rule * rule, const GTEXT_Allocator * allocator, GTEXT_CSS_Atrule ** out);
 
 /// A part of the serialization of a rule: its header (`@keyframes name`, `@page :first`, a keyframe's selectors) or its declarations (`a: b; c: d;`, nothing if there are none).

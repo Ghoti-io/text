@@ -26,6 +26,7 @@
  * mutation of the rule and of its sheet.
  */
 
+#include "cssom_typed.h"
 #include <string.h>
 
 #include "css_internal.h"
@@ -357,14 +358,23 @@ GTEXT_CSS_Status css_rule_build_style(css_rule * r) {
   if (r->style) {
     return GTEXT_CSS_OK;
   }
-  const GTEXT_CSS_Declaration * decls = NULL;
-  size_t n = 0;
-  if (!css_rule_declarations(r, &decls, &n)) {
-    return GTEXT_CSS_E_UNSUPPORTED;
-  }
   css_core * core = r->obj.core;
   GTEXT_CSS_Declaration_Block * block = NULL;
-  GTEXT_CSS_Status st = css_decl_block_from_declarations(core, decls, n, false, &block);
+  css_desc * descs = NULL;
+  size_t ndescs = 0;
+  const bool typed = css_typed_kind((GTEXT_CSSOM_Rule_Kind)r->kind);
+  GTEXT_CSS_Status st;
+  if (typed) {
+    st = css_typed_view(r, &block, &descs, &ndescs);
+  }
+  else {
+    const GTEXT_CSS_Declaration * decls = NULL;
+    size_t n = 0;
+    if (!css_rule_declarations(r, &decls, &n)) {
+      return GTEXT_CSS_E_UNSUPPORTED;
+    }
+    st = css_decl_block_from_declarations(core, decls, n, false, &block);
+  }
   if (st != GTEXT_CSS_OK) {
     return st;
   }
@@ -372,10 +382,21 @@ GTEXT_CSS_Status css_rule_build_style(css_rule * r) {
   st = css_decl_create(core, GTEXT_CSSOM_DECL_RULE, 1, 0, r->obj.id, &d);
   if (st != GTEXT_CSS_OK) {
     gtext_css_block_free(block);
+    if (typed) {
+      GTEXT_Allocator a = core->alloc;
+      for (size_t i = 0; i < ndescs; i++) {
+        gtext_allocator_free(&a, descs[i].name);
+        gtext_allocator_free(&a, descs[i].text);
+      }
+      gtext_allocator_free(&a, descs);
+    }
     return st;
   }
   gtext_css_block_free(d->block);
   d->block = block;
+  d->typed = typed;
+  d->descs = descs;
+  d->ndescs = d->capdescs = ndescs;
   d->owner = &r->obj;
   d->ops = &rule_ops;
   css_obj_set_parent(&d->obj, &r->obj);

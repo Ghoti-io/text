@@ -872,7 +872,7 @@ static bool pattern_matches(const char * pat, const char * name, size_t len) {
 }
 
 /// Whether a block of the at-rule takes a declaration of the property (the generated allow / ignore / keep rows).
-static bool property_taken(const char * atrule, const char * name, size_t len) {
+bool css_atrule_property_taken(const char * atrule, const char * name, size_t len) {
   bool has_allow = false, allowed = false, ignored = false, kept = false;
   for (size_t i = 0; i < CSS_ATRULE_PROPERTY_RULE_COUNT; i++) {
     const css_atrule_property_rule * r = &css_atrule_property_rules[i];
@@ -1296,15 +1296,29 @@ static bool read_block(ctx * c, const GTEXT_CSS_Rule * rule, block_mode mode, co
       case BLOCK_DESCRIPTORS:
         ok = read_descriptor(c, at_name, d, false);
         break;
-      case BLOCK_PAGE:
-        ok = read_descriptor(c, at_name, d, true);
+      case BLOCK_PAGE: {
+        /* "The @page rule can only contain page properties and margin at-rules": a descriptor of @page, or a property of the page context (Appendix A) */
+        const GTEXT_CSS_At_Rule_Id page_id = gtext_css_registry_find_at_rule("@page", 5);
+        char lower[64];
+        const size_t ln = d->name.length < sizeof lower ? d->name.length : 0;
+        for (size_t k = 0; k < ln; k++) {
+          const char ch = d->name.data[k];
+          lower[k] = (char)(ch >= 'A' && ch <= 'Z' ? ch + 32 : ch);
+        }
+        if (ln && !gtext_css_registry_find_descriptor(page_id, lower, ln) && !css_atrule_property_taken("page", d->name.data, d->name.length)) {
+          ok = diag(c, GTEXT_CSS_ATRULE_DIAG_NOT_ALLOWED, d->span, "Paged Media 3, 4.3: the @page rule can only contain page properties (Appendix A) and margin at-rules");
+        }
+        else {
+          ok = read_descriptor(c, at_name, d, true);
+        }
         break;
+      }
       case BLOCK_FEATURE:
         ok = read_feature_declaration(c, d);
         break;
       case BLOCK_PROPERTIES:
       case BLOCK_KEYFRAME: {
-        if (!property_taken(mode == BLOCK_KEYFRAME ? "keyframes" : at_name, d->name.data, d->name.length)) {
+        if (!css_atrule_property_taken(mode == BLOCK_KEYFRAME ? "keyframes" : at_name, d->name.data, d->name.length)) {
           ok = diag(c, GTEXT_CSS_ATRULE_DIAG_NOT_ALLOWED, d->span, mode == BLOCK_KEYFRAME ? "Animations 1, 3.1: the animation properties are ignored in a keyframe" :
                                                                    "Anchor Positioning 1, 6.4: @position-try only accepts the accepted @position-try properties");
         }
