@@ -152,9 +152,7 @@ TEST(CssomLifetime, AHoldPassesUpTheWholeChain) {
   gtext_cssom_decl_retain(leaf);
   EXPECT_EQ(mid->obj.external, 1u);
   EXPECT_EQ(top->obj.external, 1u) << "a held grandchild keeps the sheet";
-  gtext_cssom_decl_release(leaf);
-  EXPECT_EQ(mid->obj.external, 0u);
-  EXPECT_EQ(top->obj.external, 0u);
+  gtext_cssom_decl_release(leaf);   // the last reference of the chain: top, mid and the leaf are freed here, and nothing below reads them
   // nothing holds top: it was freed with the last release; the counters say no object is left
   GTEXT_CSSOM_Counters c;
   ASSERT_EQ(gtext_cssom_document_counters(doc.d, &c), GTEXT_CSS_OK);
