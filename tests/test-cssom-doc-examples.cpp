@@ -49,6 +49,7 @@ namespace snippets {
 #include "doc-snippets/css/cssom-inline-style.c"
 #include "doc-snippets/css/cssom-sheet.c"
 #include "doc-snippets/css/cssom-insert.c"
+#include "doc-snippets/css/cssom-setters.c"
 } // namespace snippets
 
 namespace {
@@ -65,6 +66,7 @@ const Snippet kSnippets[] = {
         "width: 1px -> ignored: bad priority\nbogus: 1 -> ignored: unknown property\ncssText: margin: 1px 2px; color: red !important;\nremoved margin: 1px 2px\nlength: 1\n"},
     {"cssom-inline-style.c", snippets::cssom_inline_style, "attribute: color: blue; margin: 1px; (written: yes)\nagain: written: no\nwidth: 5px\ncolor: \"\"\n"},
     {"cssom-insert.c", snippets::cssom_insert, "insert media: success\n@import url(a.css); -> HierarchyRequestError\nt|c { } -> SyntaxError\na { } b { } -> SyntaxError\nd { } -> IndexSizeError\ndeleted: @media print {\n  s|b { width: 1px; }\n} (parentStyleSheet is null)\n@namespace s url(\"urn:s\");\na {\n  color: red;\n  & > c { }\n  width: 2px;\n}\n"},
+    {"cssom-setters.c", snippets::cssom_setters, "selectorText: changed 1\nselectorText: ignored 1\ncssText: d > e { color: red; }\ndeleteMedium: NotFoundError\nmediaText: print, not all, tv\nsystem: ignored 1\ncounter style: @counter-style n { system: cyclic; symbols: x y z; }\npage block: 5 declarations, transform ignored 1\npage: @page { margin: 1em 2em; size: landscape; }\nold rule: parentStyleSheet is null; sheet rules: 1\nreplaceSync on a parsed sheet: NotAllowedError\n"},
     {"cssom-sheet.c", snippets::cssom_sheet, "rules: 2, dropped: 1\nCSSStyleRule (type 1) at line 1\nCSSMediaRule (type 4) at line 2\nstyle: width: 2px; (sheet version 1, owner is the sheet: yes)\nafter the release: 2 rules\n"},
 };
 

@@ -108,6 +108,7 @@ static void rule_destroy(css_obj * o) {
     r->style->owner = NULL;
     css_obj_release_internal(&r->style->obj);
   }
+  css_media_owner_gone(&r->media);
   css_source_release(r->source);
   gtext_allocator_free(&a, r);
 }

@@ -214,16 +214,15 @@ static GTEXT_CSS_Status own_body(css_rule * rule, tbuf * out) {
 
 /// Try `header { body }` as the rule's new own part. `body_override` replaces the rule's own declarations when not NULL. On success the rule is changed (and `check` has passed).
 /// `*ignored` is true when the text does not read as this rule; nothing has changed then.
-typedef GTEXT_CSS_Status (*own_check)(css_rule * rule, const css_own * own, void * user, bool * ok);
 
-static GTEXT_CSS_Status replace_own(css_rule * rule, const char * header, size_t header_length, const char * body, size_t body_length, own_check check, void * user, bool * ignored,
-    GTEXT_CSSOM_Outcome * outcome) {
+GTEXT_CSS_Status css_rule_replace_own(css_rule * rule, const char * header, size_t header_length, const char * body, size_t body_length, bool statement, own_check check, void * user,
+    bool * ignored, GTEXT_CSSOM_Outcome * outcome) {
   const bool style = rule->kind == GTEXT_CSSOM_RULE_STYLE;
   css_core * core = rule->obj.core;
   *ignored = false;
   tbuf cand;
   tb_init(&cand, &core->alloc);
-  if (!tb_put(&cand, header, header_length) || !tb_puts(&cand, " {") || (body_length && !tb_put(&cand, body, body_length)) || !tb_puts(&cand, "}") || cand.oom) {
+  if (!tb_put(&cand, header, header_length) || (statement ? !tb_puts(&cand, ";") : (!tb_puts(&cand, " {") || (body_length && !tb_put(&cand, body, body_length)) || !tb_puts(&cand, "}"))) || cand.oom) {
     tb_free(&cand);
     return GTEXT_CSS_E_OOM;
   }
@@ -356,7 +355,7 @@ GTEXT_CSS_Status gtext_cssom_rule_set_selector_text(GTEXT_CSSOM_Rule * rule, con
   }
   bool ignored = false;
   if (st == GTEXT_CSS_OK) {
-    st = replace_own(rule, header.data ? header.data : "", header.len, body.data, body.len, NULL, NULL, &ignored, out);
+    st = css_rule_replace_own(rule, header.data ? header.data : "", header.len, body.data, body.len, false, NULL, NULL, &ignored, out);
   }
   tb_free(&old);
   tb_free(&body);
@@ -403,7 +402,7 @@ GTEXT_CSS_Status gtext_cssom_rule_set_key_text(GTEXT_CSSOM_Rule * rule, const ch
   st = own_body(rule, &body);
   bool ignored = false;
   if (st == GTEXT_CSS_OK) {
-    st = replace_own(rule, text ? text : "", length, body.data, body.len, NULL, NULL, &ignored, out);
+    st = css_rule_replace_own(rule, text ? text : "", length, body.data, body.len, false, NULL, NULL, &ignored, out);
   }
   tb_free(&body);
   if (st == GTEXT_CSS_OK && ignored) {
@@ -815,7 +814,7 @@ static GTEXT_CSS_Status set_name_like(css_rule * rule, const attr_row * row, con
     }
   }
   if (st == GTEXT_CSS_OK) {
-    st = replace_own(rule, header.data, header.len, body.data, body.len, NULL, NULL, ignored, out);
+    st = css_rule_replace_own(rule, header.data, header.len, body.data, body.len, false, NULL, NULL, ignored, out);
   }
   tb_free(&header);
   tb_free(&body);
@@ -882,7 +881,7 @@ GTEXT_CSS_Status gtext_cssom_rule_set_attribute(GTEXT_CSSOM_Rule * rule, const c
     gtext_css_atrule_free(a);
     if (st == GTEXT_CSS_OK) {
       desc_check dc = {row->desc, dl, value_length == 0};
-      st = replace_own(rule, header.data, header.len, body.data, body.len, desc_present, &dc, &ignored, out);
+      st = css_rule_replace_own(rule, header.data, header.len, body.data, body.len, false, desc_present, &dc, &ignored, out);
     }
     tb_free(&header);
     tb_free(&body);

@@ -49,6 +49,7 @@ typedef struct {
   size_t nns, capns, nstrings;
   char * default_uri;
   bool imports_open, ns_open;
+  bool constructed;                   ///< The sheet is a constructed one: `@import` is not a rule of it ("replaceSync": the rules of the text, the `@import` rules ignored).
   css_parse_diag * diags;
   size_t ndiags, capdiags, diag_total;
   GTEXT_CSS_Status status;            ///< The first resource failure inside a callback (which can only answer yes or no).
@@ -237,6 +238,10 @@ static bool at_rule_valid(cvalidity * v, const GTEXT_CSS_Parent * parent, const 
   /* the order of the rules at the top of a sheet */
   switch (kind) {
   case GTEXT_CSSOM_RULE_IMPORT:
+    if (v->constructed) {
+      diagnose(v, GTEXT_CSSOM_PARSE_INVALID_AT_RULE, rule, "CSSOM, replaceSync(): \"Parse a stylesheet from text ... Ignore any @import rules\" (a constructed style sheet has none)");
+      return false;
+    }
     if (!v->imports_open) {
       diagnose(v, GTEXT_CSSOM_PARSE_MISPLACED_IMPORT, rule, "CSS Cascade 4, @import: any @import rules must precede all other valid at-rules and style rules in a style sheet (ignoring @charset and @layer statements)");
       return false;
@@ -449,6 +454,7 @@ GTEXT_CSS_Status css_sheet_parse_into(css_core * core, css_sheet * sheet, char *
   v.core = core;
   v.imports_open = true;
   v.ns_open = true;
+  v.constructed = sheet->constructed;
   v.selector = gtext_css_selector_options_default();
   gtext_css_atrule_validity_init(&v.at, core->registry);
   GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();

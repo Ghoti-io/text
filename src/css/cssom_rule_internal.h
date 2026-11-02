@@ -177,6 +177,7 @@ struct GTEXT_CSSOM_Rule {
   const GTEXT_CSS_Declaration * run;   ///< A nested-declarations rule made of a run of declarations of an at-rule's block: the run.
   size_t run_count;
   GTEXT_CSSOM_Decl * style;        ///< The declaration block, built the first time it is asked for (internal count held).
+  struct GTEXT_CSSOM_Media_List * media;   ///< `media` of an `@import` or `@media`, made the first time it is asked for (internal count held).
 };
 
 css_rule * css_rule_from_obj(css_obj * o);
@@ -250,6 +251,9 @@ struct GTEXT_CSSOM_Sheet {
   char * href, * title, * base_url;
   const void * owner_node;
   bool disabled, alternate, origin_clean, constructed, disallow_modification;
+  char * media_text;               ///< The sheet's media query list, canonical; NULL for the empty list.
+  struct GTEXT_CSSOM_Media_List * media;   ///< `media`, made the first time it is asked for (internal count held).
+  unsigned pending_replace;        ///< `replace()` calls begun and not completed (a constructed sheet).
   size_t rule_total;               ///< Rules at every depth.
   css_source * source;             ///< The parse of the sheet's text, or NULL once it was compacted.
   css_ns_env * ns;                 ///< The sheet's `@namespace` rules: what a selector inserted into it is read in. NULL for none.

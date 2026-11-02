@@ -28,6 +28,7 @@
 
 #include "css_internal.h"
 #include "cssom_rule_internal.h"
+#include "cssom_typed.h"
 
 GTEXT_CSSOM_Sheet_Options gtext_cssom_sheet_options_default(void) {
   GTEXT_CSSOM_Sheet_Options o;
@@ -45,6 +46,8 @@ static void sheet_destroy(css_obj * o) {
   css_sheet * s = (css_sheet *)o;
   GTEXT_Allocator a = o->core->alloc;
   css_rule_list_release_all(&s->rules);
+  css_media_owner_gone(&s->media);
+  gtext_allocator_free(&a, s->media_text);
   css_source_release(s->source);
   css_ns_env_release(s->ns);
   gtext_allocator_free(&a, s->href);
@@ -55,7 +58,7 @@ static void sheet_destroy(css_obj * o) {
 }
 
 /// A copy of an optional string; `*out` stays NULL for NULL. False on memory.
-static bool copy_string(css_core * core, const char * s, char ** out, size_t * bytes) {
+static bool sheet_copy_string(css_core * core, const char * s, char ** out, size_t * bytes) {
   *out = NULL;
   if (!s) {
     return true;
@@ -65,7 +68,8 @@ static bool copy_string(css_core * core, const char * s, char ** out, size_t * b
   return *out != NULL;
 }
 
-GTEXT_CSS_Status gtext_cssom_sheet_new_parsed(GTEXT_CSSOM_Document * document, const char * text, size_t length, const GTEXT_CSSOM_Sheet_Options * options,
+/// A sheet from text: parsed, or (constructed) empty and with no `@import`.
+static GTEXT_CSS_Status sheet_make(GTEXT_CSSOM_Document * document, const char * text, size_t length, const GTEXT_CSSOM_Sheet_Options * options, bool constructed,
     GTEXT_CSSOM_Sheet ** out) {
   if (!document || !out || (!text && length) || (options && options->size < offsetof(GTEXT_CSSOM_Sheet_Options, href) + sizeof options->href)) {
     return GTEXT_CSS_E_INVALID;
@@ -94,15 +98,37 @@ GTEXT_CSS_Status gtext_cssom_sheet_new_parsed(GTEXT_CSSOM_Document * document, c
   s->disabled = o.disabled;
   s->alternate = o.alternate;
   s->origin_clean = o.origin_clean;
-  s->owner_node = o.owner_node;
+  s->constructed = constructed;
+  s->owner_node = constructed ? NULL : o.owner_node;
   size_t strings = 0;
-  if (!copy_string(core, o.href, &s->href, &strings) || !copy_string(core, o.title, &s->title, &strings) || !copy_string(core, o.base_url, &s->base_url, &strings)) {
+  if (!sheet_copy_string(core, o.href, &s->href, &strings) || !sheet_copy_string(core, o.title, &s->title, &strings) || !sheet_copy_string(core, o.base_url, &s->base_url, &strings)) {
     css_obj_release_external(&s->obj);
     return GTEXT_CSS_E_OOM;
   }
   if (!css_obj_charge(&s->obj, strings)) {
     css_obj_release_external(&s->obj);
     return GTEXT_CSS_E_LIMIT_CSSOM;
+  }
+  if (o.media) {
+    /* kept in its canonical form: a text always parses */
+    tbuf canon;
+    tb_init(&canon, &core->alloc);
+    st = css_media_canonical(core, o.media, strlen(o.media), &canon);
+    if (st == GTEXT_CSS_OK && canon.len) {
+      size_t cn = 0;
+      s->media_text = tb_take(&canon, &cn);
+      if (!s->media_text || !css_obj_charge(&s->obj, cn + 1)) {
+        css_obj_release_external(&s->obj);
+        return s->media_text ? GTEXT_CSS_E_LIMIT_CSSOM : GTEXT_CSS_E_OOM;
+      }
+    }
+    else {
+      tb_free(&canon);
+    }
+    if (st != GTEXT_CSS_OK) {
+      css_obj_release_external(&s->obj);
+      return st;
+    }
   }
   char * copy = NULL;
   if (length) {
@@ -119,6 +145,15 @@ GTEXT_CSS_Status gtext_cssom_sheet_new_parsed(GTEXT_CSSOM_Document * document, c
   }
   *out = s;
   return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_cssom_sheet_new_parsed(GTEXT_CSSOM_Document * document, const char * text, size_t length, const GTEXT_CSSOM_Sheet_Options * options,
+    GTEXT_CSSOM_Sheet ** out) {
+  return sheet_make(document, text, length, options, false, out);
+}
+
+GTEXT_CSS_Status gtext_cssom_sheet_new_constructed(GTEXT_CSSOM_Document * document, const GTEXT_CSSOM_Sheet_Options * options, GTEXT_CSSOM_Sheet ** out) {
+  return sheet_make(document, NULL, 0, options, true, out);
 }
 
 GTEXT_CSSOM_Sheet * gtext_cssom_sheet_retain(GTEXT_CSSOM_Sheet * sheet) {
@@ -403,4 +438,122 @@ GTEXT_CSS_Status gtext_cssom_sheet_compact(GTEXT_CSSOM_Sheet * sheet) {
     return GTEXT_CSS_E_INVALID;
   }
   return css_sheet_compact(sheet);
+}
+
+/* ---- replace -------------------------------------------------------------------------------------------------------------------------------- */
+
+/// "Replace" with the text: the rules of the text become the sheet's and every old rule is detached. Everything that can fail is done before the first change: the text is read into a
+/// sheet of its own, and its rules are then moved (the moves allocate nothing).
+static GTEXT_CSS_Status replace_rules(css_sheet * sheet, const char * text, size_t length, GTEXT_CSSOM_Outcome * outcome) {
+  css_core * core = sheet->obj.core;
+  if (!core->document) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  const uint64_t saved_id = core->next_id;
+  css_sheet * tmp = NULL;
+  GTEXT_CSS_Status st = sheet_make(core->document, text, length, NULL, true, &tmp);
+  if (st != GTEXT_CSS_OK) {
+    core->next_id = saved_id;
+    return st;
+  }
+  /* the first change */
+  while (sheet->rules.root) {
+    css_rule * old = css_rule_list_first(&sheet->rules);
+    css_rule_list_remove(&sheet->rules, old);   /* "set the parent CSS style sheet and parent CSS rule of every rule to null": the chain ends here, for the nested ones too */
+    css_rule_touch(old);
+    css_obj_release_internal(&old->obj);
+  }
+  while (tmp->rules.root) {
+    css_rule * r = css_rule_list_first(&tmp->rules);
+    css_rule_list_remove(&tmp->rules, r);
+    css_rule_list_insert(&sheet->rules, sheet->rules.count, r);
+  }
+  css_source * os = sheet->source;
+  sheet->source = tmp->source;
+  tmp->source = os;
+  css_ns_env * on = sheet->ns;
+  sheet->ns = tmp->ns;
+  tmp->ns = on;
+  css_parse_diag * od = sheet->diags;
+  sheet->diags = tmp->diags;
+  tmp->diags = od;
+  const size_t nd = sheet->ndiags, cd = sheet->capdiags, dt = sheet->diag_total;
+  sheet->ndiags = tmp->ndiags;
+  sheet->capdiags = tmp->capdiags;
+  sheet->diag_total = tmp->diag_total;
+  tmp->ndiags = nd;
+  tmp->capdiags = cd;
+  tmp->diag_total = dt;
+  sheet->rule_total = tmp->rule_total;
+  tmp->rule_total = 0;
+  sheet->version++;
+  css_cssom_event ev;
+  memset(&ev, 0, sizeof ev);
+  ev.kind = GTEXT_CSSOM_EVENT_RULE_REPLACED;   /* with no rule: all of the sheet's */
+  ev.sheet = sheet;
+  ev.sheet_id = sheet->obj.id;
+  if (outcome) {
+    outcome->kind = GTEXT_CSSOM_CHANGED;
+  }
+  css_obj_release_external(&tmp->obj);
+  css_cssom_commit(core, &ev, outcome);
+  return GTEXT_CSS_OK;
+}
+
+static GTEXT_CSS_Status replace_open(css_sheet * sheet, size_t length, GTEXT_CSSOM_Outcome * outcome, bool completing) {
+  css_outcome_reset(outcome, sheet->obj.core);
+  GTEXT_CSS_Status st = css_cssom_enter(sheet->obj.core);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (!sheet->constructed || (!completing && sheet->pending_replace)) {
+    return GTEXT_CSS_E_NOT_ALLOWED;   /* "If the constructed flag is not set, or disallow modification flag is set, throw a NotAllowedError" */
+  }
+  if (length > sheet->obj.core->config.max_input_bytes) {
+    return GTEXT_CSS_E_LIMIT_INPUT;
+  }
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_cssom_sheet_replace_sync(GTEXT_CSSOM_Sheet * sheet, const char * text, size_t length, GTEXT_CSSOM_Outcome * outcome) {
+  if (!sheet || (!text && length)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  GTEXT_CSS_Status st = replace_open(sheet, length, outcome, false);
+  return st != GTEXT_CSS_OK ? st : replace_rules(sheet, text, length, outcome);
+}
+
+GTEXT_CSS_Status gtext_cssom_sheet_replace_begin(GTEXT_CSSOM_Sheet * sheet) {
+  if (!sheet) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  GTEXT_CSS_Status st = replace_open(sheet, 0, NULL, false);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  sheet->pending_replace++;
+  sheet->disallow_modification = true;
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_cssom_sheet_replace_complete(GTEXT_CSSOM_Sheet * sheet, const char * text, size_t length, GTEXT_CSSOM_Outcome * outcome) {
+  if (!sheet || (!text && length)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  if (sheet->pending_replace == 0) {
+    return GTEXT_CSS_E_INVALID_STATE;
+  }
+  GTEXT_CSS_Status st = replace_open(sheet, length, outcome, true);
+  if (st == GTEXT_CSS_OK) {
+    st = replace_rules(sheet, text, length, outcome);
+  }
+  if (st != GTEXT_CSS_E_REENTRANT) {
+    sheet->pending_replace--;
+    sheet->disallow_modification = sheet->pending_replace > 0;
+  }
+  return st;
+}
+
+bool gtext_cssom_sheet_replace_pending(const GTEXT_CSSOM_Sheet * sheet) {
+  return sheet && sheet->pending_replace > 0;
 }

@@ -70,8 +70,21 @@ GTEXT_CSS_Status css_own_typed(css_rule * rule, const css_own * own, bool shallo
 /// The header of the rule as text, up to and not including its block: `@page :first`, `0%, 100%`, a style rule's selectors, `@counter-style foo`.
 GTEXT_CSS_Status css_rule_header_text(css_rule * rule, tbuf * out);
 
+/// Replace the rule's own part with `header { body }` (a statement rule, an `@import`, with `header;`): read again in the rule's place, swapped in if it is a rule of the same kind and
+/// `check` (optional) says it holds what was set. `*ignored` is true when it does not; nothing has changed then. On success the event is sent.
+typedef GTEXT_CSS_Status (*own_check)(css_rule * rule, const css_own * own, void * user, bool * ok);
+GTEXT_CSS_Status css_rule_replace_own(css_rule * rule, const char * header, size_t header_length, const char * body, size_t body_length, bool statement, own_check check, void * user,
+    bool * ignored, GTEXT_CSSOM_Outcome * outcome);
+
 /// A rule changed as a whole: the sheet's version moves and the event is sent. `outcome` may be NULL.
 void css_rule_replaced(css_rule * rule, GTEXT_CSSOM_Outcome * outcome);
+
+/* ---- media lists (cssom_media.c) ---------------------------------------------------------------------------------------------------------- */
+
+/// The owner of a media list is going: the list is released and no longer reaches it. A NULL list is a no-op.
+/// The canonical text of a media query list (a text always parses: a bad query is `not all`), appended to `out`.
+GTEXT_CSS_Status css_media_canonical(css_core * core, const char * text, size_t length, tbuf * out);
+void css_media_owner_gone(struct GTEXT_CSSOM_Media_List ** list);
 
 /* ---- the declaration block of a typed rule (cssom_typed.c) ------------------------------------------------------------------------------------ */
 

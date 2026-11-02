@@ -47,6 +47,7 @@ struct Scenario {
   const char * css;
   std::function<GTEXT_CSS_Status(Sheet &)> op;
   size_t min_failures = 3;   ///< The allocations the call is known to make at least.
+  bool constructed = false;  ///< A constructed sheet whose rules are first set from `css`.
 };
 
 GTEXT_CSS_Status sel(Sheet & s, std::initializer_list<size_t> p, const char * text) {
@@ -68,7 +69,49 @@ GTEXT_CSS_Status prop(Sheet & s, std::initializer_list<size_t> p, const char * n
   return set(d.d, name, value).st;
 }
 
+GTEXT_CSS_Status media_set(Sheet & s, std::initializer_list<size_t> p, const char * text) {
+  GTEXT_CSSOM_Media_List * m = nullptr;
+  GTEXT_CSS_Status st = p.size() ? gtext_cssom_rule_media(path(s, p).r, &m) : gtext_cssom_sheet_media(s.s, &m);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  GTEXT_CSSOM_Outcome o;
+  st = gtext_cssom_media_set_text(m, text, std::strlen(text), &o);
+  gtext_cssom_media_release(m);
+  return st;
+}
+
+GTEXT_CSS_Status media_append(Sheet & s, std::initializer_list<size_t> p, const char * text) {
+  GTEXT_CSSOM_Media_List * m = nullptr;
+  GTEXT_CSS_Status st = gtext_cssom_rule_media(path(s, p).r, &m);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  GTEXT_CSSOM_Outcome o;
+  st = gtext_cssom_media_append(m, text, std::strlen(text), &o);
+  gtext_cssom_media_release(m);
+  return st;
+}
+
+void make_sheet(Sheet & s, Doc & doc, const Scenario & sc) {
+  if (!sc.constructed) {
+    s.status = gtext_cssom_sheet_new_parsed(doc.d, sc.css, std::strlen(sc.css), nullptr, &s.s);
+    return;
+  }
+  s.status = gtext_cssom_sheet_new_constructed(doc.d, nullptr, &s.s);
+  if (s.status == GTEXT_CSS_OK) {
+    s.status = gtext_cssom_sheet_replace_sync(s.s, sc.css, std::strlen(sc.css), nullptr);
+  }
+}
+
 const Scenario kScenarios[] = {
+    {"mediaText of a sheet", "a{}", [](Sheet & s) { return media_set(s, {}, "screen, (min-width: 1px)"); }, 1},
+    {"mediaText of a media rule", "@media screen { a {} }", [](Sheet & s) { return media_set(s, {0}, "print, tv"); }},
+    {"appendMedium to an import", "@import url(a.css) screen;", [](Sheet & s) { return media_append(s, {0}, "print"); }},
+    {"replaceSync", "a { b {} } @media print { c {} }", [](Sheet & s) {
+       return gtext_cssom_sheet_replace_sync(s.s, "x { y {} } z {} @import 'q';", 27, nullptr);
+     }, 3, true},
+
     {"selectorText of a style rule", "a, b { color: red; & c {} }", [](Sheet & s) { return sel(s, {0}, "d > e, f"); }},
     {"selectorText of a nested rule", "a { b { color: red } }", [](Sheet & s) { return sel(s, {0, 0}, "> c"); }},
     {"selectorText of a page rule", "@page { size: a3 }", [](Sheet & s) { return sel(s, {0}, ":first"); }},
@@ -101,7 +144,8 @@ TEST(CssomSettersOom, EveryMutatorIsAllOrNothing) {
     {
       FaultAllocator fa;
       Doc doc(nullptr, &fa.alloc);
-      Sheet s(doc, sc.css);
+      Sheet s;
+      make_sheet(s, doc, sc);
       ASSERT_EQ(s.status, GTEXT_CSS_OK) << sc.name;
       want_status = sc.op(s);
       ASSERT_EQ(want_status, GTEXT_CSS_OK) << sc.name;
@@ -112,8 +156,20 @@ TEST(CssomSettersOom, EveryMutatorIsAllOrNothing) {
       FaultAllocator fa;
       {
         Doc doc(nullptr, &fa.alloc);
-        Sheet s(doc, sc.css);
+        Sheet s;
+        make_sheet(s, doc, sc);
         ASSERT_EQ(s.status, GTEXT_CSS_OK) << sc.name;
+        if (std::string(sc.name).find("mediaText of a sheet") == 0 || std::string(sc.name).find("mediaText of a media") == 0 || std::string(sc.name).find("appendMedium") == 0) {
+          /* the list object is made the first time it is asked for and stays: not what the call is measured on */
+          GTEXT_CSSOM_Media_List * m = nullptr;
+          if (std::string(sc.name).find("sheet") != std::string::npos) {
+            ASSERT_EQ(gtext_cssom_sheet_media(s.s, &m), GTEXT_CSS_OK);
+          }
+          else {
+            ASSERT_EQ(gtext_cssom_rule_media(path(s, {0}).r, &m), GTEXT_CSS_OK);
+          }
+          gtext_cssom_media_release(m);
+        }
         if (needs_block(sc.name)) {
           const bool in_keyframes = std::string(sc.css).find("@keyframes") != std::string::npos;
           Rule r = in_keyframes ? path(s, {0, 0}) : path(s, {0});

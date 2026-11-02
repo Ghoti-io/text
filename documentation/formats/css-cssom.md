@@ -418,6 +418,130 @@ a {
 
 **Where this library and the browsers differ**, and which of them it follows. The sheet's text follows the served draft: the parse before the index (above); a media query list is written in its canonical form (the pinned `serialize-media-rule.html` says so) where a `@supports` condition keeps the author's spacing, as both browsers do; `@keyframes` is written one rule to a line, indented two spaces, where Chromium writes `@keyframes k { ` and Firefox does not indent. A style rule directly in an `@scope` that begins with a combinator is written as the browsers write it (`> a`); the prelude of an `@scope` inside a style rule is written without the `&` it is read with. `insertRule` into a detached rule works (Firefox 158 throws). An `@page` takes margin rules with `insertRule`; a style rule into it is a HierarchyRequestError (Chromium answers SyntaxError, Firefox accepts it).
 
+## The attributes of a rule, media lists and constructed sheets
+
+**A rule whose syntax is immutable is replaced as a whole.** `gtext_cssom_rule_set_selector_text()` (`selectorText` of a style rule and of `@page`), `_set_key_text()` (`keyText`) and `_set_attribute()` (the writable attributes: a `@counter-style`'s name and descriptors, a `@keyframes` name, the family list of `@font-feature-values`) write the candidate text of the rule's own part, read it again in the place the rule stands in (a nested rule's selector is relative, a prefix must have been declared), and swap the rule's syntax for the result only if it is a rule of the same kind that holds what was set. The rule's identity, its place, the rules inside it and its ids do not change; its source becomes `MODIFIED`; the version of the rule and of its sheet moves once and one `RULE_REPLACED` event is sent. The cost is the size of that one rule, and a call that fails (an allocation included) changes nothing, ids included. A selector that does not parse is **ignored** (CSSOM: "do nothing"; the outcome says `IGNORED_INVALID_SELECTOR`). A key list that does not parse is a `SyntaxError` (`GTEXT_CSS_E_SYNTAX`; CSS Animations 1 says so, the pinned web-platform-tests page and both browsers throw). A value a descriptor refuses is ignored (`IGNORED_INVALID_VALUE`), the empty string removes a descriptor, and a readonly attribute is ignored as WebIDL says (`IGNORED_NOT_ALLOWED_HERE`): `conditionText` is readonly (CSS Conditional 3, and the pinned page asserts assigning to it does nothing). `gtext_cssom_rule_get_attribute()` reads the rest of the attributes CSSOM names by their IDL name (`href`, `layerName`, `supportsText`, `namespaceURI`, `prefix`, `start`, `end`, `containerName`, `containerQuery`, `syntax`, `inherits`, `initialValue`, `navigation`, `types`, `fontFamily`, `basePalette`, `overrideColors`, the descriptors of `@counter-style`, `name`); `*is_null` is true where the IDL says nullable and the attribute is absent.
+
+**`style` of a keyframe, a page or margin rule, `@font-face`, `@position-try`, `@view-transition`, `@counter-style`, `@font-palette-values` and `@color-profile`** is a block that is a view of the rule: the declarations that are properties are in a declaration block (so `margin: auto` is four declarations, written as the shorthand), the descriptors that are not properties (`src`, `size`, `symbols`) follow them. Every edit is made on a copy and kept only if the rule reads again, from the text the copy writes, with what was set: `animation-name` in a keyframe, a `src` that is not a source list, a `!important` descriptor, and a property a page does not take are refused with nothing changed. An `@page` takes the descriptors of the pin and the page properties of Paged Media 3, Appendix A ("CSS 2.1 Properties that apply within the page context": margin, border, padding, background, color, font, text, width, height and the rest of the list), and a custom property; `gtext_cssom_decl_has_attribute()` says which IDL attributes such a block has (a page has `marginTop` and `size` and no `cssFloat`). The rule keeps the order of the text it was last written from; the block lists properties before descriptors.
+
+**Media lists.** `gtext_cssom_sheet_media()` and `gtext_cssom_rule_media()` (an `@import` or an `@media`) return the list, the same object every time, which is a view of its owner and keeps it reachable. `mediaText` is the owner's media query list serialized; setting it **always parses** (a query that is not valid is `not all`, Media Queries 4, 3.2; the empty text is the empty list, which matches everything); `appendMedium()` ignores a text that is not one valid query and does not add a medium whose serialization is already there; `deleteMedium()` of one that is not there is a `NotFoundError`. The media of an `@import` are the queries after its URL, `layer()` and `supports()`.
+
+**Constructed sheets.** `gtext_cssom_sheet_new_constructed()` is `new CSSStyleSheet()`: empty, `constructed`, no owner node. `gtext_cssom_sheet_replace_sync()` is `replaceSync()`: the text is read as a style sheet, its `@import` rules are dropped (a diagnostic each), and the rest become the sheet's rules while **every old rule is detached, the nested ones too** (`parentStyleSheet` reads null at once). It is `NotAllowedError` on a sheet that is not constructed. `replace()` is its two synchronous steps, `_replace_begin()` (sets disallow-modification: `insertRule` and `deleteRule` are `NotAllowedError` until it ends) and `_replace_complete()`; the promise is the caller's. A replace reads the text into a sheet of its own first, so a failure changes nothing.
+
+```c
+#include <ghoti.io/text/css.h>
+#include <stdio.h>
+#include <string.h>
+
+static void show(const char * label, GTEXT_CSS_Status status, char * text, GTEXT_CSSOM_Document * document) {
+  printf("%s: %s\n", label, status == GTEXT_CSS_OK ? text : gtext_css_status_string(status));
+  if (status == GTEXT_CSS_OK) {
+    gtext_cssom_buffer_free(gtext_cssom_document_allocator(document), text);
+  }
+}
+
+/* An editor's panel: change a selector, a counter style and a media list, read an @page block, and replace a constructed sheet. */
+static void cssom_setters(void) {
+  GTEXT_CSS_Registry * registry = NULL;
+  gtext_css_registry_new(NULL, &registry);
+  GTEXT_CSSOM_Config config = gtext_cssom_config_default();
+  config.registry = registry;
+  GTEXT_CSSOM_Document * document = NULL;
+  gtext_cssom_document_new(&config, &document);
+
+  const char * text = "a, b { color: red } @media screen { c {} } @counter-style n { system: cyclic; symbols: a b } @page { size: a3; margin: 1em 2em }";
+  GTEXT_CSSOM_Sheet * sheet = NULL;
+  gtext_cssom_sheet_new_parsed(document, text, strlen(text), NULL, &sheet);
+  const GTEXT_CSSOM_Rule_List * rules = NULL;
+  gtext_cssom_sheet_rules(sheet, &rules);
+
+  /* style.selectorText = "d > e": the rule is replaced as a whole, and keeps its identity; text that is not a selector is ignored */
+  GTEXT_CSSOM_Rule * a = gtext_cssom_rule_list_at(rules, 0);
+  GTEXT_CSSOM_Outcome outcome;
+  GTEXT_CSS_Status status;
+  gtext_cssom_rule_set_selector_text(a, "d > e", 5, &outcome);
+  printf("selectorText: changed %d\n", outcome.kind == GTEXT_CSSOM_CHANGED);
+  gtext_cssom_rule_set_selector_text(a, "d >", 3, &outcome);
+  printf("selectorText: ignored %d\n", outcome.kind == GTEXT_CSSOM_IGNORED_INVALID_SELECTOR);
+  char * css = NULL;
+  size_t length = 0;
+  status = gtext_cssom_rule_css_text(a, &css, &length);
+  show("cssText", status, css, document);
+
+  /* media.mediaText, appendMedium(), deleteMedium(): a text always parses, a medium that is not valid is ignored, a medium that is not there is a NotFoundError */
+  GTEXT_CSSOM_Rule * media = gtext_cssom_rule_list_at(rules, 1);
+  GTEXT_CSSOM_Media_List * list = NULL;
+  gtext_cssom_rule_media(media, &list);
+  gtext_cssom_media_set_text(list, "print, (bogus: 1) and", 21, NULL);
+  gtext_cssom_media_append(list, "tv", 2, NULL);
+  status = gtext_cssom_media_delete(list, "handheld", 8, NULL);
+  printf("deleteMedium: %s\n", gtext_cssom_exception_name(status));
+  status = gtext_cssom_media_text(list, &css, &length);
+  show("mediaText", status, css, document);
+
+  /* a counter style's descriptors are attributes; the empty string removes one */
+  GTEXT_CSSOM_Rule * counter = gtext_cssom_rule_list_at(rules, 2);
+  gtext_cssom_rule_set_attribute(counter, "symbols", 7, "x y z", 5, NULL);
+  gtext_cssom_rule_set_attribute(counter, "system", 6, "bogus (", 7, &outcome);
+  printf("system: ignored %d\n", outcome.kind == GTEXT_CSSOM_IGNORED_INVALID_VALUE);
+  status = gtext_cssom_rule_css_text(counter, &css, &length);
+  show("counter style", status, css, document);
+
+  /* the block of an @page rule: margins are properties, size is a descriptor; what a page does not take is refused */
+  GTEXT_CSSOM_Rule * page = gtext_cssom_rule_list_at(rules, 3);
+  GTEXT_CSSOM_Decl * block = NULL;
+  gtext_cssom_rule_style(page, &block);
+  size_t count = 0;
+  gtext_cssom_decl_length(block, &count);
+  gtext_cssom_decl_set_property(block, "transform", 9, "none", 4, "", 0, &outcome);
+  printf("page block: %zu declarations, transform ignored %d\n", count, outcome.kind == GTEXT_CSSOM_IGNORED_INVALID_VALUE);
+  gtext_cssom_decl_set_property(block, "size", 4, "landscape", 9, "", 0, NULL);
+  status = gtext_cssom_rule_css_text(page, &css, &length);
+  show("page", status, css, document);
+
+  /* new CSSStyleSheet() and replaceSync(): the @import is dropped, and every old rule is detached, the nested ones too */
+  GTEXT_CSSOM_Sheet * constructed = NULL;
+  gtext_cssom_sheet_new_constructed(document, NULL, &constructed);
+  gtext_cssom_sheet_replace_sync(constructed, "x { y { } }", 11, NULL);
+  const GTEXT_CSSOM_Rule_List * crules = NULL;
+  gtext_cssom_sheet_rules(constructed, &crules);
+  GTEXT_CSSOM_Rule * old = gtext_cssom_rule_list_at(crules, 0);
+  gtext_cssom_sheet_replace_sync(constructed, "@import 'a.css'; z { }", 22, NULL);
+  GTEXT_CSSOM_Sheet * parent = gtext_cssom_rule_parent_sheet(old);
+  printf("old rule: parentStyleSheet is %s; sheet rules: %zu\n", parent ? "set" : "null", gtext_cssom_rule_list_length(crules));
+  status = gtext_cssom_sheet_replace_sync(sheet, "a {}", 4, NULL);
+  printf("replaceSync on a parsed sheet: %s\n", gtext_cssom_exception_name(status));
+
+  gtext_cssom_rule_release(old);
+  gtext_cssom_sheet_release(constructed);
+  gtext_cssom_decl_release(block);
+  gtext_cssom_rule_release(page);
+  gtext_cssom_rule_release(counter);
+  gtext_cssom_media_release(list);
+  gtext_cssom_rule_release(media);
+  gtext_cssom_rule_release(a);
+  gtext_cssom_sheet_release(sheet);
+  gtext_cssom_document_release(document);
+  gtext_css_registry_free(registry);
+}
+```
+
+prints
+
+```
+selectorText: changed 1
+selectorText: ignored 1
+cssText: d > e { color: red; }
+deleteMedium: NotFoundError
+mediaText: print, not all, tv
+system: ignored 1
+counter style: @counter-style n { system: cyclic; symbols: x y z; }
+page block: 5 declarations, transform ignored 1
+page: @page { margin: 1em 2em; size: landscape; }
+old rule: parentStyleSheet is null; sheet rules: 1
+replaceSync on a parsed sheet: NotAllowedError
+```
+
 ## Utilities
 
 `gtext_cssom_escape()` is `CSS.escape()`: CSSOM's "serialize an identifier" of well-formed UTF-8 (or WTF-8, where a lone surrogate is one code point). The empty text is the empty text, a NUL is U+FFFD, and the result always reads back as the text. A character from U+0080 up is written as it is only where it is a non-ASCII ident code point of CSS Syntax; otherwise it is escaped, which is what the served text says and what the browsers do not do for every such character.

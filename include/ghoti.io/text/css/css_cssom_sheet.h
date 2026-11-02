@@ -82,6 +82,7 @@ typedef struct {
   bool disabled;                ///< The `disabled` flag.
   bool alternate;               ///< The sheet is an alternate style sheet (HTML's `alternate`).
   bool origin_clean;            ///< The origin-clean flag. False for a sheet from another origin: reading `cssRules` and every mutation are then GTEXT_CSS_E_SECURITY.
+  const char * media;           ///< `media`: the sheet's media query list as text (copied, kept in its canonical form); NULL for none, which matches everything.
 } GTEXT_CSSOM_Sheet_Options;
 
 /** @brief The defaults, spelled out: `size` set, no href, title, base URL or owner, not disabled, not alternate, origin-clean. */
