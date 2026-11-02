@@ -55,7 +55,7 @@ fuzz-forgiving-entry-leaves-its-simple-selectors-behind	css_selector_parse.c	   
 sheet-the-host-is-not-the-parent-of-its-shadow-tree	css_match.c	  return ctx->iface.containing_host(ctx->iface.user, e);\n}	  return NULL;\n}	sheet
 sheet-a-pseudo-element-parent-is-everything	css_match.c	    if (cx->never || cx->raw.data || cx->has_pseudo_element) {	    if (cx->never || cx->raw.data) {	sheet
 sheet-a-nested-scope-is-not-inside-the-outer-root	css_sheet.c	st = css_sheet_selector_prelude(alloc, options, map, sv, sn, relative, in_scope, &start);	st = css_sheet_selector_prelude(alloc, options, map, sv, sn, false, false, &start);	sheet
-fuzz-selector-compound-list-reads-past-the-tokens	css_selector_parse.c	v[b > a ? b - 1 : a - 1].span	v[b - (b > a ? 1 : 0)].span	selector-seeds
+fuzz-selector-compound-list-reads-past-the-tokens	css_selector_parse.c	v[b > a ? b - 1 : a - 1].span	v[b - (b > a ? 1 : 0)].span	selector
 sheet-the-host-is-not-featureless	css_match.c	  return ctx->tree_scope && !ctx->host_arg && HAVE(ctx, GTEXT_CSS_ELEMENT_CB_SHADOW_SCOPE) && ctx->iface.shadow_scope(ctx->iface.user, element) == ctx->tree_scope;	  return false;	sheet
 scope-in-has-is-the-anchor	css_match_has.c	    const bool r = ex(ctx, list, rc, 0, anchor, aux);	    const void * planted_scope = ctx->scope;\n    ctx->scope = anchor;\n    const bool r = ex(ctx, list, rc, 0, anchor, aux);\n    ctx->scope = planted_scope;	match
 sheet-host-look-through-is-and-where	css_match.c	if ((s->pseudo == GTEXT_CSS_SEL_PC_IS_FN || s->pseudo == GTEXT_CSS_SEL_PC_WHERE_FN) && list_names_host(s->list, depth + 1)) {	if (0 && list_names_host(s->list, depth + 1)) {	sheet

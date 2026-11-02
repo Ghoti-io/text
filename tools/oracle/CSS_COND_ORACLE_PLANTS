@@ -16,7 +16,6 @@ a-reserved-counter-style-name-is-allowed	rule
 additive-weights-may-ascend	rule
 a-backwards-range-is-kept	rule
 fallback-none-is-kept	rule
-a-generic-family-names-a-face	rule
 a-feature-tag-of-any-length-is-kept	rule
 current-color-overrides-a-palette-color	rule
 an-unknown-at-rule-stays-in-a-page-block	rule

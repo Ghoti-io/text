@@ -246,6 +246,26 @@ TEST(CssSelectorModes, AComplexListIsUnforgivingOneBadSelectorInvalidatesTheList
   EXPECT_NE(std::string(d.reference).find("Selectors 4"), std::string::npos);
 }
 
+TEST(CssSelectorModes, ACompoundArgumentWithASecondSelectorIsReportedAtTheLastTokenBeforeIt) {
+  // The span is a fact of the diagnostic, not of the heap: it is the last token of the second selector, or, when that selector is empty,
+  // the comma that begins it. An empty second selector at the very end of the argument has no token of its own to read.
+  struct Case { const char * text; const char * at; unsigned offset; } cases[] = {
+    {":host(.a, .b)", "b", 11}, {":host(.a,)", ",", 8}, {":host(.a,,.b)", ",", 8}, {":host(.a,, )", ",", 8}, {":host(.a, .b, .c)", "b", 11},
+  };
+  for (const auto & c : cases) {
+    Parsed p;
+    parse(p, c.text);
+    EXPECT_FALSE(p.result.valid) << c.text;
+    ASSERT_GE(gtext_css_selector_result_diagnostic_count(&p.result), 1u) << c.text;
+    GTEXT_CSS_Selector_Diagnostic d;
+    ASSERT_TRUE(gtext_css_selector_result_diagnostic(&p.result, 0, &d));
+    EXPECT_EQ(d.kind, GTEXT_CSS_SELDIAG_SYNTAX) << c.text;
+    const std::string text = c.text;
+    EXPECT_EQ(d.span.offset, c.offset) << c.text;
+    EXPECT_EQ(text.substr(d.span.offset, d.span.end - d.span.offset), c.at) << c.text;
+  }
+}
+
 TEST(CssSelectorModes, AForgivingListKeepsWhatIsInvalidAsWrittenAndNeverMatchesIt) {
   // Selectors 4, 18.2: the forgiving list; csswg-drafts 8356: "preserve invalid selectors inside forgiving selector lists"
   Parsed p;
