@@ -44,6 +44,8 @@ PROGRAMS = {
     "setters": "test-cssom-setters.cpp", "settersoom": "test-cssom-setters-oom.cpp", "setterscost": "test-cssom-setters-cost.cpp", "media": "test-cssom-media.cpp", "sheetseeds": "test-cssom-sheet-fuzz-seeds.cpp",
     "compilerules": "test-css-sheet-compile-rules.cpp", "snapshot": "test-cssom-snapshot.cpp", "snapshotoom": "test-cssom-snapshot-oom.cpp", "snapshotcost": "test-cssom-snapshot-cost.cpp",
     "markupgen": "test-markup-generation.cpp", "indexretain": "test-css-rule-index-retain.cpp",
+    "document": "test-cssom-document.cpp", "imports": "test-cssom-imports.cpp", "mediaquery": "test-cssom-media-query.cpp", "documentoom": "test-cssom-document-oom.cpp",
+    "documentcost": "test-cssom-document-cost.cpp", "multidoc": "test-cssom-multidoc.cpp", "threads": "test-cssom-threads.cpp", "wptdocument": "test-cssom-wpt-document.cpp",
 }
 EXTRA_PROGRAMS = os.path.join(ROOT, "tools", "conformance", "CSS_CSSOM_PROGRAMS")
 

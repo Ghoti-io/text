@@ -622,6 +622,115 @@ asked again: the same object
 after a change in the import: a new object, imported records 2; the second still has 1
 ```
 
+## The document, tree scopes and the index
+
+A document is more than the owner of objects: it is what the cascade is computed for. `gtext_cssom_document_index()` returns its **frozen `GTEXT_CSS_Rule_Index`**, the one the engine's style computation reads.
+
+**The first thing to know: the index is borrowed.** `gtext_cssom_document_index()` keeps the owner and returns a pointer that is valid until the next ask that has to build a new index, or until the document is released. A caller that holds it across an ask retains it (`gtext_css_rule_index_retain()`), and a thread that computes styles while the writer goes on takes its own owner with `gtext_cssom_document_index_retained()`; the count is atomic and the index, with the snapshots it holds, goes with the last owner. Everything else in this section is single-writer, like the rest of the object model.
+
+**What is in it.** The user-agent and user sheets the caller registered (`gtext_cssom_document_register_sheet()`: compiled sheets, as given, first and in order of registration), then the author sheets: for each **tree scope** in order of its context number, the owner sheets of its `styleSheets` list in list order, then its **adopted** sheets. A sheet takes part as its snapshot when it is not `disabled`, its `media` is true for the document's conditions, and the document made it (an adopted sheet is a constructed sheet of the scope's document, checked when it is adopted, `GTEXT_CSS_E_NOT_ALLOWED` otherwise). A sheet listed more than once in an adopted list takes part once, **at its last position**: both Chromium 156 and Firefox 158 answer so, and the pinned `CSSStyleSheet-constructable-duplicate.html` asserts it. A sheet with a pending import takes part with the rules it has; the pending import contributes nothing until it is completed.
+
+**Tree scopes.** The document makes scope 0 (`gtext_cssom_document_scope()`); `gtext_cssom_scope_new()` registers a shadow tree's with its handle, its parent scope, its **context number** (assigned in shadow-including tree order; 0 takes the next number in the order the scopes are made, which is right when a host's scope is made before its shadow trees) and, for adopted sheets, the shadow host as the implicit root of an `@scope` with no prelude. The library does not see the caller's tree, so `styleSheets` is what the caller puts there (`gtext_cssom_scope_insert_sheet()` at an index, in tree order of the owner nodes); a sheet taken out (`gtext_cssom_scope_remove_sheet()`, or its scope removed) **stays a valid, mutable object** with no owner node, leaves the cascade, and `insertRule` on it works and affects nothing. The registrations are checked by the index exactly as the rule index checks them: a shadow tree whose context is not greater than its host scope's is `GTEXT_CSS_E_INVALID` from the ask. `gtext_cssom_scope_reparent()` moves a scope to another document (a shadow root adopted by a template) and **keeps both its lists**: the new document's index takes the sheets that document made, the others stay listed, take part nowhere and take part again if the scope returns.
+
+**It is cached, and it is rebuilt once.** The index is keyed on the greatest change stamp among every sheet the scopes list and the sheets they import (the composite versions of the previous section), the document's structure version (a scope, a list or an adopted list changed), its registration version and its conditions epoch. The same pointer is returned while the key is unchanged; any change builds one new index, lazily, at the next ask, **however many changes came before it**: *n* mutations and one ask are one build and one compile of each edited sheet, O(n + S). *n* times "one mutation, one ask" is *n* builds of the whole document, n x S records, and compiles only the sheet that was edited. That is C5's known quadratic cost, stated here and asserted by `tests/test-cssom-document-cost.cpp` (`index_builds`, `snapshot_compiles`, `index_records_rebuilt`); C6's incremental update removes it, and the events already carry the delta it needs. A hit looks at the listed sheets (`index_key_sheets`) and builds nothing.
+
+**The environment.** `gtext_cssom_document_set_conditions()` retains a new `GTEXT_CSS_Conditions` object (a resize, a scheme switch) and increases the generation. The next index is built for it, and **its snapshots are the same objects**: a compiled sheet keeps its conditions as data, so an environment change recompiles nothing. Then Media Queries 4's "evaluate media queries and report changes" runs: every `MediaQueryList` that has a listener is evaluated once (lists with the same text share the evaluation), a list whose answer changed calls its listeners in the order they were added, the lists in the order they were made, after the change is complete. A listener may read and may not mutate (`GTEXT_CSS_E_REENTRANT`); one added during the report is not called for it, one removed is not called; the first status a listener returns is `observer_status` of the outcome. The evaluation is done before anything changes, so a failure of it (a unit the environment cannot answer, memory) leaves the document as it was. `gtext_cssom_match_media()` is `matchMedia()` (an invalid query is `not all`, the empty text matches), `matches` is cached per conditions object, and `gtext_cssom_supports()` and `gtext_cssom_supports_text()` are `CSS.supports()` over the document's conditions. The conditions are the config's `conditions` (retained), or the registry's defaults.
+
+**Imports and the callback.** With `GTEXT_CSSOM_Config::import` the document asks for the sheet of each `@import` of a sheet made from text, and of an `@import` inserted by `insertRule` (asked last, when nothing else can fail, with the rule not yet in the sheet). The callback is given the rule's `href`, `media`, `supports()` and `layer` as CSSOM states them and the sheet's base URL (never parsed or joined), and answers with a new sheet (the rule takes it; the callback's reference is released), or `GTEXT_CSSOM_IMPORT_PENDING` (nothing contributes until `gtext_cssom_import_rule_complete()` gives the sheet, or none; `gtext_cssom_sheet_pending_imports()` is what a `replace()` promise waits on) or `GTEXT_CSSOM_IMPORT_FAILED`. Imports stay single-owner: a sheet that has an owner, or that would be its own import, is **released and recorded as a diagnostic** of the sheet (`GTEXT_CSSOM_PARSE_IMPORT_REFUSED`) and the import contributes nothing. While the callback runs a mutation is `GTEXT_CSS_E_REENTRANT` but the callback may make sheets, and a sheet it makes is asked for its own imports; the nesting is bounded at 64. A status other than `GTEXT_CSS_OK` from the callback fails the call that asked: a sheet being made is dropped, and an `insertRule` changes nothing (ids that the callback's own sheets took stay taken). A constructed sheet drops its `@import` rules and asks nobody.
+
+An allocation failure in any of these calls is `GTEXT_CSS_E_OOM` with the document, its lists, versions, ids and events as they were (`tests/test-cssom-document-oom.cpp` fails every allocation in turn). The documented concurrency model, one writer thread and any number of readers on retained indexes, is run by `tests/test-cssom-threads.cpp` (ten thousand mutations, eight readers, in the ThreadSanitizer arm). Several documents on one registry are independent single-writer graphs (`tests/test-cssom-multidoc.cpp`).
+
+```c
+#include <ghoti.io/text/css.h>
+#include <stdio.h>
+#include <string.h>
+
+static GTEXT_CSS_Status on_change(void * user, GTEXT_CSSOM_Media_Query_List * list, bool matches) {
+  (void)user;
+  (void)list;
+  printf("change: matches %s\n", matches ? "yes" : "no");
+  return GTEXT_CSS_OK;
+}
+
+/* The document as the cascade sees it: a tree scope with an owner sheet and an adopted sheet, the frozen index built from them, and the environment changing. */
+static void cssom_document(void) {
+  GTEXT_CSS_Registry * registry = NULL;
+  gtext_css_registry_new(NULL, &registry);
+  GTEXT_CSS_Media_Environment narrow_env = gtext_css_media_environment_default(NULL);
+  narrow_env.viewport.width = 800;
+  GTEXT_CSS_Conditions_Options options = gtext_css_conditions_options_default();
+  options.media = &narrow_env;
+  GTEXT_CSS_Conditions * narrow = NULL;
+  gtext_css_conditions_new(registry, &options, &narrow);
+
+  GTEXT_CSSOM_Config config = gtext_cssom_config_default();
+  config.registry = registry;
+  config.conditions = narrow;
+  GTEXT_CSSOM_Document * document = NULL;
+  gtext_cssom_document_new(&config, &document);
+  GTEXT_CSSOM_Scope * scope = gtext_cssom_document_scope(document);
+
+  /* document.styleSheets: the owner sheet is listed where its owner node is in the caller's tree */
+  const char * text = "a { color: red } @media (min-width: 1000px) { b { width: 1px } }";
+  GTEXT_CSSOM_Sheet * owner = NULL;
+  gtext_cssom_sheet_new_parsed(document, text, strlen(text), NULL, &owner);
+  gtext_cssom_scope_insert_sheet(scope, owner, 0, NULL);
+  const GTEXT_CSS_Rule_Index * first = NULL;
+  const GTEXT_CSS_Rule_Index * again = NULL;
+  gtext_cssom_document_index(document, &first);
+  gtext_cssom_document_index(document, &again);
+  printf("index: %zu records, asked again: %s object\n", gtext_css_rule_index_record_count(first), again == first ? "the same" : "another");
+
+  /* document.adoptedStyleSheets: a constructed sheet of this document, ordered after the owner sheets */
+  GTEXT_CSSOM_Sheet * adopted = NULL;
+  gtext_cssom_sheet_new_constructed(document, NULL, &adopted);
+  gtext_cssom_sheet_replace_sync(adopted, "c { margin: 0 }", 15, NULL);
+  gtext_cssom_scope_adopted_insert(scope, adopted, 0, NULL);
+  GTEXT_CSS_Rule_Index * held = NULL;
+  gtext_cssom_document_index_retained(document, &held);
+  printf("after adopting: %zu records in %zu sheets (the old index is not the new one: %s)\n", gtext_css_rule_index_record_count(held), gtext_css_rule_index_sheet_count(held),
+      held != first ? "yes" : "no");
+
+  /* matchMedia, and the environment changing: the listener runs after the change, and the @media rule joins the index; no sheet is compiled again */
+  GTEXT_CSSOM_Media_Query_List * wide_query = NULL;
+  gtext_cssom_match_media(document, "(min-width: 1000px)", 19, &wide_query);
+  gtext_cssom_media_query_list_add_listener(wide_query, on_change, NULL);
+  GTEXT_CSS_Sheet * before = NULL;
+  gtext_cssom_sheet_snapshot(owner, &before);
+  GTEXT_CSS_Media_Environment wide_env = gtext_css_media_environment_default(NULL);
+  wide_env.viewport.width = 1200;
+  options.media = &wide_env;
+  GTEXT_CSS_Conditions * wide = NULL;
+  gtext_css_conditions_new(registry, &options, &wide);
+  gtext_cssom_document_set_conditions(document, wide, NULL);
+  const GTEXT_CSS_Rule_Index * after_index = NULL;
+  gtext_cssom_document_index(document, &after_index);
+  GTEXT_CSS_Sheet * after = NULL;
+  gtext_cssom_sheet_snapshot(owner, &after);
+  printf("after the resize: %zu records, the sheet is %s object\n", gtext_css_rule_index_record_count(after_index), after == before ? "the same" : "another");
+
+  gtext_css_sheet_free(before);
+  gtext_css_sheet_free(after);
+  gtext_css_rule_index_free(held);
+  gtext_cssom_media_query_list_release(wide_query);
+  gtext_cssom_sheet_release(adopted);
+  gtext_cssom_sheet_release(owner);
+  gtext_cssom_document_release(document);
+  gtext_css_conditions_free(wide);
+  gtext_css_conditions_free(narrow);
+  gtext_css_registry_free(registry);
+}
+```
+
+prints
+
+```
+index: 1 records, asked again: the same object
+after adopting: 2 records in 2 sheets (the old index is not the new one: yes)
+change: matches yes
+after the resize: 3 records, the sheet is the same object
+```
+
 ## Utilities
 
 `gtext_cssom_escape()` is `CSS.escape()`: CSSOM's "serialize an identifier" of well-formed UTF-8 (or WTF-8, where a lone surrogate is one code point). The empty text is the empty text, a NUL is U+FFFD, and the result always reads back as the text. A character from U+0080 up is written as it is only where it is a non-ASCII ident code point of CSS Syntax; otherwise it is escaped, which is what the served text says and what the browsers do not do for every such character.

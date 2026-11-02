@@ -71,7 +71,10 @@
 #define GHOTI_IO_GTEXT_CSS_CSS_CSSOM_CORE_H
 
 #include <ghoti.io/text/allocator.h>
+#include <ghoti.io/text/css/css_condition.h>
 #include <ghoti.io/text/css/css_core.h>
+#include <ghoti.io/text/css/css_element.h>
+#include <ghoti.io/text/css/css_match.h>
 #include <ghoti.io/text/css/css_registry.h>
 #include <ghoti.io/text/macros.h>
 #include <stdbool.h>
@@ -92,7 +95,8 @@ typedef enum {
   GTEXT_CSSOM_OBJECT_RULE,              ///< A rule (css_cssom_rule.h).
   GTEXT_CSSOM_OBJECT_DECLARATION,       ///< A declaration block (css_cssom_decl.h).
   GTEXT_CSSOM_OBJECT_MEDIA_LIST,        ///< A media list (css_cssom_media.h).
-  GTEXT_CSSOM_OBJECT_MEDIA_QUERY_LIST   ///< A media query list (css_cssom_document.h).
+  GTEXT_CSSOM_OBJECT_MEDIA_QUERY_LIST,  ///< A media query list (css_cssom_document.h).
+  GTEXT_CSSOM_OBJECT_SCOPE              ///< A tree scope (css_cssom_document.h).
 } GTEXT_CSSOM_Object_Kind;
 
 /** @brief What a mutator did, besides its status. */
@@ -135,6 +139,45 @@ typedef enum {
   GTEXT_CSSOM_EVENT_CONDITIONS_CHANGED
 } GTEXT_CSSOM_Event_Kind;
 
+/** @brief A rule and a sheet (the structs are private; css_cssom_rule.h and css_cssom_sheet.h). */
+typedef struct GTEXT_CSSOM_Rule GTEXT_CSSOM_Rule;
+typedef struct GTEXT_CSSOM_Sheet GTEXT_CSSOM_Sheet;
+
+/** @brief What the import callback says when it gives no sheet. */
+typedef enum {
+  GTEXT_CSSOM_IMPORT_LOADED = 0,    ///< (A sheet is given.)
+  GTEXT_CSSOM_IMPORT_PENDING,       ///< The sheet will come: gtext_cssom_import_rule_complete() gives it, or NULL if it fails. The import contributes nothing until then.
+  GTEXT_CSSOM_IMPORT_FAILED         ///< There will be none. The import contributes nothing.
+} GTEXT_CSSOM_Import_Outcome;
+
+/**
+ * @struct GTEXT_CSSOM_Import_Request
+ * @brief What the import callback is asked: valid for the call only.
+ */
+typedef struct {
+  size_t size;                   ///< `sizeof` this struct.
+  GTEXT_CSSOM_Rule * rule;       ///< The `@import` rule. Borrowed; it is **not in the sheet yet** when the call is for an `insertRule`, and must not be mutated.
+  GTEXT_CSSOM_Sheet * sheet;     ///< The sheet the rule is for (borrowed).
+  const char * href;             ///< The `href` of the rule as CSSOM gives it (not parsed or joined to any base), NUL-terminated.
+  size_t href_length;
+  const char * base_url;         ///< The sheet's base URL (opaque), or NULL.
+  const char * media;            ///< The rule's media query list as CSSOM serializes it ("" for none).
+  const char * supports;         ///< The `supports()` condition text, or NULL for none.
+  const char * layer;            ///< The layer name (the empty string for an anonymous layer), or NULL for no `layer`.
+  size_t depth;                  ///< How many import callbacks are running above this one (a callback that makes the imported sheet makes its own requests inside this call).
+} GTEXT_CSSOM_Import_Request;
+
+/**
+ * @brief The import callback: make the sheet an `@import` asks for, or say it is pending or failed.
+ *
+ * On a sheet (`*sheet` not NULL) the callback has made a new one (a parse of the fetched text, with the options it wants) and **gives it to the rule**: the document attaches it
+ * (single-owner: gtext_cssom_import_rule_complete()) and releases the callback's reference. A sheet that is refused (it has an owner, or would make a cycle) is released and recorded as a
+ * diagnostic of the sheet. With `*sheet` NULL, `*outcome` is PENDING or FAILED. While the callback runs a mutation is GTEXT_CSS_E_REENTRANT, but it may make sheets, and a sheet it makes
+ * is asked for its own imports (the nesting is bounded: a request deeper than 64 is a failed import). A status other than GTEXT_CSS_OK fails the call that made the request (a sheet being
+ * made is dropped; an `insertRule` changes nothing), and a sheet the callback gave is released.
+ */
+typedef GTEXT_CSS_Status (*GTEXT_CSSOM_Import_Fn)(void * user, const GTEXT_CSSOM_Import_Request * request, GTEXT_CSSOM_Sheet ** sheet, GTEXT_CSSOM_Import_Outcome * outcome);
+
 /** @brief The finalizer of a user-data pair: called with the pointer and the kind of the object that held it. It must not call any `gtext_cssom_*` function on that object. */
 typedef void (*GTEXT_CSSOM_Finalizer)(void * pointer, GTEXT_CSSOM_Object_Kind kind);
 
@@ -152,7 +195,7 @@ typedef struct {
    *  NULL: the caller calls gtext_cssom_document_tree_changed() instead, or neither, and no cache is kept across calls. */
   uint64_t (*tree_version)(void * user);
   void * tree_version_user;             ///< Passed to `tree_version`.
-  bool quirks;                          ///< The document is in quirks mode: an element-owned declaration reads a unitless number as a length where the properties allow it (Quirks Mode 3.4). Only element-owned declarations are affected.
+  bool quirks;                          ///< The document is in quirks mode: an element-owned declaration reads a unitless number as a length where the properties allow it (Quirks Mode 3.4); and, when `match_options` is NULL, the rule index's `quirks`. Nothing else is affected.
   bool inline_trust_notifications;      ///< The caller calls gtext_cssom_inline_style_attribute_changed() when a `style` attribute changes, and the library does not compare the attribute with what it parsed.
   size_t max_live_objects;              ///< Most live objects (declarations, sheets, rules...). Default 16,777,216. One more is GTEXT_CSS_E_LIMIT_CSSOM.
   size_t max_live_bytes;                ///< Most bytes the objects hold (their structs and the strings they keep). Default 1 GiB. One more is GTEXT_CSS_E_LIMIT_CSSOM.
@@ -165,6 +208,15 @@ typedef struct {
   size_t max_rule_nesting;              ///< Deepest nesting of rules in a sheet (a rule in a rule is 2). Default 64, at most 4,096. One more is GTEXT_CSS_E_LIMIT_RULE_NESTING.
   size_t max_diagnostics;               ///< Most diagnostics of a sheet's parse that are kept (the rest are counted). Default 1,024.
   size_t max_cached_text_bytes;         ///< Most bytes of rule `cssText` kept for leaf rules (a rule with no rules inside it). Default 64 MiB. Past it the entries added first are dropped; it is never an error.
+  /* the document (css_cssom_document.h) */
+  const GTEXT_CSS_Conditions * conditions;   ///< The evaluator of media and supports conditions (retained). NULL: the document makes one of the registry's defaults.
+  const GTEXT_CSS_Element_Interface * element_interface;   ///< The caller's tree, for what C5d computes (not owned; it outlives the document). NULL: none.
+  const GTEXT_CSS_Selector_Match_Options * match_options;  ///< How selectors are matched (copied). Its `html_document` and `quirks` are the ones the rule index is built with. NULL: neither (`quirks` above is then the index's).
+  GTEXT_CSSOM_Import_Fn import;         ///< Asked for the sheet of each `@import` (see GTEXT_CSSOM_Import_Fn). NULL: the caller gives the sheets with gtext_cssom_import_rule_complete().
+  void * import_user;                   ///< Passed to `import`.
+  size_t max_scopes;                    ///< Most tree scopes registered with the document, its own included. Default 65,536. One more is GTEXT_CSS_E_LIMIT_CSSOM.
+  size_t max_adopted;                   ///< Most sheets one scope adopts, a sheet listed twice counted twice. Default 1,048,576. One more is GTEXT_CSS_E_LIMIT_CSSOM.
+  size_t max_media_query_lists;         ///< Most `MediaQueryList` objects alive at once. Default 1,048,576. One more is GTEXT_CSS_E_LIMIT_CSSOM.
 } GTEXT_CSSOM_Config;
 
 /** @brief The defaults, spelled out: `size` set, the registry and allocator NULL, the counters at 0 and 1, the limits as documented. */
@@ -193,6 +245,16 @@ typedef struct {
   uint64_t snapshot_rules_reused;   ///< Top-level rules of those compiles that were read from their own syntax tree (not changed since they were read).
   uint64_t snapshot_rules_reparsed; ///< ... and those read from the parse of their own `cssText` (changed, or with a changed rule inside, or whose syntax is not what the object model writes).
   uint64_t snapshot_rules_checked;  ///< Rules whose syntax was compared once with the syntax of their serialization to decide which of the two to read.
+  uint64_t index_builds;            ///< Rule indexes built (gtext_cssom_document_index() that did not find a current one).
+  uint64_t index_hits;              ///< Asks answered with the index that was current.
+  uint64_t index_sheets_added;      ///< Sheets (snapshots, imports included) put into an index, over all builds.
+  uint64_t index_records_rebuilt;   ///< Records of the indexes built, over all builds: the work of a rebuild.
+  uint64_t index_key_sheets;        ///< Listed sheets (owner and adopted, those of other documents left out) looked at to decide whether the cached index is current, over all asks.
+  uint64_t import_requests;         ///< Times the import callback was called.
+  uint64_t import_refused;          ///< Sheets the callback gave that were refused (owned, a cycle), and requests refused for their nesting.
+  uint64_t mql_evaluations;         ///< Media query lists evaluated by an environment change or a `matches` that found its answer stale.
+  uint64_t mql_notifications;       ///< Listener calls made because an answer changed.
+  size_t live_scopes;               ///< Tree scopes registered with the document, its own included.
 } GTEXT_CSSOM_Counters;
 
 /**

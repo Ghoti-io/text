@@ -41,6 +41,7 @@
 #include <string.h>
 
 #include "css_internal.h"
+#include "cssom_doc_internal.h"
 #include "cssom_rule_internal.h"
 #include "cssom_typed.h"
 
@@ -483,6 +484,201 @@ static bool reaches(const css_sheet * candidate, const css_sheet * host) {
   return false;
 }
 
+GTEXT_CSS_Status css_import_check(const css_sheet * host, const css_sheet * candidate) {
+  if (host && candidate->obj.core != host->obj.core) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  if (candidate->owner_rule || candidate->owner_node || candidate->constructed || candidate->scope) {
+    return GTEXT_CSS_E_INVALID_STATE;   /* single owner: the sheet has one already */
+  }
+  if (reaches(candidate, host)) {
+    return GTEXT_CSS_E_HIERARCHY;   /* CSS Cascade 5's cycle, applied to the live graph */
+  }
+  return GTEXT_CSS_OK;
+}
+
+void css_import_attach(css_rule * rule, css_sheet * sheet) {
+  css_obj_retain_internal(&sheet->obj);
+  sheet->owner_rule = rule;
+  css_obj_set_parent(&sheet->obj, &rule->obj);
+  rule->import_sheet = sheet;
+  rule->import_pending = false;
+}
+
+bool css_sheet_diag_reserve(css_sheet * sheet, size_t more) {
+  css_core * core = sheet->obj.core;
+  if (sheet->ndiags + more > core->config.max_diagnostics) {
+    more = core->config.max_diagnostics > sheet->ndiags ? core->config.max_diagnostics - sheet->ndiags : 0;
+  }
+  if (sheet->ndiags + more <= sheet->capdiags) {
+    return true;
+  }
+  size_t cap = sheet->capdiags ? sheet->capdiags : 16;
+  while (cap < sheet->ndiags + more) {
+    cap *= 2;
+  }
+  css_parse_diag * grown = gtext_allocator_realloc(&core->alloc, sheet->diags, cap * sizeof *grown);
+  if (!grown) {
+    return false;
+  }
+  sheet->diags = grown;
+  sheet->capdiags = cap;
+  return true;
+}
+
+void css_sheet_diag_push(css_sheet * sheet, GTEXT_CSSOM_Parse_Diag_Kind kind, GTEXT_CSS_Span span, const char * reference) {
+  sheet->diag_total++;
+  if (sheet->ndiags >= sheet->obj.core->config.max_diagnostics || sheet->ndiags >= sheet->capdiags) {
+    return;
+  }
+  sheet->diags[sheet->ndiags].kind = kind;
+  sheet->diags[sheet->ndiags].span = span;
+  sheet->diags[sheet->ndiags].reference = reference;
+  sheet->ndiags++;
+}
+
+#define IMPORT_NESTING_LIMIT 64u
+
+/// A text of the rule's attribute, or NULL (and `*is_null` true) when it has none.
+static GTEXT_CSS_Status import_attribute(css_rule * rule, const char * name, char ** out, size_t * length, bool * is_null) {
+  *out = NULL;
+  *length = 0;
+  *is_null = true;
+  return gtext_cssom_rule_get_attribute(rule, name, strlen(name), out, length, is_null);
+}
+
+GTEXT_CSS_Status css_import_ask(css_sheet * sheet, css_rule * rule, bool * asked, css_sheet ** made, bool * pending, bool * nesting_refused) {
+  css_core * core = sheet->obj.core;
+  *asked = false;
+  *made = NULL;
+  *pending = false;
+  *nesting_refused = false;
+  if (!core->config.import) {
+    return GTEXT_CSS_OK;
+  }
+  *asked = true;
+  if (core->import_depth >= IMPORT_NESTING_LIMIT) {
+    core->counters.import_refused++;
+    *nesting_refused = true;
+    return GTEXT_CSS_OK;
+  }
+  char * href = NULL;
+  char * layer = NULL;
+  char * supports = NULL;
+  char * media = NULL;
+  size_t href_n = 0, layer_n = 0, supports_n = 0, media_n = 0;
+  bool href_null = true, layer_null = true, supports_null = true;
+  GTEXT_CSS_Status st = import_attribute(rule, "href", &href, &href_n, &href_null);
+  if (st == GTEXT_CSS_OK) {
+    st = import_attribute(rule, "layerName", &layer, &layer_n, &layer_null);
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = import_attribute(rule, "supportsText", &supports, &supports_n, &supports_null);
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = css_rule_media_text(rule, &media, &media_n);   /* without the MediaList object, which would take an id the callback has no use for */
+  }
+  if (st == GTEXT_CSS_OK) {
+    GTEXT_CSSOM_Import_Request req;
+    memset(&req, 0, sizeof req);
+    req.size = sizeof req;
+    req.rule = rule;
+    req.sheet = sheet;
+    req.href = href ? href : "";
+    req.href_length = href_n;
+    req.base_url = sheet->base_url;
+    req.media = media ? media : "";
+    req.supports = supports_null ? NULL : supports;
+    req.layer = layer_null ? NULL : (layer ? layer : "");
+    req.depth = core->import_depth;
+    GTEXT_CSSOM_Import_Outcome outcome = GTEXT_CSSOM_IMPORT_FAILED;
+    css_sheet * got = NULL;
+    core->import_depth++;
+    core->in_callback++;
+    core->counters.import_requests++;
+    st = core->config.import(core->config.import_user, &req, &got, &outcome);
+    core->in_callback--;
+    core->import_depth--;
+    if (st != GTEXT_CSS_OK) {
+      gtext_cssom_sheet_release(got);
+    }
+    else if (got) {
+      *made = got;
+    }
+    else {
+      *pending = outcome == GTEXT_CSSOM_IMPORT_PENDING;
+    }
+  }
+  gtext_cssom_buffer_free(&core->alloc, href);
+  gtext_cssom_buffer_free(&core->alloc, layer);
+  gtext_cssom_buffer_free(&core->alloc, supports);
+  gtext_cssom_buffer_free(&core->alloc, media);
+  return st;
+}
+
+GTEXT_CSS_Status css_sheet_ask_imports(css_sheet * sheet) {
+  css_core * core = sheet->obj.core;
+  if (!core->config.import) {
+    return GTEXT_CSS_OK;
+  }
+  size_t n[4];
+  css_rule_list_totals(&sheet->rules, n);
+  for (size_t k = 0; k < n[CSS_CLASS_IMPORT]; k++) {
+    css_rule * rule = css_rule_list_nth_of_class(&sheet->rules, CSS_CLASS_IMPORT, k);
+    if (!rule || rule->kind != GTEXT_CSSOM_RULE_IMPORT || rule->import_sheet || rule->import_pending) {
+      continue;
+    }
+    bool asked = false, pending = false, nesting = false;
+    css_sheet * made = NULL;
+    GTEXT_CSS_Status st = css_import_ask(sheet, rule, &asked, &made, &pending, &nesting);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+    GTEXT_CSS_Status chk = GTEXT_CSS_OK;
+    if (made) {
+      chk = css_import_check(sheet, made);
+    }
+    if (nesting || (made && chk != GTEXT_CSS_OK)) {
+      if (!css_sheet_diag_reserve(sheet, 1)) {
+        gtext_cssom_sheet_release(made);
+        return GTEXT_CSS_E_OOM;
+      }
+      css_sheet_diag_push(sheet, GTEXT_CSSOM_PARSE_IMPORT_REFUSED, css_rule_span(rule),
+          nesting ? "the import callbacks are nested deeper than the library follows"
+                  : "CSS Cascade 5, @import: the sheet of an import has one owner and cannot hold the sheet that holds it");
+      if (made) {
+        core->counters.import_refused++;
+      }
+    }
+    else if (made) {
+      css_import_attach(rule, made);
+    }
+    else if (pending) {
+      rule->import_pending = true;
+    }
+    gtext_cssom_sheet_release(made);
+  }
+  return GTEXT_CSS_OK;
+}
+
+size_t gtext_cssom_sheet_pending_imports(const GTEXT_CSSOM_Sheet * sheet) {
+  if (!sheet) {
+    return 0;
+  }
+  size_t n[4];
+  css_rule_list_totals(&sheet->rules, n);
+  size_t pending = 0;
+  for (size_t k = 0; k < n[CSS_CLASS_IMPORT]; k++) {
+    const css_rule * r = css_rule_list_nth_of_class(&sheet->rules, CSS_CLASS_IMPORT, k);
+    pending += r && r->import_pending;
+  }
+  return pending;
+}
+
+bool gtext_cssom_import_rule_pending(const GTEXT_CSSOM_Rule * rule) {
+  return rule && rule->kind == GTEXT_CSSOM_RULE_IMPORT && rule->import_pending;
+}
+
 GTEXT_CSS_Status gtext_cssom_import_rule_complete(GTEXT_CSSOM_Rule * rule, GTEXT_CSSOM_Sheet * sheet, GTEXT_CSSOM_Outcome * outcome) {
   if (!rule) {
     return GTEXT_CSS_E_INVALID;
@@ -506,24 +702,23 @@ GTEXT_CSS_Status gtext_cssom_import_rule_complete(GTEXT_CSSOM_Rule * rule, GTEXT
     if (sheet == rule->import_sheet) {
       return GTEXT_CSS_OK;   /* UNCHANGED */
     }
-    if (sheet->owner_rule || sheet->owner_node || sheet->constructed) {
-      return GTEXT_CSS_E_INVALID_STATE;
-    }
-    if (reaches(sheet, host)) {
-      return GTEXT_CSS_E_HIERARCHY;
+    st = css_import_check(host, sheet);
+    if (st != GTEXT_CSS_OK) {
+      return st;
     }
   }
-  else if (!rule->import_sheet) {
+  else if (!rule->import_sheet && !rule->import_pending) {
     return GTEXT_CSS_OK;   /* UNCHANGED */
   }
-  /* nothing below can fail */
+  /* nothing below can fail: a pending import is answered (a sheet or none) and is a change either way */
   css_sheet * old = rule->import_sheet;
   if (sheet) {
-    css_obj_retain_internal(&sheet->obj);
-    sheet->owner_rule = rule;
-    css_obj_set_parent(&sheet->obj, &rule->obj);
+    css_import_attach(rule, sheet);
   }
-  rule->import_sheet = sheet;
+  else {
+    rule->import_sheet = NULL;
+    rule->import_pending = false;
+  }
   if (old) {
     old->owner_rule = NULL;
     css_obj_set_parent(&old->obj, NULL);

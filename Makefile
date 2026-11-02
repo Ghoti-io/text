@@ -1159,6 +1159,9 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_block.c \
 	src/css/cssom_core.c \
 	src/css/cssom_decl.c \
+	src/css/cssom_index.c \
+	src/css/cssom_mql.c \
+	src/css/cssom_scope.c \
 	src/css/cssom_decl_idl.c \
 	src/css/cssom_inline.c \
 	src/css/cssom_dump.c \

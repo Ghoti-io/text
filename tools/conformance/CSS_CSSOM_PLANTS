@@ -37,7 +37,7 @@ origin-clean-ignored	cssom_sheet.c	  if (!sheet->origin_clean) {\n    return GTE
 disabled-to-the-same-value-is-a-change	cssom_sheet.c	  if (sheet->disabled == disabled) {	  if (0) {	sheet
 tree-bytes-not-counted	cssom_rule.c	  core->counters.tree_bytes += held;	  (void)held;	sheet,rulescost
 tree-released-with-the-first-owner	css_core.c	  if (gcu_atomic_int_fetch_sub(&tree->internal->refs, 1) != 1) {\n    return;   /* another owner holds it */\n  }		treeretain
-failed-parse-keeps-its-objects	cssom_sheet.c	  st = css_sheet_parse_into(core, s, copy, length);\n  if (st != GTEXT_CSS_OK) {\n    css_obj_release_external(&s->obj);	  st = css_sheet_parse_into(core, s, copy, length);\n  if (st != GTEXT_CSS_OK) {	rulesoom,sheet
+failed-parse-keeps-its-objects	cssom_sheet.c	  if (st != GTEXT_CSS_OK) {\n    css_obj_release_external(&s->obj);\n    return st;\n  }\n  *out = s;	  if (st != GTEXT_CSS_OK) {\n    return st;\n  }\n  *out = s;	rulesoom,sheet
 lazy-block-built-at-parse	cssom_parse.c	    css_rule_list_insert(&sheet->rules, sheet->rules.count, r);\n    if (css_kind(kind)->flags & CSS_KIND_LIST_ANY) {	    css_rule_list_insert(&sheet->rules, sheet->rules.count, r);\n    { GTEXT_CSSOM_Decl * eager = NULL; if (gtext_cssom_rule_style(r, &eager) == GTEXT_CSS_OK) { gtext_cssom_decl_release(eager); } }\n    if (css_kind(kind)->flags & CSS_KIND_LIST_ANY) {	rules,rulescost
 insert-index-past-the-end-accepted	cssom_insert.c	    if (index > count) {\n      st = GTEXT_CSS_E_INDEX_SIZE;\n      goto fail;\n    }\n  }\n  else {	  }\n  else {	insert,order
 rule-index-checked-after-the-parse	cssom_insert.c	    /* a rule's list ("insert a CSS rule" with the nested flag): "If index is greater than length, then throw an IndexSizeError" comes before the text is looked at */\n    if (index > count) {\n      st = GTEXT_CSS_E_INDEX_SIZE;\n      goto fail;\n    }		insert,order
@@ -130,9 +130,9 @@ snapshot-reparse-forgets-its-tree	cssom_snapshot.c	  c->trees[c->ntrees++] = tre
 composite-ignores-the-imports	cssom_snapshot.c	    if (sub > best) {	    if (0) {	snapshot
 composite-ignores-the-sheets-own-stamp	cssom_snapshot.c	  uint64_t best = sheet->stamp;	  uint64_t best = 0;	snapshot
 composite-does-not-limit-the-depth	cssom_snapshot.c	    if (levels == 0) {\n      return GTEXT_CSS_E_LIMIT_RULE_NESTING;\n    }\n    uint64_t sub = 0;	    if (levels == 0) {\n      continue;\n    }\n    uint64_t sub = 0;	snapshot
-import-cycle-allowed	cssom_snapshot.c	    if (reaches(sheet, host)) {	    if (0) {	snapshot
-import-accepts-a-sheet-that-has-an-owner	cssom_snapshot.c	    if (sheet->owner_rule || sheet->owner_node || sheet->constructed) {	    if (sheet->constructed) {	snapshot
-import-owner-not-recorded	cssom_snapshot.c	    sheet->owner_rule = rule;\n		snapshot
+import-cycle-allowed	cssom_snapshot.c	  if (reaches(candidate, host)) {	  if (0) {	snapshot
+import-accepts-a-sheet-that-has-an-owner	cssom_snapshot.c	  if (candidate->owner_rule || candidate->owner_node || candidate->constructed || candidate->scope) {	  if (candidate->constructed) {	snapshot
+import-owner-not-recorded	cssom_snapshot.c	  sheet->owner_rule = rule;\n		snapshot
 import-change-does-not-move-the-importer	cssom_snapshot.c	    css_sheet_bump(host);\n    ev.sheet = host;	    ev.sheet = host;	snapshot
 import-again-is-a-change	cssom_snapshot.c	    if (sheet == rule->import_sheet) {\n      return GTEXT_CSS_OK;   /* UNCHANGED */\n    }\n		snapshot
 rule-touch-marks-only-the-rule	cssom_rule_serialize.c	x = x->list && x->list->owner->kind == GTEXT_CSSOM_OBJECT_RULE ? (css_rule *)(uintptr_t)x->list->owner : NULL) {	x = NULL) {	snapshot
@@ -161,3 +161,74 @@ canonical-check-ignores-the-values	cssom_snapshot.c	same_text(&dx->name, &dy->na
 canonical-check-ignores-the-names	cssom_snapshot.c	same_text(&dx->name, &dy->name) && dx->important == dy->important && lx == ly	dx->important == dy->important && lx == ly	snapshot
 canonical-check-reads-no-declarations	cssom_snapshot.c	    st = same_run(&sh, x->declarations, x->declaration_count, y->declarations, y->declaration_count, &ok);\n		snapshot
 canonical-check-reads-no-declarations-among-the-contents	cssom_snapshot.c	      else {\n        st = same_run(&sh, ix->declarations, ix->declaration_count, iy->declarations, iy->declaration_count, &ok);\n      }	      else {\n      }	snapshot
+# C5c2: the document layer (cssom_scope.c, cssom_index.c, cssom_mql.c, the import callback in cssom_snapshot.c, cssom_insert.c and cssom_sheet.c)
+scope-sheet-list-does-not-hold-its-sheet	cssom_scope.c	  scope->nsheets++;\n  css_obj_retain_internal(&sheet->obj);\n  sheet->scope = scope;	  scope->nsheets++;\n  sheet->scope = scope;	document
+scope-sheet-list-puts-the-sheet-last	cssom_scope.c	  scope->sheets[index] = sheet;	  scope->sheets[scope->nsheets] = sheet;	document
+scope-sheet-list-accepts-a-sheet-already-listed	cssom_scope.c	sheet->constructed || sheet->owner_rule || sheet->scope) {	sheet->constructed || sheet->owner_rule) {	document
+scope-sheet-list-accepts-a-constructed-sheet	cssom_scope.c	sheet->constructed || sheet->owner_rule || sheet->scope) {	sheet->owner_rule || sheet->scope) {	document
+scope-sheet-list-accepts-a-sheet-of-another-document	cssom_scope.c	  if (sheet->obj.core != core) {\n    return GTEXT_CSS_E_INVALID;   /* a sheet of another document */	  if (0) {\n    return GTEXT_CSS_E_INVALID;   /* a sheet of another document */	document,multidoc
+removed-sheet-keeps-its-owner-node	cssom_scope.c	  sheet->scope = NULL;\n  sheet->owner_node = NULL;\n  core->structure_version++;\n  emit(core, GTEXT_CSSOM_EVENT_SHEET_REMOVED, scope, sheet, outcome);\n  css_obj_release_internal(&sheet->obj);	  sheet->scope = NULL;\n  core->structure_version++;\n  emit(core, GTEXT_CSSOM_EVENT_SHEET_REMOVED, scope, sheet, outcome);\n  css_obj_release_internal(&sheet->obj);	document
+removed-sheet-leaves-the-index-as-it-was	cssom_scope.c	  sheet->owner_node = NULL;\n  core->structure_version++;\n  emit(core, GTEXT_CSSOM_EVENT_SHEET_REMOVED, scope, sheet, outcome);\n  css_obj_release_internal(&sheet->obj);	  sheet->owner_node = NULL;\n  emit(core, GTEXT_CSSOM_EVENT_SHEET_REMOVED, scope, sheet, outcome);\n  css_obj_release_internal(&sheet->obj);	document
+adopting-takes-any-sheet	cssom_scope.c	  return sheet && sheet->constructed && sheet->obj.core == scope_core(scope);	  return sheet != NULL;	document,wptdocument,multidoc
+adopting-ignores-the-constructor-document	cssom_scope.c	  return sheet && sheet->constructed && sheet->obj.core == scope_core(scope);	  return sheet && sheet->constructed;	document,wptdocument,multidoc
+adopting-a-sheet-that-is-not-constructed	cssom_scope.c	  return sheet && sheet->constructed && sheet->obj.core == scope_core(scope);	  return sheet && sheet->obj.core == scope_core(scope);	document,wptdocument
+adopted-set-equal-list-is-a-change	cssom_scope.c	  if (same) {\n    return GTEXT_CSS_OK;   /* UNCHANGED */	  if (0) {\n    return GTEXT_CSS_OK;   /* UNCHANGED */	document
+adopted-limit-one-too-many	cssom_scope.c	  if (scope->nadopted >= core->config.max_adopted) {	  if (scope->nadopted > core->config.max_adopted) {	document
+adopted-remove-leaves-the-index-as-it-was	cssom_scope.c	  scope->nadopted--;\n  core->structure_version++;	  scope->nadopted--;	document
+adopted-set-leaves-the-index-as-it-was	cssom_scope.c	  scope->adopted = fresh;\n  scope->nadopted = scope->capadopted = count;\n  core->structure_version++;	  scope->adopted = fresh;\n  scope->nadopted = scope->capadopted = count;	document,wptdocument
+scopes-are-not-bounded	cssom_scope.c	  if (core->nscopes >= core->config.max_scopes) {\n    return GTEXT_CSS_E_LIMIT_CSSOM;\n  }\n  if (!scopes_reserve(core)) {	  if (0) {\n    return GTEXT_CSS_E_LIMIT_CSSOM;\n  }\n  if (!scopes_reserve(core)) {	document
+scope-context-is-not-advanced	cssom_scope.c	    s->context = core->next_context++;	    s->context = core->next_context;	document
+moved-scope-leaves-the-old-document-as-it-was	cssom_scope.c	    from->structure_version++;\n  }\n  to->structure_version++;	  }\n  to->structure_version++;	document
+moved-scope-keeps-the-new-document-as-it-was	cssom_scope.c	  to->structure_version++;\n  const bool matters	  const bool matters	document
+removed-scope-stays-registered	cssom_scope.c	  unlist(core, scope);\n  scope->home = NULL;\n  core->structure_version++;	  scope->home = NULL;\n  core->structure_version++;	document
+removed-scope-is-not-a-change-of-the-index	cssom_scope.c	  scope->home = NULL;\n  core->structure_version++;\n  for (size_t i = 0; i < nsheets; i++) {\n    sheets[i]->scope = NULL;	  scope->home = NULL;\n  for (size_t i = 0; i < nsheets; i++) {\n    sheets[i]->scope = NULL;	document
+reparent-accepts-its-own-descendant-as-parent	cssom_scope.c	    if (x == scope) {\n      return GTEXT_CSS_E_INVALID;   /* a scope cannot sit under itself */	    if (0) {\n      return GTEXT_CSS_E_INVALID;   /* a scope cannot sit under itself */	document
+index-key-ignores-the-sheets	cssom_index.c	core->index_valid && core->index_stamp == stamp && core->index_structure	core->index_valid && core->index_structure	document,documentcost,imports
+index-key-ignores-the-structure	cssom_index.c	core->index_structure == core->structure_version && 		document,wptdocument
+index-key-ignores-the-registrations	cssom_index.c	core->index_registration == core->registration_version &&\n      core->index_epoch	core->index_epoch	document
+index-key-ignores-the-environment	cssom_index.c	core->index_registration == core->registration_version &&\n      core->index_epoch == core->conditions_epoch) {	core->index_registration == core->registration_version) {	document
+index-is-never-cached	cssom_index.c	  if (core->index_valid && core->index_stamp	  if (0 && core->index_valid && core->index_stamp	document,documentcost,documentoom
+index-takes-disabled-sheets	cssom_index.c	  if (sheet->disabled) {\n    return GTEXT_CSS_OK;\n  }	  if (0) {\n    return GTEXT_CSS_OK;\n  }	document
+index-ignores-the-media-of-a-sheet	cssom_index.c	  if (!sheet->media_text) {\n    *yes = true;	  if (1) {\n    *yes = true;	document
+index-takes-a-repeated-sheet-twice	cssom_index.c	      if (sh->adopt_mark != mark && css_scope_owns(scope, sh)) {	      if (css_scope_owns(scope, sh)) {	document
+index-takes-adopted-sheets-of-another-document	cssom_index.c	      if (sh->adopt_mark != mark && css_scope_owns(scope, sh)) {	      if (sh->adopt_mark != mark) {	document
+index-takes-owner-sheets-of-another-document	cssom_index.c	      if (css_scope_owns(scope, scope->sheets[i])) {	      if (1) {	document
+index-takes-adopted-sheets-first	cssom_index.c	    for (size_t i = 0; st == GTEXT_CSS_OK && i < scope->nsheets; i++) {	    for (size_t i = 0; st == GTEXT_CSS_OK && i < 0; i++) {	document
+unregistering-a-sheet-leaves-the-index-as-it-was	cssom_index.c	  core->nregs--;\n  core->registration_version++;	  core->nregs--;	document
+registering-a-sheet-twice	cssom_index.c	    if (core->regs[i].sheet == sheet) {\n      return GTEXT_CSS_E_INVALID_STATE;	    if (0) {\n      return GTEXT_CSS_E_INVALID_STATE;	document
+registering-an-author-sheet	cssom_index.c	(origin != GTEXT_CSS_ORIGIN_USER_AGENT && origin != GTEXT_CSS_ORIGIN_USER)	0	document
+index-counts-no-build	cssom_index.c	  core->counters.index_builds++;		documentcost
+matches-is-never-cached	cssom_mql.c	  if (!m->has_answer || m->epoch != core->conditions_epoch) {	  if (1) {	mediaquery,documentoom
+environment-change-keeps-the-epoch	cssom_mql.c	  core->conditions_epoch++;		mediaquery,document
+report-calls-lists-that-did-not-change	cssom_mql.c	    const bool differs = m->has_answer ? m->matches != answers[i] : false;	    const bool differs = true;	mediaquery,wptdocument
+report-evaluates-identical-queries-again	cssom_mql.c	      if (seen->text_length == m->text_length && memcmp(seen->text, m->text, m->text_length) == 0) {	      if (0) {	mediaquery,documentcost
+report-in-reverse-order	cssom_mql.c	  for (size_t i = 0; i < n; i++) {\n    css_mql * m = lists[i];\n    if (changed[i]) {	  for (size_t i = n; i-- > 0;) {\n    css_mql * m = lists[i];\n    if (changed[i]) {	mediaquery,wptdocument
+report-calls-listeners-removed-meanwhile	cssom_mql.c	        if (m->listeners[j].removed) {\n          continue;	        if (0) {\n          continue;	mediaquery
+report-calls-listeners-added-meanwhile	cssom_mql.c	      const size_t count = m->nlisteners;	      const size_t count = SIZE_MAX;	mediaquery
+report-without-the-mutation-guard	cssom_mql.c	        core->in_callback++;\n        const GTEXT_CSS_Status ls	        const GTEXT_CSS_Status ls	mediaquery
+report-without-the-mutation-guard	cssom_mql.c	        core->in_callback--;\n        core->counters.mql_notifications++;	        core->counters.mql_notifications++;	mediaquery
+report-loses-the-failure-of-a-listener	cssom_mql.c	          outcome->observer_status = ls;	          (void)ls;	mediaquery
+same-conditions-are-a-change	cssom_mql.c	  if (conditions == core->conditions) {\n    return GTEXT_CSS_OK;   /* UNCHANGED */	  if (0) {\n    return GTEXT_CSS_OK;   /* UNCHANGED */	document
+the-same-listener-is-added-twice	cssom_mql.c	      return GTEXT_CSS_OK;   /* the same pair is added once */	      continue;	mediaquery,wptdocument
+listener-is-judged-against-no-answer	cssom_mql.c	  GTEXT_CSS_Status st = current(list, &ignored);   /* the answer a later change is judged against */\n  if (st != GTEXT_CSS_OK) {\n    return st;\n  }	  GTEXT_CSS_Status st = GTEXT_CSS_OK;\n  (void)ignored;	mediaquery,wptdocument
+lists-are-not-bounded	cssom_mql.c	  if (core->nmql >= core->config.max_media_query_lists) {	  if (0) {	mediaquery
+change-is-evaluated-after-it-is-made	cssom_mql.c	  if (st != GTEXT_CSS_OK) {\n    gtext_allocator_free(&a, lists);\n    gtext_allocator_free(&a, answers);\n    return st;\n  }\n  /* commit: nothing below can fail */	  st = GTEXT_CSS_OK;\n  /* commit: nothing below can fail */	mediaquery
+import-nesting-allows-one-more	cssom_snapshot.c	  if (core->import_depth >= IMPORT_NESTING_LIMIT) {	  if (core->import_depth > IMPORT_NESTING_LIMIT) {	imports
+import-callback-runs-without-the-guard	cssom_snapshot.c	    core->import_depth++;\n    core->in_callback++;	    core->import_depth++;	imports
+import-callback-runs-without-the-guard	cssom_snapshot.c	    core->in_callback--;\n    core->import_depth--;	    core->import_depth--;	imports
+import-callback-sheet-is-not-released	cssom_snapshot.c	    gtext_cssom_sheet_release(made);\n  }\n  return GTEXT_CSS_OK;\n}\n\nsize_t gtext_cssom_sheet_pending_imports	  }\n  return GTEXT_CSS_OK;\n}\n\nsize_t gtext_cssom_sheet_pending_imports	imports
+import-callback-sheet-with-an-owner-is-taken	cssom_snapshot.c	      chk = css_import_check(sheet, made);	      chk = GTEXT_CSS_OK;	imports
+import-pending-is-forgotten	cssom_snapshot.c	      rule->import_pending = true;\n    }	    }	imports
+import-failed-is-pending	cssom_snapshot.c	      *pending = outcome == GTEXT_CSSOM_IMPORT_PENDING;	      *pending = true;	imports
+pending-answer-with-no-sheet-is-nothing	cssom_snapshot.c	  else if (!rule->import_sheet && !rule->import_pending) {	  else if (!rule->import_sheet) {	imports
+completing-an-import-leaves-it-pending	cssom_snapshot.c	  rule->import_sheet = sheet;\n  rule->import_pending = false;\n}	  rule->import_sheet = sheet;\n}	imports
+failing-an-import-leaves-it-pending	cssom_snapshot.c	    rule->import_sheet = NULL;\n    rule->import_pending = false;\n  }	    rule->import_sheet = NULL;\n  }	imports
+import-check-takes-a-sheet-of-a-scope	cssom_snapshot.c	candidate->constructed || candidate->scope) {	candidate->constructed) {	imports
+pending-count-counts-every-import	cssom_snapshot.c	    pending += r && r->import_pending;	    pending += r != NULL;	imports
+inserted-import-ignores-the-callbacks-failure	cssom_insert.c	    st = css_import_ask(pl->sheet, rule, &asked, &made_sheet, &import_pending, &nesting);\n    if (st != GTEXT_CSS_OK) {	    st = css_import_ask(pl->sheet, rule, &asked, &made_sheet, &import_pending, &nesting);\n    if (0) {	imports,documentoom
+inserted-import-keeps-the-ids-it-took	cssom_insert.c	      if (core->next_id != before) {\n        saved_id = core->next_id;   /* the callback made objects: their ids stay taken */\n      }	      saved_id = core->next_id;	imports
+sheet-made-from-text-asks-nobody	cssom_sheet.c	  if (st == GTEXT_CSS_OK && !constructed) {\n    st = css_sheet_ask_imports(s);	  if (0) {\n    st = css_sheet_ask_imports(s);	imports
+released-document-keeps-its-scopes	cssom_core.c	  gtext_allocator_free(&a, document);\n  css_scope_teardown_all(core);	  gtext_allocator_free(&a, document);	multidoc
+import-request-shows-the-wrong-sheet	cssom_snapshot.c	    req.sheet = sheet;	    req.sheet = NULL;	imports
+
+document-scope-is-an-object-of-the-counters	cssom_scope.c	  core->counters.live_objects--;\n  core->counters.live_bytes -= s->obj.bytes;\n  s->obj.bytes = 0;\n  s->obj.uncounted = true;\n  s->obj.id = 0;\n  core->next_id--;	  s->obj.id = 0;\n  core->next_id--;	document

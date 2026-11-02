@@ -257,16 +257,16 @@ static size_t import_media_start(const char * s, size_t n) {
   return n;
 }
 
-/// The owner's media query list as text, appended to `out`.
-static GTEXT_CSS_Status owner_text(GTEXT_CSSOM_Media_List * list, tbuf * out) {
-  if (!list->owner) {
+/// The media query list of a sheet, an `@import` rule or an `@media` rule as text, appended to `out`.
+static GTEXT_CSS_Status owner_obj_text(const css_obj * owner, tbuf * out) {
+  if (!owner) {
     return GTEXT_CSS_E_INVALID_STATE;
   }
-  if (list->owner->kind == GTEXT_CSSOM_OBJECT_SHEET) {
-    const css_sheet * s = (const css_sheet *)(uintptr_t)list->owner;
+  if (owner->kind == GTEXT_CSSOM_OBJECT_SHEET) {
+    const css_sheet * s = (const css_sheet *)(uintptr_t)owner;
     return !s->media_text || tb_put(out, s->media_text, strlen(s->media_text)) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
   }
-  css_rule * r = (css_rule *)(uintptr_t)list->owner;
+  css_rule * r = (css_rule *)(uintptr_t)owner;
   GTEXT_CSS_Atrule * a = NULL;
   GTEXT_CSS_Status st = css_rule_typed(r->obj.core, r, true, &a);
   if (st != GTEXT_CSS_OK) {
@@ -283,6 +283,22 @@ static GTEXT_CSS_Status owner_text(GTEXT_CSSOM_Media_List * list, tbuf * out) {
   }
   gtext_css_atrule_free(a);
   return st;
+}
+
+static GTEXT_CSS_Status owner_text(GTEXT_CSSOM_Media_List * list, tbuf * out) {
+  return owner_obj_text(list->owner, out);
+}
+
+GTEXT_CSS_Status css_rule_media_text(css_rule * rule, char ** out, size_t * length) {
+  tbuf b;
+  tb_init(&b, &rule->obj.core->alloc);
+  GTEXT_CSS_Status st = owner_obj_text(&rule->obj, &b);
+  if (st != GTEXT_CSS_OK || b.oom) {
+    tb_free(&b);
+    return st != GTEXT_CSS_OK ? st : GTEXT_CSS_E_OOM;
+  }
+  *out = tb_take(&b, length);
+  return *out ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
 }
 
 GTEXT_CSS_Status gtext_cssom_media_text(GTEXT_CSSOM_Media_List * list, char ** out, size_t * length) {

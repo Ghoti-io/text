@@ -27,6 +27,7 @@
 #include <string.h>
 
 #include "css_internal.h"
+#include "cssom_doc_internal.h"
 #include "cssom_rule_internal.h"
 #include "cssom_typed.h"
 
@@ -107,6 +108,7 @@ static GTEXT_CSS_Status sheet_make(GTEXT_CSSOM_Document * document, const char *
   s->max_import_depth = o.max_import_depth;
   s->constructed = constructed;
   s->owner_node = constructed ? NULL : o.owner_node;
+  s->implicit_root = constructed ? NULL : o.implicit_root;
   size_t strings = 0;
   if (!sheet_copy_string(core, o.href, &s->href, &strings) || !sheet_copy_string(core, o.title, &s->title, &strings) || !sheet_copy_string(core, o.base_url, &s->base_url, &strings)) {
     css_obj_release_external(&s->obj);
@@ -146,6 +148,9 @@ static GTEXT_CSS_Status sheet_make(GTEXT_CSSOM_Document * document, const char *
     }
   }
   st = css_sheet_parse_into(core, s, copy, length);
+  if (st == GTEXT_CSS_OK && !constructed) {
+    st = css_sheet_ask_imports(s);   /* the document's import callback, for each `@import` of the text */
+  }
   if (st != GTEXT_CSS_OK) {
     css_obj_release_external(&s->obj);
     return st;

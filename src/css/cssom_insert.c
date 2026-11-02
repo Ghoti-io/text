@@ -37,6 +37,7 @@
 #include "css_shorthand_internal.h"
 #include "css_sheet_internal.h"
 #include "cssom_kind_tables.h"
+#include "cssom_doc_internal.h"
 #include "cssom_rule_internal.h"
 #include "cssom_typed.h"
 
@@ -288,7 +289,9 @@ static void settle(place * pl, css_rule * rule, size_t count, bool inserted, css
 
 static GTEXT_CSS_Status insert_text(place * pl, const char * text, size_t length, size_t index, bool keyframe, GTEXT_CSSOM_Rule ** out, GTEXT_CSSOM_Outcome * outcome) {
   css_core * core = pl->core;
-  const uint64_t saved_id = core->next_id;
+  uint64_t saved_id = core->next_id;
+  css_sheet * made_sheet = NULL;   /* the sheet the import callback gave for an `@import`, held until it is attached or refused */
+  bool import_pending = false;
   GTEXT_CSS_Tree * tree = NULL;
   css_source * source = NULL;
   css_rule * rule = NULL;
@@ -431,6 +434,34 @@ static GTEXT_CSS_Status insert_text(place * pl, const char * text, size_t length
     }
   }
 
+  if (kind == GTEXT_CSSOM_RULE_IMPORT && pl->ctx.top && !keyframe && !declarations_rule) {
+    /* the document's import callback is asked last, when nothing else can fail; the rule is not in the sheet yet */
+    bool asked = false, nesting = false;
+    if (!css_sheet_diag_reserve(pl->sheet, 1)) {
+      st = GTEXT_CSS_E_OOM;
+      goto fail;
+    }
+    const uint64_t before = core->next_id;
+    st = css_import_ask(pl->sheet, rule, &asked, &made_sheet, &import_pending, &nesting);
+    if (st != GTEXT_CSS_OK) {
+      if (core->next_id != before) {
+        saved_id = core->next_id;   /* the callback made objects: their ids stay taken */
+      }
+      goto fail;
+    }
+    if (nesting || (made_sheet && css_import_check(pl->sheet, made_sheet) != GTEXT_CSS_OK)) {
+      css_sheet_diag_push(pl->sheet, GTEXT_CSSOM_PARSE_IMPORT_REFUSED, css_rule_span(rule),
+          nesting ? "the import callbacks are nested deeper than the library follows"
+                  : "CSS Cascade 5, @import: the sheet of an import has one owner and cannot hold the sheet that holds it");
+      if (made_sheet) {
+        core->counters.import_refused++;
+        gtext_cssom_sheet_release(made_sheet);
+        made_sheet = NULL;
+      }
+      import_pending = false;
+    }
+  }
+
   /* the first change: nothing below can fail */
   {
     css_cssom_event ev;
@@ -444,6 +475,12 @@ static GTEXT_CSS_Status insert_text(place * pl, const char * text, size_t length
       new_env = NULL;
     }
     core->counters.rule_inserts += made;
+    if (made_sheet) {
+      css_import_attach(rule, made_sheet);
+      gtext_cssom_sheet_release(made_sheet);   /* the callback's reference: the rule holds the sheet now */
+      made_sheet = NULL;
+    }
+    rule->import_pending = import_pending;
     if (out) {
       css_obj_retain_external(&rule->obj);
       *out = rule;
@@ -460,6 +497,7 @@ static GTEXT_CSS_Status insert_text(place * pl, const char * text, size_t length
   return GTEXT_CSS_OK;
 
 fail:
+  gtext_cssom_sheet_release(made_sheet);
   if (rule) {
     css_obj_release_internal(&rule->obj);
   }

@@ -52,12 +52,21 @@ typedef struct css_core css_core;
 typedef struct css_obj css_obj;
 typedef struct css_cssom_event css_cssom_event;
 struct css_text_cache;
+struct GTEXT_CSSOM_Scope;
+struct GTEXT_CSSOM_Media_Query_List;
+
+/// A compiled sheet the caller registered for the user-agent or user origin.
+typedef struct {
+  GTEXT_CSS_Sheet * sheet;             ///< Retained.
+  GTEXT_CSS_Origin origin;
+} css_registered_sheet;
 
 /// The base of every object.
 struct css_obj {
   uint8_t kind;                        ///< GTEXT_CSSOM_Object_Kind.
   bool finalized;
   bool queued;                         ///< On the queue of objects being freed.
+  bool uncounted;                      ///< The document's own scope: it takes no id and is no live object of the counters, so that a document with nothing in it has no objects.
   uint64_t internal;                   ///< Owning edges.
   uint64_t external;                   ///< The callers' references and the holds of held children.
   css_obj * parent;                    ///< Weak: the object a held child keeps alive; NULL when detached or when there is none.
@@ -101,6 +110,25 @@ struct css_core {
   size_t cache_bytes;
   css_cssom_tap_fn tap;                ///< Where events go (a test, and the observer registry of C5c3).
   void * tap_user;
+  /* the document (cssom_document.c, cssom_scope.c, cssom_index.c, cssom_mql.c) */
+  GTEXT_CSS_Conditions * conditions;   ///< Retained; never NULL while the core lives.
+  uint64_t conditions_epoch;           ///< Advances when the conditions object is replaced by another.
+  GTEXT_CSS_Selector_Match_Options match;
+  bool has_match;
+  struct GTEXT_CSSOM_Scope ** scopes;          ///< The registered scopes in the order they were made; the document's own is first. Each is held by an internal count.
+  size_t nscopes, capscopes;
+  struct GTEXT_CSSOM_Scope * doc_scope;
+  uint32_t next_context;               ///< The context the next scope that asks for none gets.
+  uint64_t structure_version;          ///< Advances when a scope, a `styleSheets` list or an adopted list changed.
+  uint64_t registration_version;       ///< Advances when a user-agent or user sheet was registered or taken out.
+  css_registered_sheet * regs;
+  size_t nregs, capregs;
+  GTEXT_CSS_Rule_Index * index;        ///< The index last built (one owner held), or NULL.
+  bool index_valid;
+  uint64_t index_stamp, index_structure, index_registration, index_epoch;   ///< The tuple it was built for.
+  struct GTEXT_CSSOM_Media_Query_List * mql_head, * mql_tail;   ///< The live media query lists in creation order (weak).
+  size_t nmql;
+  unsigned import_depth;               ///< Import callbacks running above this point.
 };
 
 /// A notification (css_cssom_core.h names the kinds). The pointers are borrowed for the call.
@@ -109,6 +137,7 @@ struct css_cssom_event {
   uint64_t sheet_id, rule_id;
   void * declaration;                  ///< The declaration object, or NULL.
   void * sheet;                        ///< The sheet, or NULL.
+  void * scope;                        ///< The tree scope of a sheet-list or adopted-list event, or NULL.
   void * rule;                         ///< The rule, or NULL.
   bool silent;                         ///< The mutation changed an object that no sheet holds: no generation, no event.
   const void * element;                ///< The owner element of an inline style.

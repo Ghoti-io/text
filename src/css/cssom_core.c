@@ -31,6 +31,7 @@
 #include "css_internal.h"
 #include "css_registry_internal.h"
 #include "css_shorthand_internal.h"
+#include "cssom_doc_internal.h"
 #include "cssom_internal.h"
 
 #define DEFAULT_MAX_LIVE_OBJECTS ((size_t)1 << 24)
@@ -47,6 +48,9 @@
 #define DEFAULT_MAX_DIAGNOSTICS ((size_t)1024)
 #define DEFAULT_MAX_CACHED_TEXT ((size_t)64 << 20)
 #define LIMIT_MAX_RULES ((size_t)1 << 28)
+#define DEFAULT_MAX_SCOPES ((size_t)1 << 16)
+#define DEFAULT_MAX_ADOPTED ((size_t)1 << 20)
+#define DEFAULT_MAX_MEDIA_QUERY_LISTS ((size_t)1 << 20)
 
 struct GTEXT_CSSOM_Document {
   css_core * core;
@@ -69,6 +73,9 @@ GTEXT_CSSOM_Config gtext_cssom_config_default(void) {
   c.max_rule_nesting = DEFAULT_MAX_RULE_NESTING;
   c.max_diagnostics = DEFAULT_MAX_DIAGNOSTICS;
   c.max_cached_text_bytes = DEFAULT_MAX_CACHED_TEXT;
+  c.max_scopes = DEFAULT_MAX_SCOPES;
+  c.max_adopted = DEFAULT_MAX_ADOPTED;
+  c.max_media_query_lists = DEFAULT_MAX_MEDIA_QUERY_LISTS;
   return c;
 }
 
@@ -101,6 +108,20 @@ static void config_fill(GTEXT_CSSOM_Config * out, const GTEXT_CSSOM_Config * in)
   if (n < offsetof(GTEXT_CSSOM_Config, max_cached_text_bytes) + sizeof in->max_cached_text_bytes || !out->max_cached_text_bytes) {
     out->max_cached_text_bytes = d.max_cached_text_bytes;
   }
+  /* the document's fields: a caller built against the header of C5c1 has none of them */
+  if (n < offsetof(GTEXT_CSSOM_Config, max_media_query_lists) + sizeof in->max_media_query_lists) {
+    out->conditions = NULL;
+    out->element_interface = NULL;
+    out->match_options = NULL;
+    out->import = NULL;
+    out->import_user = NULL;
+    out->max_scopes = 0;
+    out->max_adopted = 0;
+    out->max_media_query_lists = 0;
+  }
+  if (!out->max_scopes) out->max_scopes = d.max_scopes;
+  if (!out->max_adopted) out->max_adopted = d.max_adopted;
+  if (!out->max_media_query_lists) out->max_media_query_lists = d.max_media_query_lists;
 }
 
 GTEXT_CSS_Status gtext_cssom_document_new(const GTEXT_CSSOM_Config * config, GTEXT_CSSOM_Document ** out) {
@@ -121,12 +142,38 @@ GTEXT_CSS_Status gtext_cssom_document_new(const GTEXT_CSSOM_Config * config, GTE
   core->refs = 1;   /* the document handle */
   core->alloc = a;
   core->registry = cfg.registry;
-  cfg.allocator = NULL;   /* the core's copy is `alloc`; the pointer the caller gave need not outlive this call */
-  core->config = cfg;
   core->generation = cfg.first_generation;
   core->next_id = cfg.first_id;
+  core->next_context = 1;
   core->document = doc;
   doc->core = core;
+  /* the conditions: the caller's, retained, or the registry's defaults */
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  if (cfg.conditions) {
+    core->conditions = gtext_css_conditions_retain(cfg.conditions);
+  }
+  else {
+    GTEXT_CSS_Conditions_Options co = gtext_css_conditions_options_default();
+    co.allocator = &core->alloc;
+    co.element_interface = cfg.element_interface;
+    st = gtext_css_conditions_new(cfg.registry, &co, &core->conditions);
+  }
+  if (st == GTEXT_CSS_OK && cfg.match_options) {
+    core->match = *cfg.match_options;
+    core->has_match = true;
+  }
+  cfg.allocator = NULL;   /* the core's copy is `alloc`; the pointer the caller gave need not outlive this call */
+  cfg.conditions = core->conditions;
+  cfg.match_options = core->has_match ? &core->match : NULL;
+  core->config = cfg;
+  if (st == GTEXT_CSS_OK) {
+    css_scope * scope = NULL;
+    st = css_scope_create_document(core, &scope);
+  }
+  if (st != GTEXT_CSS_OK) {
+    gtext_cssom_document_release(doc);
+    return st;
+  }
   *out = doc;
   return GTEXT_CSS_OK;
 }
@@ -136,7 +183,11 @@ void css_core_release(css_core * core) {
     return;
   }
   css_inline_map_free(core);
+  css_index_teardown(core);
+  gtext_css_conditions_free(core->conditions);
   GTEXT_Allocator a = core->alloc;
+  gtext_allocator_free(&a, core->regs);
+  gtext_allocator_free(&a, core->scopes);
   gtext_allocator_free(&a, core);
 }
 
@@ -150,6 +201,8 @@ void gtext_cssom_document_release(GTEXT_CSSOM_Document * document) {
   core->tap = NULL;
   core->tap_user = NULL;
   gtext_allocator_free(&a, document);
+  css_scope_teardown_all(core);
+  css_index_teardown(core);
   css_core_release(core);
 }
 
@@ -168,6 +221,7 @@ GTEXT_CSS_Status gtext_cssom_document_counters(const GTEXT_CSSOM_Document * docu
     return GTEXT_CSS_E_INVALID;
   }
   *out = document->core->counters;
+  out->live_scopes = document->core->nscopes;
   return GTEXT_CSS_OK;
 }
 

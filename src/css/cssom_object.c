@@ -125,7 +125,9 @@ static void drain(css_core * core) {
       /* the finalizer may release other objects and set their user slots; those that die are queued behind this one */
       run_finalizer(o);
     }
-    core->counters.live_objects--;
+    if (!o->uncounted) {
+      core->counters.live_objects--;
+    }
     core->counters.live_bytes -= o->bytes;
     o->destroy(o);   /* frees the object's memory: `o` is gone */
     css_core_release(core);

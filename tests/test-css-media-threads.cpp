@@ -88,3 +88,47 @@ TEST(CssMediaThreads, EvaluationAndSerializationAreSafeOnSharedObjects) {
   gtext_css_conditions_free(c);
   gtext_css_condition_defs_free(defs);
 }
+
+// Making a conditions object seals its definitions, which sorts them; two threads making conditions objects from definitions of their own at the same time must not disturb each other (the
+// sort once read the definitions through one global that both wrote). Each thread builds many sets whose names repeat, so that the last of a name wins, and every answer is the single thread's.
+TEST(CssMediaThreads, ConditionsObjectsMadeOnSeveralThreadsAtOnceAreIndependent) {
+  auto build = [](int variant) {
+    std::string answer;
+    for (int round = 0; round < 60; round++) {
+      GTEXT_CSS_Condition_Defs * defs = nullptr;
+      EXPECT_EQ(gtext_css_condition_defs_new(nullptr, &defs), GTEXT_CSS_OK);
+      for (int i = 0; i < 40; i++) {
+        // names in a scrambled order, each defined twice with different values: the winner is the later
+        const int name = (i * 17 + variant * 7) % 40;
+        const std::string t = "--m" + std::to_string(name) + (i < 20 ? " (width > 100000px)" : " (width > " + std::to_string(name) + "px)");
+        EXPECT_EQ(gtext_css_condition_defs_add_custom_media_text(defs, t.data(), t.size(), nullptr, nullptr), GTEXT_CSS_OK);
+      }
+      GTEXT_CSS_Conditions_Options co = gtext_css_conditions_options_default();
+      co.defs = defs;
+      GTEXT_CSS_Conditions * c = nullptr;
+      EXPECT_EQ(gtext_css_conditions_new(nullptr, &co, &c), GTEXT_CSS_OK);
+      for (int name = 0; name < 40; name += 3) {
+        const std::string q = "(--m" + std::to_string(name) + ")";
+        bool m = false;
+        EXPECT_EQ(gtext_css_conditions_matches_media(c, q.data(), q.size(), nullptr, &m), GTEXT_CSS_OK);
+        answer += m ? '1' : '0';
+      }
+      gtext_css_conditions_free(c);
+      gtext_css_condition_defs_free(defs);
+    }
+    return answer;
+  };
+  const std::string want_a = build(0), want_b = build(1);
+  ASSERT_NE(want_a, want_b);
+  std::atomic<int> bad{0};
+  std::vector<std::thread> threads;
+  for (int t = 0; t < 8; t++) {
+    threads.emplace_back([&, t] {
+      for (int i = 0; i < 6; i++) {
+        if (build(t % 2) != (t % 2 ? want_b : want_a)) bad++;
+      }
+    });
+  }
+  for (auto & th : threads) th.join();
+  EXPECT_EQ(bad.load(), 0);
+}

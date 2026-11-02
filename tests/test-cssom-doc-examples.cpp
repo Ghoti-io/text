@@ -51,6 +51,7 @@ namespace snippets {
 #include "doc-snippets/css/cssom-insert.c"
 #include "doc-snippets/css/cssom-setters.c"
 #include "doc-snippets/css/cssom-snapshot.c"
+#include "doc-snippets/css/cssom-document.c"
 } // namespace snippets
 
 namespace {
@@ -70,6 +71,8 @@ const Snippet kSnippets[] = {
     {"cssom-setters.c", snippets::cssom_setters, "selectorText: changed 1\nselectorText: ignored 1\ncssText: d > e { color: red; }\ndeleteMedium: NotFoundError\nmediaText: print, not all, tv\nsystem: ignored 1\ncounter style: @counter-style n { system: cyclic; symbols: x y z; }\npage block: 5 declarations, transform ignored 1\npage: @page { margin: 1em 2em; size: landscape; }\nold rule: parentStyleSheet is null; sheet rules: 1\nreplaceSync on a parsed sheet: NotAllowedError\n"},
     {"cssom-snapshot.c", snippets::cssom_snapshot,
         "records: 2, imports: 0\nafter the import: records 2, imports 1, imported records 1\nasked again: the same object\nafter a change in the import: a new object, imported records 2; the second still has 1\n"},
+    {"cssom-document.c", snippets::cssom_document,
+        "index: 1 records, asked again: the same object\nafter adopting: 2 records in 2 sheets (the old index is not the new one: yes)\nchange: matches yes\nafter the resize: 3 records, the sheet is the same object\n"},
     {"cssom-sheet.c", snippets::cssom_sheet, "rules: 2, dropped: 1\nCSSStyleRule (type 1) at line 1\nCSSMediaRule (type 4) at line 2\nstyle: width: 2px; (sheet version 1, owner is the sheet: yes)\nafter the release: 2 rules\n"},
 };
 

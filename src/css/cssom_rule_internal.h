@@ -170,6 +170,7 @@ struct GTEXT_CSSOM_Rule {
   uint8_t canon;                   ///< For a rule with `mod` false: 0 not yet known, 1 its syntax node is what its serialization reads back as, 2 it is not (cssom_snapshot.c). The node does not change while `mod` is false.
   bool mod;                        ///< The rule, or one inside it, was changed after its syntax node was read (or the node no longer holds the rules inside it): the node is not the rule's state. Set on the rule and on every rule above it.
   struct GTEXT_CSSOM_Sheet * import_sheet;   ///< `@import`: the sheet the import loaded (an internal count held), or NULL.
+  bool import_pending;             ///< `@import`: the import callback said the sheet will come (gtext_cssom_import_rule_complete() ends it).
 
   struct css_text_cache * cache;   ///< The cached `cssText` of a leaf rule, or NULL.
   uint32_t prio;
@@ -263,6 +264,9 @@ struct GTEXT_CSSOM_Sheet {
   css_ns_env * ns;                 ///< The sheet's `@namespace` rules: what a selector inserted into it is read in. NULL for none.
   uint64_t stamp;                  ///< The core's stamp counter at the sheet's last change (css_sheet_bump()); 0 before any.
   struct GTEXT_CSSOM_Rule * owner_rule;   ///< `ownerRule`: the `@import` rule that holds this sheet (weak: the rule holds the sheet), or NULL.
+  struct GTEXT_CSSOM_Scope * scope;        ///< The tree scope whose `styleSheets` lists this sheet (weak: the scope holds the sheet), or NULL.
+  const void * implicit_root;      ///< The sheet option of that name.
+  uint64_t adopt_mark;             ///< The index build's mark for "already taken at a later position of this adopted list" (cssom_index.c).
   size_t max_import_depth;         ///< The sheet option; 0 is the default.
   GTEXT_CSS_Sheet * snap;          ///< The snapshot last made (one owner held), or NULL; valid while `snap_stamp` is the composite stamp (cssom_snapshot.c).
   uint64_t snap_stamp;

@@ -215,16 +215,53 @@ static int name_cmp(const char * a, size_t an, const char * b, size_t bn) {
   return an < bn ? -1 : (an > bn ? 1 : 0);
 }
 
-static const struct GTEXT_CSS_Condition_Defs * sort_ctx;
-
-static int winner_cmp(const void * x, const void * y) {
-  const css_def * a = &sort_ctx->items[*(const uint32_t *)x];
-  const css_def * b = &sort_ctx->items[*(const uint32_t *)y];
+/// Whether definition `x` sorts before `y`: by name, then by the order they were added. (The context is a parameter and not a global: two threads sealing the definitions of their own
+/// conditions objects at once must not read each other's.)
+static int winner_cmp(const struct GTEXT_CSS_Condition_Defs * d, uint32_t x, uint32_t y) {
+  const css_def * a = &d->items[x];
+  const css_def * b = &d->items[y];
   int c = name_cmp(a->name, a->name_length, b->name, b->name_length);
   if (c) {
     return c;
   }
   return a->order < b->order ? -1 : (a->order > b->order ? 1 : 0);
+}
+
+/// Sort the indexes `all[0..n)` by winner_cmp(): a bottom-up merge sort through a buffer of the same size (the sort is stable and allocates once). False when the buffer cannot be had.
+static bool winner_sort(const struct GTEXT_CSS_Condition_Defs * d, uint32_t * all, size_t n) {
+  if (n < 2) {
+    return true;
+  }
+  uint32_t * tmp = gtext_allocator_malloc(&d->alloc, n * sizeof *tmp);
+  if (!tmp) {
+    return false;
+  }
+  uint32_t * from = all;
+  uint32_t * to = tmp;
+  for (size_t width = 1; width < n; width *= 2) {
+    for (size_t lo = 0; lo < n; lo += 2 * width) {
+      const size_t mid = lo + width < n ? lo + width : n;
+      const size_t hi = lo + 2 * width < n ? lo + 2 * width : n;
+      size_t i = lo, j = mid, k = lo;
+      while (i < mid && j < hi) {
+        to[k++] = winner_cmp(d, from[j], from[i]) < 0 ? from[j++] : from[i++];
+      }
+      while (i < mid) {
+        to[k++] = from[i++];
+      }
+      while (j < hi) {
+        to[k++] = from[j++];
+      }
+    }
+    uint32_t * swap = from;
+    from = to;
+    to = swap;
+  }
+  if (from != all) {
+    memcpy(all, from, n * sizeof *all);
+  }
+  gtext_allocator_free(&d->alloc, tmp);
+  return true;
 }
 
 int css_defs_find(const struct GTEXT_CSS_Condition_Defs * d, const char * name, size_t length) {
@@ -403,7 +440,6 @@ static GTEXT_CSS_Status find_cycles(struct GTEXT_CSS_Condition_Defs * d) {
         d->cycles[k++] = (uint32_t)w;
       }
     }
-    sort_ctx = d;
     /* order by the definition's order, not by name */
     for (size_t x = 1; x < k; x++) {
       uint32_t v = d->cycles[x];
@@ -429,8 +465,10 @@ static GTEXT_CSS_Status seal(struct GTEXT_CSS_Condition_Defs * d) {
   for (size_t i = 0; i < d->count; i++) {
     all[i] = (uint32_t)i;
   }
-  sort_ctx = d;
-  qsort(all, d->count, sizeof(uint32_t), winner_cmp);
+  if (!winner_sort(d, all, d->count)) {
+    gtext_allocator_free(&d->alloc, all);
+    return GTEXT_CSS_E_OOM;
+  }
   /* The last of each name wins ("the truth value is based on the last one alone"). */
   size_t w = 0;
   for (size_t i = 0; i < d->count; i++) {

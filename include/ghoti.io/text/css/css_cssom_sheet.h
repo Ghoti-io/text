@@ -95,6 +95,7 @@ typedef struct {
   bool origin_clean;            ///< The origin-clean flag. False for a sheet from another origin: reading `cssRules` and every mutation are then GTEXT_CSS_E_SECURITY.
   const char * media;           ///< `media`: the sheet's media query list as text (copied, kept in its canonical form); NULL for none, which matches everything.
   size_t max_import_depth;      ///< Deepest chain of imports a snapshot of this sheet follows (the sheets its `@import` rules loaded, and theirs). 0 is the default, 16; at most 64. One more is GTEXT_CSS_E_LIMIT_RULE_NESTING.
+  const void * implicit_root;   ///< The root of an `@scope` rule with no prelude in this sheet: the parent of its owner node, as the interface's element handle (opaque, never dereferenced). NULL for none. Fixed for the life of the sheet: moving the element makes a new sheet.
 } GTEXT_CSSOM_Sheet_Options;
 
 /** @brief The defaults, spelled out: `size` set, no href, title, base URL or owner, not disabled, not alternate, origin-clean. */
@@ -108,7 +109,8 @@ typedef enum {
   GTEXT_CSSOM_PARSE_INVALID_SELECTOR,     ///< A style rule whose selector list is not valid (Selectors 4: an invalid selector makes its rule invalid).
   GTEXT_CSSOM_PARSE_INVALID_KEYFRAME,     ///< A keyframe whose selector is not `from`, `to` or a percentage.
   GTEXT_CSSOM_PARSE_MISPLACED_IMPORT,     ///< An `@import` after a rule it must precede (CSS Cascade 4, "@import").
-  GTEXT_CSSOM_PARSE_MISPLACED_NAMESPACE   ///< An `@namespace` after a rule it must precede (CSS Namespaces 3, "@namespace").
+  GTEXT_CSSOM_PARSE_MISPLACED_NAMESPACE,  ///< An `@namespace` after a rule it must precede (CSS Namespaces 3, "@namespace").
+  GTEXT_CSSOM_PARSE_IMPORT_REFUSED        ///< The sheet the import callback gave for an `@import` was refused: it has an owner, or it would make a cycle (the import contributes nothing); or the callbacks were nested too deep.
 } GTEXT_CSSOM_Parse_Diag_Kind;
 
 /** @brief One rule of the text that is not in the sheet. */
