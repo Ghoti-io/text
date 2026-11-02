@@ -96,9 +96,11 @@ def main(argv):
     gtest = sh(["pkg-config", "--libs", "--cflags", "gtest", "gtest_main"], env=env).stdout.split()
     programs_all = load_programs()
     PLANT_LIST = load_plants()
-    needed = {k for p in PLANT_LIST for k in p[4]}
-    programs_all = {k: v for k, v in programs_all.items() if k in needed}
     names = argv[1:] or ["control"] + [p[0] for p in PLANT_LIST]
+    needed = {k for p in PLANT_LIST if p[0] in names for k in p[4]}
+    if "control" in names:
+        needed |= {k for p in PLANT_LIST for k in p[4]} if len(names) == 1 else needed
+    programs_all = {k: v for k, v in programs_all.items() if k in needed}
     unknown = [n for n in names if n not in [p[0] for p in PLANT_LIST] + ["control"]]
     if unknown:
         sys.stderr.write("no such plant: %s\n" % " ".join(unknown))

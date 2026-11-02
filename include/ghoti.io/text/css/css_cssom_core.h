@@ -72,10 +72,13 @@
 
 #include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/css/css_condition.h>
+#include <ghoti.io/text/css/css_computed.h>
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_element.h>
 #include <ghoti.io/text/css/css_match.h>
 #include <ghoti.io/text/css/css_registry.h>
+#include <ghoti.io/text/css/css_selector.h>
+#include <ghoti.io/text/css/css_value.h>
 #include <ghoti.io/text/macros.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -178,6 +181,33 @@ typedef struct {
  */
 typedef GTEXT_CSS_Status (*GTEXT_CSSOM_Import_Fn)(void * user, const GTEXT_CSSOM_Import_Request * request, GTEXT_CSSOM_Sheet ** sheet, GTEXT_CSSOM_Import_Outcome * outcome);
 
+/** @brief Bits of what an element's state says (GTEXT_CSSOM_Config::element_state): the three facts the first steps of `getComputedStyle()` ask. */
+#define GTEXT_CSSOM_ELEMENT_CONNECTED 0x1u             ///< The element is connected.
+#define GTEXT_CSSOM_ELEMENT_IN_FLAT_TREE 0x2u          ///< It is part of the flat tree.
+#define GTEXT_CSSOM_ELEMENT_IN_RENDERED_CONTEXT 0x4u   ///< Its shadow-including root has a browsing context that has no container, or whose container is being rendered.
+#define GTEXT_CSSOM_ELEMENT_STATE_ALL 0x7u             ///< All three: what an absent `element_state` means.
+
+/**
+ * @struct GTEXT_CSSOM_Layout_Interface
+ * @brief What the consumer's layout answers for the resolved values that are used values (css_cssom_computed.h). Size-prefixed and copied; every callback is optional.
+ *
+ * A resolved value that CSSOM defines as the used value (a `width`, a `margin-top`, an inset, a `line-height`, a transform) is a fact about a laid out box, which this
+ * library does not have. Without `used_value` such a property's resolved value is its computed value and gtext_cssom_computed_origin() says so.
+ */
+typedef struct {
+  size_t size;      ///< `sizeof` this struct as the caller's header has it. Required.
+  void * user;      ///< Passed to every callback.
+  /** Whether the element (or its pseudo-element, a selector list as gtext_css_style_options says, or NULL) is being rendered: the third fact of `getComputedStyle()`'s fifth step.
+   *  Optional: without it the element counts as rendered. A failing status fails the read. */
+  GTEXT_CSS_Status (*is_rendered)(void * user, const void * element, const GTEXT_CSS_Selector_List * pseudo, bool * rendered);
+  /** The used value of a property for the element: set `*applies` false for "does not apply, use computed" (the property does not apply to the box, the element is not positioned,
+   *  an inset is over-constrained, the box is not a grid container ...: the resolved value is then the computed value), else give the value in `*out`, a set the library takes (a C1
+   *  typed value, serialized like any specified value; release with gtext_css_value_set_free() if the library does not take it, which it always does on GTEXT_CSS_OK). Any status
+   *  but GTEXT_CSS_OK fails the read; GTEXT_CSS_E_UNSUPPORTED names the callback and the property (gtext_cssom_computed_failure()), never a guess. Optional. */
+  GTEXT_CSS_Status (*used_value)(void * user, const void * element, const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Property_Id property, bool * applies,
+      GTEXT_CSS_Value_Set ** out);
+} GTEXT_CSSOM_Layout_Interface;
+
 /** @brief The finalizer of a user-data pair: called with the pointer and the kind of the object that held it. It must not call any `gtext_cssom_*` function on that object. */
 typedef void (*GTEXT_CSSOM_Finalizer)(void * pointer, GTEXT_CSSOM_Object_Kind kind);
 
@@ -219,6 +249,17 @@ typedef struct {
   size_t max_media_query_lists;         ///< Most `MediaQueryList` objects alive at once. Default 1,048,576. One more is GTEXT_CSS_E_LIMIT_CSSOM.
   size_t max_observers;                 ///< Most observers registered at once (gtext_cssom_document_observe()). Default 1,024. One more is GTEXT_CSS_E_LIMIT_CSSOM.
   size_t max_queued_events;             ///< Most events a batch holds (gtext_cssom_document_begin_batch()). Default 1,048,576. A mutation that would queue one more is GTEXT_CSS_E_LIMIT_CSSOM and changes nothing.
+  /* getComputedStyle() and resolved values (css_cssom_computed.h) */
+  /** The facts of the first steps of `getComputedStyle()` for an element: GTEXT_CSSOM_ELEMENT_* bits. NULL: all three are true. */
+  uint32_t (*element_state)(void * user, const void * element);
+  void * element_state_user;            ///< Passed to `element_state`.
+  const GTEXT_CSSOM_Layout_Interface * layout;   ///< The consumer's layout (copied); NULL: none, and a resolved value that is a used value is the computed value.
+  /** The context the computed styles are made with (css_computed.h): the environment (viewport, fonts, colors) and the limits. Borrowed: it outlives the document and every computed
+   *  declaration; gtext_cssom_document_set_compute_context() replaces it. NULL: the document makes one from the registry, the default environment and `element_interface`. */
+  const GTEXT_CSS_Compute_Context * compute_context;
+  size_t max_cached_styles;             ///< Most computed styles the document's style cache holds. Default 65,536. The oldest entry goes first; the answer never depends on the cache.
+  bool computed_trust_tree_changed;     ///< The caller calls gtext_cssom_document_tree_changed() on every change of its tree (it has no `tree_version`), and styles are cached from the first read; without this and without a
+                                        ///< hook, nothing is cached across reads until the first call of gtext_cssom_document_tree_changed().
 } GTEXT_CSSOM_Config;
 
 /** @brief The defaults, spelled out: `size` set, the registry and allocator NULL, the counters at 0 and 1, the limits as documented. */
@@ -261,6 +302,12 @@ typedef struct {
   uint64_t events_degraded;         ///< Events whose affected-set summary could not be made (an allocation failed after the mutation was complete): delivered with `summary_complete` false.
   uint64_t events_lost;             ///< Events that could not be queued in a batch although room was reserved. Always 0; a test asserts it.
   size_t live_scopes;               ///< Tree scopes registered with the document, its own included.
+  uint64_t computed_computes;       ///< Styles computed for `getComputedStyle()` (gtext_css_style_compute() calls): the chain of depth d costs d for the first read and none for the next.
+  uint64_t computed_cache_hits;     ///< Styles answered from the style cache.
+  uint64_t computed_cache_evictions;///< Styles the cache dropped to stay within `max_cached_styles`.
+  uint64_t computed_refreshes;      ///< Computed declarations whose declarations were made again (a first read, or a read after the document or the tree moved).
+  uint64_t computed_layout_calls;   ///< Calls of the layout interface's `used_value`.
+  size_t cached_styles;             ///< Styles in the cache now.
 } GTEXT_CSSOM_Counters;
 
 /**
@@ -283,6 +330,14 @@ GTEXT_API void gtext_cssom_document_release(GTEXT_CSSOM_Document * document);
 
 /** @brief The document's generation: it increases by one with every mutation of any object the document owns that changed something. @return 0 for NULL. */
 GTEXT_API uint64_t gtext_cssom_document_generation(const GTEXT_CSSOM_Document * document);
+
+/**
+ * @brief Replace the compute context (a resize that changes the environment of the computed values, a new color scheme).
+ *
+ * The style cache and the styles that computed declarations hold are dropped (they belong to the context they were made with, which the caller may free after this call), and every
+ * computed declaration reads its values again on its next call. NULL: back to the context the document makes itself.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_document_set_compute_context(GTEXT_CSSOM_Document * document, const GTEXT_CSS_Compute_Context * context);
 
 /** @brief The caller's notice that its tree changed (a class, an attribute, a move): the caches the document keeps for elements are stale. For a caller with no `tree_version` hook. */
 GTEXT_API void gtext_cssom_document_tree_changed(GTEXT_CSSOM_Document * document);

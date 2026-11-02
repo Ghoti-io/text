@@ -14,6 +14,12 @@ style rule and the nested-declarations rule); this script checks it against the 
 row, a row that is not a kind, a duplicate, a value outside its domain, a kind that is not a rule yet insertable, an insertable at-rule that no place allows) and writes
 ``src/css/cssom_kind_tables.h``, in the order of the enumeration, with the places each at-rule may be (the ledger's ``parents``) beside it.
 
+The third table is the resolved values (CSS Object Model, section 9). ``tools/css/resolved_value.tsv`` has a row for each longhand whose resolved value is not its computed value (and
+a few that say the computed value is the used one), each with the category (the ``CSS_RESOLVED_*`` names of ``src/css/cssom_computed_internal.h``) and the sentence of the served text
+that says so; this script checks it against the properties of the pin (a row must name a longhand, once) and the enumeration, and writes ``src/css/cssom_resolved_tables.h`` sorted by
+name. With ``--served DIR`` it also requires every sentence to be in ``DIR/<source>.html`` (whitespace and markup aside): **a row whose sentence the served text does not contain does
+not exist**.
+
 It fails (exit 1, every problem listed) when a property has no camel-cased attribute or more than one, two properties share an attribute, a dashed attribute is not the
 property's name, the names the pin itself lists for a property (``styleDeclaration``) are not exactly the attributes this derives (the algorithm and the pin must agree),
 or (``--check``) a committed file is not what this writes. ``--controls`` makes each mistake in a copy and requires the report.
@@ -35,6 +41,9 @@ KINDS_HEADER_DEFAULT = os.path.join(ROOT, "src", "css", "cssom_kind_tables.h")
 SUPPLEMENT_DEFAULT = os.path.join(HERE, "cssom-supplement.tsv")
 LEDGER_DEFAULT = os.path.join(HERE, "atrule_kinds.tsv")
 ATRULE_HEADER = os.path.join(ROOT, "include", "ghoti.io", "text", "css", "css_atrule.h")
+RESOLVED_DEFAULT = os.path.join(HERE, "resolved_value.tsv")
+RESOLVED_HEADER_DEFAULT = os.path.join(ROOT, "src", "css", "cssom_resolved_tables.h")
+COMPUTED_INTERNAL = os.path.join(ROOT, "src", "css", "cssom_computed_internal.h")
 
 LICENSE = """/*
  * SPDX-License-Identifier: LGPL-3.0-only
@@ -69,6 +78,17 @@ def load_pin():
     props = {n: list(p["style"]) for n, p in built["props"].items() if not n.startswith("--")}
     commit = open(os.path.join(HERE, "WEBREF_COMMIT")).read().strip()
     return props, commit
+
+
+def load_longhands():
+    """The longhands of the registry: not an alias, not a shorthand, not a custom property."""
+    spec = importlib.util.spec_from_file_location("gen_css_tables", os.path.join(HERE, "gen-css-tables.py"))
+    mod = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, HERE)
+    spec.loader.exec_module(mod)
+    model = mod.wm.load(mod.wm.DATA, None)
+    built = mod.build(model)
+    return {n for n, p in built["props"].items() if not n.startswith("--") and not p["alias_of"] and not p["longhands"]}
 
 
 def css_property_to_idl_attribute(prop, lowercase_first=False):
@@ -279,6 +299,110 @@ static const cssom_kind_row cssom_kind_rows[CSSOM_KIND_ROW_COUNT] = {
     return "".join(out)
 
 
+# ---- the resolved values ----------------------------------------------------------------------------------------------------------------------------
+
+def enum_resolved(header_text):
+    """The categories of cssom_computed_internal.h in the order of the enumeration, as the names the table uses (lower case, without CSS_RESOLVED_)."""
+    import re
+    m = re.search(r"typedef enum \{(.*?)\} css_resolved_category;", header_text, re.S)
+    if not m:
+        raise SystemExit("gen-cssom-tables: the enumeration css_resolved_category is not in cssom_computed_internal.h")
+    names = re.findall(r"CSS_RESOLVED_([A-Z_]+)\s*(?:=\s*\d+)?\s*,", m.group(1) + ",")
+    return [n.lower() for n in names if n != "count"]
+
+
+def squeeze(text):
+    """A text with every white space dropped, for the comparison of a quoted sentence with the served text."""
+    import re
+    return re.sub(r"\s+", "", text)
+
+
+def served_text(directory, source, cache={}):
+    """The text of DIR/SOURCE.html with the markup and the character references gone and the white space dropped; None if the file is not there."""
+    import html
+    import re
+    path = os.path.join(directory, source + ".html")
+    if path in cache:
+        return cache[path]
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            raw = f.read()
+    except OSError:
+        cache[path] = None
+        return None
+    raw = re.sub(r"<script.*?</script>|<style.*?</style>", "", raw, flags=re.S)
+    raw = re.sub(r"<[^>]+>", " ", raw)
+    cache[path] = squeeze(html.unescape(raw))
+    return cache[path]
+
+
+def derive_resolved(tsv, longhands, enum_names, served):
+    """The rows (property, category number) sorted by the bytes of the name, and the problems found."""
+    problems = []
+    rows = {}
+    for r in read_tsv(tsv):
+        if len(r) != 4:
+            problems.append("a row of resolved_value.tsv has %d columns, not 4: %s" % (len(r), r[0] if r else "?"))
+            continue
+        name, category, source, sentence = r
+        if name in rows:
+            problems.append("the property %s has two rows" % name)
+            continue
+        if name not in longhands:
+            problems.append("%s is not a longhand of the registry" % name)
+            continue
+        if category not in enum_names:
+            problems.append("%s: the category %r is not one of %s" % (name, category, ", ".join(enum_names)))
+            continue
+        if not sentence.strip() or not source.strip():
+            problems.append("%s: a row quotes a sentence and names its source" % name)
+            continue
+        if served is not None:
+            text = served_text(served, source)
+            if text is None:
+                problems.append("%s: the served text %s.html is not in %s" % (name, source, served))
+            elif squeeze(sentence) not in text:
+                problems.append("%s: the served text %s does not contain the sentence: %s" % (name, source, sentence))
+        rows[name] = enum_names.index(category)
+    return [(n, rows[n]) for n in sorted(rows, key=lambda x: x.encode("utf-8"))], problems
+
+
+def resolved_header_text(rows, names):
+    out = [LICENSE, """
+/**
+ * @file
+ *
+ * GENERATED by tools/css/gen-cssom-tables.py from tools/css/resolved_value.tsv, checked against the properties of the registry and the categories of cssom_computed_internal.h. Do not edit.
+ *
+ * The longhands whose resolved value (CSS Object Model, section 9) is not their computed value, sorted by the bytes of the name, for a binary search; the category is the number of
+ * the enumerator of css_resolved_category. A longhand with no row is the computed value.
+ * Regenerate with:  tools/css/gen-cssom-tables.py
+ * Verify with:      make check-cssom
+ */
+
+#ifndef GHOTI_IO_GTEXT_SRC_CSS_CSSOM_RESOLVED_TABLES_H
+#define GHOTI_IO_GTEXT_SRC_CSS_CSSOM_RESOLVED_TABLES_H
+
+#include <ghoti.io/text/macros.h>
+
+#include <stddef.h>
+#include <stdint.h>
+
+typedef struct {
+  const char * name;
+  size_t length;
+  uint8_t category;   /* %s */
+} css_resolved_row;
+
+#define CSS_RESOLVED_ROW_COUNT %d
+static const css_resolved_row css_resolved_rows[CSS_RESOLVED_ROW_COUNT] = {
+""" % (", ".join("%d %s" % (i, n) for i, n in enumerate(names)), len(rows))]
+    for name, cat in rows:
+        out.append('  {"%s", %d, %d},\n' % (name, len(name), cat))
+    out.append("};\n\n#endif // GHOTI_IO_GTEXT_SRC_CSS_CSSOM_RESOLVED_TABLES_H\n")
+    return "".join(out)
+
+
 def read(path):
     with open(path, encoding="utf-8") as f:
         return f.read()
@@ -331,11 +455,14 @@ def run(args):
     rows, problems = derive(props)
     kinds, kind_problems = derive_kinds(read(args.supplement), read(args.ledger), read(ATRULE_HEADER))
     problems += kind_problems
+    resolved, resolved_problems = derive_resolved(read(args.resolved), load_longhands(), enum_resolved(read(COMPUTED_INTERNAL)), args.served)
+    problems += resolved_problems
+    resolved_header = resolved_header_text(resolved, enum_resolved(read(COMPUTED_INTERNAL)))
     tsv = tsv_text(rows, commit)
     header = header_text(rows, commit)
     kinds_header = kinds_header_text(kinds)
     if args.check:
-        for path, text in ((args.tsv, tsv), (args.header, header), (args.kinds_header, kinds_header)):
+        for path, text in ((args.tsv, tsv), (args.header, header), (args.kinds_header, kinds_header), (args.resolved_header, resolved_header)):
             try:
                 with open(path, encoding="utf-8") as f:
                     have = f.read()
@@ -347,7 +474,8 @@ def run(args):
             for p in problems:
                 print("gen-cssom-tables: " + p, file=sys.stderr)
             return 1
-        print("check-cssom: %d attributes of %d properties, %d kinds of rule, the tables are current and agree with the pin and the ledger" % (len(rows), len(props), len(kinds)))
+        print("check-cssom: %d attributes of %d properties, %d kinds of rule, %d resolved-value rows%s, the tables are current and agree with the pin and the ledger" %
+              (len(rows), len(props), len(kinds), len(resolved), " (every sentence found in the served text)" if args.served else ""))
         return 0
     if problems:
         for p in problems:
@@ -359,8 +487,11 @@ def run(args):
         f.write(header)
     with open(args.kinds_header, "w", encoding="utf-8", newline="\n") as f:
         f.write(kinds_header)
+    with open(args.resolved_header, "w", encoding="utf-8", newline="\n") as f:
+        f.write(resolved_header)
     print("wrote %d attributes to %s and %s, and %d kinds to %s" % (len(rows), os.path.relpath(args.tsv, ROOT), os.path.relpath(args.header, ROOT), len(kinds),
                                                                      os.path.relpath(args.kinds_header, ROOT)))
+    print("wrote %d resolved-value rows to %s" % (len(resolved), os.path.relpath(args.resolved_header, ROOT)))
     return 0
 
 
@@ -412,6 +543,29 @@ def controls(args):
     attempt_kinds("a kind of the ledger that css_atrule.h lacks", lambda s, l, h: (s, l + "frobnicate\tFROBNICATE\ttop\t1\t1\t1\t1\t1\t0\tx\n", h), "the ledger has a kind frobnicate")
     attempt_kinds("a kind of css_atrule.h the ledger lacks", lambda s, l, h: (s, "\n".join(x for x in l.split("\n") if not x.startswith("media\t")), h), "the kind media of css_atrule.h has no row")
     attempt_kinds("an insertable at-rule no place allows", lambda s, l, h: (s, l.replace("font-face\tFONT_FACE\ttop,group", "font-face\tFONT_FACE\tmixin"), h), "is insertable and the ledger lets it be")
+    # the resolved values
+    longhands = load_longhands()
+    names = enum_resolved(read(COMPUTED_INTERNAL))
+    rv = read(args.resolved)
+    _, base_rv = derive_resolved(rv, longhands, names, args.served)
+    print("control %-58s %s" % ("the unedited resolved values", "ok" if not base_rv else "NOT OK " + str(base_rv[:3])))
+    failed = failed or bool(base_rv)
+
+    def attempt_rv(label, mutate, expect, served=args.served):
+        nonlocal failed
+        _, problems = derive_resolved(mutate(rv), longhands, names, served)
+        hit = any(expect in x for x in problems)
+        print("control %-58s %s" % (label, "ok" if hit else "NOT SEEN"))
+        failed = failed or not hit
+
+    attempt_rv("a row for a shorthand", lambda s: s + "margin\tcomputed\tcssom\tx\n", "margin is not a longhand")
+    attempt_rv("a row for a property that is not one", lambda s: s + "bogus\tcomputed\tcssom\tx\n", "bogus is not a longhand")
+    attempt_rv("a property with two rows", lambda s: s + "width\tused_if_applies\tcssom\tx\n", "the property width has two rows")
+    attempt_rv("a category that is not one", lambda s: s.replace("height\tused_if_applies", "height\tuse_it", 1), "the category 'use_it'")
+    attempt_rv("a row with no sentence", lambda s: s + "zoom\tcomputed\tcssom\t \n", "quotes a sentence")
+    if args.served:
+        attempt_rv("a sentence the served text does not contain", lambda s: s.replace("The resolved value is the used value.", "The resolved value is always the used value.", 1), "does not contain the sentence")
+        attempt_rv("a source that is not served", lambda s: s.replace("\tcssom\t", "\tcssom-9\t", 1), "is not in")
     # a hand edit of a generated file
     tmp = tempfile.mkdtemp(prefix="cssomctl")
     try:
@@ -419,6 +573,7 @@ def controls(args):
         a.tsv = os.path.join(tmp, "n.tsv")
         a.header = os.path.join(tmp, "h.h")
         a.kinds_header = os.path.join(tmp, "k.h")
+        a.resolved_header = os.path.join(tmp, "r.h")
         a.check = False
         run(a)
         with open(a.tsv, encoding="utf-8") as f:
@@ -446,6 +601,9 @@ def main():
     ap.add_argument("--tsv", default=TSV_DEFAULT)
     ap.add_argument("--header", default=HEADER_DEFAULT)
     ap.add_argument("--kinds-header", dest="kinds_header", default=KINDS_HEADER_DEFAULT)
+    ap.add_argument("--resolved", default=RESOLVED_DEFAULT)
+    ap.add_argument("--resolved-header", dest="resolved_header", default=RESOLVED_HEADER_DEFAULT)
+    ap.add_argument("--served", default=None, help="a directory of the served documents (<source>.html): every sentence of the resolved-value table must be in its source")
     ap.add_argument("--supplement", default=SUPPLEMENT_DEFAULT)
     ap.add_argument("--ledger", default=LEDGER_DEFAULT)
     ap.add_argument("--check", action="store_true")

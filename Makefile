@@ -1157,6 +1157,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_atrule_set.c \
 	src/css/css_at_property.c \
 	src/css/css_block.c \
+	src/css/cssom_computed.c \
 	src/css/cssom_core.c \
 	src/css/cssom_events.c \
 	src/css/cssom_markup.c \
@@ -1169,6 +1170,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/cssom_dump.c \
 	src/css/cssom_object.c \
 	src/css/cssom_parse.c \
+	src/css/cssom_resolved.c \
 	src/css/cssom_rule.c \
 	src/css/cssom_rule_kinds.c \
 	src/css/cssom_insert.c \

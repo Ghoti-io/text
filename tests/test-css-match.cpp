@@ -512,6 +512,34 @@ TEST_F(CssMatch, NamespacesThroughACompiledSelectorWithAMap) {
   EXPECT_EQ(run("b|x", nullptr), "!invalid");
 }
 
+/* An adapter keeps the classes of the element it was asked about last (and the form and radio group asked about last). An edit of the tree under it must be seen by the next question,
+   whichever element was asked about last: `.z + #p2` asks the class of `p1`, the previous sibling, last. The generation of the document decides whether what it kept is still true. */
+TEST(CssMatchInterface, TheAdapterSeesAnEditOfTheElementItWasAskedAboutLast) {
+  Doc d;
+  ASSERT_TRUE(d.html(kPage));
+  GTEXT_CSS_Markup_Adapter * ad = nullptr;
+  ASSERT_EQ(gtext_css_markup_adapter_new(d.doc, nullptr, &ad), GTEXT_CSS_OK);
+  GTEXT_CSS_Selector_Match_Options mo = gtext_css_markup_match_options(ad);
+  GTEXT_CSS_Selector_List * l = nullptr;
+  ASSERT_EQ(gtext_css_selector_parse(".z + #p2", 8, nullptr, &l, nullptr), GTEXT_CSS_OK);
+  auto asks = [&]() {
+    GTEXT_CSS_Selector_Match_Context * ctx = nullptr;
+    EXPECT_EQ(gtext_css_selector_match_context_new(gtext_css_markup_interface(ad), &mo, &ctx), GTEXT_CSS_OK);
+    GTEXT_CSS_Selector_Match_Result r;
+    EXPECT_EQ(gtext_css_selector_match(l, ctx, d.at("p2"), nullptr, &r), GTEXT_CSS_OK);
+    gtext_css_selector_match_context_free(ctx);
+    return r.matched;
+  };
+  EXPECT_FALSE(asks());
+  GTEXT_Markup_Node * p1 = const_cast<GTEXT_Markup_Node *>(d.at("p1"));
+  ASSERT_EQ(gtext_markup_element_set_attribute(p1, nullptr, nullptr, "class", "z", 1), GTEXT_MARKUP_OK);
+  EXPECT_TRUE(asks()) << "the class of the element asked about last was set";
+  ASSERT_EQ(gtext_markup_element_set_attribute(p1, nullptr, nullptr, "class", "other", 5), GTEXT_MARKUP_OK);
+  EXPECT_FALSE(asks());
+  gtext_css_selector_list_free(l);
+  gtext_css_markup_adapter_free(ad);
+}
+
 TEST(CssMatchInterface, ACallbackThatIsNeededAndAbsentIsUnsupportedAndNamedNeverWorkedAround) {
   Doc d;
   ASSERT_TRUE(d.html("<!DOCTYPE html><div id=\"a\"><p id=\"b\">x</p></div>"));

@@ -37,6 +37,7 @@
 #include "css_internal.h"
 #include "css_registry_internal.h"
 #include "css_shorthand_internal.h"
+#include "cssom_computed_internal.h"
 #include "cssom_internal.h"
 #include "cssom_typed.h"
 
@@ -50,6 +51,9 @@ static void decl_destroy(css_obj * o) {
   GTEXT_Allocator a = core->alloc;
   if (d->owner_kind == GTEXT_CSSOM_DECL_ELEMENT) {
     css_inline_forget(core, d);
+  }
+  if (d->comp) {
+    css_computed_forget(d);
   }
   gtext_allocator_free(&a, d->remembered);
   gtext_css_block_free(d->block);
@@ -420,6 +424,14 @@ GTEXT_CSS_Status gtext_cssom_decl_css_text(GTEXT_CSSOM_Decl * decl, char ** out,
     return GTEXT_CSS_E_INVALID;
   }
   css_core * core = decl->obj.core;
+  if (decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED) {
+    /* "Getting the cssText attribute must run these steps: If the computed flag is set, then return the empty string." */
+    *out = css_core_dup(core, "", 0);
+    if (out_length) {
+      *out_length = 0;
+    }
+    return *out ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  }
   GTEXT_CSS_Status st = css_decl_validate(decl);
   if (st != GTEXT_CSS_OK) {
     return st;

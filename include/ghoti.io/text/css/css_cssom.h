@@ -21,7 +21,7 @@
 /**
  * @file
  * @brief The CSS Object Model umbrella: the document and the objects (css_cssom_core.h), the declaration object (css_cssom_decl.h), the rule (css_cssom_rule.h)
- *   and the sheet (css_cssom_sheet.h), the document as the cascade sees it (css_cssom_document.h) and the utilities (css_cssom_util.h).
+ *   the sheet (css_cssom_sheet.h), `getComputedStyle()` (css_cssom_computed.h), the document as the cascade sees it (css_cssom_document.h) and the utilities (css_cssom_util.h).
  */
 
 #ifndef GHOTI_IO_GTEXT_CSS_CSS_CSSOM_H
@@ -29,6 +29,7 @@
 
 #include <ghoti.io/text/macros.h>
 
+#include <ghoti.io/text/css/css_cssom_computed.h>
 #include <ghoti.io/text/css/css_cssom_core.h>
 #include <ghoti.io/text/css/css_cssom_decl.h>
 #include <ghoti.io/text/css/css_cssom_document.h>

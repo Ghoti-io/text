@@ -52,6 +52,8 @@ typedef struct css_core css_core;
 typedef struct css_obj css_obj;
 typedef struct css_cssom_event css_cssom_event;
 struct css_text_cache;
+struct css_cmps;
+struct css_comp;
 struct css_qevent;
 struct GTEXT_CSSOM_Scope;
 struct GTEXT_CSSOM_Media_Query_List;
@@ -148,6 +150,10 @@ struct css_core {
   struct GTEXT_CSSOM_Media_Query_List * mql_head, * mql_tail;   ///< The live media query lists in creation order (weak).
   size_t nmql;
   unsigned import_depth;               ///< Import callbacks running above this point.
+  /* getComputedStyle() (cssom_computed.c) */
+  struct css_cmps * cs;                  ///< The session, made on first use.
+  GTEXT_CSSOM_Layout_Interface layout; ///< The caller's layout interface, copied (`has_layout`).
+  bool has_layout;
 };
 
 /// A notification (css_cssom_core.h names the kinds). The pointers are borrowed for the call.
@@ -294,6 +300,8 @@ struct GTEXT_CSSOM_Decl {
   unsigned typed_bypass;               ///< Greater than 0 while the typed code calls the block code of the untyped declaration.
   css_desc * descs;
   size_t ndescs, capdescs;
+  /* computed (cssom_computed.c) */
+  struct css_comp * comp;
 };
 
 /// Make a declaration object of an owner; the block is empty. Counts as css_obj_init() says.

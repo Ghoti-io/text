@@ -35,6 +35,7 @@
 #include "css_internal.h"
 #include "css_registry_internal.h"
 #include "css_shorthand_internal.h"
+#include "cssom_computed_internal.h"
 #include "cssom_internal.h"
 
 /* ---- the weak map ------------------------------------------------------------------------------------------------------------------------------------ */
@@ -139,6 +140,7 @@ void gtext_cssom_document_element_released(GTEXT_CSSOM_Document * document, cons
     return;
   }
   css_core * core = css_document_core(document);
+  css_computed_element_released(core, element);
   const size_t at = map_find(core, element);
   if (at == SIZE_MAX) {
     return;
@@ -196,6 +198,9 @@ static void remember_commit(GTEXT_CSSOM_Decl * d, char * copy, size_t n, bool pr
 }
 
 GTEXT_CSS_Status css_decl_validate(GTEXT_CSSOM_Decl * d) {
+  if (d->owner_kind == GTEXT_CSSOM_DECL_COMPUTED) {
+    return css_computed_refresh(d);
+  }
   if (d->owner_kind != GTEXT_CSSOM_DECL_ELEMENT || d->detached) {
     return GTEXT_CSS_OK;
   }

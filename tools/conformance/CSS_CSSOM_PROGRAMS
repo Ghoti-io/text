@@ -1,0 +1,5 @@
+# extra test programs for the planted defects of CSS_CSSOM_PLANTS: key, source
+computed	test-cssom-computed.cpp
+computedoom	test-cssom-computed-oom.cpp
+wptcomputed	test-cssom-wpt-computed.cpp
+match	test-css-match.cpp

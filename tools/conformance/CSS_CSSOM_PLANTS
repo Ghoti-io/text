@@ -5,7 +5,7 @@ priority-matched-case-sensitively	cssom_decl.c	    if (c >= 'A' && c <= 'Z') {\n
 remove-of-a-shorthand-leaves-its-longhands	css_block.c	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(block->registry, id)) {\n      if (!css_shorthand_leaves	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && 0) {\n      if (!css_shorthand_leaves	block,decl
 unknown-property-checked-after-the-value	cssom_decl.c	  if (!p.known) {\n    ignore(out, GTEXT_CSSOM_IGNORED_UNKNOWN_PROPERTY, 0, "not a supported property");\n    return GTEXT_CSS_OK;\n  }\n  /* 3.	  if (!p.known && value_length) {\n    ignore(out, GTEXT_CSSOM_IGNORED_UNKNOWN_PROPERTY, 0, "not a supported property");\n    return GTEXT_CSS_OK;\n  }\n  /* 3.	decl
 inline-validated-per-call	cssom_inline.c	  if (d->validated && !d->stale) {	  if (0) {	inline
-computed-declaration-writable	cssom_decl.c	  d->readonly = owner_kind == GTEXT_CSSOM_DECL_COMPUTED;	  d->readonly = false;	decl
+computed-declaration-writable	cssom_decl.c	  d->readonly = owner_kind == GTEXT_CSSOM_DECL_COMPUTED;	  d->readonly = false;	decl,computed
 reentrant-mutation-accepted	cssom_core.c	  if (core->in_callback || core->in_finalizer) {	  if (0) {	decl,lifetime
 finalizer-may-mutate	cssom_core.c	  if (core->in_callback || core->in_finalizer) {	  if (core->in_callback) {	lifetime
 held-child-does-not-keep-its-parent	cssom_object.c	    o = o->parent;\n  }\n}\n\nvoid css_obj_release_external	    break;\n  }\n}\n\nvoid css_obj_release_external	lifetime
@@ -268,3 +268,34 @@ failed-sync-records-its-generation	cssom_markup.c	  if (st == GTEXT_CSS_OK) {\n 
 fuzz-style-text-change-keeps-the-old-sheet	cssom_markup.c	  if (length != e->text_length || (length && memcmp(text, e->text, length) != 0)) {	  if (0) {	documentseeds
 fuzz-type-with-parameters-accepted	cssom_markup.c	  return n == 0 || ci_equal(v, n, "text/css");	  return true;	documentseeds
 fuzz-removed-sheet-stays-in-the-list	cssom_markup.c	  const GTEXT_CSS_Status st = gtext_cssom_scope_remove_sheet(b->scope, e->sheet, &o);	  const GTEXT_CSS_Status st = GTEXT_CSS_OK;	documentseeds
+# C5d: getComputedStyle() and the resolved values
+computed-read-ignores-the-tree-version	cssom_computed.c	c->gen == core->generation && c->tree == tree && c->epoch == core->tree_epoch && c->cepoch == cs->cepoch)	c->gen == core->generation)	computed,documentseeds
+computed-read-ignores-the-generation	cssom_computed.c	cacheable && c->gen == core->generation && c->tree == tree	cacheable && c->tree == tree	computed,documentseeds
+style-cache-survives-a-mutation	cssom_computed.c	const bool same = cs->pair_valid && cacheable && cs->pgen == core->generation && cs->ptree == tree	const bool same = cs->pair_valid && cacheable && cs->ptree == tree	computed,documentseeds
+style-cache-survives-a-tree-change	cssom_computed.c	cs->pgen == core->generation && cs->ptree == tree && cs->pepoch == core->tree_epoch	cs->pgen == core->generation && cs->pepoch == core->tree_epoch	computed
+chain-recomputed-per-call	cssom_computed.c	  if (!r) {\n    return;   /* not cached: the answer does not depend on it */\n  }	  if (1) {\n    return;\n  }	computed
+style-cache-unbounded	cssom_computed.c	  while (cs->nstyles > max_cached(core) && cs->fifo_head) {	  while (0) {	computed
+disconnected-element-answered-with-values	cssom_computed.c	    if ((flags & GTEXT_CSSOM_ELEMENT_STATE_ALL) != GTEXT_CSSOM_ELEMENT_STATE_ALL) {	    if (0) {	computed
+unrendered-element-answered-with-values	cssom_computed.c	    *ok = r;\n  }\n  return GTEXT_CSS_OK;	    *ok = true;\n  }\n  return GTEXT_CSS_OK;	computed
+released-handle-answered-from-the-old-cache	cssom_computed.c	  rec_drop_style(cs, r);\n  while (r->decls) {	  while (r->decls) {	computed
+pseudo-element-argument-ignored	cssom_computed.c	      if (st == GTEXT_CSS_OK && c->pseudo) {	      if (st == GTEXT_CSS_OK && 0) {	computed
+slotted-pseudo-accepted	cssom_computed.c	    good = s->kind == GTEXT_CSS_SIMPLE_PSEUDO_ELEMENT && !(s->name.length == 7 && memcmp(s->name.data, "slotted", 7) == 0) &&	    good = s->kind == GTEXT_CSS_SIMPLE_PSEUDO_ELEMENT &&	computed
+computed-callback-may-mutate	cssom_computed.c	  core->in_callback++;   /* a mutation attempted from a callback of the caller's tree or layout is refused */		computed
+computed-enumeration-reversed	cssom_resolved.c	  const int c = memcmp(x->name, y->name, n);\n  if (c) {\n    return c;\n  }	  const int c = memcmp(x->name, y->name, n);\n  if (c) {\n    return -c;\n  }	computed
+used-value-asked-of-a-display-none-element	cssom_resolved.c	    if (r->display_hidden || (cat == CSS_RESOLVED_USED_IF_POSITIONED && !r->positioned)) {	    if ((cat == CSS_RESOLVED_USED_IF_POSITIONED && !r->positioned)) {	computed
+inset-used-for-a-static-element	cssom_resolved.c	    if (r->display_hidden || (cat == CSS_RESOLVED_USED_IF_POSITIONED && !r->positioned)) {	    if (r->display_hidden) {	computed
+currentcolor-left-in-a-used-color	cssom_resolved.c	    st = use_colors(r, computed, auto_is_current(info), owned);\n    *origin	    st = GTEXT_CSS_OK;\n    *origin	computed
+keyword-color-not-converted	cssom_resolved.c	  const size_t count = gtext_css_color_named_count();	  const size_t count = 0;	computed
+line-height-normal-asked-of-layout	cssom_resolved.c	    const bool normal = t && text_is(t, n, "normal");	    const bool normal = false;	computed
+layout-failure-swallowed	cssom_resolved.c	    css_computed_note_failure(core, st, "used_value", 10, info->id);\n    return st;	    return GTEXT_CSS_OK;	computed
+auto-duration-kept-with-an-auto-timeline	cssom_resolved.c	  if (!computed_is(r, "animation-timeline", 18, "auto", &st) || st != GTEXT_CSS_OK) {	  if (1) {	computed
+auto-minimum-size-of-a-flex-item-zero	cssom_resolved.c	    zero = !item;	    zero = item;	computed
+shorthand-origin-not-found	cssom_computed.c	  *found = any;	  *found = false;	computed
+computed-css-text-not-empty	cssom_decl.c	  if (decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED) {\n    /* "Getting the cssText	  if (0) {\n    /* "Getting the cssText	computed
+computed-block-add-failure-ignored	cssom_resolved.c	    st = gtext_css_block_add(block, &pv, false, NULL);\n    gtext_css_value_set_free(owned);	    (void)gtext_css_block_add(block, &pv, false, NULL);\n    gtext_css_value_set_free(owned);	computedoom
+vendor-prefixed-longhands-sorted-first	cssom_resolved.c	  if (xd != yd) {\n    return xd ? 1 : -1;\n  }	  if (0) {\n    return xd ? 1 : -1;\n  }	computed
+pseudo-element-with-trailing-white-space-accepted	cssom_computed.c	 && l->complex[0].span.end == length;	;	computed
+auto-caret-color-kept	cssom_resolved.c	  return (info->name_length == 11 && memcmp(info->name, "caret-color", 11) == 0) ||	  return 0 && (info->name_length == 11 && memcmp(info->name, "caret-color", 11) == 0) ||	computed
+nested-currentcolor-not-computed	cssom_resolved.c	  return v->text.data && find_currentcolor(v->text.data, v->text.length, 0) != SIZE_MAX;	  return 0;	computed
+adapter-class-cache-survives-an-edit	css_markup.c	static bool classes_of(struct GTEXT_CSS_Markup_Adapter * a, Node * el) {\n  caches_fresh(a);	static bool classes_of(struct GTEXT_CSS_Markup_Adapter * a, Node * el) {	wptcomputed,match
+loose-element-answered-as-connected	cssom_computed.c	    if (top != core->match.root) {	    if (0) {	computed,wptcomputed

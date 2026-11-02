@@ -4,9 +4,9 @@
 
 The CSSOM here is the **data model and the algorithms** of the CSS Object Model specification as a native, reference counted, mutable object graph, for a program with no script engine: a browser engine's binding layer, an editor, an inspector. It is not a JavaScript engine, Web IDL, wrapper objects, events or promises; those are a binding's, and the API is shaped for one (object identity is stable, every object has a user-data slot with a finalizer, the specification's exceptions are status codes, and nothing a call returns is a pointer that a later mutation can invalidate).
 
-This page describes what is built: the document and its objects, their lifetime, the style sheet and the rule objects and what a parse makes of a text, the declaration object (`CSSStyleDeclaration`) of a rule, of an element's `style` attribute and free-standing, the IDL attribute names, `CSS.escape()`, and the statuses of the web platform's exceptions. The declaration block underneath is in \ref format_css_computed "css-computed.md"; the immutable sheets and indexes that the style computation reads are in \ref format_css_sheets "css-sheets.md".
+This page describes what is built: the document and its objects, their lifetime, the style sheet and the rule objects and what a parse makes of a text, the declaration object (`CSSStyleDeclaration`) of a rule, of an element's `style` attribute and free-standing, the IDL attribute names, `getComputedStyle()` and the resolved values, `CSS.escape()`, and the statuses of the web platform's exceptions. The declaration block underneath is in \ref format_css_computed "css-computed.md"; the immutable sheets and indexes that the style computation reads are in \ref format_css_sheets "css-sheets.md".
 
-Back to \ref "Formats". Include `<ghoti.io/text/css.h>` (`css/css_cssom.h`, `css/css_cssom_core.h`, `css/css_cssom_decl.h`, `css/css_cssom_rule.h`, `css/css_cssom_sheet.h`, `css/css_cssom_util.h`).
+Back to \ref "Formats". Include `<ghoti.io/text/css.h>` (`css/css_cssom.h`, `css/css_cssom_computed.h`, `css/css_cssom_core.h`, `css/css_cssom_decl.h`, `css/css_cssom_rule.h`, `css/css_cssom_sheet.h`, `css/css_cssom_util.h`).
 
 ## The document and its objects
 
@@ -917,6 +917,134 @@ after the text change: a new sheet, the old sheet has no owner, outcome changed
 ```
 
 `gtext_cssom_markup_inline_binding()` is the attribute binding of the previous section for a Markup element, and `gtext_cssom_markup_tree_version()` the config's `tree_version` hook for a Markup document, so that a declaration notices a `setAttribute('style', ...)` made through the Markup API on its next call.
+
+## `getComputedStyle()` and resolved values
+
+`css_cssom_computed.h`: `gtext_cssom_computed_style(document, element, pseudo, pseudo_length, &decl)` is `getComputedStyle(element, pseudo)`. It returns a new `CSSStyleDeclaration` each call (owner `COMPUTED`) that is **read-only** (every mutator is `NoModificationAllowedError`, the `cssText` getter is the empty string, `getPropertyPriority` is always empty) and **live**: each call checks the document's generation and the caller's tree version against those it last read for, and reads again when either moved, so a read after `insertRule`, `setProperty` or a change of the tree (a class, a `style` attribute, a move) sees the new cascade. It is a pure function of the document and the tree: two reads at one state are byte-identical.
+
+**When it is empty.** As the served text says (section 7.2, step 5), the list is empty unless the element is connected, part of the flat tree and rendered. The three facts are the bits of `element_state` in the config (absent: all true, and for a Markup document a loose element, whose top is not the document element, is not connected) and the layout interface's `is_rendered`. A `display: none` element is connected and in the tree, so it has its values. A pseudo-element argument is a string that starts with a colon and parses as one `<pseudo-element-selector>`; any other string is read as no pseudo-element (`'before'` is the element, as Firefox and the served text have it, and Chromium has it as `::before`), and `::slotted()`, `::part()`, an unknown pseudo-element, `:hover` and a string with white space at the end make the declaration empty, as both browsers answer.
+
+**What it lists.** Every supported longhand in lexicographic order with the vendor-prefixed ones (names that begin with a hyphen) after the others, as both browsers list them, then the element's custom properties that are not the guaranteed-invalid value, in the byte order of their names (the served text says the order is undefined; Chromium and Firefox differ). A shorthand is written from the resolved longhands, so its value is the empty string when a longhand it needs is not supported.
+
+**Resolved values.** CSSOM's section 9: the computed value, except where the property's category says otherwise. `tools/css/resolved_value.tsv` is the data (each row quotes the sentence of the served text that says it), `gen-cssom-tables.py` checks it against the registry and writes it. Every `<color>` in any value is its used value ("The resolved value of a `<color>` is its used value", Color 4, 15): a keyword is its sRGB color (`rgb(255, 0, 0)`, `transparent` is `rgba(0, 0, 0, 0)`), `currentcolor` is the element's color (and a `color-mix()` or relative color that held it is computed with it), and the used value of `auto` in `caret-color` and `outline-color` is the current color, which both browsers answer. A system color stays as it is unless the environment of the compute context has a `resolve_color` callback. A used value that is a fact about a laid out box (`width`, `height`, the margins, the paddings, `transform-origin`, `perspective-origin`, `grid-template-columns` and `-rows`, `line-height` unless it is `normal`, the insets of a positioned box, `transform`) is the **layout interface's**: its `used_value` gives a typed value or says "does not apply", and then, as when the box is `display: none` or `contents` or the inset is not positioned, the computed value stands. With no `used_value` callback the computed value stands in and `gtext_cssom_computed_origin()` says `ABSENT_LAYOUT` for it, `USED` for what the layout or a rule of the library made, `COMPUTED` otherwise; a layout that fails fails the read, naming itself in `gtext_cssom_computed_failure()`. Two rules need no layout: an `auto` `animation-duration` is `0s` when `animation-timeline` is `auto`, and an `auto` minimum size is zero except for the items of a flex or grid container (and for a box whose `aspect-ratio` is not `auto`).
+
+**Cost.** The style of an element is computed from its inheritance parent's, and the document keeps the styles it computed in a cache for the state it computed them in (bounded by `max_cached_styles`, the entry cached first going first, so that the answer never depends on it), so n reads over a chain of depth d cost d + n computes, not d x n (`computed_computes` of the counters). A document with neither a `tree_version` hook nor a notification (`gtext_cssom_document_tree_changed()` with `computed_trust_tree_changed`) cannot know the tree is unchanged and computes each read again. `gtext_cssom_document_element_released()` drops that element's cache entry and freezes its declarations (a reused address never answers for the old element); `gtext_cssom_document_set_compute_context()` replaces the context the styles are made with. `:visited` never matches in this library (the matcher answers as the privacy-preserving reading), so the privacy rule of `getComputedStyle()` has nothing to hide. A callback of the caller's tree or layout cannot mutate the document: the attempt is `GTEXT_CSS_E_REENTRANT`.
+
+```c
+#include <ghoti.io/text/css.h>
+#include <ghoti.io/text/html.h>
+#include <stdio.h>
+#include <string.h>
+
+/* The layout of this page is a table of one entry: the used width of the element is 49.5px. A real consumer answers for the box it laid out. */
+static GTEXT_CSS_Status used_width(void * user, const void * element, const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Property_Id property, bool * applies,
+    GTEXT_CSS_Value_Set ** out) {
+  (void)element;
+  (void)pseudo;
+  GTEXT_CSS_Property_Value value;
+  memset(&value, 0, sizeof value);
+  *applies = false;
+  GTEXT_CSS_Property_Info info;
+  GTEXT_CSS_Registry * registry = (GTEXT_CSS_Registry *)user;
+  if (!gtext_css_registry_property_info(registry, property, &info) || strcmp(info.name, "width") != 0) {
+    return GTEXT_CSS_OK;   /* does not apply: the resolved value is the computed value */
+  }
+  if (gtext_css_parse_property_text(registry, "width", 5, "49.5px", 6, NULL, &value) != GTEXT_CSS_OK || !value.set) {
+    return GTEXT_CSS_E_INTERNAL;
+  }
+  *out = value.set;   /* the document takes the set */
+  *applies = true;
+  return GTEXT_CSS_OK;
+}
+
+static void show(GTEXT_CSSOM_Decl * style, const char * property) {
+  char * value = NULL;
+  size_t length = 0;
+  gtext_cssom_decl_get_property_value(style, property, strlen(property), &value, &length);
+  GTEXT_CSSOM_Origin origin = GTEXT_CSSOM_ORIGIN_COMPUTED;
+  bool found = false;
+  gtext_cssom_computed_origin(style, property, strlen(property), &origin, &found);
+  printf("%s: %s (%s)\n", property, value, origin == GTEXT_CSSOM_ORIGIN_USED ? "used" : origin == GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT ? "no layout" : "computed");
+  gtext_cssom_buffer_free(gtext_cssom_document_allocator(gtext_cssom_decl_document(style)), value);
+}
+
+/* getComputedStyle(): a live, read-only declaration of resolved values. A color is its used value (a keyword is its sRGB color, `currentcolor` the element's color), a size is
+   the used value when the layout gives one and the computed value when it does not, and the declaration reads again when the document or the tree moved. */
+static void cssom_computed(void) {
+  const char * html = "<!DOCTYPE html><html><head><style>p { color: red; width: 50px; border-top-style: solid } .b { color: blue }</style></head><body><p id=\"a\">x</p></body></html>";
+  GTEXT_Markup_Document * markup = NULL;
+  GTEXT_HTML_Result result;
+  memset(&result, 0, sizeof result);
+  gtext_html_parse(html, strlen(html), NULL, &markup, &result);
+  gtext_html_result_free(&result);
+  GTEXT_CSS_Markup_Adapter * adapter = NULL;
+  gtext_css_markup_adapter_new(markup, NULL, &adapter);
+  GTEXT_CSS_Selector_Match_Options match = gtext_css_markup_match_options(adapter);
+
+  GTEXT_CSS_Registry * registry = NULL;
+  gtext_css_registry_new(NULL, &registry);
+  GTEXT_CSSOM_Layout_Interface layout;
+  memset(&layout, 0, sizeof layout);
+  layout.size = sizeof layout;
+  layout.user = registry;
+  layout.used_value = used_width;
+  GTEXT_CSSOM_Config config = gtext_cssom_config_default();
+  config.registry = registry;
+  config.element_interface = gtext_css_markup_interface(adapter);
+  config.match_options = &match;
+  config.tree_version = gtext_cssom_markup_tree_version;
+  config.tree_version_user = markup;
+  config.layout = &layout;
+  GTEXT_CSSOM_Document * document = NULL;
+  gtext_cssom_document_new(&config, &document);
+  GTEXT_CSSOM_Markup_Binding * binding = NULL;
+  gtext_cssom_markup_binding_new(document, gtext_cssom_document_scope(document), markup, NULL, &binding);
+  gtext_cssom_markup_sync(binding, NULL);
+
+  GTEXT_Markup_Node * root = gtext_markup_document_root(markup);
+  GTEXT_Markup_Node * p = gtext_markup_node_next_in_order(root, root, false);
+  while (p && !gtext_markup_element_is(p, GTEXT_MARKUP_NS_HTML, "p")) {
+    p = gtext_markup_node_next_in_order(root, p, false);
+  }
+  GTEXT_CSSOM_Decl * style = NULL;
+  gtext_cssom_computed_style(document, gtext_css_markup_handle(p), NULL, 0, &style);
+  show(style, "color");
+  show(style, "border-top-color");
+  show(style, "width");
+  show(style, "margin-top");
+
+  /* the same object, after the tree changed */
+  gtext_markup_element_set_attribute(p, NULL, NULL, "class", "b", 1);
+  show(style, "color");
+
+  char * text = NULL;
+  size_t length = 0;
+  gtext_cssom_decl_css_text(style, &text, &length);
+  printf("cssText: \"%s\"\n", text);
+  gtext_cssom_buffer_free(gtext_cssom_document_allocator(document), text);
+  GTEXT_CSSOM_Outcome outcome;
+  printf("setProperty: %s\n", gtext_cssom_exception_name(gtext_cssom_decl_set_property(style, "color", 5, "green", 5, "", 0, &outcome)));
+
+  gtext_cssom_decl_release(style);
+  gtext_cssom_markup_binding_free(binding);
+  gtext_cssom_document_release(document);
+  gtext_css_registry_free(registry);
+  gtext_css_markup_adapter_free(adapter);
+  gtext_markup_document_free(markup);
+}
+```
+
+prints
+
+```
+color: rgb(255, 0, 0) (used)
+border-top-color: rgb(255, 0, 0) (used)
+width: 49.5px (used)
+margin-top: 0px (computed)
+color: rgb(0, 0, 255) (used)
+cssText: ""
+setProperty: NoModificationAllowedError
+```
 
 ## Utilities
 

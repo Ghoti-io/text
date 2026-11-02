@@ -45,6 +45,7 @@
 #include <string.h>
 
 namespace snippets {
+#include "doc-snippets/css/cssom-computed.c"
 #include "doc-snippets/css/cssom-declaration.c"
 #include "doc-snippets/css/cssom-inline-style.c"
 #include "doc-snippets/css/cssom-sheet.c"
@@ -65,6 +66,8 @@ struct Snippet {
 };
 
 const Snippet kSnippets[] = {
+    {"cssom-computed.c", snippets::cssom_computed,
+        "color: rgb(255, 0, 0) (used)\nborder-top-color: rgb(255, 0, 0) (used)\nwidth: 49.5px (used)\nmargin-top: 0px (computed)\ncolor: rgb(0, 0, 255) (used)\ncssText: \"\"\nsetProperty: NoModificationAllowedError\n"},
     {"cssom-declaration.c", snippets::cssom_declaration,
         "margin-top: 5px -> changed\nmargin: 1px 2px -> changed\nmargin: 1px 2px -> unchanged\ncolor: nonsense -> ignored: invalid value\ncolor: red -> changed\n"
         "width: 1px -> ignored: bad priority\nbogus: 1 -> ignored: unknown property\ncssText: margin: 1px 2px; color: red !important;\nremoved margin: 1px 2px\nlength: 1\n"},

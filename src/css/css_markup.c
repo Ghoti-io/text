@@ -47,6 +47,8 @@ struct GTEXT_CSS_Markup_Adapter {
   GTEXT_CSS_Markup_Options opt;
   bool html;
   bool quirks;
+  /* the generation of the document the caches below were filled at: a change of the tree (an attribute, a node moved) empties them, so the adapter answers for the tree as it is */
+  uint64_t gen;
   /* the classes of the element asked about last */
   Node * cnode;
   size_t ccount;
@@ -146,6 +148,28 @@ static bool cb_id(void * user, GTEXT_CSS_Element_Handle h, GTEXT_CSS_String * ou
   return true;
 }
 
+/// The caches of the adapter (the classes of the element asked about last, the first submit button of the form asked about last, the radio group asked about last, the auto
+/// directionality found for an element) are answers about the tree: when the document's generation moved since they were made they are dropped, so that an attribute set or a node
+/// moved under the adapter is seen by the next question (the CSSOM's `getComputedStyle()` asks the same adapter before and after an edit).
+static void caches_fresh(struct GTEXT_CSS_Markup_Adapter * a) {
+  const uint64_t g = gtext_markup_document_generation(a->doc);
+  if (g == a->gen) {
+    return;
+  }
+  a->gen = g;
+  a->cnode = NULL;
+  a->ccount = 0;
+  a->cvalue = NULL;
+  a->clen_total = 0;
+  a->dform = NULL;
+  a->dfirst = NULL;
+  a->rscope = NULL;
+  a->rname = NULL;
+  a->rname_len = 0;
+  a->rchecked = false;
+  memset(a->dirc, 0, sizeof a->dirc);
+}
+
 static bool class_space(char c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r';
 }
@@ -153,6 +177,7 @@ static bool class_space(char c) {
 /// Tokenize the class attribute of an element, keeping the offsets of the first MAX_CACHED_CLASSES of the last element asked about (no allocation: an interface callback has no
 /// way to say it ran out of memory). Past them a class is found by reading the attribute again.
 static bool classes_of(struct GTEXT_CSS_Markup_Adapter * a, Node * el) {
+  caches_fresh(a);
   if (a->cnode == el && a->cvalue) {
     return true;
   }
@@ -486,6 +511,7 @@ static bool default_button(struct GTEXT_CSS_Markup_Adapter * a, Node * el) {
   if (!form || !is_submit_button(el)) {
     return false;
   }
+  caches_fresh(a);
   if (a->dform != form) { // the answer for the last form asked about: the buttons of a form ask in a row
     a->dform = form;
     a->dfirst = NULL;
@@ -510,6 +536,7 @@ static bool radio_group_unchecked(struct GTEXT_CSS_Markup_Adapter * a, Node * el
   }
   Node * form = form_of(el);
   Node * top = form ? form : gtext_markup_document_root(a->doc);
+  caches_fresh(a);
   if (a->rscope == top && a->rname_len == nm.value_length && memcmp(a->rname, nm.value, nm.value_length) == 0) {
     return !a->rchecked;
   }
@@ -693,6 +720,7 @@ static int strong_below(Node * el) {
 /// The auto directionality of `p` (1 rtl, 0 ltr), found once for each element: the scan reads the text below it, so asking it for every child of a `dir=auto` parent would read
 /// the parent's text once for each child. A direct-mapped cache of the answers; it lives as long as the adapter, which is why the document must not change under it.
 static int auto_dir(struct GTEXT_CSS_Markup_Adapter * a, Node * p, bool input_value) {
+  caches_fresh(a);
   struct dir_ent * ent = &a->dirc[((uintptr_t)p >> 4) % DIR_CACHE];
   if (ent->node == p) {
     return ent->rtl;
@@ -779,6 +807,7 @@ GTEXT_CSS_Status gtext_css_markup_adapter_new(const GTEXT_Markup_Document * docu
   o.allocator = NULL;
   a->opt = o;
   a->doc = document;
+  a->gen = gtext_markup_document_generation(document);
   Node * de = gtext_markup_document_element(document);
   switch (o.kind) {
   case GTEXT_CSS_MARKUP_HTML: a->html = true; break;

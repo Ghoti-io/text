@@ -1,0 +1,206 @@
+/*
+ * SPDX-License-Identifier: LGPL-3.0-only
+ *
+ * Copyright (C) 2026 Corey Pennycuff
+ *
+ * This file is part of Ghoti.io Text.
+ *
+ * Ghoti.io Text is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License version 3 as
+ * published by the Free Software Foundation.
+ *
+ * Ghoti.io Text is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
+ * @file
+ *
+ * Allocation failure and `getComputedStyle()` (css_cssom_computed.h): every allocation of making a computed declaration and of reading it for the first time, and of reading
+ * it again after the document moved, is failed in turn.
+ *
+ * A failed read is GTEXT_CSS_E_OOM and leaves the declaration as it was (the next read, with memory, gives what a healthy run gives), the document's generation and
+ * counters of live objects unchanged; an allocation the layer tolerates (a style that is not cached) leaves the answer the healthy one; and nothing leaks.
+ */
+
+#include <gtest/gtest.h>
+
+#include "cssom_computed_test_support.h"
+
+using namespace cc;
+
+namespace {
+
+const char * kHtml =
+    "<!DOCTYPE html><html><head><style id=s>"
+    "div{color:red;margin-top:7px;--k:1px solid red} p{width:50px;background-color:currentcolor;box-shadow:1px 2px 3px currentcolor, 4px 5px blue;animation-duration:auto}"
+    "p::before{color:blue} .x{color:color-mix(in srgb, currentcolor, blue)}"
+    "</style></head><body><div id=d><p id=a class=x>x</p><p id=b>y</p></div></body></html>";
+
+/// Every name and value of a declaration, as one text.
+std::string everything(GTEXT_CSSOM_Decl * d, GTEXT_CSS_Status * status) {
+  size_t n = 0;
+  *status = gtext_cssom_decl_length(d, &n);
+  if (*status != GTEXT_CSS_OK) {
+    return "";
+  }
+  std::string out;
+  for (size_t i = 0; i < n; i++) {
+    char * name = nullptr;
+    size_t nl = 0;
+    *status = gtext_cssom_decl_item(d, i, &name, &nl);
+    if (*status != GTEXT_CSS_OK) {
+      return "";
+    }
+    const std::string key(name, nl);
+    gtext_cssom_buffer_free(gtext_cssom_document_allocator(gtext_cssom_decl_document(d)), name);
+    char * value = nullptr;
+    size_t vl = 0;
+    *status = gtext_cssom_decl_get_property_value(d, key.data(), key.size(), &value, &vl);
+    if (*status != GTEXT_CSS_OK) {
+      return "";
+    }
+    out += key + ":" + std::string(value, vl) + ";";
+    gtext_cssom_buffer_free(gtext_cssom_document_allocator(gtext_cssom_decl_document(d)), value);
+  }
+  for (const char * shorthand : {"margin", "border-top-color", "box-shadow", "font"}) {
+    char * value = nullptr;
+    size_t vl = 0;
+    *status = gtext_cssom_decl_get_property_value(d, shorthand, std::strlen(shorthand), &value, &vl);
+    if (*status != GTEXT_CSS_OK) {
+      return "";
+    }
+    out += std::string("|") + shorthand + "=" + std::string(value, vl);
+    gtext_cssom_buffer_free(gtext_cssom_document_allocator(gtext_cssom_decl_document(d)), value);
+  }
+  return out;
+}
+
+struct Scenario {
+  const char * name;
+  const char * selector;
+  const char * pseudo;
+  bool layout;
+  bool mutate;   ///< a mutation of the document between the first read and the one that is failed
+};
+
+void sweep(const Scenario & sc) {
+  SCOPED_TRACE(sc.name);
+  Layout lay;
+  lay.used["width"] = "49px";
+  lay.used["margin-top"] = "6px";
+  std::string want;
+  {
+    Cs m(kHtml, [&](GTEXT_CSSOM_Config & c) {
+      if (sc.layout) {
+        lay.install(c);
+      }
+    });
+    Decl d = m.computed(sc.selector, sc.pseudo);
+    GTEXT_CSS_Status st = GTEXT_CSS_OK;
+    if (sc.mutate) {
+      (void)everything(d.d, &st);
+      set_attr(m.el(sc.selector), "title", "moved");
+    }
+    want = everything(d.d, &st);
+    ASSERT_EQ(st, GTEXT_CSS_OK);
+    ASSERT_FALSE(want.empty());
+  }
+  size_t failed_runs = 0;
+  // one run: the allocation `n` of the phase is failed; false once the phase needs fewer than n allocations
+  auto run = [&](size_t n, bool in_make) -> bool {
+    FaultAllocator fa;
+    bool fired = false;
+    {
+      Cs m(kHtml, [&](GTEXT_CSSOM_Config & c) {
+        if (sc.layout) {
+          lay.install(c);
+        }
+      }, &fa.alloc);
+      GTEXT_CSSOM_Decl * made = nullptr;
+      const void * h = m.handle(sc.selector);
+      const size_t plen = sc.pseudo ? std::strlen(sc.pseudo) : 0;
+      GTEXT_CSS_Status st = GTEXT_CSS_OK;
+      std::string got;
+      if (in_make) {
+        fa.arm(n);
+        const GTEXT_CSS_Status mk = gtext_cssom_computed_style(m.d(), h, sc.pseudo, plen, &made);
+        fa.disarm();
+        fired = fa.failed;
+        if (mk != GTEXT_CSS_OK) {
+          failed_runs++;
+          EXPECT_EQ(mk, GTEXT_CSS_E_OOM) << n;
+          EXPECT_EQ(made, nullptr);
+          made = nullptr;
+        }
+        else {
+          if (sc.mutate) {
+            (void)everything(made, &st);
+            set_attr(m.el(sc.selector), "title", "moved");
+          }
+          got = everything(made, &st);
+          EXPECT_EQ(st, GTEXT_CSS_OK);
+          EXPECT_EQ(got, want) << "allocation " << n << " of making";
+        }
+      }
+      else {
+        EXPECT_EQ(gtext_cssom_computed_style(m.d(), h, sc.pseudo, plen, &made), GTEXT_CSS_OK);
+        if (sc.mutate) {
+          (void)everything(made, &st);
+          set_attr(m.el(sc.selector), "title", "moved");
+        }
+        const uint64_t gen = gtext_cssom_document_generation(m.d());
+        size_t len = 0;
+        fa.arm(n);
+        st = gtext_cssom_decl_length(made, &len);
+        fa.disarm();
+        fired = fa.failed;
+        if (st != GTEXT_CSS_OK) {
+          failed_runs++;
+          EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n;
+          EXPECT_EQ(gtext_cssom_document_generation(m.d()), gen) << "a failed read moves nothing";
+        }
+        got = everything(made, &st);   // with memory again: the healthy answer, whether the fault was tolerated or not
+        EXPECT_EQ(st, GTEXT_CSS_OK);
+        EXPECT_EQ(got, want) << "allocation " << n << " of reading" << (st == GTEXT_CSS_OK && fired ? " (tolerated or recovered)" : "");
+      }
+      gtext_cssom_decl_release(made);
+    }
+    EXPECT_TRUE(fa.live.empty()) << "a leak after failing allocation " << n << (in_make ? " of making" : " of reading");
+    EXPECT_EQ(fa.bad_frees, 0u);
+    return fired;
+  };
+  for (const bool in_make : {true, false}) {
+    // every one of the first allocations, which are the distinct sites (a context, a session, the first record), then every eleventh: the sites past them repeat
+    // (a declaration added to the block, a value made) hundreds of times, and a stride that is coprime with their period still lands on each of them in turn
+    for (size_t n = 1; n < 100000; n += n < 80 ? 1 : 11) {
+      if (!run(n, in_make)) {
+        break;
+      }
+    }
+  }
+  EXPECT_GT(failed_runs, 20u) << "the sweep reached the allocations of the layer";
+}
+
+TEST(CssomComputedOom, ReadingAnElement) {
+  sweep({"element", "#a", nullptr, false, false});
+}
+
+TEST(CssomComputedOom, ReadingAPseudoElement) {
+  sweep({"pseudo-element", "#a", "::before", false, false});
+}
+
+TEST(CssomComputedOom, ReadingWithTheLayout) {
+  sweep({"layout", "#b", nullptr, true, false});
+}
+
+TEST(CssomComputedOom, ReadingAgainAfterTheTreeMoved) {
+  sweep({"after a move", "#a", nullptr, false, true});
+}
+
+}  // namespace

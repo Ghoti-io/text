@@ -1,0 +1,68 @@
+# The resolved value of a longhand where it is not its computed value (CSS Object Model, section 9, and the specifications that call a property a "resolved value special case property").
+# One row per longhand: property, category, source, sentence. A property with no row is `computed`: "Any other property: The resolved value is the computed value."
+# category is one of the CSS_RESOLVED_* names of src/css/cssom_computed_internal.h, lower case without the prefix.
+# source is the served document the sentence is quoted from (tools/css/gen-cssom-tables.py --served DIR reads DIR/<source>.html and fails on a sentence the text does not contain).
+# A row whose sentence the served text does not contain does not exist.
+# Copyright 2026 by Corey Pennycuff
+animation-duration	animation_duration	css-animations-2	For backwards-compatibility with Level 1, when the computed value of animation-timeline is auto (i.e. only one list value, and that value being auto), the resolved value of auto for animation-duration is 0s whenever its used value would also be 0s.
+background-color	used_color	cssom	The resolved value is the used value.
+block-size	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+border-block-end-color	used_color	cssom	The resolved value is the used value.
+border-block-end-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-block-start-color	used_color	cssom	The resolved value is the used value.
+border-block-start-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-bottom-color	used_color	cssom	The resolved value is the used value.
+border-bottom-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-inline-end-color	used_color	cssom	The resolved value is the used value.
+border-inline-end-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-inline-start-color	used_color	cssom	The resolved value is the used value.
+border-inline-start-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-left-color	used_color	cssom	The resolved value is the used value.
+border-left-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-right-color	used_color	cssom	The resolved value is the used value.
+border-right-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-top-color	used_color	cssom	The resolved value is the used value.
+border-top-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+bottom	used_if_positioned	cssom	If the property applies to a positioned element and the resolved value of the display property is not none or contents, and the property is not over-constrained, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+box-shadow-color	used_color	cssom	The resolved value is the used value.
+caret-color	used_color	cssom	The resolved value is the used value.
+color	used_color	cssom	The resolved value is the used value.
+grid-template-columns	used_if_applies	css-grid-2	When an element generates a grid container box, the resolved value of its grid-template-rows or grid-template-columns property in a standalone axis is the used value, serialized with:
+grid-template-rows	used_if_applies	css-grid-2	When an element generates a grid container box, the resolved value of its grid-template-rows or grid-template-columns property in a standalone axis is the used value, serialized with:
+height	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+inline-size	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+inset-block-end	used_if_positioned	cssom	If the property applies to a positioned element and the resolved value of the display property is not none or contents, and the property is not over-constrained, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+inset-block-start	used_if_positioned	cssom	If the property applies to a positioned element and the resolved value of the display property is not none or contents, and the property is not over-constrained, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+inset-inline-end	used_if_positioned	cssom	If the property applies to a positioned element and the resolved value of the display property is not none or contents, and the property is not over-constrained, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+inset-inline-start	used_if_positioned	cssom	If the property applies to a positioned element and the resolved value of the display property is not none or contents, and the property is not over-constrained, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+left	used_if_positioned	cssom	If the property applies to a positioned element and the resolved value of the display property is not none or contents, and the property is not over-constrained, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+letter-spacing	computed	css-text-3	For legacy reasons, a computed letter-spacing of zero yields a resolved value (getComputedStyle() return value) of normal.
+line-height	line_height	cssom	The resolved value is normal if the computed value is normal, or the used value otherwise.
+margin-block-end	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+margin-block-start	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+margin-bottom	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+margin-inline-end	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+margin-inline-start	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+margin-left	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+margin-right	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+margin-top	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+min-block-size	min_size_auto	css-sizing-3	For backwards-compatibility, the resolved value of this keyword is zero for boxes of all [CSS2] display types (block and inline boxes, inline blocks, and all table display types) when aspect-ratio is auto.
+min-height	min_size_auto	css-sizing-3	For backwards-compatibility, the resolved value of this keyword is zero for boxes of all [CSS2] display types (block and inline boxes, inline blocks, and all table display types) when aspect-ratio is auto.
+min-inline-size	min_size_auto	css-sizing-3	For backwards-compatibility, the resolved value of this keyword is zero for boxes of all [CSS2] display types (block and inline boxes, inline blocks, and all table display types) when aspect-ratio is auto.
+min-width	min_size_auto	css-sizing-3	For backwards-compatibility, the resolved value of this keyword is zero for boxes of all [CSS2] display types (block and inline boxes, inline blocks, and all table display types) when aspect-ratio is auto.
+outline-color	used_color	cssom	The resolved value is the used value.
+padding-block-end	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+padding-block-start	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+padding-bottom	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+padding-inline-end	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+padding-inline-start	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+padding-left	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+padding-right	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+padding-top	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+perspective-origin	used_if_applies	css-transforms-2	The perspective-origin property is a resolved value special case property like height.
+right	used_if_positioned	cssom	If the property applies to a positioned element and the resolved value of the display property is not none or contents, and the property is not over-constrained, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+top	used_if_positioned	cssom	If the property applies to a positioned element and the resolved value of the display property is not none or contents, and the property is not over-constrained, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+transform	used	css-transforms-2	When the computed value is a <transform-list>, the resolved value is one <matrix()> function or one <matrix3d()> function computed by the following algorithm:
+transform-origin	used_if_applies	css-transforms-1	The transform-origin property is a resolved value special case property like height.
+translate	computed	css-transforms-2	Note: The resolved value of the translate property is the computed value, and thus getComputedStyle() includes percentage values in its results.
+width	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.

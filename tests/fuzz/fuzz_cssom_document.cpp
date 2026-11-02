@@ -39,6 +39,8 @@
  *   a sync with the Markup generation unchanged walks nothing;
  *   the binding and the scope agree after every operation, a failed one included (each listed sheet is its element's; no element's sheet is unlisted);
  *   the declaration of an element reads what its `style` attribute says, whoever wrote it;
+ *   the computed values (C5d) of probe properties of probe elements: a computed declaration made before the edits and held through them, one made after, and the one a document built
+ *     again from the serialized state gives (with a style cache of two entries, so that the bound is exercised) are equal, and `cssText` of a computed declaration is empty;
  *   the events: generations strictly increase, the last is the document's, the set of sheets they say are listed is the scope's, and the path of an inserted rule found at its event
  *     leads to the rule when no mutation came after it;
  *   with one allocation failed: the call is OOM or untouched by the failure, and the next sync ends where an unswept one would;
@@ -166,6 +168,7 @@ const char * const kValues[] = {"red", "1px", "", "nonsense", "blue !important",
 const char * const kInline[] = {"color: red", "margin-top: 1px; color: blue", "", "bogus: 1", "width: 3px !important"};
 const char * const kProbeProps[] = {"color", "margin-top", "width"};
 const char * const kProbeIds[] = {"p1", "p2", "d"};
+const char * const kComputedProps[] = {"color", "margin-top", "width", "border-top-color", "background-color", "display"};
 
 std::string serialize_sheet(const GTEXT_CSSOM_Sheet * s) {
   std::string out;
@@ -211,6 +214,7 @@ struct World {
   std::vector<GTEXT_CSSOM_Decl *> inlines;     ///< Inline declarations held, by element.
   std::vector<GTEXT_Markup_Node *> inline_elements;
   std::vector<GTEXT_CSSOM_Sheet *> adopted;    ///< Constructed sheets made.
+  std::map<std::string, GTEXT_CSSOM_Decl *> held;   ///< Computed declarations of the probe elements, made once and read through every edit.
   std::set<uint64_t> ids;                      ///< The sheets the events say are listed.
   uint64_t last_event_generation = 0;
   uint64_t synced_generation = 0;
@@ -339,6 +343,70 @@ std::string cascaded(World & w, const GTEXT_CSS_Rule_Index * index, GTEXT_Markup
   return out;
 }
 
+/// The resolved value of a property in a computed declaration, or the status in angle brackets.
+std::string resolved(GTEXT_CSSOM_Decl * d, const char * property) {
+  char * out = nullptr;
+  size_t n = 0;
+  const GTEXT_CSS_Status st = gtext_cssom_decl_get_property_value(d, property, std::strlen(property), &out, &n);
+  if (st != GTEXT_CSS_OK) {
+    return std::string("<status ") + std::to_string(static_cast<int>(st)) + ">";
+  }
+  std::string s(out, n);
+  gtext_cssom_buffer_free(gtext_cssom_document_allocator(gtext_cssom_decl_document(d)), out);
+  return s;
+}
+
+GTEXT_Markup_Node * by_id(World & w, const char * id);
+
+/// The computed values of the probe elements through the live document (a declaration held since before the edits, and one made now) and through `fresh`.
+void check_computed(World & w, GTEXT_CSSOM_Document * fresh, const char * after) {
+  w.fa.disarm();
+  for (const char * id : kProbeIds) {
+    GTEXT_Markup_Node * el = by_id(w, id);
+    if (!el) {
+      continue;
+    }
+    const void * handle = gtext_css_markup_handle(el);
+    GTEXT_CSSOM_Decl *& held = w.held[id];
+    if (!held && gtext_cssom_computed_style(w.doc, handle, nullptr, 0, &held) != GTEXT_CSS_OK) {
+      held = nullptr;
+      continue;
+    }
+    GTEXT_CSSOM_Decl * now = nullptr;
+    GTEXT_CSSOM_Decl * other = nullptr;
+    if (gtext_cssom_computed_style(w.doc, handle, nullptr, 0, &now) != GTEXT_CSS_OK) {
+      continue;
+    }
+    if (gtext_cssom_computed_style(fresh, handle, nullptr, 0, &other) != GTEXT_CSS_OK) {
+      gtext_cssom_decl_release(now);
+      continue;
+    }
+    for (const char * prop : kComputedProps) {
+      const std::string a = resolved(held, prop), b = resolved(now, prop), c = resolved(other, prop);
+      if (b != c) {
+        fail("a computed value differs from the document built again from the serialized state", std::string(after) + " " + id + " " + prop + ": " + b + " vs " + c, w.input);
+      }
+      if (a != b) {
+        fail("a computed declaration held through the edits is stale", std::string(after) + " " + id + " " + prop + ": " + a + " vs " + b, w.input);
+      }
+    }
+    char * text = nullptr;
+    size_t n = 0;
+    if (gtext_cssom_decl_css_text(now, &text, &n) == GTEXT_CSS_OK) {
+      if (n != 0) {
+        fail("the cssText of a computed declaration is not empty", after, w.input);
+      }
+      gtext_cssom_buffer_free(gtext_cssom_document_allocator(w.doc), text);
+    }
+    size_t l1 = 0, l2 = 0;
+    if (gtext_cssom_decl_length(held, &l1) == GTEXT_CSS_OK && gtext_cssom_decl_length(other, &l2) == GTEXT_CSS_OK && l1 != l2) {
+      fail("the length of a computed declaration differs from the document built again", std::string(after) + " " + std::to_string(l1) + " vs " + std::to_string(l2), w.input);
+    }
+    gtext_cssom_decl_release(now);
+    gtext_cssom_decl_release(other);
+  }
+}
+
 GTEXT_Markup_Node * by_id(World & w, const char * id) {
   GTEXT_Markup_Node * root = gtext_markup_document_root(w.markup);
   for (GTEXT_Markup_Node * x = gtext_markup_node_next_in_order(root, root, false); x; x = gtext_markup_node_next_in_order(root, x, false)) {
@@ -356,6 +424,9 @@ GTEXT_CSSOM_Document * rebuild(World & w) {
   c.registry = registry();
   c.element_interface = gtext_css_markup_interface(w.adapter);
   c.match_options = &w.mo;
+  c.tree_version = &gtext_cssom_markup_tree_version;
+  c.tree_version_user = w.markup;
+  c.max_cached_styles = 2;
   GTEXT_CSSOM_Document * fresh = nullptr;
   if (gtext_cssom_document_new(&c, &fresh) != GTEXT_CSS_OK) {
     return nullptr;
@@ -486,6 +557,7 @@ void check_synced(World & w, const char * after) {
       }
     }
   }
+  check_computed(w, fresh, after);
   gtext_cssom_document_release(fresh);
 }
 
@@ -840,6 +912,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     check_synced(w, "the final sync");
     for (GTEXT_CSSOM_Decl * dd : w.inlines) {
       gtext_cssom_decl_release(dd);
+    }
+    for (auto & kv : w.held) {
+      gtext_cssom_decl_release(kv.second);
     }
     for (GTEXT_CSSOM_Sheet * s : w.adopted) {
       gtext_cssom_sheet_release(s);

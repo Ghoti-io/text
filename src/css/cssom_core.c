@@ -31,6 +31,7 @@
 #include "css_internal.h"
 #include "css_registry_internal.h"
 #include "css_shorthand_internal.h"
+#include "cssom_computed_internal.h"
 #include "cssom_doc_internal.h"
 #include "cssom_internal.h"
 
@@ -53,6 +54,7 @@
 #define DEFAULT_MAX_MEDIA_QUERY_LISTS ((size_t)1 << 20)
 #define DEFAULT_MAX_OBSERVERS ((size_t)1024)
 #define DEFAULT_MAX_QUEUED_EVENTS ((size_t)1 << 20)
+#define DEFAULT_MAX_CACHED_STYLES ((size_t)65536)
 
 struct GTEXT_CSSOM_Document {
   css_core * core;
@@ -80,6 +82,7 @@ GTEXT_CSSOM_Config gtext_cssom_config_default(void) {
   c.max_media_query_lists = DEFAULT_MAX_MEDIA_QUERY_LISTS;
   c.max_observers = DEFAULT_MAX_OBSERVERS;
   c.max_queued_events = DEFAULT_MAX_QUEUED_EVENTS;
+  c.max_cached_styles = DEFAULT_MAX_CACHED_STYLES;
   return c;
 }
 
@@ -133,6 +136,16 @@ static void config_fill(GTEXT_CSSOM_Config * out, const GTEXT_CSSOM_Config * in)
   }
   if (!out->max_observers) out->max_observers = d.max_observers;
   if (!out->max_queued_events) out->max_queued_events = d.max_queued_events;
+  /* the fields of getComputedStyle(): a caller built against the header of C5c3 has none of them */
+  if (n < offsetof(GTEXT_CSSOM_Config, computed_trust_tree_changed) + sizeof in->computed_trust_tree_changed) {
+    out->element_state = NULL;
+    out->element_state_user = NULL;
+    out->layout = NULL;
+    out->compute_context = NULL;
+    out->max_cached_styles = 0;
+    out->computed_trust_tree_changed = false;
+  }
+  if (!out->max_cached_styles) out->max_cached_styles = d.max_cached_styles;
 }
 
 GTEXT_CSS_Status gtext_cssom_document_new(const GTEXT_CSSOM_Config * config, GTEXT_CSSOM_Document ** out) {
@@ -173,6 +186,14 @@ GTEXT_CSS_Status gtext_cssom_document_new(const GTEXT_CSSOM_Config * config, GTE
     core->match = *cfg.match_options;
     core->has_match = true;
   }
+  if (cfg.layout && cfg.layout->size >= offsetof(GTEXT_CSSOM_Layout_Interface, user) + sizeof cfg.layout->user) {
+    /* a size-prefixed struct, copied: a field past the caller's size is absent */
+    const size_t m = cfg.layout->size < sizeof core->layout ? cfg.layout->size : sizeof core->layout;
+    memcpy(&core->layout, cfg.layout, m);
+    core->layout.size = sizeof core->layout;
+    core->has_layout = true;
+  }
+  cfg.layout = core->has_layout ? &core->layout : NULL;
   cfg.allocator = NULL;   /* the core's copy is `alloc`; the pointer the caller gave need not outlive this call */
   cfg.conditions = core->conditions;
   cfg.match_options = core->has_match ? &core->match : NULL;
@@ -194,6 +215,7 @@ void css_core_release(css_core * core) {
     return;
   }
   css_inline_map_free(core);
+  css_computed_free(core);
   css_index_teardown(core);
   gtext_css_conditions_free(core->conditions);
   GTEXT_Allocator a = core->alloc;
@@ -216,6 +238,7 @@ void gtext_cssom_document_release(GTEXT_CSSOM_Document * document) {
   gtext_allocator_free(&a, document);
   css_events_teardown(core);
   css_scope_teardown_all(core);
+  css_computed_teardown(core);
   css_index_teardown(core);
   css_core_release(core);
 }
@@ -236,6 +259,7 @@ GTEXT_CSS_Status gtext_cssom_document_counters(const GTEXT_CSSOM_Document * docu
   }
   *out = document->core->counters;
   out->live_scopes = document->core->nscopes;
+  out->cached_styles = css_computed_cached_styles(document->core);
   return GTEXT_CSS_OK;
 }
 

@@ -34,6 +34,7 @@
 #include <string.h>
 
 #include "css_internal.h"
+#include "cssom_computed_internal.h"
 #include "cssom_doc_internal.h"
 
 void css_index_teardown(css_core * core) {
@@ -290,6 +291,10 @@ static GTEXT_CSS_Status current(css_core * core, const GTEXT_CSS_Rule_Index ** o
   gtext_css_rule_index_free(old);
   *out = fresh;
   return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status css_index_current(css_core * core, const GTEXT_CSS_Rule_Index ** out) {
+  return current(core, out);
 }
 
 GTEXT_CSS_Status gtext_cssom_document_index(GTEXT_CSSOM_Document * document, const GTEXT_CSS_Rule_Index ** out) {
