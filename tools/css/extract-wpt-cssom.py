@@ -716,8 +716,49 @@ def try_chain(node, env):
         return None
 
 
+def media_target(node, env):
+    """The path of the rule or sheet whose `media` the expression is, or None: `X.media` for an X that is a chain to a rule or a sheet."""
+    if node[0] == 'member' and node[2] == 'media':
+        c = try_chain(node[1], env)
+        if c and c[0] in ('rule', 'sheet'):
+            return c[1]
+    return None
+
+
+RULE_ATTRS_READ = ('selectorText', 'keyText', 'name', 'conditionText', 'fontFamily', 'containerName', 'containerQuery', 'href', 'layerName', 'supportsText', 'namespaceURI', 'prefix',
+                   'start', 'end', 'syntax', 'inherits', 'initialValue', 'navigation', 'basePalette', 'overrideColors', 'system', 'symbols', 'additiveSymbols', 'negative', 'suffix',
+                   'range', 'pad', 'speakAs', 'fallback', 'nameList')
+
+
+# the ops that read or change a sheet or a rule: the sheets of a page are one world its tests share, as its elements are
+SHEET_STATE_OPS = frozenset(['rinsert', 'radd', 'rdelete', 'rappend', 'rkfdelete', 'rset', 'mset', 'mappend', 'mdelete', 'assert_rlen', 'assert_rtype', 'assert_rsame', 'assert_rcsstext',
+                             'assert_rattr', 'assert_mtext', 'assert_mlen', 'assert_mitem', 'assert_nsheets', 'rstyle', 'bind'])
+
+
+MUTATES = re.compile(r'insertRule|deleteRule|removeRule|appendRule|addRule|selectorText\s*=|keyText\s*=|mediaText\s*=|appendMedium|deleteMedium|replaceSync|\.replace\(|\.name\s*=|\.disabled\s*=|adoptedStyleSheets')
+
+
+def poison(state, text):
+    """A statement or test the reader did not recognize ran in the page: what it did to the page's elements and sheets is missing from the world the later tests run in."""
+    state['poisoned'] = True
+    if MUTATES.search(text):
+        state['sheets_poisoned'] = True
+
+
 def read_expr(node, env, ops):
     """('value', S, name) etc.: the read an assertion compares: returns (op name, args)."""
+    if node[0] == 'member' and node[2] in ('mediaText', 'length'):
+        m = media_target(node[1], env)
+        if m is not None:
+            return ('assert_mtext' if node[2] == 'mediaText' else 'assert_mlen', [m])
+    if node[0] == 'call' and node[1][0] == 'member' and node[1][2] == 'item' and len(node[2]) == 1 and node[2][0][0] == 'num':
+        m = media_target(node[1][1], env)
+        if m is not None:
+            return ('assert_mitem', [m, str(int(node[2][0][1]))])
+    if node[0] == 'member' and node[2] in RULE_ATTRS_READ:
+        c = try_chain(node[1], env)
+        if c and c[0] == 'rule':
+            return ('assert_rattr', [c[1], node[2]])
     if node[0] == 'member' and node[1] == ('var', 'document') and node[2] == 'styleSheets':
         raise Unrecognized(R_RULES)
     if node[0] == 'member' and node[2] == 'length' and node[1] == ('member', ('var', 'document'), 'styleSheets'):
@@ -803,6 +844,11 @@ def rule_call(e, env, ops, expect, result=None):
     callee, args = e[1], e[2]
     if callee[0] != 'member':
         raise Unrecognized(R_SHAPE)
+    if callee[2] in ('appendMedium', 'deleteMedium') and len(args) == 1:
+        m = media_target(callee[1], env)
+        if m is not None:
+            ops.append(('mappend' if callee[2] == 'appendMedium' else 'mdelete', m, js_string(args[0], 'medium'), expect))
+            return
     c = try_chain(callee[1], env)
     if not c or c[0] not in ('sheet', 'rule'):
         raise Unrecognized(R_RULES)
@@ -876,6 +922,15 @@ def statement_ops(st, env, ops):
         target, value = st[1], st[2]
         if target[0] == 'member':
             obj, name = target[1], target[2]
+            if name == 'mediaText':
+                m = media_target(obj, env)
+                if m is not None:
+                    ops.append(('mset', m, js_string(value, 'text'), 'ok'))
+                    return
+            rc = try_chain(obj, env)
+            if rc and rc[0] == 'rule' and name not in ('length', 'parentRule', 'type', 'cssRules'):
+                ops.append(('rset', rc[1], name, js_string(value, 'value'), 'ok'))
+                return
             if name == 'cssText':
                 ops.append(('csstext', style_expr(obj, env, ops), js_string(value, 'text')))
                 return
@@ -926,6 +981,9 @@ def statement_ops(st, env, ops):
     if callee[0] == 'member' and callee[2] in ('insertRule', 'deleteRule', 'removeRule', 'addRule', 'appendRule') and try_chain(callee[1], env):
         rule_call(e, env, ops, expect='ok')
         return
+    if callee[0] == 'member' and callee[2] in ('appendMedium', 'deleteMedium') and media_target(callee[1], env) is not None:
+        rule_call(e, env, ops, expect='ok')
+        return
     if callee[0] == 'member':
         obj, meth = callee[1], callee[2]
         if meth == 'setProperty' and len(args) in (2, 3):
@@ -972,7 +1030,7 @@ def extract_script(page, script, rel, prog, state, unextracted):
         toks = tokenize(script)
     except Unrecognized as u:
         unextracted.append((rel, 1, u.reason))
-        state['poisoned'] = True
+        poison(state, text)
         return
     env = state['env']
     for toks_ in split_statements(toks):
@@ -998,7 +1056,7 @@ def extract_script(page, script, rel, prog, state, unextracted):
                     pass
             else:
                 unextracted.append((rel, 1, classify(text) if classify(text) != R_SHAPE else u.reason))
-                state['poisoned'] = True
+                poison(state, text)
             continue
         if st[0] == 'expr' and st[1][0] == 'call' and st[1][1] == ('var', 'test'):
             args = st[1][2]
@@ -1006,7 +1064,7 @@ def extract_script(page, script, rel, prog, state, unextracted):
             state['tests'] += 1
             if not args or args[0][0] != 'func':
                 unextracted.append((rel, 1, R_SHAPE))
-                state['poisoned'] = True
+                poison(state, text)
                 continue
             tenv = env.copy()
             ops = []
@@ -1019,19 +1077,19 @@ def extract_script(page, script, rel, prog, state, unextracted):
                 if tenv.cleanups:
                     ops.append(('cleanup',))
                     ops.extend(tenv.cleanups)
-                if state['poisoned'] and any(n in env.globals for n in tenv.touched):
+                if (state['poisoned'] and any(n in env.globals for n in tenv.touched)) or (state['sheets_poisoned'] and any(o[0] in SHEET_STATE_OPS for o in ops)):
                     raise Unrecognized('shared state after a construct the reader did not recognize')
             except Unrecognized as u:
                 text_body = ' '.join(t.text for t in args[0][2]) if args[0][2] and isinstance(args[0][2][0], Tok) else ''
                 unextracted.append((rel, 1, u.reason if u.reason != R_SHAPE else classify(text_body)))
-                state['poisoned'] = True
+                poison(state, text)
                 continue
             prog.append(('test', str(idx)))
             prog.extend(ops)
             continue
         if re.search(r'\btest\s*\(', text):
             unextracted.append((rel, 1, R_GENERATED))
-            state['poisoned'] = True
+            poison(state, text)
             continue
         # a declaration, or a statement that acts on the world: its ops are part of the program, in order
         before = len(prog)
@@ -1057,7 +1115,7 @@ def extract_script(page, script, rel, prog, state, unextracted):
             if st[0] == 'decl' and not mentions_known(toks_, env):
                 continue   # a variable the tests cannot use: a test that names it is unrecognized
             unextracted.append((rel, 1, classify(text) if classify(text) != R_SHAPE else u.reason))
-            state['poisoned'] = True
+            poison(state, text)
 
 
 HELPERS = re.compile(r'testcommon|/css/support/|computed-testcommon|serialize-testcommon|parsing-testcommon|interpolation-testcommon|inheritance-testcommon|numeric-testcommon')
@@ -1109,7 +1167,7 @@ def scan_page(wpt, rel, programs, unextracted):
     prog = [('elem', idname(i), tag, style if style is not None else '') for i, (tag, style) in sorted(page.elements.items())]
     if page.sheets_ok and re.search(r'styleSheets|\.sheet\b', text):
         prog += [('sheet', str(n), st[2]) for n, st in enumerate(page.styles)]
-    state = {'env': Env(page), 'poisoned': False, 'tests': 0}
+    state = {'env': Env(page), 'poisoned': False, 'sheets_poisoned': False, 'tests': 0}
     state['env'].globals = {idname(i) for i in page.elements}
     for sc in scripts:
         extract_script(page, sc, rel, prog, state, unextracted)

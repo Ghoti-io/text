@@ -65,10 +65,13 @@ if [ "$1" = "--regenerate-unscored" ]; then
 	exit 0
 fi
 
+handports=$root/tools/conformance/css_cssom_handports.py
 if [ "$1" != "--controls" ]; then
+	python3 -I "$handports" "$wpt" --vectors "$vectors" || exit 1
 	python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$unscored"
 	exit $?
 fi
+python3 -I "$handports" "$wpt" --vectors "$vectors" --controls || exit 1
 
 scratch=$(mktemp -d)
 log=$(mktemp)
@@ -125,6 +128,7 @@ expect unscored-page-missing "UNSCORED VECTORS" python3 -I "$suite_py" "$vectors
 expect unscored-page-stale "UNSCORED VECTORS" python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$scratch/unscored-extra"
 expect floor "below the floor" env CSS_CSSOM_MIN_SCORED=999999 python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$unscored"
 expect page-floor "below the floor" env CSS_CSSOM_MIN_PAGES=999999 python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$unscored"
+expect fraction-floor "of the touched pages are scored" env CSS_CSSOM_MIN_FRACTION=10000 python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$unscored"
 { cat "$exceptions"; printf 'css/control/defect.html#0\tfails\tdefect\towner: planted\n'; } > "$scratch/defect"
 expect defect-ceiling "defects above the ceiling" env CSS_CSSOM_MAX_DEFECTS=0 python3 -I "$suite_py" "$vectors" "$runner" "$scratch/defect" "$unscored"
 echo "css cssom gate: controls done"

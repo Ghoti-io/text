@@ -11,7 +11,7 @@ Every failure has to be listed, one line a test, in CSS_CSSOM_EXCEPTIONS: the te
 recorded browser answers differ and the library keeps the served text), ``wpt-tentative`` (the page is tentative and no browser record exists) and ``defect`` (a library
 defect, with its owner: ``owner: <where it is fixed>``; the number of them is a ceiling, CSS_CSSOM_MAX_DEFECTS, that only falls). The gate fails on a failure that is not
 listed ("UNEXPLAINED FAILURES"), on a listed test that passes, does not exist or fails another way ("STALE EXCEPTIONS"), on a reason without a quote where one is needed or
-a class outside the five ("SUITE PROBLEMS"), when fewer tests were scored than the floor (CSS_CSSOM_MIN_SCORED) or fewer pages than CSS_CSSOM_MIN_PAGES ("below the floor"),
+a class outside the five ("SUITE PROBLEMS"), when fewer tests were scored than the floor (CSS_CSSOM_MIN_SCORED) or fewer pages than CSS_CSSOM_MIN_PAGES ("below the floor"), or a smaller fraction of the tests of the touched pages than CSS_CSSOM_MIN_FRACTION (parts in ten thousand; it only rises),
 on more defects than the ceiling ("defects above the ceiling"), and on a runner that does not answer.
 
 The pages not read are in UNSCORED_CSSOM: the file, the number of its tests and the reason. A line that differs from what the reader finds fails ("UNSCORED VECTORS"), so a
@@ -135,12 +135,17 @@ def main():
     floor_pages = int(os.environ.get('CSS_CSSOM_MIN_PAGES', '0'))
     if pages < floor_pages:
         out.append('below the floor: %d pages scored, the floor is %d' % (pages, floor_pages))
+    unread = sum(int(v) for v in have.values())
+    fraction = 10000 * scored // (scored + unread) if scored + unread else 0
+    floor_fraction = int(os.environ.get('CSS_CSSOM_MIN_FRACTION', '0'))
+    if fraction < floor_fraction:
+        out.append('below the floor: %d of %d tests of the touched pages are scored (%d in ten thousand), the floor is %d' % (scored, scored + unread, fraction, floor_fraction))
     if out:
         print('\n'.join(out))
         return 1
     touched = len({k[0] for k in have}) + pages
-    print('css-cssom: %d tests of %d pages scored, %d pass, %d are exceptions (%d defects); %d (page, reason) pairs not read' % (
-        scored, pages, scored - len(failures), len(failures), defects, len(have)))
+    print('css-cssom: %d tests of %d pages scored, %d pass, %d are exceptions (%d defects); %d (page, reason) pairs not read; scored fraction %d in ten thousand of %d tests' % (
+        scored, pages, scored - len(failures), len(failures), defects, len(have), fraction, scored + unread))
     return 0
 
 

@@ -641,6 +641,120 @@ static char * run_edit_op(world * w, const op * o) {
       result = bad_call("deleteRule", o->f[3], got);
     }
   }
+  else if (strcmp(name, "rset") == 0 && o->n == 5 && r.rule) {
+    /* rule.attribute = value: selectorText, keyText and the rest by the table of attributes (a readonly one is ignored, as WebIDL says; cssText does nothing) */
+    GTEXT_CSSOM_Outcome oc;
+    GTEXT_CSS_Status st = GTEXT_CSS_OK;
+    if (strcmp(o->f[2], "selectorText") == 0) {
+      st = gtext_cssom_rule_set_selector_text(r.rule, o->f[3], o->l[3], &oc);
+    }
+    else if (strcmp(o->f[2], "keyText") == 0) {
+      st = gtext_cssom_rule_set_key_text(r.rule, o->f[3], o->l[3], &oc);
+    }
+    else if (strcmp(o->f[2], "cssText") != 0) {
+      st = gtext_cssom_rule_set_attribute(r.rule, o->f[2], strlen(o->f[2]), o->f[3], o->l[3], &oc);
+    }
+    if (st == GTEXT_CSS_E_UNSUPPORTED) {
+      st = GTEXT_CSS_OK;   /* a member the object does not have: script makes a property of the object, and nothing else happens */
+    }
+    const char * got = exception_of(st, eb, sizeof eb);
+    if (strcmp(got, o->f[4]) != 0) {
+      result = bad_call(o->f[2], o->f[4], got);
+    }
+  }
+  else if (strcmp(name, "assert_rattr") == 0 && o->n == 4) {
+    if (!r.rule) {
+      result = dups("an attribute of null is read");
+    }
+    else {
+      char * text = NULL;
+      size_t n = 0;
+      bool is_null = false;
+      GTEXT_CSS_Status st;
+      if (strcmp(o->f[2], "selectorText") == 0) {
+        st = gtext_cssom_rule_selector_text(r.rule, &text, &n);
+      }
+      else if (strcmp(o->f[2], "keyText") == 0) {
+        st = gtext_cssom_rule_key_text(r.rule, &text, &n);
+      }
+      else {
+        st = gtext_cssom_rule_get_attribute(r.rule, o->f[2], strlen(o->f[2]), &text, &n, &is_null);
+      }
+      if (st == GTEXT_CSS_E_UNSUPPORTED) {
+        if (strcmp(o->f[3], UNDEFINED) != 0) {
+          snprintf(msg, sizeof msg, "%s is undefined for this rule, expected \"%.*s\"", o->f[2], (int)(o->l[3] < 200 ? o->l[3] : 200), o->f[3]);
+          result = dups(msg);
+        }
+      }
+      else if (st != GTEXT_CSS_OK) {
+        snprintf(msg, sizeof msg, "%s: %s", o->f[2], gtext_css_status_string(st));
+        result = dups(msg);
+      }
+      else if (strcmp(o->f[3], "\x01null") == 0 ? !is_null : (is_null || n != o->l[3] || memcmp(text, o->f[3], n) != 0)) {
+        snprintf(msg, sizeof msg, "%s is %s\"%.*s\", expected \"%.*s\"", o->f[2], is_null ? "null " : "", (int)(n < 200 ? n : 200), text, (int)(o->l[3] < 200 ? o->l[3] : 200), o->f[3]);
+        result = dups(msg);
+      }
+      gtext_cssom_buffer_free(gtext_cssom_document_allocator(w->doc), text);
+    }
+  }
+  else if ((strcmp(name, "mset") == 0 || strcmp(name, "mappend") == 0 || strcmp(name, "mdelete") == 0) && o->n == 4) {
+    GTEXT_CSSOM_Media_List * m = NULL;
+    GTEXT_CSS_Status st = r.rule ? gtext_cssom_rule_media(r.rule, &m) : (r.sheet ? gtext_cssom_sheet_media(r.sheet, &m) : GTEXT_CSS_E_INVALID);
+    if (st != GTEXT_CSS_OK) {
+      result = dups("media of an object that has none is read");
+    }
+    else {
+      GTEXT_CSSOM_Outcome oc;
+      st = name[1] == 's' ? gtext_cssom_media_set_text(m, o->f[2], o->l[2], &oc) : name[1] == 'a' ? gtext_cssom_media_append(m, o->f[2], o->l[2], &oc) : gtext_cssom_media_delete(m, o->f[2], o->l[2], &oc);
+      const char * got = exception_of(st, eb, sizeof eb);
+      if (strcmp(got, o->f[3]) != 0) {
+        result = bad_call(name[1] == 's' ? "mediaText" : name[1] == 'a' ? "appendMedium" : "deleteMedium", o->f[3], got);
+      }
+      gtext_cssom_media_release(m);
+    }
+  }
+  else if ((strcmp(name, "assert_mtext") == 0 && o->n == 3) || (strcmp(name, "assert_mlen") == 0 && o->n == 3) || (strcmp(name, "assert_mitem") == 0 && o->n == 4)) {
+    GTEXT_CSSOM_Media_List * m = NULL;
+    GTEXT_CSS_Status st = r.rule ? gtext_cssom_rule_media(r.rule, &m) : (r.sheet ? gtext_cssom_sheet_media(r.sheet, &m) : GTEXT_CSS_E_INVALID);
+    if (st != GTEXT_CSS_OK) {
+      result = dups("media of an object that has none is read");
+    }
+    else {
+      char got[2048];
+      const char * expected = o->f[name[8] == 'i' ? 3 : 2];
+      got[0] = 0;
+      if (strcmp(name, "assert_mtext") == 0) {
+        char * t = NULL;
+        size_t n = 0;
+        if (gtext_cssom_media_text(m, &t, &n) == GTEXT_CSS_OK) {
+          snprintf(got, sizeof got, "%.*s", (int)(n < sizeof got - 1 ? n : sizeof got - 1), t);
+        }
+        gtext_cssom_buffer_free(gtext_cssom_document_allocator(w->doc), t);
+      }
+      else if (strcmp(name, "assert_mlen") == 0) {
+        size_t n = 0;
+        gtext_cssom_media_length(m, &n);
+        snprintf(got, sizeof got, "%zu", n);
+      }
+      else {
+        char * t = NULL;
+        size_t n = 0;
+        bool absent = false;
+        if (gtext_cssom_media_item(m, (size_t)strtoull(o->f[2], NULL, 10), &t, &n, &absent) == GTEXT_CSS_OK && !absent) {
+          snprintf(got, sizeof got, "%.*s", (int)(n < sizeof got - 1 ? n : sizeof got - 1), t);
+        }
+        else {
+          snprintf(got, sizeof got, "%s", "\x01null");
+        }
+        gtext_cssom_buffer_free(gtext_cssom_document_allocator(w->doc), t);
+      }
+      if (strcmp(got, expected) != 0) {
+        snprintf(msg, sizeof msg, "%s is \"%s\", expected \"%s\"", name + 7, got, expected);
+        result = dups(msg);
+      }
+      gtext_cssom_media_release(m);
+    }
+  }
   else if (strcmp(name, "assert_rcsstext") == 0 && o->n == 3) {
     if (!r.rule) {
       result = dups("the cssText of null is read");
@@ -677,7 +791,8 @@ static char * run_op(world * w, const op * o, int * failed_status) {
     return run_rule_op(w, o);
   }
   if (strcmp(name, "bind") == 0 || strcmp(name, "rinsert") == 0 || strcmp(name, "radd") == 0 || strcmp(name, "rdelete") == 0 || strcmp(name, "rappend") == 0 ||
-      strcmp(name, "rkfdelete") == 0 || strcmp(name, "assert_rcsstext") == 0) {
+      strcmp(name, "rkfdelete") == 0 || strcmp(name, "assert_rcsstext") == 0 || strcmp(name, "rset") == 0 || strcmp(name, "assert_rattr") == 0 || strcmp(name, "mset") == 0 ||
+      strcmp(name, "mappend") == 0 || strcmp(name, "mdelete") == 0 || strcmp(name, "assert_mtext") == 0 || strcmp(name, "assert_mlen") == 0 || strcmp(name, "assert_mitem") == 0) {
     return run_edit_op(w, o);
   }
   if (strcmp(name, "style") == 0 && o->n == 3) {
