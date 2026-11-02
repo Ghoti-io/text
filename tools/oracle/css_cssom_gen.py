@@ -156,10 +156,53 @@ def labelled(group, docs):
     return [dict(d, g=d.get("g", group)) for d in docs]
 
 
+def computed_documents():
+    """getComputedStyle() after a mutation: the page is inside an element with display: none, where the resolved value is the computed one. Each document reads, changes the sheet, and reads again."""
+    docs = []
+    base = ("p{color:red} div p{margin-top:1px} #b{color:green} .x{margin-top:7px} @media (min-width:100px){ #a{color:navy} } @media print{ #a{color:black} }", "<div><p id=a class=x>t</p><p id=b>u</p></div><span id=s>v</span>")
+    steps = [
+        [["I", "", 0, "#a{color:blue}"]],
+        [["I", "", 0, "p{color:blue !important}"]],
+        [["I", "", 99, "#a{color:blue}"], ["I", "", 4, "#a{color:blue}"]],
+        [["D", "", 0]],
+        [["D", "", 2]],
+        [["T", "0", "#b"]],
+        [["T", "0", "#a"]],
+        [["T", "0", "p, span"]],
+        [["P", "0", "color", "blue", ""]],
+        [["P", "0", "color", "blue", "important"]],
+        [["P", "1", "margin-top", "9px", ""]],
+        [["P", "0", "--x", "5", ""], ["I", "", 0, "#a{width:var(--x)}"]],
+        [["Q", "0", "color"]],
+        [["Y", "0", "color:teal;margin-top:2px"]],
+        [["M", "4", "print"]],
+        [["M", "5", "all"]],
+        [["I", "", 0, "@media all{ #a{color:olive} }"]],
+        [["I", "", 0, "@supports (color:red){ #a{color:maroon} }"]],
+        [["I", "", 0, "@layer z{ #a{color:purple} }"]],
+        [["R", "p{color:aqua}"]],
+        [["DIS", "1"]],
+        [["I", "", 0, "#s{color:fuchsia}"]],
+    ]
+    props = ["color", "margin-top", "width", "font-size"]
+    for st in steps:
+        ops = [["H", base[0], base[1]]]
+        for sel in ("#a", "#b", "#s"):
+            ops.append(["GC", sel, "color"])
+        ops.append(["GC", "#a", "margin-top"])
+        ops += st
+        for sel in ("#a", "#b", "#s"):
+            ops.append(["GC", sel, "color"])
+        for p in props[1:]:
+            ops.append(["GC", "#a", p])
+        docs.append({"g": "computed", "ops": ops})
+    return docs
+
+
 def fixed_documents():
     global _FIXED
     if _FIXED is None:
-        _FIXED = labelled("order", css_ruleops_gen.order_documents()) + open_items_documents() + setter_documents() + page_documents()
+        _FIXED = labelled("order", css_ruleops_gen.order_documents()) + open_items_documents() + setter_documents() + page_documents() + computed_documents()
     return _FIXED
 
 

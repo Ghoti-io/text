@@ -74,6 +74,7 @@ const OPS = `(json) => {
   for (const e of Array.from(document.head.querySelectorAll('style'))) {
     e.remove();
   }
+  document.body.innerHTML = '';
   try {
     document.adoptedStyleSheets = [];
   } catch (x) { /* an engine without adopted style sheets */ }
@@ -120,6 +121,19 @@ const OPS = `(json) => {
       } else if (k === 'AD') {
         const list = op[1] === '' ? [] : op[1].split(',').map((i) => sheets[Number(i)]).filter((x) => x);
         document.adoptedStyleSheets = list;
+      } else if (k === 'H') {
+        const e = document.createElement('style');
+        e.textContent = op[1];
+        document.head.appendChild(e);
+        sheet = e.sheet;
+        sheets.push(sheet);
+        document.body.innerHTML = '<div style="display:none">' + op[2] + '</div>';
+      } else if (k === 'GC') {
+        const el = document.querySelector(op[1]);
+        if (!el) {
+          throw new TypeError('no such element');
+        }
+        r = getComputedStyle(el).getPropertyValue(op[2]);
       } else if (k === 'MM') {
         const m = window.matchMedia(op[1]);
         r = m.media + '|' + m.matches;

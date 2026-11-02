@@ -27,7 +27,7 @@ C5b2 left open, and the `cssText` setters, so each is asked of both browsers in 
 **What is a divergence.** An operation the three do not answer alike, or, when every operation is answered alike, a sheet the three do not write alike. By who differs it is `ours` (the
 browsers agree and this library does not), `browsers` (they disagree with each other; the library is with one of them) or `both` (it is with neither of two that disagree). Each is
 abstracted to a **feature** (the kind of operation, what it read, and the pattern of the three answers: the exception names, or which of them are alike when the answers are texts), and
-the list (css_cssom_divergences.txt) gives each feature its class, its count in the default population (seed 1, 500 documents) and its reason, a sentence of the served text or the
+the list (css_cssom_divergences.txt) gives each feature its class, its count in the default population (seed 1, 600 documents) and its reason, a sentence of the served text or the
 browsers' known deviation, in the classes of the other differentials. **None may stay unexplained.** The gate fails (exit 3) on a divergence whose feature is not listed, a listed feature
 that does not occur, a count that moved, and a reason that is short or blanket. The classes are those of C2e (`served-text`, `browsers-differ`) and the names C4 gave (`standard-newer`,
 `reference-old`, `reference-wrong`, `reference-narrow`, `legacy-compat`), which TABLE below maps onto the first two for the report; the number of independent lineages is two (Blink and
@@ -52,14 +52,14 @@ import oracle_env  # noqa: E402
 GATE_EXIT = 3
 DRIVER = os.path.join(HERE, "containers", "cssprop", "cssom_driver.mjs")
 ENGINES = ["chromium", "firefox"]
-CLASSES = ("served-text", "standard-newer", "reference-old", "reference-wrong", "reference-narrow", "legacy-compat", "browsers-differ", "ours")
+CLASSES = ("served-text", "standard-newer", "reference-old", "reference-wrong", "reference-narrow", "legacy-compat", "env-fixed", "browsers-differ", "ours")
 # a divergence in which the browsers agree and this library does not is allowed in these classes: the library follows a served sentence (or a newer draft) they do not. Class `ours` is a
 # defect of the library with an owner, and there may be at most MAX_OURS of them (a ceiling that only goes down and ends at 0).
-OURS_OK = ("served-text", "standard-newer", "reference-old")
+OURS_OK = ("served-text", "standard-newer", "reference-old", "env-fixed")
 MAX_OURS = int(os.environ.get("CSS_CSSOM_ORACLE_MAX_OURS", "2"))
 LIST = os.path.join(HERE, "css_cssom_divergences.txt")
 # the C4 names of a class, and what each is for the report (one vocabulary: the first two are the classes of C2e)
-TABLE = {"standard-newer": "served-text", "reference-old": "browsers-differ", "reference-wrong": "browsers-differ", "reference-narrow": "browsers-differ", "legacy-compat": "browsers-differ"}
+TABLE = {"standard-newer": "served-text", "reference-old": "browsers-differ", "reference-wrong": "browsers-differ", "reference-narrow": "browsers-differ", "legacy-compat": "browsers-differ", "env-fixed": "browsers-differ"}
 
 
 def esc(s):
@@ -242,7 +242,7 @@ def main():
     ap.add_argument("--ours", required=True)
     ap.add_argument("--work", required=True)
     ap.add_argument("--seed", type=int, default=int(os.environ.get("CSS_CSSOM_ORACLE_SEED", "1")))
-    ap.add_argument("--count", type=int, default=int(os.environ.get("CSS_CSSOM_ORACLE_COUNT", "500")))
+    ap.add_argument("--count", type=int, default=int(os.environ.get("CSS_CSSOM_ORACLE_COUNT", "600")))
     ap.add_argument("--stage", default="all", choices=["populate", "browsers", "ours", "classify", "all"])
     ap.add_argument("--replay")
     ap.add_argument("--list", default=LIST)
@@ -275,7 +275,7 @@ def main():
         for f, who, w in found:
             witness.setdefault(f, (who, w))
         listed, problems = load_list(a.list)
-        default_population = a.seed == 1 and a.count == 500
+        default_population = a.seed == 1 and a.count == 600
         bad = []
         for f in sorted(counts):
             who = witness[f][0]

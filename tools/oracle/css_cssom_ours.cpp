@@ -37,12 +37,16 @@
  *   V path attr                  String(rule[attr])                  VS path prop  style.getPropertyValue   VL path  style.length   VP path prop  style.getPropertyPriority
  *   DIS 0|1                      sheet.disabled = ...                AD list   document.adoptedStyleSheets = [the sheets at these creation indexes]
  *   MM text                      matchMedia(text): "media|matches"
+ *   H css body                   a document: <style>css</style> and the body markup inside an element with display: none (so that a resolved value is the computed one); its sheet is the
+ *                                current one. GC selector property  getComputedStyle(document.querySelector(selector)).getPropertyValue(property)
  * Output: {"r": [one answer for each operation], "t": [{"r": [cssText of each rule], "m": mediaText, "d": disabled} for each sheet made]}. An answer is "ok", the name of an exception, a
  * string, or null (`\x01null` inside). What a JavaScript caller gets for a member the object does not have (a TypeError on a call, `undefined` on a read, nothing on a write) is given
  * here as the language gives it.
  */
 
 #include <ghoti.io/text/css.h>
+#include <ghoti.io/text/html.h>
+#include <ghoti.io/text/markup.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -196,9 +200,14 @@ struct World {
   GTEXT_CSS_Conditions * conditions = nullptr;
   std::vector<GTEXT_CSSOM_Sheet *> sheets;
   GTEXT_CSSOM_Sheet * current = nullptr;
+  /* a Markup document, for the ops H and GC */
+  GTEXT_Markup_Document * markup = nullptr;
+  GTEXT_CSS_Markup_Adapter * adapter = nullptr;
+  GTEXT_CSS_Selector_Match_Options match_options{};
+  GTEXT_CSSOM_Markup_Binding * binding = nullptr;
 };
 
-bool open_world(World & w, GTEXT_CSS_Registry * registry) {
+bool open_world(World & w, GTEXT_CSS_Registry * registry, const std::string * html = nullptr) {
   GTEXT_CSS_Media_Environment env = gtext_css_media_environment_default(nullptr);
   env.viewport.width = 1280;
   env.viewport.height = 800;
@@ -212,11 +221,77 @@ bool open_world(World & w, GTEXT_CSS_Registry * registry) {
   GTEXT_CSSOM_Config c = gtext_cssom_config_default();
   c.registry = registry;
   c.conditions = w.conditions;
-  return gtext_cssom_document_new(&c, &w.doc) == GTEXT_CSS_OK;
+  if (html) {
+    GTEXT_HTML_Result hr;
+    std::memset(&hr, 0, sizeof hr);
+    if (gtext_html_parse(html->data(), html->size(), nullptr, &w.markup, &hr) != GTEXT_HTML_OK || gtext_css_markup_adapter_new(w.markup, nullptr, &w.adapter) != GTEXT_CSS_OK) {
+      return false;
+    }
+    gtext_html_result_free(&hr);
+    w.match_options = gtext_css_markup_match_options(w.adapter);
+    c.element_interface = gtext_css_markup_interface(w.adapter);
+    c.match_options = &w.match_options;
+    c.tree_version = &gtext_cssom_markup_tree_version;
+    c.tree_version_user = w.markup;
+  }
+  if (gtext_cssom_document_new(&c, &w.doc) != GTEXT_CSS_OK) {
+    return false;
+  }
+  if (html) {
+    GTEXT_CSSOM_Markup_Options mo = gtext_cssom_markup_options_default();
+    if (gtext_cssom_markup_binding_new(w.doc, gtext_cssom_document_scope(w.doc), w.markup, &mo, &w.binding) != GTEXT_CSS_OK || gtext_cssom_markup_sync(w.binding, nullptr) != GTEXT_CSS_OK) {
+      return false;
+    }
+    for (size_t i = 0; i < gtext_cssom_scope_sheet_count(gtext_cssom_document_scope(w.doc)); i++) {
+      w.sheets.push_back(gtext_cssom_scope_sheet_at(gtext_cssom_document_scope(w.doc), i));
+    }
+    w.current = w.sheets.empty() ? nullptr : w.sheets[0];
+  }
+  return true;
 }
 
-std::string run_op(World & w, const std::vector<std::string> & f) {
+void close_world(World & w) {
+  for (GTEXT_CSSOM_Sheet * s : w.sheets) {
+    gtext_cssom_sheet_release(s);
+  }
+  gtext_cssom_markup_binding_free(w.binding);
+  gtext_cssom_document_release(w.doc);
+  gtext_css_conditions_free(w.conditions);
+  gtext_css_markup_adapter_free(w.adapter);
+  gtext_markup_document_free(w.markup);
+  w = World();
+}
+
+std::string run_op(World & w, const std::vector<std::string> & f, GTEXT_CSS_Registry * registry) {
   const std::string & op = f[0];
+  if (op == "H") {
+    /* the page of a computed-style document: the world is made again over it */
+    close_world(w);
+    const std::string html = "<!DOCTYPE html><html><head><style>" + f[1] + "</style></head><body><div style=\"display:none\">" + f[2] + "</div></body></html>";
+    return open_world(w, registry, &html) ? "ok" : "error";
+  }
+  if (op == "GC") {
+    if (!w.markup) {
+      return "TypeError";
+    }
+    GTEXT_Markup_Node ** nodes = nullptr;
+    size_t n = 0;
+    if (gtext_markup_query_selector_all(gtext_markup_document_root(w.markup), f[1].data(), f[1].size(), nullptr, &nodes, &n, nullptr) != GTEXT_MARKUP_OK || n == 0) {
+      gtext_markup_query_free(nullptr, nodes);
+      return "TypeError";
+    }
+    const void * handle = gtext_css_markup_handle(nodes[0]);
+    gtext_markup_query_free(nullptr, nodes);
+    GTEXT_CSSOM_Decl * d = nullptr;
+    if (gtext_cssom_computed_style(w.doc, handle, nullptr, 0, &d) != GTEXT_CSS_OK) {
+      return "error";
+    }
+    char * v = nullptr;
+    size_t len = 0;
+    const std::string got = gtext_cssom_decl_get_property_value(d, f[2].data(), f[2].size(), &v, &len) == GTEXT_CSS_OK ? take(w.doc, v, len) : "error";
+    gtext_cssom_decl_release(d);
+    return got;
+  }
   GTEXT_CSSOM_Outcome o;
   std::memset(&o, 0, sizeof o);
   if (op == "S" || op == "C") {
@@ -405,7 +480,18 @@ std::string run_op(World & w, const std::vector<std::string> & f) {
   }
   else if (op == "V") {
     if (!t.rule) {
-      answer = "undefined";
+      /* a style sheet: type, href, title */
+      char * out = nullptr;
+      size_t n = 0;
+      if (f[2] == "type") {
+        answer = gtext_cssom_sheet_type(t.sheet);
+      }
+      else if ((f[2] == "href" && gtext_cssom_sheet_href(t.sheet, &out, &n) == GTEXT_CSS_OK) || (f[2] == "title" && gtext_cssom_sheet_title(t.sheet, &out, &n) == GTEXT_CSS_OK)) {
+        answer = out ? take(w.doc, out, n) : kNull;
+      }
+      else {
+        answer = "undefined";
+      }
     }
     else if (f[2] == "cssText") {
       answer = css_text(t.rule);
@@ -486,12 +572,7 @@ int main() {
     }
     out += "],\"t\":" + state(w) + "}";
     puts(out.c_str());
-    for (GTEXT_CSSOM_Sheet * s : w.sheets) {
-      gtext_cssom_sheet_release(s);
-    }
-    gtext_cssom_document_release(w.doc);
-    gtext_css_conditions_free(w.conditions);
-    w = World();
+    close_world(w);
     answers.clear();
   };
   while (std::getline(std::cin, line)) {
@@ -510,7 +591,7 @@ int main() {
     while (f.size() < 6) {
       f.push_back("");
     }
-    answers.push_back(run_op(w, f));
+    answers.push_back(run_op(w, f, registry));
   }
   finish();
   gtext_css_registry_free(registry);
