@@ -367,6 +367,7 @@ TEST(CssomSerializeCache, AMillionRuleSheetKeepsTheCacheSmall) {
     gtext_cssom_rule_release(r);
     r = next;
     if (c.cache_fills > 20000) {
+      gtext_cssom_rule_release(r); // the next one was taken and is not visited
       break;
     }
   }
