@@ -421,6 +421,223 @@ static bool wide_keyword_name(const GTEXT_CSS_String * s) {
   return lower_eq(s, "initial") || lower_eq(s, "inherit") || lower_eq(s, "unset") || lower_eq(s, "revert") || lower_eq(s, "revert-layer") || lower_eq(s, "default");
 }
 
+static char * text_in_arena(ctx * c, const GTEXT_CSS_Component_Value * v, size_t n, size_t * len);
+
+/// A growing text for the canonical prelude of an `@import` or `@namespace`.
+typedef struct {
+  const GTEXT_Allocator * alloc;
+  char * data;
+  size_t len, cap;
+  bool failed;
+} pbuf;
+
+static GTEXT_Markup_Status pbuf_write(void * user, const char * bytes, size_t n) {
+  pbuf * b = user;
+  if (b->failed) {
+    return GTEXT_MARKUP_E_OOM;
+  }
+  if (b->len + n + 1 > b->cap) {
+    size_t nc = b->cap ? b->cap : 64;
+    while (nc < b->len + n + 1) {
+      nc *= 2;
+    }
+    char * nd = gtext_allocator_realloc(b->alloc, b->data, nc);
+    if (!nd) {
+      b->failed = true;
+      return GTEXT_MARKUP_E_OOM;
+    }
+    b->data = nd;
+    b->cap = nc;
+  }
+  memcpy(b->data + b->len, bytes, n);
+  b->len += n;
+  b->data[b->len] = 0;
+  return GTEXT_MARKUP_OK;
+}
+
+static void pbuf_puts(pbuf * b, const char * s) {
+  (void)pbuf_write(b, s, strlen(s));
+}
+
+static bool prelude_ws(const GTEXT_CSS_Component_Value * v) {
+  return v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_WHITESPACE;
+}
+
+/// CSSOM's "serialize a URL": `url("` and the string with its quotes and backslashes escaped, `")`.
+static void pbuf_url(pbuf * b, const GTEXT_CSS_String * uri) {
+  GTEXT_Markup_Sink sink = {pbuf_write, b};
+  pbuf_puts(b, "url(");
+  (void)gtext_css_serialize_string(uri->data ? uri->data : "", uri->length, &sink);
+  pbuf_puts(b, ")");
+}
+
+/// The canonical text of the prelude of an `@import` (`url("a.css") layer(x) supports(...) screen`) or an `@namespace` (`x url("u")`), as CSSOM writes them: the URL is always
+/// `url("...")`, and the words after it keep their order, with the media query list as `mediaText` writes it. Left as written when the prelude does not have that shape (the rule is then
+/// invalid and the text is not used).
+static bool canonical_url_prelude(ctx * c, const GTEXT_CSS_Component_Value * p, size_t n, bool is_import) {
+  GTEXT_CSS_Atrule * a = c->a;
+  pbuf b = {&a->alloc, NULL, 0, 0, false};
+  size_t i = 0;
+  while (i < n && prelude_ws(&p[i])) {
+    i++;
+  }
+  if (!is_import && i < n && p[i].kind == GTEXT_CSS_VALUE_TOKEN && p[i].type == GTEXT_CSS_TOKEN_IDENT) {
+    GTEXT_Markup_Sink sink = {pbuf_write, &b};
+    (void)gtext_css_serialize_identifier(p[i].value.data, p[i].value.length, &sink);
+    pbuf_puts(&b, " ");
+    i++;
+    while (i < n && prelude_ws(&p[i])) {
+      i++;
+    }
+  }
+  const GTEXT_CSS_String * uri = NULL;
+  if (i < n && p[i].kind == GTEXT_CSS_VALUE_TOKEN && (p[i].type == GTEXT_CSS_TOKEN_URL || p[i].type == GTEXT_CSS_TOKEN_STRING)) {
+    uri = &p[i].value;
+  }
+  else if (i < n && p[i].kind == GTEXT_CSS_VALUE_FUNCTION && css_ascii_ieq(&p[i].value, "url")) {
+    for (size_t k = 0; k < p[i].child_count && !uri; k++) {
+      if (!prelude_ws(&p[i].children[k])) {
+        uri = &p[i].children[k].value;
+      }
+    }
+  }
+  if (!uri) {
+    gtext_allocator_free(&a->alloc, b.data);
+    return false;
+  }
+  i++;
+  pbuf_url(&b, uri);
+  if (is_import) {
+    for (; i < n; i++) {
+      if (prelude_ws(&p[i])) {
+        continue;
+      }
+      const bool kw = p[i].kind == GTEXT_CSS_VALUE_TOKEN && p[i].type == GTEXT_CSS_TOKEN_IDENT;
+      const bool fn = p[i].kind == GTEXT_CSS_VALUE_FUNCTION;
+      const char * word = NULL;
+      if ((kw || fn) && css_ascii_ieq(&p[i].value, "layer")) {
+        word = "layer";
+      }
+      else if ((kw || fn) && css_ascii_ieq(&p[i].value, "scope")) {
+        word = "scope";
+      }
+      else if (fn && css_ascii_ieq(&p[i].value, "supports")) {
+        word = "supports";
+      }
+      if (!word) {
+        break;
+      }
+      pbuf_puts(&b, " ");
+      pbuf_puts(&b, word);
+      if (fn) {
+        size_t tl = 0;
+        char * t = text_in_arena(c, p[i].children, p[i].child_count, &tl);
+        pbuf_puts(&b, "(");
+        if (t) {
+          (void)pbuf_write(&b, t, tl);
+        }
+        pbuf_puts(&b, ")");
+      }
+    }
+    while (i < n && prelude_ws(&p[i])) {
+      i++;
+    }
+    if (i < n) {
+      /* the media query list, as `mediaText` writes it */
+      GTEXT_CSS_Media_List * list = NULL;
+      GTEXT_CSS_Media_Result mr;
+      memset(&mr, 0, sizeof mr);
+      const GTEXT_CSS_Status ms = gtext_css_media_list_parse_values(p + i, n - i, NULL, &list, &mr);
+      gtext_css_media_result_free(&mr);
+      char * mt = NULL;
+      size_t ml = 0;
+      if (ms == GTEXT_CSS_OK && list && gtext_css_media_list_serialize_buffer(list, NULL, &mt, &ml) == GTEXT_CSS_OK && mt) {
+        if (ml) {
+          pbuf_puts(&b, " ");
+          (void)pbuf_write(&b, mt, ml);
+        }
+        gtext_css_media_buffer_free(NULL, mt);
+      }
+      else {
+        size_t tl = 0;
+        char * t = text_in_arena(c, p + i, n - i, &tl);
+        if (t && tl) {
+          pbuf_puts(&b, " ");
+          (void)pbuf_write(&b, t, tl);
+        }
+      }
+      gtext_css_media_list_free(list);
+    }
+  }
+  if (!b.failed && b.data) {
+    char * copy = css_arena_strdup(&a->arena, b.data, b.len);
+    if (copy) {
+      a->prelude = copy;
+      a->prelude_len = b.len;
+    }
+    else {
+      fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
+    }
+  }
+  else if (b.failed) {
+    fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
+  }
+  gtext_allocator_free(&a->alloc, b.data);
+  if (!is_import) {
+    while (i < n && prelude_ws(&p[i])) {
+      i++;
+    }
+    return i >= n;   /* an @namespace is a prefix and a URL, and nothing else */
+  }
+  return true;
+}
+
+/// Whether the prelude of an `@layer` is a layer name list (a statement: names separated by commas) or at most one name (a block). A name is identifiers joined by `.` with no white
+/// space around the dots (CSS Cascade 5, `<layer-name>`).
+static bool layer_prelude_valid(const GTEXT_CSS_Component_Value * p, size_t n, bool has_block) {
+  size_t i = 0, names = 0;
+  for (;;) {
+    while (i < n && prelude_ws(&p[i])) {
+      i++;
+    }
+    if (i >= n) {
+      break;
+    }
+    /* one name */
+    if (p[i].kind != GTEXT_CSS_VALUE_TOKEN || p[i].type != GTEXT_CSS_TOKEN_IDENT) {
+      return false;
+    }
+    i++;
+    while (i + 1 < n && p[i].kind == GTEXT_CSS_VALUE_TOKEN && p[i].type == GTEXT_CSS_TOKEN_DELIM && p[i].value.length == 1 && p[i].value.data[0] == '.' &&
+        p[i + 1].kind == GTEXT_CSS_VALUE_TOKEN && p[i + 1].type == GTEXT_CSS_TOKEN_IDENT) {
+      i += 2;
+    }
+    names++;
+    while (i < n && prelude_ws(&p[i])) {
+      i++;
+    }
+    if (i >= n) {
+      break;
+    }
+    if (p[i].kind != GTEXT_CSS_VALUE_TOKEN || p[i].type != GTEXT_CSS_TOKEN_COMMA) {
+      return false;
+    }
+    i++;
+    /* a comma needs a name after it */
+    size_t k = i;
+    while (k < n && prelude_ws(&p[k])) {
+      k++;
+    }
+    if (k >= n) {
+      return false;
+    }
+  }
+  if (has_block) {
+    return names <= 1;
+  }
+  return names >= 1;
+}
+
 /// The canonical text of component values, in the arena.
 static char * text_in_arena(ctx * c, const GTEXT_CSS_Component_Value * v, size_t n, size_t * len) {
   GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
@@ -1439,6 +1656,7 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   a->registry = registry;
   a->span = rule->span;
   a->id = rule->id;
+  a->statement = rule->kind == GTEXT_CSS_RULE_AT && !rule->has_block;
   cx.a = a;
   const GTEXT_CSS_Component_Value * p = rule->prelude;
   const size_t pn = rule->prelude_count;
@@ -1493,6 +1711,11 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
     if (!(row->parents & bit[(int)parent])) {
       cx.valid = false;
       diag(&cx, GTEXT_CSS_ATRULE_DIAG_INVALID_RULE, rule->span, "the at-rule is not valid in this place");
+    }
+    else if (kind == GTEXT_CSS_ATRULE_LAYER && !rule->has_block && parent == GTEXT_CSS_ATRULE_PARENT_STYLE) {
+      /* CSS Cascade 5: an `@layer` statement is not a rule of a style rule's block (both browsers drop it there); a block is */
+      cx.valid = false;
+      diag(&cx, GTEXT_CSS_ATRULE_DIAG_INVALID_RULE, rule->span, "an @layer statement is not valid inside a style rule");
     }
   }
   /* the prelude */
@@ -1677,18 +1900,16 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
       return cx.st != GTEXT_CSS_OK ? cx.st : fail(&cx, GTEXT_CSS_E_OOM, NULL, NULL);
     }
   }
-  if (pn && !bad_prelude && (kind == GTEXT_CSS_ATRULE_MEDIA || kind == GTEXT_CSS_ATRULE_SUPPORTS || kind == GTEXT_CSS_ATRULE_CONTAINER)) {
-    /* the prelude of a conditional group rule is written as CSSOM writes its condition (`mediaText`, `conditionText`): an invalid media query list is `not all`, a ratio has both
-       of its numbers, an unknown feature is kept as it was */
+  if (pn && !bad_prelude && (kind == GTEXT_CSS_ATRULE_MEDIA || kind == GTEXT_CSS_ATRULE_CONTAINER)) {
+    /* the prelude of a media or container rule is written as CSSOM writes its condition (`mediaText`, `conditionText`): an invalid media query list is `not all`, a ratio has both
+       of its numbers, an unknown feature is kept as it was. A `@supports` condition is not: `conditionText` of it is the text as it was written (both browsers, and the pinned
+       css-conditional/js/supports-conditionText.html: `(color : red) or ( color:blue )`) */
     GTEXT_CSS_Media_List * list = NULL;
     GTEXT_CSS_Media_Result mr;
     memset(&mr, 0, sizeof mr);
     GTEXT_CSS_Status ms;
     if (kind == GTEXT_CSS_ATRULE_MEDIA) {
       ms = gtext_css_media_list_parse_values(p, pn, NULL, &list, &mr);
-    }
-    else if (kind == GTEXT_CSS_ATRULE_SUPPORTS) {
-      ms = gtext_css_supports_parse_values(p, pn, false, NULL, &list, &mr);
     }
     else {
       ms = gtext_css_container_parse_values(p, pn, NULL, &list, &mr);
@@ -1707,6 +1928,21 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
       }
     }
     gtext_css_media_list_free(list);
+  }
+  if (!bad_prelude && (kind == GTEXT_CSS_ATRULE_IMPORT || kind == GTEXT_CSS_ATRULE_NAMESPACE)) {
+    /* `@import` and `@namespace` are statements with a URL (CSS Cascade 5, CSS Namespaces 3); a block makes them invalid */
+    if (rule->has_block || !pn || !canonical_url_prelude(&cx, p, pn, kind == GTEXT_CSS_ATRULE_IMPORT)) {
+      bad_prelude = true;
+      prelude_why = "CSS Cascade 5 and CSS Namespaces 3: @import and @namespace are statements that name a URL (an @namespace may have a prefix before it)";
+    }
+  }
+  if (cx.st != GTEXT_CSS_OK) {
+    atrule_destroy(a);
+    return cx.st;
+  }
+  if (!bad_prelude && kind == GTEXT_CSS_ATRULE_LAYER && !layer_prelude_valid(p, pn, rule->has_block)) {
+    bad_prelude = true;
+    prelude_why = "CSS Cascade 5, 6.4: the prelude of @layer is a list of layer names (a statement) or one optional layer name (a block)";
   }
   if (bad_prelude) {
     prelude_ok = false;
@@ -1814,6 +2050,22 @@ GTEXT_CSS_Status css_atrule_keyframe_block_valid(const GTEXT_CSS_Registry * regi
   gtext_css_atrule_free(a);
   *valid = st == GTEXT_CSS_OK && res.valid;
   return st;
+}
+
+GTEXT_CSS_Status css_atrule_parse_keyframe(const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Rule * rule, const GTEXT_Allocator * allocator, GTEXT_CSS_Atrule ** out) {
+  GTEXT_CSS_Atrule_Options o = gtext_css_atrule_options_default();
+  o.allocator = allocator;
+  GTEXT_CSS_Atrule_Result res;
+  memset(&res, 0, sizeof res);
+  GTEXT_CSS_Atrule * a = NULL;
+  const GTEXT_CSS_Status st = parse_into(registry, rule, &o, true, GTEXT_CSS_ATRULE_PARENT_GROUP, &a, &res);
+  if (st != GTEXT_CSS_OK || !res.valid) {
+    gtext_css_atrule_free(a);
+    *out = NULL;
+    return st;
+  }
+  *out = a;
+  return GTEXT_CSS_OK;
 }
 
 /* ---- parsing one descriptor on its own ---------------------------------------------------------------------------------------------- */
@@ -1942,9 +2194,34 @@ static void put_names_prelude(outp * o, const GTEXT_CSS_Atrule * a) {
   }
 }
 
-static void put_rule(outp * o, const GTEXT_CSS_Atrule * a, size_t indent) {
-  switch (a->kind) {
-  case GTEXT_CSS_ATRULE_KEYFRAMES: {
+/// A keyframe block's selectors, the offsets written as percentages (`from` and `to` as `0%` and `100%`, as `keyText` is).
+static void put_keyframe_selectors(outp * o, const GTEXT_CSS_Atrule * a) {
+  for (size_t i = 0; i < a->noffsets; i++) {
+    if (i) {
+      putz(o, ", ");
+    }
+    if (a->seltext && a->seltext[i]) {
+      putz(o, a->seltext[i]);
+      continue;
+    }
+    char buf[40];
+    const double pc = a->offsets[i] * 100.0;
+    size_t len = 0;
+    const long long whole = (long long)pc;
+    if ((double)whole == pc) {
+      len = css_cssom_number(pc, true, buf);
+    }
+    else {
+      len = css_cssom_number(pc, false, buf);
+    }
+    put(o, buf, len);
+    putz(o, "%");
+  }
+}
+
+/// The part of a rule before its block: `@keyframes name`, `@page :first`, `@font-face`, and for a keyframe block its selectors.
+static void put_header(outp * o, const GTEXT_CSS_Atrule * a) {
+  if (a->kind == GTEXT_CSS_ATRULE_KEYFRAMES) {
     putz(o, "@keyframes ");
     if (a->nnames) {
       const GTEXT_CSS_String * n = &a->names[0];
@@ -1955,44 +2232,11 @@ static void put_rule(outp * o, const GTEXT_CSS_Atrule * a, size_t indent) {
         put_ident(o, n->data, n->length);
       }
     }
-    putz(o, " {");
-    for (size_t i = 0; i < a->nkids; i++) {
-      putz(o, "\n  ");
-      put_rule(o, a->kids[i], indent + 2);
-    }
-    putz(o, a->nkids ? "\n}" : " }");
     return;
   }
-  case GTEXT_CSS_ATRULE_KEYFRAME: {
-    for (size_t i = 0; i < a->noffsets; i++) {
-      if (i) {
-        putz(o, ", ");
-      }
-      if (a->seltext && a->seltext[i]) {
-        putz(o, a->seltext[i]);
-        continue;
-      }
-      char buf[40];
-      /* offsets are percentages; from and to are written 0% and 100%, as keyText is */
-      const double pc = a->offsets[i] * 100.0;
-      size_t len = 0;
-      const long long whole = (long long)pc;
-      if ((double)whole == pc) {
-        len = css_cssom_number(pc, true, buf);
-      }
-      else {
-        len = css_cssom_number(pc, false, buf);
-      }
-      put(o, buf, len);
-      putz(o, "%");
-    }
-    putz(o, " { ");
-    put_declarations(o, a);
-    putz(o, a->nds ? " }" : "}");
+  if (a->kind == GTEXT_CSS_ATRULE_KEYFRAME) {
+    put_keyframe_selectors(o, a);
     return;
-  }
-  default:
-    break;
   }
   putz(o, "@");
   put_ident(o, a->name, a->name_len);
@@ -2006,7 +2250,28 @@ static void put_rule(outp * o, const GTEXT_CSS_Atrule * a, size_t indent) {
       put(o, a->prelude, a->prelude_len);
     }
   }
-  if (a->kind == GTEXT_CSS_ATRULE_NAMESPACE || a->kind == GTEXT_CSS_ATRULE_IMPORT || a->kind == GTEXT_CSS_ATRULE_CHARSET || a->kind == GTEXT_CSS_ATRULE_CUSTOM_MEDIA) {
+}
+
+static void put_rule(outp * o, const GTEXT_CSS_Atrule * a, size_t indent) {
+  if (a->kind == GTEXT_CSS_ATRULE_KEYFRAMES) {
+    put_header(o, a);
+    putz(o, " {");
+    for (size_t i = 0; i < a->nkids; i++) {
+      putz(o, "\n  ");
+      put_rule(o, a->kids[i], indent + 2);
+    }
+    putz(o, a->nkids ? "\n}" : " }");
+    return;
+  }
+  if (a->kind == GTEXT_CSS_ATRULE_KEYFRAME) {
+    put_header(o, a);
+    putz(o, " { ");
+    put_declarations(o, a);
+    putz(o, a->nds ? " }" : "}");
+    return;
+  }
+  put_header(o, a);
+  if (a->statement || a->kind == GTEXT_CSS_ATRULE_NAMESPACE || a->kind == GTEXT_CSS_ATRULE_IMPORT || a->kind == GTEXT_CSS_ATRULE_CHARSET || a->kind == GTEXT_CSS_ATRULE_CUSTOM_MEDIA) {
     putz(o, ";");
     return;
   }
@@ -2031,6 +2296,20 @@ static void put_rule(outp * o, const GTEXT_CSS_Atrule * a, size_t indent) {
     put_rule(o, a->kids[i], indent + 2);
   }
   putz(o, "\n}");
+}
+
+GTEXT_CSS_Status css_atrule_serialize_part(const GTEXT_CSS_Atrule * rule, bool declarations, const GTEXT_Markup_Sink * sink) {
+  if (!rule || !sink || !sink->write) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  outp o = {sink, GTEXT_CSS_OK};
+  if (declarations) {
+    put_declarations(&o, rule);
+  }
+  else {
+    put_header(&o, rule);
+  }
+  return o.st;
 }
 
 GTEXT_CSS_Status gtext_css_atrule_serialize(const GTEXT_CSS_Atrule * rule, const GTEXT_Markup_Sink * sink) {
@@ -2122,7 +2401,7 @@ static bool atrule_validity_rule(void * user, const GTEXT_CSS_Parent * parent, c
   const void * row = css_atrule_row_find(nm, rule->name.length);
   GTEXT_CSS_Atrule_Parent where = GTEXT_CSS_ATRULE_PARENT_TOP;
   if (!parent->top_level) {
-    if (parent->kind == GTEXT_CSS_RULE_QUALIFIED) {
+    if (parent->kind == GTEXT_CSS_RULE_QUALIFIED || parent->in_style_rule) {
       where = GTEXT_CSS_ATRULE_PARENT_STYLE;
     }
     else if (css_ascii_ieq(&parent->name, "page")) {

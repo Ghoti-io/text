@@ -160,11 +160,19 @@ enum {
   RF_BLOCK        ///< A rule's block being read.
 };
 
+/// What a rule's block puts the rules inside it in: bits of rframe::context.
+enum {
+  CTX_RELATIVE = 1, ///< Some enclosing rule is a style rule or an `@scope`.
+  CTX_SCOPE = 2,    ///< The nearest of those is an `@scope`.
+  CTX_STYLE = 4     ///< Some enclosing rule is a style rule.
+};
+
 /// A frame of the rule machine: the base context of an entry point, or a rule's block.
 typedef struct {
   int kind;             ///< RF_*.
   bool nested;          ///< RF_BLOCK: the rule was consumed with nested set.
   bool discard;         ///< RF_BLOCK: the block is consumed and the rule dropped.
+  uint8_t context;      ///< RF_BLOCK: what the rules directly inside are in (CTX_*), inherited through at-rules that are neither a style rule nor an `@scope`.
   GTEXT_CSS_Rule rule;  ///< RF_BLOCK: the rule, its prelude read.
   size_t item_base;     ///< Where this frame's items begin in `items`.
   size_t decl_base;     ///< Where its current run of declarations begins.
@@ -692,6 +700,9 @@ static GTEXT_CSS_Parent parent_of(parser * p, bool nested) {
     parent.name = f->rule.name;
     parent.prelude = f->rule.prelude;
     parent.prelude_count = f->rule.prelude_count;
+    parent.relative = (f->context & CTX_RELATIVE) != 0;
+    parent.in_scope = (f->context & CTX_SCOPE) != 0;
+    parent.in_style_rule = (f->context & CTX_STYLE) != 0;
   }
   else {
     parent.top_level = true;
@@ -774,11 +785,20 @@ static void deliver_rule(parser * p, GTEXT_CSS_Rule * rule, bool nested) {
 
 static bool push_block_frame(parser * p, const GTEXT_CSS_Rule * rule, bool nested, bool discard,
     const css_tok * open) {
+  const rframe * enclosing = p->rframes.len ? top_frame(p) : NULL;
+  const uint8_t inherited = enclosing && enclosing->kind == RF_BLOCK ? enclosing->context : 0;
   rframe * f = vec_push(p->ctx, &p->rframes);
   if (!f) {
     return false;
   }
   f->kind = RF_BLOCK;
+  f->context = inherited;
+  if (rule->kind == GTEXT_CSS_RULE_QUALIFIED) {
+    f->context = (uint8_t)((inherited & CTX_STYLE) | CTX_STYLE | CTX_RELATIVE);   /* a style rule: the nearest is not a scope */
+  }
+  else if (rule->kind == GTEXT_CSS_RULE_AT && rule->name.length == 5 && css_ascii_ieq(&rule->name, "scope")) {
+    f->context = (uint8_t)((inherited & CTX_STYLE) | CTX_RELATIVE | CTX_SCOPE);
+  }
   f->nested = nested;
   f->discard = discard;
   f->rule = *rule;
@@ -1597,6 +1617,14 @@ static GTEXT_CSS_Status parse(entry e, const char * input, size_t length,
   }
   css_ctx ctx;
   css_ctx_init(&ctx, options, result != NULL);
+  if (length < 512) {
+    /* the tree of a few bytes is small: a block of 16 KiB each would be most of what an editor's many small insertions hold */
+    size_t first = 1024;
+    while (first < length * 32 + 1024) {
+      first *= 2;
+    }
+    ctx.arena.first = first;
+  }
   ctx.in = (const unsigned char *)(input ? input : "");
   ctx.in_len = length;
   ctx.map = src ? src->map : NULL;

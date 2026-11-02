@@ -568,6 +568,10 @@ typedef struct {
   const GTEXT_CSS_Component_Value * prelude; ///< The enclosing rule's prelude.
   size_t prelude_count;            ///< Its length.
   size_t depth;                    ///< How many rules enclose the construct.
+  bool relative;                   ///< A style rule's prelude read here is a relative selector list: some enclosing rule, at any depth, is a style rule or an `@scope`
+                                   ///< (the standard's nesting context, which `nested` is not: every rule in a block is `nested`).
+  bool in_scope;                   ///< The nearest enclosing style rule or `@scope`, at any depth, is an `@scope`.
+  bool in_style_rule;              ///< Some enclosing rule, at any depth, is a style rule (a rule that is valid only outside one is not valid here).
 } GTEXT_CSS_Parent;
 
 /**

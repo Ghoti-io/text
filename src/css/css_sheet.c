@@ -720,8 +720,8 @@ static bool list_ends_in_pseudo_element(const GTEXT_CSS_Selector_List * l) {
 }
 
 /// Read `(<start>)? to (<end>)?` (an `@scope` prelude, or what `scope()` of an `@import` holds in parentheses). `bad`: it is not valid. The lists are not yet kept.
-static GTEXT_CSS_Status read_scope_boundaries(build * b, const GTEXT_CSS_Component_Value * p, size_t n, bool relative, bool in_scope, GTEXT_CSS_Span span,
-    GTEXT_CSS_Selector_List ** start_out, GTEXT_CSS_Selector_List ** end_out, bool * bad_out) {
+GTEXT_CSS_Status css_sheet_scope_boundaries(const GTEXT_Allocator * alloc, const GTEXT_CSS_Selector_Options * options, const GTEXT_CSS_Namespace_Map * map, const GTEXT_CSS_Component_Value * p,
+    size_t n, bool relative, bool in_scope, GTEXT_CSS_Selector_List ** start_out, GTEXT_CSS_Selector_List ** end_out, bool * bad_out) {
   size_t i = 0;
   const GTEXT_CSS_Component_Value * sv = NULL;
   size_t sn = 0;
@@ -771,14 +771,14 @@ static GTEXT_CSS_Status read_scope_boundaries(build * b, const GTEXT_CSS_Compone
   GTEXT_CSS_Selector_List *start = NULL, *end = NULL;
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
   if (!bad && has_start) {
-    st = parse_selector(b, sv, sn, relative, in_scope, span, &start); // inside a rule or another @scope the roots are inside what that is (the implied `&`)
+    st = css_sheet_selector_prelude(alloc, options, map, sv, sn, relative, in_scope, &start); // inside a rule or another @scope the roots are inside what that is (the implied `&`)
     if (st != GTEXT_CSS_OK) {
       return st;
     }
     bad = start == NULL || list_ends_in_pseudo_element(start);
   }
   if (!bad && has_end) {
-    st = parse_selector(b, ev, en, true, true, span, &end);
+    st = css_sheet_selector_prelude(alloc, options, map, ev, en, true, true, &end);
     if (st != GTEXT_CSS_OK) {
       gtext_css_selector_list_free(start);
       return st;
@@ -793,6 +793,21 @@ static GTEXT_CSS_Status read_scope_boundaries(build * b, const GTEXT_CSS_Compone
   *start_out = start;
   *end_out = end;
   *bad_out = bad;
+  return GTEXT_CSS_OK;
+}
+
+/// The same for the build: the namespaces are the sheet's, and a failure is the build's.
+static GTEXT_CSS_Status read_scope_boundaries(build * b, const GTEXT_CSS_Component_Value * p, size_t n, bool relative, bool in_scope, GTEXT_CSS_Span span,
+    GTEXT_CSS_Selector_List ** start_out, GTEXT_CSS_Selector_List ** end_out, bool * bad_out) {
+  GTEXT_CSS_Sheet * s = b->sheet;
+  GTEXT_CSS_Namespace_Map map;
+  map.entries = s->ns;
+  map.count = s->nns;
+  map.default_uri = s->default_ns;
+  const GTEXT_CSS_Status st = css_sheet_scope_boundaries(&s->alloc, &b->opt->selector, &map, p, n, relative, in_scope, start_out, end_out, bad_out);
+  if (st != GTEXT_CSS_OK) {
+    return bfail(b, st, &span, NULL, NULL);
+  }
   return GTEXT_CSS_OK;
 }
 

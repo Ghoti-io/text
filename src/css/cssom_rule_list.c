@@ -42,8 +42,54 @@ static size_t size_of(const css_rule * n) {
   return n ? n->size : 0;
 }
 
+unsigned css_rule_class(const css_rule * rule) {
+  switch ((GTEXT_CSSOM_Rule_Kind)rule->kind) {
+  case GTEXT_CSSOM_RULE_IMPORT: return CSS_CLASS_IMPORT;
+  case GTEXT_CSSOM_RULE_NAMESPACE: return CSS_CLASS_NAMESPACE;
+  case GTEXT_CSSOM_RULE_LAYER: return rule->has_block ? CSS_CLASS_OTHER : CSS_CLASS_LAYER_STATEMENT;
+  default: return CSS_CLASS_OTHER;
+  }
+}
+
 static void update(css_rule * n) {
   n->size = 1 + size_of(n->left) + size_of(n->right);
+  for (unsigned k = 0; k < 4; k++) {
+    n->agg[k] = (css_rule_class(n) == k) + (n->left ? n->left->agg[k] : 0) + (n->right ? n->right->agg[k] : 0);
+  }
+}
+
+static void reset_leaf(css_rule * rule) {
+  rule->left = rule->right = rule->up = NULL;
+  rule->size = 1;
+  for (unsigned k = 0; k < 4; k++) {
+    rule->agg[k] = css_rule_class(rule) == k;
+  }
+}
+
+void css_rule_list_totals(const struct GTEXT_CSSOM_Rule_List * list, size_t out[4]) {
+  for (unsigned k = 0; k < 4; k++) {
+    out[k] = list->root ? list->root->agg[k] : 0;
+  }
+}
+
+void css_rule_list_prefix(const struct GTEXT_CSSOM_Rule_List * list, size_t index, size_t out[4]) {
+  for (unsigned k = 0; k < 4; k++) {
+    out[k] = 0;
+  }
+  const css_rule * n = list->root;
+  while (n && index > 0) {
+    const size_t before = size_of(n->left);
+    if (index <= before) {
+      n = n->left;
+      continue;
+    }
+    /* the whole left subtree and this node come before the index */
+    for (unsigned k = 0; k < 4; k++) {
+      out[k] += (n->left ? n->left->agg[k] : 0) + (css_rule_class(n) == k);
+    }
+    index -= before + 1;
+    n = n->right;
+  }
 }
 
 /// Rotate `x` above its parent, keeping the order and the sizes.
@@ -80,8 +126,7 @@ static void rotate_up(struct GTEXT_CSSOM_Rule_List * list, css_rule * x) {
 }
 
 void css_rule_list_insert(struct GTEXT_CSSOM_Rule_List * list, size_t index, css_rule * rule) {
-  rule->left = rule->right = rule->up = NULL;
-  rule->size = 1;
+  reset_leaf(rule);
   rule->prio = priority_of(rule->obj.id);
   rule->list = list;
   if (index > list->count) {
@@ -112,8 +157,10 @@ void css_rule_list_insert(struct GTEXT_CSSOM_Rule_List * list, size_t index, css
       }
     }
     rule->up = n;
+    const unsigned cls = css_rule_class(rule);
     for (css_rule * a = n; a; a = a->up) {
       a->size++;
+      a->agg[cls]++;
     }
     while (rule->up && rule->prio > rule->up->prio) {
       rotate_up(list, rule);
@@ -149,12 +196,13 @@ void css_rule_list_remove(struct GTEXT_CSSOM_Rule_List * list, css_rule * rule) 
     else {
       p->right = NULL;
     }
+    const unsigned cls = css_rule_class(rule);
     for (css_rule * a = p; a; a = a->up) {
       a->size--;
+      a->agg[cls]--;
     }
   }
-  rule->up = rule->left = rule->right = NULL;
-  rule->size = 1;
+  reset_leaf(rule);
   rule->list = NULL;
   list->count--;
   css_obj_set_parent(&rule->obj, NULL);
@@ -253,4 +301,24 @@ void css_rule_list_release_all(struct GTEXT_CSSOM_Rule_List * list) {
   }
   list->root = NULL;
   list->count = 0;
+}
+
+css_rule * css_rule_list_nth_of_class(const struct GTEXT_CSSOM_Rule_List * list, unsigned cls, size_t k) {
+  css_rule * n = list->root;
+  while (n) {
+    const size_t left = n->left ? n->left->agg[cls] : 0;
+    if (k < left) {
+      n = n->left;
+      continue;
+    }
+    k -= left;
+    if (css_rule_class(n) == cls) {
+      if (k == 0) {
+        return n;
+      }
+      k--;
+    }
+    n = n->right;
+  }
+  return NULL;
 }

@@ -51,6 +51,7 @@ extern "C" {
 typedef struct css_core css_core;
 typedef struct css_obj css_obj;
 typedef struct css_cssom_event css_cssom_event;
+struct css_text_cache;
 
 /// The base of every object.
 struct css_obj {
@@ -95,6 +96,8 @@ struct css_core {
   GTEXT_CSSOM_Counters counters;
   css_inline_entry * inline_map;       ///< Open addressing over the element handle; an entry with no element is empty, one with `decl` NULL is a tombstone.
   size_t inline_cap, inline_used, inline_live;
+  struct css_text_cache * cache_head, * cache_tail;   ///< The cached `cssText` of leaf rules, the entry added first at the head.
+  size_t cache_bytes;
   css_cssom_tap_fn tap;                ///< Where events go (a test, and the observer registry of C5c3).
   void * tap_user;
 };

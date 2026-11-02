@@ -209,6 +209,70 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_sheet_source_text(const GTEXT_CSSOM_Sheet
  */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_sheet_compact(GTEXT_CSSOM_Sheet * sheet);
 
+/* ---- insertRule, deleteRule and the sheet's text ---------------------------------------------------------------------------------------- */
+
+/**
+ * @brief `CSSStyleSheet.insertRule(rule, index)`: parse one rule from the text and insert it at the index.
+ *
+ * **The order of checks** (the first error wins; the Editors' Draft of CSSOM as read, and the answers of Chromium 156 and Firefox 158 where it is silent):
+ * 1. GTEXT_CSS_E_REENTRANT (called from an observer or a finalizer), GTEXT_CSS_E_LIMIT_CSSOM (the generation counter is spent);
+ * 2. GTEXT_CSS_E_SECURITY (the sheet is not origin-clean);
+ * 3. GTEXT_CSS_E_NOT_ALLOWED (the disallow-modification flag is set);
+ * 4. GTEXT_CSS_E_SYNTAX: "parse a rule" over the whole text finds one rule that is valid, or it does not (nothing, two rules, trailing text, an unknown at-rule, a style rule whose
+ *    selector is not valid, a rule that is invalid for its own grammar); so a text that is not a rule is a SyntaxError **whatever the index is**;
+ * 5. GTEXT_CSS_E_SYNTAX for an `@import` into a constructed sheet;
+ * 6. GTEXT_CSS_E_INDEX_SIZE (the index is greater than the number of rules);
+ * 7. GTEXT_CSS_E_HIERARCHY: the rule cannot be at that position by CSS Cascade 5 and CSS Namespaces 3 (an `@import` after a style rule, a style rule before an `@import` or
+ *    `@namespace`, an `@namespace` after a style rule or before an `@import`);
+ * 8. GTEXT_CSS_E_INVALID_STATE: an `@namespace` into a list that holds anything but `@import` and `@namespace` rules;
+ * 9. the rule is inserted.
+ *
+ * Both browsers answer the index check (6) before the text is looked at (4); the served text puts the parse first, and this library follows the text.
+ *
+ * Atomic: on any failure (an allocation or a limit included) the sheet, its versions, its ids and its observers' view are as they were. One GTEXT_CSSOM_EVENT_RULE_INSERTED is sent.
+ *
+ * @param sheet The sheet. Not NULL.
+ * @param text The rule, UTF-8. NULL with a length of 0 is the empty text (a SyntaxError).
+ * @param length Its length in bytes.
+ * @param index Where to insert it: 0 to the number of rules. (The binding's default is 0.)
+ * @param rule_out NULL, or receives the new rule with an external reference of the caller's; written only on success.
+ * @param outcome NULL, or receives what the call did.
+ * @return GTEXT_CSS_OK, or one of the statuses above; GTEXT_CSS_E_INVALID (a NULL argument); the limits (GTEXT_CSS_E_LIMIT_INPUT, _LIMIT_RULES, _LIMIT_RULE_NESTING, _LIMIT_WORK, _LIMIT_CSSOM,
+ *   and the parse's); GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_sheet_insert_rule(GTEXT_CSSOM_Sheet * sheet, const char * text, size_t length, size_t index, GTEXT_CSSOM_Rule ** rule_out,
+    GTEXT_CSSOM_Outcome * outcome);
+
+/**
+ * @brief `CSSStyleSheet.deleteRule(index)`: remove the rule, with the rules inside it, which stay valid objects that no sheet holds (`parentStyleSheet` and `parentRule` are NULL).
+ *
+ * The order: GTEXT_CSS_E_REENTRANT/_LIMIT_CSSOM, GTEXT_CSS_E_SECURITY, GTEXT_CSS_E_NOT_ALLOWED, GTEXT_CSS_E_INDEX_SIZE (the index is not less than the number of rules),
+ * GTEXT_CSS_E_INVALID_STATE (an `@namespace` rule, when the list holds anything but `@import` and `@namespace` rules), then the rule is removed. One GTEXT_CSSOM_EVENT_RULE_REMOVED
+ * is sent. Atomic. O(log n) in the rules of the sheet.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_sheet_delete_rule(GTEXT_CSSOM_Sheet * sheet, size_t index, GTEXT_CSSOM_Outcome * outcome);
+
+/**
+ * @brief The legacy `addRule(selector, style, index)`: `insertRule(selector + " { " + style + " }", index)`, at the end when no index is given. The binding returns -1.
+ * @param has_index Whether `index` is given.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_sheet_add_rule(GTEXT_CSSOM_Sheet * sheet, const char * selector, size_t selector_length, const char * style, size_t style_length,
+    bool has_index, size_t index, GTEXT_CSSOM_Outcome * outcome);
+
+/** @brief The legacy `removeRule(index)`: the steps of gtext_cssom_sheet_delete_rule(). (`rules` is gtext_cssom_sheet_rules().) */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_sheet_remove_rule(GTEXT_CSSOM_Sheet * sheet, size_t index, GTEXT_CSSOM_Outcome * outcome);
+
+/**
+ * @brief Write the sheet as text: the `cssText` of each rule, each followed by a line feed. Reads the live state, fills no cache, and the sink's output is bounded by the document's
+ *   `max_output_bytes` (GTEXT_CSS_E_LIMIT_OUTPUT).
+ *
+ * Parsing the text again gives a sheet that serializes to the same bytes (for every sheet this library's parse can make, but a rule closed by the end of input and a custom property
+ * value holding `{` or `(`, which the syntax layer owns).
+ *
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_SECURITY (not origin-clean); GTEXT_CSS_E_LIMIT_OUTPUT; GTEXT_CSS_E_WRITE (the sink refused); GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_sheet_serialize(const GTEXT_CSSOM_Sheet * sheet, const GTEXT_Markup_Sink * sink);
+
 /**
  * @brief The canonical dump of a sheet and every rule in it (`cssom-sheet 1`): the sheet's attributes, then the rules in document order, one line each; identical on every
  *   host. It reads and builds nothing.

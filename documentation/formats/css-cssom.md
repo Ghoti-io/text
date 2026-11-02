@@ -299,6 +299,125 @@ after the release: 2 rules
 
 **Limits.** `max_rules` (rules in a sheet, at every depth, counting every rule the parse makes), `max_rule_nesting` (default 64, at most 4,096), `max_input_bytes`, `max_work`, `max_live_objects` and `max_live_bytes` are fields of the config; each is its own status and an exact answer: the parse fails whole and leaves nothing. A nest a hundred thousand deep is a status (the parser's depth limit) and not a crash, and a sheet of a million rules is held and freed without a call that recurses. `gtext_cssom_sheet_rules()` of a sheet whose origin-clean flag is unset is `GTEXT_CSS_E_SECURITY`. `gtext_cssom_sheet_dump()` and `gtext_cssom_rule_dump()` write a sheet or a rule with everything under it in a canonical, versioned text (`cssom-sheet 1`, `cssom-rule 1`) that reads and builds nothing, with a SHA-256 of each.
 
+## Inserting and deleting rules, and writing them
+
+`gtext_cssom_sheet_insert_rule()` is `CSSStyleSheet.insertRule()`, `gtext_cssom_sheet_delete_rule()` is `deleteRule()`, and `gtext_cssom_rule_insert_rule()` and `_delete_rule()` are the same two for the rules inside a style rule, a grouping rule (`@media`, `@supports`, `@container`, `@starting-style`, `@scope`, a `@layer` with a block) and `@page`. The legacy `addRule()` and `removeRule()` are `gtext_cssom_sheet_add_rule()` and `_remove_rule()`; `rules` is `gtext_cssom_sheet_rules()`. A rule inserted is a rule object at once, with everything inside it, and `rule_out` returns it retained; a rule deleted is detached, with everything inside it (`parentStyleSheet` and `parentRule` read null at once, the object stays valid and readable, its id is unchanged), and a change to a detached rule changes the rule and nothing else.
+
+```c
+#include <ghoti.io/text/css.h>
+#include <stdio.h>
+#include <string.h>
+
+struct Out {
+  char data[512];
+  size_t used;
+};
+
+static GTEXT_Markup_Status collect(void * user, const char * bytes, size_t n) {
+  struct Out * o = (struct Out *)user;
+  memcpy(o->data + o->used, bytes, n);
+  o->used += n;
+  return GTEXT_MARKUP_OK;
+}
+
+/* An editor's round trip: parse a sheet, insert and delete rules, read the exceptions, write the sheet back. */
+static void cssom_insert(void) {
+  GTEXT_CSS_Registry * registry = NULL;
+  gtext_css_registry_new(NULL, &registry);
+  GTEXT_CSSOM_Config config = gtext_cssom_config_default();
+  config.registry = registry;
+  GTEXT_CSSOM_Document * document = NULL;
+  gtext_cssom_document_new(&config, &document);
+
+  const char * text = "@namespace s url(urn:s);\na { color: red }\n";
+  GTEXT_CSSOM_Sheet * sheet = NULL;
+  gtext_cssom_sheet_new_parsed(document, text, strlen(text), NULL, &sheet);
+
+  /* sheet.insertRule("@media print { s|b { width: 1px } }", 2): the rule, and the rule inside it, are objects at once */
+  const char * media = "@media print { s|b { width: 1px } }";
+  GTEXT_CSSOM_Rule * made = NULL;
+  GTEXT_CSS_Status status = gtext_cssom_sheet_insert_rule(sheet, media, strlen(media), 2, &made, NULL);
+  printf("insert media: %s\n", gtext_css_status_string(status));
+
+  /* the exceptions have names a binding throws: an @import after a style rule, a prefix nobody declared, text that is not a rule, an index past the end */
+  const char * bad[] = {"@import url(a.css);", "t|c { }", "a { } b { }", "d { }"};
+  const size_t where[] = {2, 2, 0, 9};
+  for (size_t i = 0; i < sizeof bad / sizeof *bad; i++) {
+    status = gtext_cssom_sheet_insert_rule(sheet, bad[i], strlen(bad[i]), where[i], NULL, NULL);
+    printf("%s -> %s\n", bad[i], gtext_cssom_exception_name(status));
+  }
+
+  /* into a style rule: a block of declarations becomes a nested-declarations rule, a relative selector gets its & */
+  GTEXT_CSSOM_Rule * a = NULL;
+  const GTEXT_CSSOM_Rule_List * rules = NULL;
+  gtext_cssom_sheet_rules(sheet, &rules);
+  a = gtext_cssom_rule_list_at(rules, 1);
+  gtext_cssom_rule_insert_rule(a, "> c { }", 7, 0, NULL, NULL);
+  gtext_cssom_rule_insert_rule(a, "width: 2px", 10, 1, NULL, NULL);
+
+  /* deleteRule detaches the rule: it stays readable, and no sheet holds it */
+  GTEXT_CSSOM_Outcome outcome;
+  gtext_cssom_sheet_delete_rule(sheet, 2, &outcome);
+  char * css = NULL;
+  size_t length = 0;
+  gtext_cssom_rule_css_text(made, &css, &length);
+  GTEXT_CSSOM_Sheet * parent = gtext_cssom_rule_parent_sheet(made);
+  printf("deleted: %s (parentStyleSheet is %s)\n", css, parent ? "set" : "null");
+  gtext_cssom_buffer_free(gtext_cssom_document_allocator(document), css);
+
+  /* the whole sheet, as text */
+  struct Out out;
+  memset(&out, 0, sizeof out);
+  GTEXT_Markup_Sink sink;
+  memset(&sink, 0, sizeof sink);
+  sink.user = &out;
+  sink.write = collect;
+  gtext_cssom_sheet_serialize(sheet, &sink);
+  printf("%.*s", (int)out.used, out.data);
+
+  gtext_cssom_rule_release(a);
+  gtext_cssom_rule_release(made);
+  gtext_cssom_sheet_release(sheet);
+  gtext_cssom_document_release(document);
+  gtext_css_registry_free(registry);
+}
+```
+
+The program above prints
+
+```
+insert media: success
+@import url(a.css); -> HierarchyRequestError
+t|c { } -> SyntaxError
+a { } b { } -> SyntaxError
+d { } -> IndexSizeError
+deleted: @media print {
+  s|b { width: 1px; }
+} (parentStyleSheet is null)
+@namespace s url("urn:s");
+a {
+  color: red;
+  & > c { }
+  width: 2px;
+}
+```
+
+**Every failure is a status, and an exact one.** The eight DOMException names of the web platform are eight statuses (`GTEXT_CSS_E_SYNTAX`, `_HIERARCHY`, `_INDEX_SIZE`, `_INVALID_STATE`, `_NOT_ALLOWED`, `_NO_MODIFICATION`, `_NOT_FOUND`, `_SECURITY`) and `gtext_cssom_exception_name()` gives the name a binding throws; `GTEXT_CSS_E_INVALID` is a misuse of the API and never a content error. A call that fails changes nothing: the sheet, its versions, its ids, the document's counters and its observers' view are as they were, an allocation failure and every limit included.
+
+**The order of checks is part of the contract**, and the first error wins. `CSSStyleSheet.insertRule()`: a call from inside an observer is `GTEXT_CSS_E_REENTRANT`; then `SecurityError` (the sheet is not origin-clean), `NotAllowedError` (the disallow-modification flag), `SyntaxError` for a text that is not exactly one valid rule (this is "parse a rule", and it comes **before** the index: a bad index with unparseable text is a SyntaxError, which is what the draft says, though both Chromium 156 and Firefox 158 look at the index first), `SyntaxError` for an `@import` into a constructed sheet, `IndexSizeError`, `HierarchyRequestError` for a rule that CSS does not allow at that place, and `InvalidStateError` for an `@namespace` into a list that holds anything but `@import` and `@namespace` rules. `deleteRule()`: `SecurityError`, `NotAllowedError`, `IndexSizeError`, `InvalidStateError` (an `@namespace` rule, when the list holds anything else). A rule's `insertRule()` looks at the index **first**, before the text; then the text is parsed as one rule; if it is not one and the rule is inside a style rule (the **nested flag**: the style rule itself, or a grouping rule inside one, at any depth), the text is read as a list of declarations and a non-empty result becomes a nested-declarations rule (`color:red` into a style rule), an empty one being a SyntaxError; then `HierarchyRequestError`. Outside a style rule a bare declaration block is a SyntaxError (the pinned web-platform-tests page and both browsers; the prose of the draft says only "with the nested flag set"). An at-rule that is valid at the top of a sheet and not where it is inserted (`@import` or `@namespace` in a group, `@font-face` in a style rule) is a HierarchyRequestError, as both browsers answer; an at-rule that is valid nowhere (`@top-left` in a group, an unknown one, `@charset`) is a SyntaxError.
+
+**The order of a sheet's top** is CSS Cascade 5 and CSS Namespaces 3: an `@import` precedes every other rule except `@layer` statements; an `@namespace` follows the imports and precedes every other rule; a rule other than those precedes neither. The checks are counts kept in the rule list (the number of rules of each class in every subtree), so an insertion and a deletion are O(log n) however many imports a sheet has. An inserted `@namespace` rule declares its prefix for the selectors inserted after it, and a deleted one stops declaring it; a style rule keeps the namespaces it was made in, so `x|a` is written `x|a` after the rule has left its sheet.
+
+**Relative selectors** (`> a`, `&`, an implied `&`) are valid only inside a style rule, or directly in an `@scope`; a selector with a namespace prefix is valid only if the sheet declared it. A nested selector is written with its `&` (`& > c`).
+
+**Keyframes.** `gtext_cssom_keyframes_append_rule()` appends a keyframe, whatever keys the rule has; text that is not one valid keyframe is **ignored** (the call succeeds, the outcome says `IGNORED_INVALID_SELECTOR`). `_find_rule()` and `_delete_rule()` match the **last** keyframe whose selector list is the one given (white space does not matter, `from` and `to` are `0%` and `100%`, the number and the order of the values must match); no match is nothing.
+
+**`cssText`** (`gtext_cssom_rule_css_text()`, or `gtext_cssom_rule_serialize()` to a sink) is CSSOM's "serialize a CSS rule", one function per kind over the serializers of the layers below. A style rule is its selector list, ` {`, its declarations, and the rules inside it, each after a newline and two spaces, then a newline and `}`; with nothing inside it is `a { }`, and with declarations only `a { color: red; }`. A grouping rule is `@media print {`, the rules inside, a newline and `}`. A rule inside a rule is **not** indented again, which is what the draft says and both browsers write. `@import` and `@namespace` write their URL as `url("...")`. The other rules are the typed model's serialization (\ref format_css_atrules "css-atrules.md"). Writing is iterative: a nest of any depth, or a rule with a hundred thousand rules inside it, is written with no recursion in the C stack. A rule with no rules inside it keeps its text for as long as its version stays (an unchanged leaf is O(1) to reach and O(length) to copy); a rule with rules inside it keeps nothing, and neither does the serialization of a sheet or through a sink. The kept texts count in `live_bytes`, are bounded by `max_cached_text_bytes` (default 64 MiB; past it the entries added first are dropped, and a text too long to keep is not an error), and are dropped when the rule's version moves.
+
+`gtext_cssom_sheet_serialize()` writes the `cssText` of every rule, each followed by a line feed. Parsing the text gives a sheet that writes the same bytes, for every sheet the parse can make except where the syntax layer owns the answer (a rule closed by the end of the input, a custom property value holding `{` or `(`).
+
+**Where this library and the browsers differ**, and which of them it follows. The sheet's text follows the served draft: the parse before the index (above); a media query list is written in its canonical form (the pinned `serialize-media-rule.html` says so) where a `@supports` condition keeps the author's spacing, as both browsers do; `@keyframes` is written one rule to a line, indented two spaces, where Chromium writes `@keyframes k { ` and Firefox does not indent. A style rule directly in an `@scope` that begins with a combinator is written as the browsers write it (`> a`); the prelude of an `@scope` inside a style rule is written without the `&` it is read with. `insertRule` into a detached rule works (Firefox 158 throws). An `@page` takes margin rules with `insertRule`; a style rule into it is a HierarchyRequestError (Chromium answers SyntaxError, Firefox accepts it).
+
 ## Utilities
 
 `gtext_cssom_escape()` is `CSS.escape()`: CSSOM's "serialize an identifier" of well-formed UTF-8 (or WTF-8, where a lone surrogate is one code point). The empty text is the empty text, a NUL is U+FFFD, and the result always reads back as the text. A character from U+0080 up is written as it is only where it is a non-ASCII ident code point of CSS Syntax; otherwise it is escaped, which is what the served text says and what the browsers do not do for every such character.

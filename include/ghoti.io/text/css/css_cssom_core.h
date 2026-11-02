@@ -164,6 +164,7 @@ typedef struct {
   size_t max_rules;                     ///< Most rules in a sheet, at every depth. Default 1,048,576 (the parse counts every rule it makes, those it drops included). One more is GTEXT_CSS_E_LIMIT_RULES.
   size_t max_rule_nesting;              ///< Deepest nesting of rules in a sheet (a rule in a rule is 2). Default 64, at most 4,096. One more is GTEXT_CSS_E_LIMIT_RULE_NESTING.
   size_t max_diagnostics;               ///< Most diagnostics of a sheet's parse that are kept (the rest are counted). Default 1,024.
+  size_t max_cached_text_bytes;         ///< Most bytes of rule `cssText` kept for leaf rules (a rule with no rules inside it). Default 64 MiB. Past it the entries added first are dropped; it is never an error.
 } GTEXT_CSSOM_Config;
 
 /** @brief The defaults, spelled out: `size` set, the registry and allocator NULL, the counters at 0 and 1, the limits as documented. */
@@ -183,6 +184,10 @@ typedef struct {
   size_t inline_styles;       ///< Element-owned declarations alive.
   size_t tree_bytes;          ///< The bytes of the syntax trees the rules hold (and the copies of the text they were read from): the part of `live_bytes` that deleting rules does not free until the last rule of a tree goes.
   uint64_t unjudgeable_preserved; ///< Declarations a parse kept as written because the library cannot judge the property (GTEXT_CSS_E_UNSUPPORTED): a property with no grammar here, or a shorthand it cannot split.
+  size_t cached_text_bytes;   ///< The bytes of `cssText` kept for leaf rules (also in `live_bytes`).
+  uint64_t cache_fills;       ///< Texts put in that cache.
+  uint64_t cache_hits;        ///< Reads answered from it.
+  uint64_t rule_inserts;      ///< Rules made by `insertRule` and `appendRule` that were linked (with the rules inside them), the work counter of the insertion cost tests.
 } GTEXT_CSSOM_Counters;
 
 /**

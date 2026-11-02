@@ -46,6 +46,9 @@ GTEXT_CSS_Status css_sheet_selector_prelude(const GTEXT_Allocator * alloc, const
     const GTEXT_CSS_Component_Value * prelude, size_t count, bool relative, bool in_scope, GTEXT_CSS_Selector_List ** out);
 
 /// Read an `@namespace` rule's prelude: `[prefix] string-or-url()`. True when that is all it holds; `*prefix` is NULL for the default namespace, and both point into the rule.
+/// `(<start>)? to (<end>)?`, the prelude of an `@scope`: the lists (NULL when not given or not valid) and whether the prelude is not valid. A resource failure is the status.
+GTEXT_CSS_Status css_sheet_scope_boundaries(const GTEXT_Allocator * alloc, const GTEXT_CSS_Selector_Options * options, const GTEXT_CSS_Namespace_Map * map, const GTEXT_CSS_Component_Value * p,
+    size_t n, bool relative, bool in_scope, GTEXT_CSS_Selector_List ** start_out, GTEXT_CSS_Selector_List ** end_out, bool * bad_out);
 bool css_sheet_namespace_prelude(const GTEXT_CSS_Rule * rule, const GTEXT_CSS_String ** prefix, const GTEXT_CSS_String ** uri);
 
 /// One valid declaration of a rule, parsed once.

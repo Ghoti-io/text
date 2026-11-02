@@ -46,6 +46,7 @@ static void sheet_destroy(css_obj * o) {
   GTEXT_Allocator a = o->core->alloc;
   css_rule_list_release_all(&s->rules);
   css_source_release(s->source);
+  css_ns_env_release(s->ns);
   gtext_allocator_free(&a, s->href);
   gtext_allocator_free(&a, s->title);
   gtext_allocator_free(&a, s->base_url);
@@ -295,78 +296,50 @@ typedef struct {
   size_t run_count;
 } move;
 
-typedef struct {
-  css_rule * rule;
-  const GTEXT_CSS_Rule * old_node;
-  const GTEXT_CSS_Rule * new_node;
-  size_t depth;
-} cframe;
-
-/// Visit the rules of the sheet in document order, with an explicit stack, copying each rule's syntax into `tree` and recording the move. The rules of one list are visited
-/// through the list; the rules inside a rule are the children its block yields, so the old node and the copy are walked together and give the same children.
+/// Visit the rules of the sheet, with an explicit stack, copying each rule's own syntax into `tree` (without the rules inside it: each of those has a node of its own, and a rule
+/// that was inserted or deleted after the parse has not the children its node has) and recording the move.
 static GTEXT_CSS_Status plan_moves(css_sheet * sheet, GTEXT_CSS_Tree * tree, move ** plan_out, size_t * count_out) {
   css_core * core = sheet->obj.core;
   GTEXT_Allocator a = core->alloc;
   const size_t total = sheet->rule_total;
   move * plan = gtext_allocator_calloc(&a, total ? total : 1, sizeof *plan);
-  cframe * stack = NULL;
+  css_rule ** stack = NULL;
   size_t cap = 0, sp = 0, n = 0;
   GTEXT_CSS_Status st = plan ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
-  /* the top-level rules */
-  for (css_rule * top = css_rule_list_first(&sheet->rules); st == GTEXT_CSS_OK && top; top = css_rule_list_next(top)) {
-    move * m = &plan[n];
-    m->rule = top;
-    if (top->node) {
-      st = css_tree_copy_rule(tree, top->node, &m->node);
+  css_rule * top = css_rule_list_first(&sheet->rules);
+  while (st == GTEXT_CSS_OK && (top || sp)) {
+    css_rule * r = top ? top : stack[--sp];
+    top = top ? css_rule_list_next(top) : NULL;
+    if (n >= total) {
+      st = GTEXT_CSS_E_INTERNAL;
+      break;
+    }
+    move * m = &plan[n++];
+    m->rule = r;
+    if (r->node) {
+      const unsigned flags = css_kind((GTEXT_CSSOM_Rule_Kind)r->kind)->flags;
+      const bool lists = (flags & CSS_KIND_LIST_ANY) != 0;
+      st = css_tree_copy_rule_own(tree, r->node, lists, (flags & CSS_KIND_LIST_RULES) != 0, &m->node);
     }
     else {
-      st = css_tree_copy_run(tree, top->run, top->run_count, &m->run);
-      m->run_count = top->run_count;
+      st = css_tree_copy_run(tree, r->run, r->run_count, &m->run);
+      m->run_count = r->run_count;
     }
-    n++;
-    if (st != GTEXT_CSS_OK || !m->node || !(css_kind((GTEXT_CSSOM_Rule_Kind)top->kind)->flags & CSS_KIND_LIST_ANY) || !top->rules.count) {
-      continue;
+    if (st != GTEXT_CSS_OK) {
+      break;
     }
-    /* its descendants, walked together with the copy of its node */
-    if (sp == cap) {
-      cframe * grown = gtext_allocator_realloc(&a, stack, (cap ? cap * 2 : 16) * sizeof *grown);
-      if (!grown) {
-        st = GTEXT_CSS_E_OOM;
-        break;
-      }
-      stack = grown;
-      cap = cap ? cap * 2 : 16;
-    }
-    stack[sp++] = (cframe){top, top->node, m->node, 1};
-    while (st == GTEXT_CSS_OK && sp) {
-      cframe f = stack[--sp];
-      /* the children of f.rule, in order, are the walk's yields over the old node; the same walk over the new node gives their copies */
-      css_child_walk old_walk, new_walk;
-      const bool nested = f.rule->nested || f.rule->kind == GTEXT_CSSOM_RULE_STYLE;
-      css_child_walk_init(&old_walk, (GTEXT_CSSOM_Rule_Kind)f.rule->kind, f.old_node, nested);
-      css_child_walk_init(&new_walk, (GTEXT_CSSOM_Rule_Kind)f.rule->kind, f.new_node, nested);
-      css_child old_c, new_c;
-      css_rule * child = css_rule_list_first(&f.rule->rules);
-      while (child && css_child_walk_next(&old_walk, &old_c) && css_child_walk_next(&new_walk, &new_c)) {
-        move * cm = &plan[n++];
-        cm->rule = child;
-        cm->node = new_c.node;
-        cm->run = new_c.run;
-        cm->run_count = new_c.run_count;
-        if (child->node && (css_kind((GTEXT_CSSOM_Rule_Kind)child->kind)->flags & CSS_KIND_LIST_ANY) && child->rules.count) {
-          if (sp == cap) {
-            cframe * grown = gtext_allocator_realloc(&a, stack, (cap ? cap * 2 : 16) * sizeof *grown);
-            if (!grown) {
-              st = GTEXT_CSS_E_OOM;
-              break;
-            }
-            stack = grown;
-            cap = cap ? cap * 2 : 16;
-          }
-          stack[sp++] = (cframe){child, old_c.node, new_c.node, f.depth + 1};
+    /* the rules inside this one, to be visited */
+    for (css_rule * c = css_rule_list_first(&r->rules); c; c = css_rule_list_next(c)) {
+      if (sp == cap) {
+        css_rule ** grown = gtext_allocator_realloc(&a, stack, (cap ? cap * 2 : 16) * sizeof *grown);
+        if (!grown) {
+          st = GTEXT_CSS_E_OOM;
+          break;
         }
-        child = css_rule_list_next(child);
+        stack = grown;
+        cap = cap ? cap * 2 : 16;
       }
+      stack[sp++] = c;
     }
   }
   gtext_allocator_free(&a, stack);
@@ -397,6 +370,9 @@ GTEXT_CSS_Status css_sheet_compact(css_sheet * sheet) {
   css_source * fresh = NULL;
   if (st == GTEXT_CSS_OK) {
     st = css_source_new(core, tree, NULL, 0, &fresh);
+  }
+  if (st == GTEXT_CSS_OK) {
+    css_source_set_ns(fresh, sheet->ns);   /* the rules' selectors are read in the sheet's namespaces, whatever parse they came from */
   }
   gtext_css_tree_free(tree);   /* the source holds the tree now (or the compaction failed and nothing does) */
   if (st != GTEXT_CSS_OK) {

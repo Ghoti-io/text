@@ -40,6 +40,7 @@ PROGRAMS = {
     "block": "test-css-block-edit.cpp", "decl": "test-cssom-decl.cpp", "inline": "test-cssom-inline.cpp", "lifetime": "test-cssom-lifetime.cpp", "util": "test-cssom-util.cpp",
     "oom": "test-cssom-decl-oom.cpp", "cost": "test-cssom-cost.cpp", "seeds": "test-cssom-fuzz-seeds.cpp",
     "rules": "test-cssom-rules.cpp", "sheet": "test-cssom-sheet.cpp", "rulesoom": "test-cssom-rules-oom.cpp", "rulescost": "test-cssom-rules-cost.cpp", "treeretain": "test-css-tree-retain.cpp",
+    "insert": "test-cssom-insert.cpp", "order": "test-cssom-order.cpp", "serialize": "test-cssom-serialize.cpp", "insertoom": "test-cssom-insert-oom.cpp", "insertcost": "test-cssom-insert-cost.cpp",
 }
 EXTRA_PROGRAMS = os.path.join(ROOT, "tools", "conformance", "CSS_CSSOM_PROGRAMS")
 

@@ -118,8 +118,9 @@ bool css_child_walk_next(css_child_walk * walk, css_child * out) {
       }
       continue;
     }
-    /* a run of declarations: in a grouping rule inside a style rule it is a nested-declarations rule (CSS Nesting); anywhere else it is no rule */
-    if (walk->nested && (css_kind(walk->parent_kind)->flags & CSS_KIND_LIST_RULES) && item->declaration_count > 0) {
+    /* a run of declarations: in a grouping rule inside a style rule it is a nested-declarations rule (CSS Nesting), and directly in an `@scope` it is one too (CSS Cascade 6: they are the
+       scope root's declarations); anywhere else it is no rule */
+    if ((walk->nested || walk->parent_kind == GTEXT_CSSOM_RULE_SCOPE) && (css_kind(walk->parent_kind)->flags & CSS_KIND_LIST_RULES) && item->declaration_count > 0) {
       out->kind = GTEXT_CSSOM_RULE_NESTED_DECLARATIONS;
       out->run = item->declarations;
       out->run_count = item->declaration_count;

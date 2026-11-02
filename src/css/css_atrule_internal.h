@@ -75,6 +75,7 @@ struct GTEXT_CSS_Atrule {
   GTEXT_CSS_Atrule_Diagnostic * diags;
   size_t ndiags, capdiags, diag_total;
   bool defines_nothing;
+  bool statement;                    ///< The rule had no block (`@layer a, b;`): it is written with a semicolon.
   double * offsets;                  ///< A keyframe block: its offsets (0 to 1), in order, duplicates kept.
   size_t noffsets;
   char ** seltext;                   ///< Per offset: the selector as written when its offset needs a timeline or `sibling-index()` (the offset is then -1), else NULL.
@@ -96,6 +97,12 @@ GTEXT_CSS_Status css_atrule_keyframe_block_valid(const GTEXT_CSS_Registry * regi
 /// Read the selectors of a page rule's prelude. *valid false: the prelude is not a `<page-selector-list>`.
 GTEXT_CSS_Status css_page_selectors_parse(const GTEXT_Allocator * alloc, css_arena * arena, const GTEXT_CSS_Component_Value * values, size_t count, size_t max,
     GTEXT_CSS_Page_Selector ** out, size_t * n, bool * valid);
+
+/// Parse one keyframe block of a `@keyframes` rule (a qualified rule) on its own. `*out` is NULL when the block is not valid.
+GTEXT_CSS_Status css_atrule_parse_keyframe(const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Rule * rule, const GTEXT_Allocator * allocator, GTEXT_CSS_Atrule ** out);
+
+/// A part of the serialization of a rule: its header (`@keyframes name`, `@page :first`, a keyframe's selectors) or its declarations (`a: b; c: d;`, nothing if there are none).
+GTEXT_CSS_Status css_atrule_serialize_part(const GTEXT_CSS_Atrule * rule, bool declarations, const GTEXT_Markup_Sink * sink);
 
 /// The find of a descriptor in an atrule by lower-case name (internal; returns the index or -1).
 int css_atrule_find_index(const struct GTEXT_CSS_Atrule * a, const char * name, size_t length);

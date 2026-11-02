@@ -52,7 +52,37 @@ typedef struct {
   css_parse_diag * diags;
   size_t ndiags, capdiags, diag_total;
   GTEXT_CSS_Status status;            ///< The first resource failure inside a callback (which can only answer yes or no).
+  /* an inserted rule (css_parse_inserted): the one rule of the text is read in the context of the place it is inserted at */
+  bool single;
+  bool at_in_place;                   ///< An at-rule of the text is read in the place (the margin rules of an `@page`), not as a rule of a style sheet.
+  const GTEXT_CSS_Parent * top;       ///< The parent the rule at the top of the text has: the rule it is inserted into.
+  bool seed_relative, seed_scope, seed_style;   ///< What the rules of the text that have no style rule or `@scope` above them in the text are in.
 } cvalidity;
+
+/// The parent as the validity of the rule is decided in: the context an inserted rule is placed in stands behind the text's own.
+static GTEXT_CSS_Parent effective_parent(const cvalidity * v, const GTEXT_CSS_Parent * p, const GTEXT_CSS_Rule * rule) {
+  if (!v->single) {
+    return *p;
+  }
+  if (p->top_level) {
+    /* the standard's "parse a rule" reads an at-rule as a rule of a style sheet, whatever the place it is inserted at (the place's constraints are HierarchyRequestError, after); a
+       style rule is read in the place, because its selectors are (a relative selector is valid in a style rule and not in a style sheet) */
+    if (rule->kind == GTEXT_CSS_RULE_AT && !v->at_in_place) {
+      GTEXT_CSS_Parent sheet_top;
+      memset(&sheet_top, 0, sizeof sheet_top);
+      sheet_top.top_level = true;
+      return sheet_top;
+    }
+    return *v->top;
+  }
+  GTEXT_CSS_Parent e = *p;
+  if (!e.relative) {
+    e.relative = v->seed_relative;
+    e.in_scope = v->seed_scope;
+  }
+  e.in_style_rule = e.in_style_rule || v->seed_style;
+  return e;
+}
 
 static void note_failure(cvalidity * v, GTEXT_CSS_Status st) {
   if (v->status == GTEXT_CSS_OK) {
@@ -83,6 +113,9 @@ static void diagnose(cvalidity * v, GTEXT_CSSOM_Parse_Diag_Kind kind, const GTEX
 
 /// A prefix and its URI, remembered for the selectors that follow.
 static void remember_namespace(cvalidity * v, const GTEXT_CSS_String * prefix, const GTEXT_CSS_String * uri) {
+  if (v->single) {
+    return;   /* one rule: nothing follows it, and the namespaces it is read in are the sheet's */
+  }
   char * u = css_core_dup(v->core, uri->data ? uri->data : "", uri->length);
   char * p = prefix ? css_core_dup(v->core, prefix->data, prefix->length) : NULL;
   if (!u || (prefix && !p)) {
@@ -137,6 +170,10 @@ static void remember_namespace(cvalidity * v, const GTEXT_CSS_String * prefix, c
 
 static void validity_free(cvalidity * v) {
   GTEXT_Allocator a = v->core->alloc;
+  if (v->single) {
+    gtext_allocator_free(&a, v->diags);   /* the namespaces are the sheet's: borrowed */
+    return;
+  }
   for (size_t i = 0; i < v->nstrings; i++) {
     gtext_allocator_free(&a, v->strings[i]);
   }
@@ -173,6 +210,26 @@ static bool at_rule_valid(cvalidity * v, const GTEXT_CSS_Parent * parent, const 
   if (!v->at.validity.rule(v->at.validity.user, parent, rule)) {
     diagnose(v, GTEXT_CSSOM_PARSE_INVALID_AT_RULE, rule, "CSS Syntax 3, 5.4.2: a rule that is not valid in the current context is dropped");
     return false;
+  }
+  if (kind == GTEXT_CSSOM_RULE_SCOPE) {
+    /* `@scope (<start>)? to (<end>)?`: the selectors in it must be valid, as the compile reads them */
+    GTEXT_CSS_Namespace_Map map;
+    map.entries = v->namespaces;
+    map.count = v->nns;
+    map.default_uri = v->default_uri;
+    GTEXT_CSS_Selector_List *start = NULL, *end = NULL;
+    bool bad = false;
+    const GTEXT_CSS_Status st = css_sheet_scope_boundaries(&v->core->alloc, &v->selector, &map, rule->prelude, rule->prelude_count, parent->relative, parent->in_scope, &start, &end, &bad);
+    gtext_css_selector_list_free(start);
+    gtext_css_selector_list_free(end);
+    if (st != GTEXT_CSS_OK) {
+      note_failure(v, st);
+      return true;
+    }
+    if (bad) {
+      diagnose(v, GTEXT_CSSOM_PARSE_INVALID_AT_RULE, rule, "CSS Cascading 6, 2.1: the prelude of @scope is not valid: the rule is dropped");
+      return false;
+    }
   }
   if (!parent->top_level) {
     return true;
@@ -223,8 +280,8 @@ static bool qualified_rule_valid(cvalidity * v, const GTEXT_CSS_Parent * parent,
       }
       return valid;
     }
-    if (!(css_kind(pk)->flags & CSS_KIND_LIST_RULES)) {
-      return true;   /* an at-rule that holds no style rules: whatever it does with them, they are not rules of its list */
+    if (!(css_kind(pk)->flags & CSS_KIND_LIST_RULES) && !v->single) {
+      return true;   /* an at-rule that holds no style rules: whatever it does with them, they are not rules of its list (an inserted rule is judged as the rule it is first, then by its place) */
     }
   }
   /* a style rule: its selector list must be valid, as a relative selector list when it is nested */
@@ -232,9 +289,8 @@ static bool qualified_rule_valid(cvalidity * v, const GTEXT_CSS_Parent * parent,
   map.entries = v->namespaces;
   map.count = v->nns;
   map.default_uri = v->default_uri;
-  const bool in_scope = !parent->top_level && parent->kind == GTEXT_CSS_RULE_AT && pk == GTEXT_CSSOM_RULE_SCOPE;
   GTEXT_CSS_Selector_List * list = NULL;
-  const GTEXT_CSS_Status st = css_sheet_selector_prelude(&v->core->alloc, &v->selector, &map, rule->prelude, rule->prelude_count, parent->nested, in_scope, &list);
+  const GTEXT_CSS_Status st = css_sheet_selector_prelude(&v->core->alloc, &v->selector, &map, rule->prelude, rule->prelude_count, parent->relative, parent->in_scope, &list);
   if (st != GTEXT_CSS_OK) {
     note_failure(v, st);
     return true;
@@ -256,11 +312,12 @@ static bool rule_valid(void * user, const GTEXT_CSS_Parent * parent, const GTEXT
   if (v->status != GTEXT_CSS_OK) {
     return true;   /* the parse is going to fail: nothing is judged any more */
   }
+  const GTEXT_CSS_Parent where = effective_parent(v, parent, rule);
   if (rule->kind == GTEXT_CSS_RULE_AT) {
-    return at_rule_valid(v, parent, rule);
+    return at_rule_valid(v, &where, rule);
   }
   if (rule->kind == GTEXT_CSS_RULE_QUALIFIED) {
-    return qualified_rule_valid(v, parent, rule);
+    return qualified_rule_valid(v, &where, rule);
   }
   return true;
 }
@@ -275,11 +332,14 @@ typedef struct {
 
 typedef struct {
   css_core * core;
-  css_sheet * sheet;
   css_source * source;
+  size_t * total;                  ///< Rules made so far in the sheet (or in the call, for an inserted rule): counted against `max_rules`.
+  size_t total_base;               ///< Rules the sheet holds besides those counted in `total`.
+  size_t depth_base;               ///< The depth of the place the rules are made for: the rules made are at least one deeper.
   frame * stack;
   size_t sp, cap;
   size_t work;
+  uint8_t source_kind;             ///< GTEXT_CSSOM_Source_Kind of the rules made.
 } builder;
 
 static GTEXT_CSS_Status push_frame(builder * b, css_rule * r, size_t depth) {
@@ -301,27 +361,31 @@ static GTEXT_CSS_Status push_frame(builder * b, css_rule * r, size_t depth) {
 
 /// Account a new rule against the limits of the sheet and of the call.
 static GTEXT_CSS_Status account(builder * b, size_t depth) {
-  if (depth > b->core->config.max_rule_nesting) {
+  if (b->depth_base + depth > b->core->config.max_rule_nesting) {
     return GTEXT_CSS_E_LIMIT_RULE_NESTING;
   }
-  if (b->sheet->rule_total >= b->core->config.max_rules) {
+  if (b->total_base + *b->total >= b->core->config.max_rules) {
     return GTEXT_CSS_E_LIMIT_RULES;
   }
   if (++b->work > b->core->config.max_work) {
     return GTEXT_CSS_E_LIMIT_WORK;
   }
-  b->sheet->rule_total++;
+  ++*b->total;
   return GTEXT_CSS_OK;
 }
 
-/// The rule objects of the subtree of a rule that has just been linked, built with the explicit stack.
+/// The rule objects of the subtree of a rule that has just been made, built with the explicit stack and linked under it. Each rule's `descendants` is complete when it returns.
 static GTEXT_CSS_Status build_below(builder * b, css_rule * top) {
   GTEXT_CSS_Status st = push_frame(b, top, 1);
   while (st == GTEXT_CSS_OK && b->sp) {
     frame * f = &b->stack[b->sp - 1];
     css_child c;
     if (!css_child_walk_next(&f->walk, &c)) {
+      css_rule * done = f->rule;
       b->sp--;
+      if (b->sp) {
+        b->stack[b->sp - 1].rule->descendants += done->descendants;
+      }
       continue;
     }
     st = account(b, f->depth + 1);
@@ -333,13 +397,49 @@ static GTEXT_CSS_Status build_below(builder * b, css_rule * top) {
     if (st != GTEXT_CSS_OK) {
       break;
     }
+    r->source_kind = b->source_kind;
     css_rule_list_insert(&f->rule->rules, f->rule->rules.count, r);
+    f->rule->descendants++;
     if (css_kind(c.kind)->flags & CSS_KIND_LIST_ANY) {
       const size_t depth = f->depth + 1;   /* f may move when the stack grows */
       st = push_frame(b, r, depth);
     }
   }
   return st;
+}
+
+GTEXT_CSS_Status css_build_inserted(css_core * core, css_source * source, GTEXT_CSSOM_Rule_Kind kind, const GTEXT_CSS_Rule * node, const GTEXT_CSS_Declaration * run, size_t run_count,
+    bool nested, size_t parent_depth, size_t sheet_total, css_rule ** out, size_t * made) {
+  size_t total = 0;
+  builder b;
+  memset(&b, 0, sizeof b);
+  b.core = core;
+  b.source = source;
+  b.total = &total;
+  b.total_base = sheet_total;
+  b.depth_base = parent_depth;
+  b.source_kind = GTEXT_CSSOM_SOURCE_INSERTED;
+  GTEXT_CSS_Status st = account(&b, 1);
+  css_rule * top = NULL;
+  if (st == GTEXT_CSS_OK) {
+    st = css_rule_create(core, kind, source, node, run, run_count, nested, &top);
+  }
+  if (top) {
+    top->source_kind = GTEXT_CSSOM_SOURCE_INSERTED;
+  }
+  if (st == GTEXT_CSS_OK && (css_kind(kind)->flags & CSS_KIND_LIST_ANY)) {
+    st = build_below(&b, top);
+  }
+  gtext_allocator_free(&core->alloc, b.stack);
+  if (st != GTEXT_CSS_OK) {
+    if (top) {
+      css_obj_release_internal(&top->obj);   /* frees it with whatever was built under it */
+    }
+    return st;
+  }
+  *out = top;
+  *made = total;
+  return GTEXT_CSS_OK;
 }
 
 GTEXT_CSS_Status css_sheet_parse_into(css_core * core, css_sheet * sheet, char * text, size_t length) {
@@ -379,11 +479,22 @@ GTEXT_CSS_Status css_sheet_parse_into(css_core * core, css_sheet * sheet, char *
     return st;
   }
   sheet->source = source;
+  if (v.nns || v.default_uri) {
+    /* the namespaces every style rule of this parse is read in: the `@namespace` rules precede all others, so the last state of the list is every rule's */
+    css_ns_env * env = NULL;
+    st = css_ns_env_new(core, v.namespaces, v.nns, v.default_uri, &env);
+    if (st != GTEXT_CSS_OK) {
+      validity_free(&v);
+      return st;
+    }
+    css_source_set_ns(source, env);
+    sheet->ns = env;
+  }
   builder b;
   memset(&b, 0, sizeof b);
   b.core = core;
-  b.sheet = sheet;
   b.source = source;
+  b.total = &sheet->rule_total;
   /* the top-level rules, in order; the parse has dropped everything that is not a rule here */
   for (size_t i = 0; st == GTEXT_CSS_OK && i < source->tree->rule_count; i++) {
     const GTEXT_CSS_Rule * node = &source->tree->rules[i];
@@ -415,4 +526,86 @@ GTEXT_CSS_Status css_sheet_parse_into(css_core * core, css_sheet * sheet, char *
   }
   validity_free(&v);
   return st;
+}
+
+/* ---- one rule, for insertRule --------------------------------------------------------------------------------------------------------------- */
+
+GTEXT_CSS_Status css_parse_inserted(css_core * core, const css_insert_ctx * ctx, const char * text, size_t length, GTEXT_CSS_Tree ** out, bool * syntax_error) {
+  *out = NULL;
+  *syntax_error = false;
+  if (length > core->config.max_input_bytes) {
+    return GTEXT_CSS_E_LIMIT_INPUT;
+  }
+  GTEXT_Allocator a = core->alloc;
+  GTEXT_CSS_Parent top;
+  memset(&top, 0, sizeof top);
+  top.top_level = ctx->top;
+  top.kind = ctx->parent_node ? ctx->parent_node->kind : GTEXT_CSS_RULE_QUALIFIED;
+  if (ctx->parent_node) {
+    top.name = ctx->parent_node->name;
+    top.prelude = ctx->parent_node->prelude;
+    top.prelude_count = ctx->parent_node->prelude_count;
+  }
+  top.nested = ctx->in_style;
+  top.depth = ctx->top ? 0 : 1;
+  top.relative = ctx->relative;
+  top.in_scope = ctx->in_scope;
+  top.in_style_rule = ctx->in_style;
+  cvalidity v;
+  memset(&v, 0, sizeof v);
+  v.core = core;
+  v.single = true;
+  v.at_in_place = ctx->at_in_place;
+  v.top = &top;
+  v.seed_relative = ctx->relative;
+  v.seed_scope = ctx->in_scope;
+  v.seed_style = ctx->in_style;
+  v.imports_open = true;
+  v.ns_open = true;
+  v.selector = gtext_css_selector_options_default();
+  GTEXT_CSS_Namespace_Map map;
+  css_ns_env_map(ctx->ns, &map);
+  v.namespaces = (GTEXT_CSS_Namespace *)(uintptr_t)map.entries;
+  v.nns = map.count;
+  v.default_uri = (char *)(uintptr_t)map.default_uri;
+  gtext_css_atrule_validity_init(&v.at, core->registry);
+  GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+  po.allocator = &a;
+  po.max_input_bytes = core->config.max_input_bytes;
+  po.max_rules = core->config.max_rules;
+  po.max_depth = core->config.max_rule_nesting + 512;
+  po.count_errors_only = true;
+  po.validity.user = &v;
+  po.validity.rule = rule_valid;
+  GTEXT_CSS_Tree * tree = NULL;
+  GTEXT_CSS_Status st = gtext_css_parse_rule(text ? text : "", length, &po, &tree, NULL);
+  if (st == GTEXT_CSS_OK && v.status != GTEXT_CSS_OK) {
+    st = v.status;
+  }
+  validity_free(&v);
+  if (st != GTEXT_CSS_OK) {
+    gtext_css_tree_free(tree);
+    return st;
+  }
+  if (tree->syntax_error != GTEXT_CSS_SYNTAX_NONE || tree->rule_count != 1) {
+    gtext_css_tree_free(tree);
+    *syntax_error = true;
+    return GTEXT_CSS_OK;
+  }
+  *out = tree;
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status css_parse_inserted_declarations(css_core * core, const char * text, size_t length, GTEXT_CSS_Tree ** out) {
+  *out = NULL;
+  if (length > core->config.max_input_bytes) {
+    return GTEXT_CSS_E_LIMIT_INPUT;
+  }
+  GTEXT_Allocator a = core->alloc;
+  GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+  po.allocator = &a;
+  po.max_input_bytes = core->config.max_input_bytes;
+  po.max_declarations = core->config.max_declarations;
+  po.count_errors_only = true;
+  return gtext_css_parse_declaration_list(text ? text : "", length, &po, out, NULL);
 }

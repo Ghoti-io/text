@@ -31,6 +31,7 @@
 
 #include <ghoti.io/text/css.h>
 
+#include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,8 +53,18 @@ typedef struct {
 } handle;
 
 typedef struct {
+  char * name;
+  GTEXT_CSSOM_Sheet * sheet;   /* what the page's variable named when it was read: retained */
+  GTEXT_CSSOM_Rule * rule;     /* retained */
+  int is_null;                 /* the variable was null */
+  char * error;                /* the read threw: using the variable fails with this */
+} binding;
+
+typedef struct {
   GTEXT_CSS_Registry * registry;
   GTEXT_CSSOM_Document * doc;
+  binding * bindings;
+  size_t nbindings, capbindings;
   GTEXT_CSSOM_Sheet ** sheets;   /* the <style> elements of the page, in document order */
   size_t nsheets, capsheets;
   elem * elems;
@@ -166,6 +177,13 @@ static int world_open(world * w, int quirks) {
 }
 
 static void world_close(world * w) {
+  for (size_t i = 0; i < w->nbindings; i++) {
+    gtext_cssom_sheet_release(w->bindings[i].sheet);
+    gtext_cssom_rule_release(w->bindings[i].rule);
+    free(w->bindings[i].name);
+    free(w->bindings[i].error);
+  }
+  free(w->bindings);
   for (size_t i = 0; i < w->nstyles; i++) {
     gtext_cssom_decl_release(w->styles[i].decl);
     free(w->styles[i].name);
@@ -255,15 +273,43 @@ static char * resolve(world * w, const char * path, node_ref * out) {
   char msg[256];
   memset(out, 0, sizeof *out);
   const char * p = path;
-  if (*p != 'S') {
-    return dups("a path that does not begin with a sheet");
+  if (*p == '$') {
+    const char * end = p;
+    while (*end && *end != '.') {
+      end++;
+    }
+    const binding * b = NULL;
+    for (size_t i = 0; i < w->nbindings; i++) {
+      if (strlen(w->bindings[i].name) == (size_t)(end - p) && memcmp(w->bindings[i].name, p, (size_t)(end - p)) == 0) {
+        b = &w->bindings[i];
+      }
+    }
+    if (!b) {
+      return dups("a variable the program did not bind");
+    }
+    if (b->error) {
+      return dups(b->error);
+    }
+    out->sheet = gtext_cssom_sheet_retain(b->sheet);
+    out->rule = gtext_cssom_rule_retain(b->rule);
+    out->null_result = b->is_null;
+    p = end;
+    if (out->null_result && *p == '.') {
+      ref_release(out);
+      return dups("a property of null is read");
+    }
   }
-  const size_t si = (size_t)strtoull(p + 1, (char **)&p, 10);
-  if (si >= w->nsheets) {
-    snprintf(msg, sizeof msg, "document.styleSheets[%zu] is undefined", si);
-    return dups(msg);
+  else {
+    if (*p != 'S') {
+      return dups("a path that does not begin with a sheet");
+    }
+    const size_t si = (size_t)strtoull(p + 1, (char **)&p, 10);
+    if (si >= w->nsheets) {
+      snprintf(msg, sizeof msg, "document.styleSheets[%zu] is undefined", si);
+      return dups(msg);
+    }
+    out->sheet = gtext_cssom_sheet_retain(w->sheets[si]);
   }
-  out->sheet = gtext_cssom_sheet_retain(w->sheets[si]);
   while (*p == '.') {
     p++;
     if (*p == 'R') {
@@ -290,6 +336,27 @@ static char * resolve(world * w, const char * path, node_ref * out) {
       out->sheet = NULL;
       gtext_cssom_rule_release(out->rule);
       out->rule = r;
+    }
+    else if (*p == 'K' && out->rule) {
+      /* findRule(selector): the selector is hex */
+      p++;
+      char sel[256];
+      size_t n = 0;
+      while (isxdigit((unsigned char)p[0]) && isxdigit((unsigned char)p[1]) && n + 1 < sizeof sel) {
+        char hex[3] = {p[0], p[1], 0};
+        sel[n++] = (char)strtol(hex, NULL, 16);
+        p += 2;
+      }
+      GTEXT_CSSOM_Rule * found = NULL;
+      const GTEXT_CSS_Status st = gtext_cssom_keyframes_find_rule(out->rule, sel, n, &found);
+      gtext_cssom_rule_release(out->rule);
+      out->rule = NULL;
+      if (st != GTEXT_CSS_OK) {
+        ref_release(out);
+        return dups("findRule of a rule that is not @keyframes");
+      }
+      out->rule = found;
+      out->null_result = found == NULL;
     }
     else if (strncmp(p, "PS", 2) == 0 && out->rule) {
       p += 2;
@@ -443,6 +510,163 @@ static char * run_rule_op(world * w, const op * o) {
   return dups("not a sheet or rule op");
 }
 
+
+/// The name of the exception a status stands for, "ok" for none, or "status N".
+static const char * exception_of(GTEXT_CSS_Status st, char * buf, size_t cap) {
+  if (st == GTEXT_CSS_OK) {
+    return "ok";
+  }
+  const char * n = gtext_cssom_exception_name(st);
+  if (n) {
+    return n;
+  }
+  snprintf(buf, cap, "status %s", gtext_css_status_string(st));
+  return buf;
+}
+
+static char * bad_call(const char * call, const char * expected, const char * got) {
+  char msg[512];
+  if (strcmp(expected, "ok") == 0) {
+    snprintf(msg, sizeof msg, "%s threw %s", call, got);
+  }
+  else if (strcmp(got, "ok") == 0) {
+    snprintf(msg, sizeof msg, "%s did not throw; expected %s", call, expected);
+  }
+  else {
+    snprintf(msg, sizeof msg, "%s threw %s; expected %s", call, got, expected);
+  }
+  return dups(msg);
+}
+
+/// insertRule, deleteRule, addRule, appendRule and the keyframes deleteRule, and the assertions and bindings around them.
+static char * run_edit_op(world * w, const op * o) {
+  const char * name = o->f[0];
+  char msg[512], eb[128];
+  if (strcmp(name, "bind") == 0 && o->n == 3) {
+    node_ref r;
+    char * err = resolve(w, o->f[2], &r);
+    if (w->nbindings == w->capbindings) {
+      w->capbindings = w->capbindings ? w->capbindings * 2 : 16;
+      w->bindings = realloc(w->bindings, w->capbindings * sizeof *w->bindings);
+    }
+    binding * b = &w->bindings[w->nbindings++];
+    memset(b, 0, sizeof *b);
+    b->name = dups(o->f[1]);
+    if (err) {
+      b->error = err;
+      return NULL;
+    }
+    b->sheet = r.sheet;
+    b->rule = r.rule;
+    b->is_null = r.null_result;
+    return NULL;
+  }
+  node_ref r;
+  char * err = resolve(w, o->f[1], &r);
+  if (err) {
+    return err;
+  }
+  char * result = NULL;
+  if (strcmp(name, "rinsert") == 0 && o->n == 6) {
+    const int has_index = strcmp(o->f[2], UNDEFINED) != 0;
+    const size_t index = has_index ? (size_t)strtoull(o->f[2], NULL, 10) : 0;
+    GTEXT_CSS_Status st;
+    GTEXT_CSSOM_Rule * made = NULL;
+    GTEXT_CSSOM_Outcome oc;
+    if (r.rule) {
+      st = gtext_cssom_rule_insert_rule(r.rule, o->f[3], o->l[3], index, &made, &oc);
+    }
+    else if (r.sheet) {
+      st = gtext_cssom_sheet_insert_rule(r.sheet, o->f[3], o->l[3], index, &made, &oc);
+    }
+    else {
+      ref_release(&r);
+      return dups("insertRule of null");
+    }
+    gtext_cssom_rule_release(made);
+    const char * got = exception_of(st, eb, sizeof eb);
+    if (strcmp(got, o->f[4]) != 0) {
+      result = bad_call("insertRule", o->f[4], got);
+    }
+    else if (st == GTEXT_CSS_OK && strcmp(o->f[5], UNDEFINED) != 0) {
+      char num[32];
+      snprintf(num, sizeof num, "%zu", index);
+      if (strcmp(num, o->f[5]) != 0) {
+        snprintf(msg, sizeof msg, "insertRule returned %s, expected %s", num, o->f[5]);
+        result = dups(msg);
+      }
+    }
+  }
+  else if (strcmp(name, "radd") == 0 && o->n == 7 && r.sheet) {
+    GTEXT_CSSOM_Outcome oc;
+    const int has_index = strcmp(o->f[4], UNDEFINED) != 0;
+    const GTEXT_CSS_Status st = gtext_cssom_sheet_add_rule(r.sheet, o->f[2], o->l[2], o->f[3], o->l[3], has_index, has_index ? (size_t)strtoull(o->f[4], NULL, 10) : 0, &oc);
+    const char * got = exception_of(st, eb, sizeof eb);
+    if (strcmp(got, o->f[5]) != 0) {
+      result = bad_call("addRule", o->f[5], got);
+    }
+  }
+  else if (strcmp(name, "rdelete") == 0 && o->n == 4) {
+    GTEXT_CSSOM_Outcome oc;
+    const size_t index = (size_t)strtoull(o->f[2], NULL, 10);
+    GTEXT_CSS_Status st;
+    if (r.rule) {
+      st = gtext_cssom_rule_delete_rule(r.rule, index, &oc);
+    }
+    else if (r.sheet) {
+      st = gtext_cssom_sheet_delete_rule(r.sheet, index, &oc);
+    }
+    else {
+      ref_release(&r);
+      return dups("deleteRule of null");
+    }
+    const char * got = exception_of(st, eb, sizeof eb);
+    if (strcmp(got, o->f[3]) != 0) {
+      result = bad_call("deleteRule", o->f[3], got);
+    }
+  }
+  else if (strcmp(name, "rappend") == 0 && o->n == 4 && r.rule) {
+    GTEXT_CSSOM_Outcome oc;
+    const GTEXT_CSS_Status st = gtext_cssom_keyframes_append_rule(r.rule, o->f[2], o->l[2], NULL, &oc);
+    const char * got = exception_of(st, eb, sizeof eb);
+    if (strcmp(got, o->f[3]) != 0) {
+      result = bad_call("appendRule", o->f[3], got);
+    }
+  }
+  else if (strcmp(name, "rkfdelete") == 0 && o->n == 4 && r.rule) {
+    GTEXT_CSSOM_Outcome oc;
+    const GTEXT_CSS_Status st = gtext_cssom_keyframes_delete_rule(r.rule, o->f[2], o->l[2], &oc);
+    const char * got = exception_of(st, eb, sizeof eb);
+    if (strcmp(got, o->f[3]) != 0) {
+      result = bad_call("deleteRule", o->f[3], got);
+    }
+  }
+  else if (strcmp(name, "assert_rcsstext") == 0 && o->n == 3) {
+    if (!r.rule) {
+      result = dups("the cssText of null is read");
+    }
+    else {
+      char * text = NULL;
+      size_t n = 0;
+      const GTEXT_CSS_Status st = gtext_cssom_rule_css_text(r.rule, &text, &n);
+      if (st != GTEXT_CSS_OK) {
+        snprintf(msg, sizeof msg, "cssText: %s", gtext_css_status_string(st));
+        result = dups(msg);
+      }
+      else if (n != o->l[2] || memcmp(text, o->f[2], n) != 0) {
+        snprintf(msg, sizeof msg, "cssText is \"%.*s\", expected \"%.*s\"", (int)(n < 200 ? n : 200), text, (int)(o->l[2] < 200 ? o->l[2] : 200), o->f[2]);
+        result = dups(msg);
+      }
+      gtext_cssom_buffer_free(gtext_cssom_document_allocator(w->doc), text);
+    }
+  }
+  else {
+    result = dups("not an editing op");
+  }
+  ref_release(&r);
+  return result;
+}
+
 /// Run one op; returns NULL, or a message for a failed assertion (the caller frees it).
 static char * run_op(world * w, const op * o, int * failed_status) {
   const char * name = o->f[0];
@@ -451,6 +675,10 @@ static char * run_op(world * w, const op * o, int * failed_status) {
   if (strcmp(name, "sheet") == 0 || strcmp(name, "assert_nsheets") == 0 || strcmp(name, "assert_rlen") == 0 || strcmp(name, "assert_rtype") == 0 ||
       strcmp(name, "assert_rsame") == 0 || strcmp(name, "rstyle") == 0) {
     return run_rule_op(w, o);
+  }
+  if (strcmp(name, "bind") == 0 || strcmp(name, "rinsert") == 0 || strcmp(name, "radd") == 0 || strcmp(name, "rdelete") == 0 || strcmp(name, "rappend") == 0 ||
+      strcmp(name, "rkfdelete") == 0 || strcmp(name, "assert_rcsstext") == 0) {
+    return run_edit_op(w, o);
   }
   if (strcmp(name, "style") == 0 && o->n == 3) {
     if (!find_style(w, o->f[1])) {
@@ -755,6 +983,10 @@ int main(void) {
       }
       if (strcmp(o.f[0], "cleanup") == 0 && o.n == 1) {
         p.in_cleanup = 1;
+        continue;
+      }
+      if (strcmp(o.f[0], "toplevel") == 0 && o.n == 1) {
+        end_test(&p);   /* a statement of the page's own script between two tests: the test before it is over */
         continue;
       }
       if (!p.open || (p.in_test && p.failed && !p.in_cleanup)) {

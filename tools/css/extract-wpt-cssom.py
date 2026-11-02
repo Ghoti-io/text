@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read the CSSOM pages of the pinned web-platform-tests as data (C5a).
 
-    extract-wpt-cssom.py <wpt checkout> <out dir>
+    extract-wpt-cssom.py <wpt checkout> <out dir> [<rule.json>]
 
 Lists every page of ``css/`` of the pin that touches the CSSOM IDL (a grep for ``cssRules``, ``insertRule``, ``deleteRule``, ``cssText``, ``.style``, ``setProperty``,
 ``getPropertyValue``, ``removeProperty``, ``selectorText``, ``CSSStyleSheet``, ``adoptedStyleSheets``, ``replaceSync``, ``MediaList``, ``matchMedia``, ``getComputedStyle``,
@@ -681,6 +681,16 @@ def chain(node, env):
         if not page.sheets_ok:
             raise Unrecognized(R_STYLEATTR)
         return 'sheet', 'S%d' % ids[0]
+    if node[0] == 'call' and node[1][0] == 'member' and node[1][2] == 'item' and len(node[2]) == 1 and node[2][0][0] == 'num':
+        kind, path = chain(node[1][1], env)
+        if kind != 'list' or node[2][0][1] < 0 or node[2][0][1] != int(node[2][0][1]):
+            raise Unrecognized(R_RULES)
+        return 'rule', '%s.R%d' % (path, int(node[2][0][1]))
+    if node[0] == 'call' and node[1][0] == 'member' and node[1][2] == 'findRule' and len(node[2]) == 1 and node[2][0][0] == 'str':
+        kind, path = chain(node[1][1], env)
+        if kind != 'rule':
+            raise Unrecognized(R_RULES)
+        return 'rule', path + '.K' + node[2][0][1].encode('utf-8', 'surrogatepass').hex()
     if node[0] == 'member' and node[2] in ('cssRules', 'rules'):
         kind, path = chain(node[1], env)
         if kind not in ('sheet', 'rule'):
@@ -747,6 +757,9 @@ def read_expr(node, env, ops):
     if node[0] == 'member':
         obj, name = node[1], node[2]
         if name == 'cssText':
+            c = try_chain(obj, env)
+            if c and c[0] == 'rule':
+                return ('assert_rcsstext', [c[1]])
             return ('assert_csstext', [style_expr(obj, env, ops)])
         if name == 'length':
             return ('assert_length', [style_expr(obj, env, ops)])
@@ -783,13 +796,68 @@ def literal(node):
     raise Unrecognized(R_SHAPE)
 
 
+
+def rule_call(e, env, ops, expect, result=None):
+    """`X.insertRule(text[, index])`, `X.deleteRule(index)`, `X.removeRule(index)`, `X.appendRule(text)`, `X.deleteRule(selector)` of a keyframes rule: the op that makes the call and
+    the exception it must throw (`ok` for none). The result an assertion names is the index insertRule returns."""
+    callee, args = e[1], e[2]
+    if callee[0] != 'member':
+        raise Unrecognized(R_SHAPE)
+    c = try_chain(callee[1], env)
+    if not c or c[0] not in ('sheet', 'rule'):
+        raise Unrecognized(R_RULES)
+    meth = callee[2]
+    if meth == 'insertRule' and len(args) in (1, 2):
+        text = js_string(args[0], 'rule')
+        if len(args) == 2:
+            if args[1][0] == 'undefined':
+                index = '\x01undefined'
+            elif args[1][0] == 'num' and args[1][1] == int(args[1][1]) and args[1][1] >= 0:
+                index = str(int(args[1][1]))
+            else:
+                raise Unrecognized(R_SHAPE)
+        else:
+            index = '\x01undefined'
+        ops.append(('rinsert', c[1], index, text, expect, result if result is not None else '\x01undefined'))
+        return
+    if meth == 'addRule' and len(args) in (1, 2, 3) and c[0] == 'sheet':
+        sel = js_string(args[0], 'selector')
+        style = js_string(args[1], 'style') if len(args) >= 2 else 'undefined'
+        index = str(int(args[2][1])) if len(args) == 3 and args[2][0] == 'num' else '\x01undefined'
+        if len(args) == 3 and args[2][0] != 'num':
+            raise Unrecognized(R_SHAPE)
+        ops.append(('radd', c[1], sel, style, index, expect, result if result is not None else '\x01undefined'))
+        return
+    if meth in ('deleteRule', 'removeRule') and len(args) == 1:
+        if args[0][0] == 'num' and args[0][1] == int(args[0][1]) and args[0][1] >= 0:
+            ops.append(('rdelete', c[1], str(int(args[0][1])), expect))
+            return
+        if args[0][0] == 'str' and meth == 'deleteRule' and c[0] == 'rule':
+            ops.append(('rkfdelete', c[1], args[0][1], expect))
+            return
+        if meth == 'removeRule' and len(args) == 0:
+            ops.append(('rdelete', c[1], '0', expect))
+            return
+    if meth == 'removeRule' and len(args) == 0 and c[0] == 'sheet':
+        ops.append(('rdelete', c[1], '0', expect))
+        return
+    if meth == 'appendRule' and len(args) == 1 and c[0] == 'rule':
+        ops.append(('rappend', c[1], js_string(args[0], 'rule'), expect))
+        return
+    raise Unrecognized(R_SHAPE)
+
+
 def statement_ops(st, env, ops):
     kind = st[0]
     if kind == 'decl':
         name, e = st[1], st[2]
         c = try_chain(e, env)
         if c:
-            env.vars[name] = ('chain', c[0], c[1])
+            # the variable holds the object, not the path to it: a later insertion or deletion does not change what it names
+            env.counter[0] += 1
+            slot = '$v%d' % env.counter[0]
+            ops.append(('bind', slot, c[1]))
+            env.vars[name] = ('chain', c[0], slot)
             return
         if e[0] == 'member' and e[2] == 'style':
             env.vars[name] = ('style', style_expr(e, env, ops))
@@ -823,6 +891,14 @@ def statement_ops(st, env, ops):
     if e[0] != 'call':
         raise Unrecognized(R_SHAPE)
     callee, args = e[1], e[2]
+    if callee[0] == 'var' and callee[1] == 'assert_throws_dom' and len(args) == 2 and args[0][0] == 'str' and args[1][0] == 'func':
+        params, body = body_statements(args[1])
+        if len(body) != 1 or body[0][0] != 'expr' or body[0][1][0] != 'call':
+            raise Unrecognized(R_SHAPE)
+        sub = []
+        rule_call(body[0][1], env, sub, expect=args[0][1])
+        ops.extend(sub)
+        return
     if callee[0] == 'var':
         fn = callee[1]
         if fn == 'assert_any' and len(args) == 3 and args[0] == ('var', 'assert_equals') and args[2][0] == 'array':
@@ -834,6 +910,9 @@ def statement_ops(st, env, ops):
                 raise Unrecognized(R_SHAPE)
             if fn == 'assert_not_equals':
                 raise Unrecognized(R_SHAPE)
+            if args[0][0] == 'call' and args[0][1][0] == 'member' and args[0][1][2] in ('insertRule', 'addRule') and args[1][0] == 'num':
+                rule_call(args[0], env, ops, expect='ok', result=str(int(args[1][1])))
+                return
             if args[1][0] in ('member', 'index', 'var') and not (args[1][0] == 'var' and args[1][1] not in env.vars):
                 first, second = try_chain(args[0], env), try_chain(args[1], env)
                 if first and second and first[0] == second[0] and first[0] in ('rule', 'sheet'):
@@ -844,6 +923,9 @@ def statement_ops(st, env, ops):
             ops.append((op,) + tuple(a) + (exp,))
             return
         raise Unrecognized(R_SHAPE)
+    if callee[0] == 'member' and callee[2] in ('insertRule', 'deleteRule', 'removeRule', 'addRule', 'appendRule') and try_chain(callee[1], env):
+        rule_call(e, env, ops, expect='ok')
+        return
     if callee[0] == 'member':
         obj, meth = callee[1], callee[2]
         if meth == 'setProperty' and len(args) in (2, 3):
@@ -953,8 +1035,13 @@ def extract_script(page, script, rel, prog, state, unextracted):
             continue
         # a declaration, or a statement that acts on the world: its ops are part of the program, in order
         before = len(prog)
+        marked = state['tests'] > 0
+        if marked:
+            prog.append(('toplevel',))   # the page's own statement between two tests: it is not part of the test before it
         try:
             statement_ops(st, env, prog)
+            if marked and len(prog) == before + 1:
+                del prog[before]
             if st[0] in ('decl', 'destructure', 'assign', 'expr'):
                 for o in prog[before:]:
                     if o[0] == 'elem':
@@ -1053,8 +1140,44 @@ def walk(wpt):
     return out
 
 
+def rule_vector_programs(path, programs):
+    """The rule vectors of the pinned pages (``test_valid_rule`` and kin of css/support/parsing-testcommon.js, read by extract-wpt-props.py into ``rule.json``), as programs: each
+    page's vectors are one program, ``<page>?rule-vectors``. As the helper runs them, a vector is a fresh empty sheet: a valid rule is inserted with ``insertRule(rule)`` (one rule
+    results), its ``cssText`` is the canonical serialization the page names, the rule is deleted, the serialization is inserted again and must read back the same; an invalid rule
+    is a SyntaxError and leaves the sheet empty."""
+    vectors = json.load(open(path, encoding='utf-8'))
+    by_file = {}
+    for v in vectors:
+        by_file.setdefault(v['file'], []).append(v)
+    for file, vs in sorted(by_file.items()):
+        ops = []
+        for i, v in enumerate(vs):
+            # the keyframes name vectors set the text of a <style> (the helper's _set_style): the sheet is parsed from `@keyframes <name> {}`
+            ops.append(('sheet', str(i), '@keyframes %s {}' % v['value'] if v['sub'].startswith('keyframes') else ''))
+        for i, v in enumerate(vs):
+            sp = 'S%d' % i
+            ops.append(('test', str(i)))
+            if v['sub'].startswith('keyframes'):
+                ops.append(('assert_rlen', sp, '1' if v['sub'] == 'keyframes-valid' else '0'))
+            elif v['sub'] == 'valid':
+                expected = v.get('expected', v['value'])
+                ops.append(('rinsert', sp, '\x01undefined', v['value'], 'ok', '\x01undefined'))
+                ops.append(('assert_rlen', sp, '1'))
+                ops.append(('assert_rcsstext', sp + '.R0', expected))
+                ops.append(('rdelete', sp, '0', 'ok'))
+                ops.append(('assert_rlen', sp, '0'))
+                ops.append(('rinsert', sp, '\x01undefined', expected, 'ok', '\x01undefined'))
+                ops.append(('assert_rlen', sp, '1'))
+                ops.append(('assert_rcsstext', sp + '.R0', expected))
+            else:
+                ops.append(('rinsert', sp, '\x01undefined', v['value'], 'SyntaxError', '\x01undefined'))
+                ops.append(('assert_rlen', sp, '0'))
+        programs.append({'file': file + '?rule-vectors', 'quirks': False, 'ops': [list(o) for o in ops], 'tests': len(vs)})
+
+
 def main():
     wpt, out = sys.argv[1], sys.argv[2]
+    rules = sys.argv[3] if len(sys.argv) > 3 else None
     os.makedirs(out, exist_ok=True)
     programs = []
     unextracted = []
@@ -1062,6 +1185,8 @@ def main():
     for rel in walk(wpt):
         if scan_page(wpt, rel, programs, unextracted):
             pages += 1
+    if rules:
+        rule_vector_programs(rules, programs)
     # The partition: one line for a page and a reason, with the number of tests.
     counts = {}
     for rel, n, reason in unextracted:

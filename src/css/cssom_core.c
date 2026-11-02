@@ -45,6 +45,8 @@
 #define DEFAULT_MAX_RULE_NESTING ((size_t)64)
 #define LIMIT_MAX_RULE_NESTING ((size_t)4096)
 #define DEFAULT_MAX_DIAGNOSTICS ((size_t)1024)
+#define DEFAULT_MAX_CACHED_TEXT ((size_t)64 << 20)
+#define LIMIT_MAX_RULES ((size_t)1 << 28)
 
 struct GTEXT_CSSOM_Document {
   css_core * core;
@@ -66,6 +68,7 @@ GTEXT_CSSOM_Config gtext_cssom_config_default(void) {
   c.max_rules = DEFAULT_MAX_RULES;
   c.max_rule_nesting = DEFAULT_MAX_RULE_NESTING;
   c.max_diagnostics = DEFAULT_MAX_DIAGNOSTICS;
+  c.max_cached_text_bytes = DEFAULT_MAX_CACHED_TEXT;
   return c;
 }
 
@@ -91,9 +94,13 @@ static void config_fill(GTEXT_CSSOM_Config * out, const GTEXT_CSSOM_Config * in)
   if (!out->max_output_bytes) out->max_output_bytes = d.max_output_bytes;
   if (!out->max_work) out->max_work = d.max_work;
   if (!out->max_rules) out->max_rules = d.max_rules;
+  if (out->max_rules > LIMIT_MAX_RULES) out->max_rules = LIMIT_MAX_RULES;
   if (!out->max_rule_nesting) out->max_rule_nesting = d.max_rule_nesting;
   if (out->max_rule_nesting > LIMIT_MAX_RULE_NESTING) out->max_rule_nesting = LIMIT_MAX_RULE_NESTING;
   if (!out->max_diagnostics) out->max_diagnostics = d.max_diagnostics;
+  if (n < offsetof(GTEXT_CSSOM_Config, max_cached_text_bytes) + sizeof in->max_cached_text_bytes || !out->max_cached_text_bytes) {
+    out->max_cached_text_bytes = d.max_cached_text_bytes;
+  }
 }
 
 GTEXT_CSS_Status gtext_cssom_document_new(const GTEXT_CSSOM_Config * config, GTEXT_CSSOM_Document ** out) {

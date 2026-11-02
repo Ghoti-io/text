@@ -68,6 +68,7 @@ typedef struct {
   GTEXT_Allocator alloc;  ///< What the blocks come from.
   css_arena_chunk * head; ///< The newest block.
   size_t total;           ///< Bytes of blocks, for the tests.
+  size_t first;           ///< The size of the first block; 0 for the default. A parse of a few bytes asks for a small one: the rules an editor inserts are each their own tree.
 } css_arena;
 
 /// Initialize an arena that allocates through `alloc`.

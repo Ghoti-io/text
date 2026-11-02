@@ -61,6 +61,8 @@ struct Ev {
   uint64_t generation = 0;
   const void * declaration = nullptr;
   const void * element = nullptr;
+  uint64_t sheet_id = 0, rule_id = 0;
+  const void * rule = nullptr;
 };
 
 /// A document with a tap that records events. `alloc` (a fault allocator, say) is the document's.
@@ -114,6 +116,9 @@ struct Doc {
     ev.generation = e->generation;
     ev.declaration = e->declaration;
     ev.element = e->element;
+    ev.sheet_id = e->sheet_id;
+    ev.rule_id = e->rule_id;
+    ev.rule = e->rule;
     self->events.push_back(ev);
     return self->inside ? self->inside() : GTEXT_CSS_OK;
   }
@@ -436,6 +441,116 @@ inline Decl style_of(GTEXT_CSSOM_Rule * r, GTEXT_CSS_Status * status = nullptr) 
     *status = st;
   }
   return Decl(st == GTEXT_CSS_OK ? d : nullptr);
+}
+
+
+/* ---- insertRule, deleteRule, cssText ------------------------------------------------------------------------------------------------------ */
+
+/// The DOMException name of a status, or the library's own name for one that is not an exception.
+inline std::string name(GTEXT_CSS_Status st) {
+  if (st == GTEXT_CSS_OK) {
+    return "ok";
+  }
+  const char * n = gtext_cssom_exception_name(st);
+  return n ? n : gtext_css_status_string(st);
+}
+
+/// What an `insertRule` did.
+struct Ins {
+  GTEXT_CSS_Status st = GTEXT_CSS_E_INTERNAL;
+  GTEXT_CSSOM_Outcome o{};
+  Rule rule;
+};
+
+inline Ins insert_rule(GTEXT_CSSOM_Sheet * s, const std::string & text, size_t index) {
+  Ins r;
+  GTEXT_CSSOM_Rule * made = nullptr;
+  r.st = gtext_cssom_sheet_insert_rule(s, text.data(), text.size(), index, &made, &r.o);
+  r.rule = Rule(made);
+  return r;
+}
+
+inline Ins insert_rule(GTEXT_CSSOM_Rule * parent, const std::string & text, size_t index) {
+  Ins r;
+  GTEXT_CSSOM_Rule * made = nullptr;
+  r.st = gtext_cssom_rule_insert_rule(parent, text.data(), text.size(), index, &made, &r.o);
+  r.rule = Rule(made);
+  return r;
+}
+
+inline GTEXT_CSS_Status delete_rule(GTEXT_CSSOM_Sheet * s, size_t index, GTEXT_CSSOM_Outcome * o = nullptr) {
+  GTEXT_CSSOM_Outcome local;
+  return gtext_cssom_sheet_delete_rule(s, index, o ? o : &local);
+}
+
+inline GTEXT_CSS_Status delete_rule(GTEXT_CSSOM_Rule * r, size_t index, GTEXT_CSSOM_Outcome * o = nullptr) {
+  GTEXT_CSSOM_Outcome local;
+  return gtext_cssom_rule_delete_rule(r, index, o ? o : &local);
+}
+
+/// `cssText` of a rule, or `<status>` when it cannot be had.
+inline std::string css(GTEXT_CSSOM_Rule * r) {
+  char * out = nullptr;
+  size_t n = 0;
+  const GTEXT_CSS_Status st = gtext_cssom_rule_css_text(r, &out, &n);
+  if (st != GTEXT_CSS_OK) {
+    return std::string("<") + gtext_css_status_string(st) + ">";
+  }
+  std::string s(out, n);
+  gtext_cssom_buffer_free(&reinterpret_cast<css_obj *>(r)->core->alloc, out);
+  return s;
+}
+
+/// The `cssText` of every rule of a list, in order.
+inline std::vector<std::string> css_list(const GTEXT_CSSOM_Rule_List * list) {
+  std::vector<std::string> out;
+  for (GTEXT_CSSOM_Rule * r = gtext_cssom_rule_list_first(list); r;) {
+    out.push_back(css(r));
+    GTEXT_CSSOM_Rule * next = gtext_cssom_rule_list_next(list, r);
+    gtext_cssom_rule_release(r);
+    r = next;
+  }
+  return out;
+}
+
+/// The serialization of a sheet (every rule's `cssText` and a line feed).
+inline std::string sheet_text(const GTEXT_CSSOM_Sheet * s, GTEXT_CSS_Status * status = nullptr) {
+  std::string out;
+  GTEXT_Markup_Sink sink;
+  std::memset(&sink, 0, sizeof sink);
+  sink.user = &out;
+  sink.write = [](void * u, const char * p, size_t n) {
+    static_cast<std::string *>(u)->append(p, n);
+    return GTEXT_MARKUP_OK;
+  };
+  const GTEXT_CSS_Status st = gtext_cssom_sheet_serialize(s, &sink);
+  if (status) {
+    *status = st;
+  }
+  return st == GTEXT_CSS_OK ? out : std::string("<") + gtext_css_status_string(st) + ">";
+}
+
+/// The rules of a list as one string, one `cssText` after another, joined with " | " (for a short assertion).
+inline std::string joined(const GTEXT_CSSOM_Rule_List * list) {
+  std::string out;
+  for (const std::string & t : css_list(list)) {
+    out += out.empty() ? t : " | " + t;
+  }
+  return out;
+}
+
+/// A rule reached by indexes from the top of a sheet: `{0, 2}` is the third rule inside the first. Empty if there is none.
+inline Rule path(const Sheet & s, std::initializer_list<size_t> indexes) {
+  const GTEXT_CSSOM_Rule_List * list = s.rules();
+  Rule cur;
+  for (size_t i : indexes) {
+    cur = at(list, i);
+    if (!cur) {
+      return cur;
+    }
+    list = gtext_cssom_rule_css_rules(cur.r);
+  }
+  return cur;
 }
 
 } // namespace cot

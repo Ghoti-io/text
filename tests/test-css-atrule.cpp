@@ -520,16 +520,16 @@ TEST(CssAtrule, TheConditionOfAGroupRuleIsWrittenAsCssomWritesIt) {
   EXPECT_EQ(Parsed("@media (MIN-WIDTH: 10PX) AND (aspect-ratio > 1) { }").css(), "@media (min-width: 10px) and (aspect-ratio > 1 / 1) { }");
   EXPECT_EQ(Parsed("@container (aspect-ratio > 1) { }").css(), "@container (aspect-ratio > 1 / 1) { }");
   EXPECT_EQ(Parsed("@container Card (width>1px) { }").css(), "@container Card (width > 1px) { }");
-  EXPECT_EQ(Parsed("@supports (display:grid) and (foo: bar) { }").css(), "@supports (display: grid) and (foo: bar) { }");
+  EXPECT_EQ(Parsed("@supports (display:grid) and (foo: bar) { }").css(), "@supports (display:grid) and (foo: bar) { }") << "a supports condition is written as it was (web-platform-tests css-conditional/js/supports-conditionText.html, both browsers)";
 }
 
 TEST(CssAtrule, APreludeEndingInAnEscapedSpaceKeepsIt) {
   /* found by the at-rule fuzzer: the white space cut from the end of a prelude included a space that a backslash escapes, and the text then ended in a backslash that escaped
    * the `;` after it, so reading it back swallowed the rule. */
-  const std::string once = Parsed("@namespace svg ur\\ ").css();
-  EXPECT_EQ(once, "@namespace svg ur\\ ;");
+  const std::string once = Parsed("@custom-media --x ur\\ ").css();
+  EXPECT_EQ(once, "@custom-media --x ur\\ ;");
   EXPECT_EQ(Parsed(once).css(), once);
-  EXPECT_EQ(Parsed("@namespace svg ur\\\\ ").css(), "@namespace svg ur\\\\;") << "an escaped backslash is not an escape of the space";
+  EXPECT_EQ(Parsed("@custom-media --x ur\\\\ ").css(), "@custom-media --x ur\\\\;") << "an escaped backslash is not an escape of the space";
 }
 
 TEST(CssAtrule, DashedNamesTagsAndMarginBoxes) {

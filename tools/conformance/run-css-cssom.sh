@@ -46,7 +46,11 @@ cc -O1 -g -D_GNU_SOURCE -o "$runner" "$root/tools/conformance/css_cssom_suite.c"
 
 vectors=$root/build/css-cssom-vectors
 mkdir -p "$vectors"
-python3 -I "$root/tools/css/extract-wpt-cssom.py" "$wpt" "$vectors" >/dev/null
+# the rule vectors of the pinned pages (test_valid_rule and kin) are read by the property extractor and scored here, through insertRule
+rulevec=$root/build/css-cssom-rule-vectors
+mkdir -p "$rulevec"
+python3 -I "$root/tools/css/extract-wpt-props.py" "$wpt" "$rulevec" --unextracted "$rulevec/UNEXTRACTED" >/dev/null
+python3 -I "$root/tools/css/extract-wpt-cssom.py" "$wpt" "$vectors" "$rulevec/rule.json" >/dev/null
 
 suite_py=$root/tools/conformance/css_cssom_suite.py
 exceptions=$root/tools/conformance/CSS_CSSOM_EXCEPTIONS

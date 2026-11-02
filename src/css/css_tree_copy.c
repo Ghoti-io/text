@@ -65,6 +65,7 @@ typedef struct {
   GTEXT_CSS_Tree * tree;
   css_arena * arena;
   GTEXT_Allocator temp;     // where the stacks come from
+  bool drop_rules, drop_runs;   // the root keeps neither the rules inside it (a style rule's `rules`, an at-rule's rule items) nor the runs of declarations in its block
   rule_pair * rules;
   size_t nrules, caprules;
   value_pair * values;
@@ -200,7 +201,7 @@ static void fill_rule(copier * c, const GTEXT_CSS_Rule * src, GTEXT_CSS_Rule * d
   }
   dst->rules = NULL;
   dst->rule_count = 0;
-  if (src->rule_count) {
+  if (src->rule_count && !c->drop_rules) {
     GTEXT_CSS_Rule * kids = css_arena_alloc(c->arena, src->rule_count * sizeof *kids);
     if (!kids) {
       cp_fail(c, GTEXT_CSS_E_OOM);
@@ -215,33 +216,47 @@ static void fill_rule(copier * c, const GTEXT_CSS_Rule * src, GTEXT_CSS_Rule * d
   dst->contents = NULL;
   dst->content_count = 0;
   if (src->content_count) {
-    size_t nrules = 0;
+    size_t nrules = 0, kept = 0;
     for (size_t i = 0; i < src->content_count; i++) {
-      nrules += src->contents[i].kind == GTEXT_CSS_ITEM_RULE;
+      const bool is_rule = src->contents[i].kind == GTEXT_CSS_ITEM_RULE;
+      nrules += is_rule && !c->drop_rules;
+      kept += is_rule ? !c->drop_rules : !c->drop_runs;
+    }
+    if (kept == 0) {
+      return;
     }
     GTEXT_CSS_Rule * kids = nrules ? css_arena_alloc(c->arena, nrules * sizeof *kids) : NULL;
-    GTEXT_CSS_Block_Item * items = css_arena_alloc(c->arena, src->content_count * sizeof *items);
+    GTEXT_CSS_Block_Item * items = css_arena_alloc(c->arena, kept * sizeof *items);
     if ((nrules && !kids) || !items) {
       cp_fail(c, GTEXT_CSS_E_OOM);
       return;
     }
-    size_t r = 0;
+    size_t r = 0, k = 0;
     for (size_t i = 0; i < src->content_count; i++) {
-      items[i] = src->contents[i];
       if (src->contents[i].kind == GTEXT_CSS_ITEM_RULE) {
-        items[i].rule = &kids[r];
+        if (c->drop_rules) {
+          continue;
+        }
+        items[k] = src->contents[i];
+        items[k].rule = &kids[r];
         push_rule(c, src->contents[i].rule, &kids[r]);
         r++;
+        k++;
       }
       else {
-        items[i].declarations = cp_declarations(c, src->contents[i].declarations, src->contents[i].declaration_count);
-        if (!items[i].declarations) {
-          items[i].declaration_count = 0;
+        if (c->drop_runs) {
+          continue;
         }
+        items[k] = src->contents[i];
+        items[k].declarations = cp_declarations(c, src->contents[i].declarations, src->contents[i].declaration_count);
+        if (!items[k].declarations) {
+          items[k].declaration_count = 0;
+        }
+        k++;
       }
     }
     dst->contents = items;
-    dst->content_count = src->content_count;
+    dst->content_count = kept;
   }
 }
 
@@ -288,6 +303,26 @@ GTEXT_CSS_Status css_tree_copy_run(GTEXT_CSS_Tree * dst, const GTEXT_CSS_Declara
   const GTEXT_CSS_Status st = copier_run(&c);
   if (st == GTEXT_CSS_OK) {
     *out = run;
+  }
+  return st;
+}
+
+GTEXT_CSS_Status css_tree_copy_rule_own(GTEXT_CSS_Tree * dst, const GTEXT_CSS_Rule * src, bool drop_rules, bool drop_runs, const GTEXT_CSS_Rule ** out) {
+  copier c;
+  memset(&c, 0, sizeof c);
+  c.tree = dst;
+  c.arena = &dst->internal->arena;
+  c.temp = c.arena->alloc;
+  c.drop_rules = drop_rules;
+  c.drop_runs = drop_runs;
+  GTEXT_CSS_Rule * root = css_arena_alloc(c.arena, sizeof *root);
+  if (!root) {
+    return GTEXT_CSS_E_OOM;
+  }
+  push_rule(&c, src, root);
+  const GTEXT_CSS_Status st = copier_run(&c);
+  if (st == GTEXT_CSS_OK) {
+    *out = root;
   }
   return st;
 }

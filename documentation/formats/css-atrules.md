@@ -17,6 +17,7 @@ descriptor goes through the registry's grammar for it and is kept as a typed val
 - A rule that is valid and defines nothing says so (`gtext_css_atrule_defines_nothing()`): an `@font-face` without `font-family` or `src` is not considered, a `@counter-style`
   with too few symbols for its system defines nothing.
 - `gtext_css_atrule_serialize()` writes the rule as CSSOM's "serialize a CSS rule" does. The text parses back to a rule that serializes to the same bytes.
+- The preludes that are not valid make the rule invalid (`result.valid` false): an `@import` or `@namespace` with a block, or without a URL (an `@namespace` is a prefix and a URL and nothing else), an `@layer` statement that is not a comma separated list of layer names (names are identifiers joined by `.` with no white space around the dots) and an `@layer` block with more than one. `@import` and `@namespace` are written with their URL as CSSOM writes it, `url("...")`, whatever the author wrote (`url(a.css)`, `"a.css"`), the words after it in the order they were found and the media query list as `mediaText` writes it; an `@layer` statement is written with a semicolon.
 - `gtext_css_atrule_validity_init()` fills a `GTEXT_CSS_Validity`: a parse given it drops an at-rule that is invalid where it stands, as Syntax says an invalid rule is dropped, and keeps the same tree as a parse without it when every at-rule is valid.
 
 `gtext_css_atrule_ledger_row()` is the table of which kinds parse, validate, serialize, apply and are typed.

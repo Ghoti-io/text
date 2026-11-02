@@ -1005,7 +1005,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: conformance-css-cssom conformance-css-selector-queries conformance-css-selectors conformance-css-conditions conformance-css-atrules conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-css-style-oracle check-css-sheet-oracle check-css-cond-oracle check-css-rule-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-color check-css-color-plants check-css-color-cross check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: conformance-css-cssom conformance-css-selector-queries conformance-css-selectors conformance-css-conditions conformance-css-atrules conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-css-style-oracle check-css-sheet-oracle check-css-cond-oracle check-css-rule-oracle check-css-ruleops-oracle check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-color check-css-color-plants check-css-color-cross check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1166,7 +1166,10 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/cssom_parse.c \
 	src/css/cssom_rule.c \
 	src/css/cssom_rule_kinds.c \
+	src/css/cssom_insert.c \
+	src/css/cssom_ns.c \
 	src/css/cssom_rule_list.c \
+	src/css/cssom_rule_serialize.c \
 	src/css/cssom_sheet.c \
 	src/css/cssom_util.c \
 	src/css/css_tree_copy.c \
@@ -2590,7 +2593,7 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=0
 # scored is listed (UNSCORED_COMPUTED), and the gate is made to fail (--controls). tools/conformance/run-css-computed.sh --regenerate writes the lists.
 CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4532 CSS_COMPUTED_MAX_DEFECTS=0
 CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=240
-CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=203 CSS_CSSOM_MIN_PAGES=68 CSS_CSSOM_MAX_DEFECTS=38
+CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=328 CSS_CSSOM_MIN_PAGES=82 CSS_CSSOM_MAX_DEFECTS=38
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
 conformance-css-computed: $(CONFORMANCE_LIB)
@@ -3285,6 +3288,16 @@ check-css-rule-oracle: $(CONFORMANCE_LIB)
 	@$(REQUIRE_PYTHON3); \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-css-cond-oracle.sh --kind rule && \
 	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-css-cond-oracle.sh --kind rule --controls
+
+check-css-ruleops-oracle: ## Compare insertRule, deleteRule and the keyframes calls against Chromium and Firefox, and show the gate fails when it should
+# tools/oracle/run-css-ruleops-oracle.sh (tools/oracle/css_ruleops_diff.py says what is compared and what a divergence is; tools/oracle/css_ruleops_divergences.txt lists the ones that
+# are not this library's). Generated sequences of insertions, deletions and keyframes calls on a sheet and the rules in it, and the pairs of adjacent conditions of every list of the
+# order of checks, are run by this library, Chromium and Firefox (one pinned image, no network): the exception each call throws, and the text of the rules that are left. It is
+# not one of the gates of `make test`: it needs a container engine.
+check-css-ruleops-oracle: $(CONFORMANCE_LIB)
+	@$(REQUIRE_PYTHON3); \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-css-ruleops-oracle.sh && \
+	$(ORACLE_ENV) $(CONFORMANCE_ENV) tools/oracle/run-css-ruleops-oracle.sh --controls
 
 check-css-property-oracle: ## Compare the CSS property layer against Chromium and Firefox, and show the gate fails when it should
 # tools/oracle/run-css-property-oracle.sh (its header says what is compared; tools/oracle/css_prop_diff.py says what a divergence is and

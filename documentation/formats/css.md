@@ -136,6 +136,9 @@ allocation of all three goes through the options' allocator.
   again as a rule, an invalid nested qualified rule is the draft's "invalid rule
   error" that ends the run of declarations before it, and so on, each with the
   parse error `invalid-declaration-in-context` or `invalid-rule`.
+  The callback is told where the construct is (`GTEXT_CSS_Parent`): its parent rule, `nested` (inside a block: true for every rule in any block), and, at any depth,
+  whether the selectors read there are **relative** (some enclosing rule is a style rule or an `@scope`), whether the nearest of those is an `@scope`, and whether some
+  enclosing rule is a style rule; a rule that is valid only outside a style rule (`@font-face`) is then invalid inside an `@media` inside one.
 - **An+B** (6.2, 9.1): gtext_css_anb_parse() over component values, by the
   grammar's productions on tokens (so an escaped digit is a digit), and
   gtext_css_anb_serialize().

@@ -48,6 +48,7 @@ namespace snippets {
 #include "doc-snippets/css/cssom-declaration.c"
 #include "doc-snippets/css/cssom-inline-style.c"
 #include "doc-snippets/css/cssom-sheet.c"
+#include "doc-snippets/css/cssom-insert.c"
 } // namespace snippets
 
 namespace {
@@ -63,6 +64,7 @@ const Snippet kSnippets[] = {
         "margin-top: 5px -> changed\nmargin: 1px 2px -> changed\nmargin: 1px 2px -> unchanged\ncolor: nonsense -> ignored: invalid value\ncolor: red -> changed\n"
         "width: 1px -> ignored: bad priority\nbogus: 1 -> ignored: unknown property\ncssText: margin: 1px 2px; color: red !important;\nremoved margin: 1px 2px\nlength: 1\n"},
     {"cssom-inline-style.c", snippets::cssom_inline_style, "attribute: color: blue; margin: 1px; (written: yes)\nagain: written: no\nwidth: 5px\ncolor: \"\"\n"},
+    {"cssom-insert.c", snippets::cssom_insert, "insert media: success\n@import url(a.css); -> HierarchyRequestError\nt|c { } -> SyntaxError\na { } b { } -> SyntaxError\nd { } -> IndexSizeError\ndeleted: @media print {\n  s|b { width: 1px; }\n} (parentStyleSheet is null)\n@namespace s url(\"urn:s\");\na {\n  color: red;\n  & > c { }\n  width: 2px;\n}\n"},
     {"cssom-sheet.c", snippets::cssom_sheet, "rules: 2, dropped: 1\nCSSStyleRule (type 1) at line 1\nCSSMediaRule (type 4) at line 2\nstyle: width: 2px; (sheet version 1, owner is the sheet: yes)\nafter the release: 2 rules\n"},
 };
 

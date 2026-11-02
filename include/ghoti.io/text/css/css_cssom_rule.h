@@ -234,6 +234,65 @@ GTEXT_API GTEXT_CSSOM_Rule * gtext_cssom_rule_list_next(const GTEXT_CSSOM_Rule_L
 /** @brief The index of `rule` in the list. O(log n). @return false when the rule is not in this list. */
 GTEXT_API bool gtext_cssom_rule_list_index_of(const GTEXT_CSSOM_Rule_List * list, const GTEXT_CSSOM_Rule * rule, size_t * index);
 
+/* ---- insertRule, deleteRule, cssText ------------------------------------------------------------------------------------------------------ */
+
+/**
+ * @brief `CSSGroupingRule.insertRule(rule, index)` (and a style rule's): insert a rule, or declarations, into the rules inside this one.
+ *
+ * Available for a style rule, a grouping rule (`@media`, `@supports`, `@container`, `@starting-style`, `@scope`, `@when`, `@else`, a `@layer` with a block) and `@page`.
+ * The text is read with the **nested flag** set when this rule is inside a style rule (or is one), at any depth.
+ *
+ * **The order of checks:** REENTRANT/_LIMIT_CSSOM; GTEXT_CSS_E_INDEX_SIZE, **before the text is looked at**; the text is parsed as one rule; with the nested flag, a text that is not a rule
+ * is read as a list of declarations and a **non-empty** result becomes a nested-declarations rule (an empty one is GTEXT_CSS_E_SYNTAX); without it a text that is not a rule is
+ * GTEXT_CSS_E_SYNTAX (a bare declaration block into a top-level `@media`, or into a sheet, is a SyntaxError: the pinned web-platform-tests page and both browsers, against the
+ * prose of the draft); then GTEXT_CSS_E_HIERARCHY when CSS does not allow the rule here (an `@import` or `@font-face` inside a style rule, an `@namespace` in a group); then it is
+ * inserted. A relative selector (`> a`, `&`) is valid only inside a style rule.
+ *
+ * Atomic. A detached rule may be inserted into: nothing changes in any sheet and no notification is sent.
+ *
+ * @param rule The rule. Not NULL.
+ * @param text The rule or declarations, UTF-8.
+ * @param length Its length in bytes.
+ * @param index 0 to the number of rules inside.
+ * @param rule_out NULL, or receives the new rule with an external reference of the caller's; written only on success.
+ * @param outcome NULL, or receives what the call did.
+ * @return GTEXT_CSS_OK or one of the statuses above; GTEXT_CSS_E_INVALID (a NULL argument); GTEXT_CSS_E_UNSUPPORTED (a kind that has no such list); the limits; GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_insert_rule(GTEXT_CSSOM_Rule * rule, const char * text, size_t length, size_t index, GTEXT_CSSOM_Rule ** rule_out,
+    GTEXT_CSSOM_Outcome * outcome);
+
+/** @brief `CSSGroupingRule.deleteRule(index)`: GTEXT_CSS_E_INDEX_SIZE if the index is not less than the number of rules inside, else the rule is removed and detached. Atomic. */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_delete_rule(GTEXT_CSSOM_Rule * rule, size_t index, GTEXT_CSSOM_Outcome * outcome);
+
+/**
+ * @brief `CSSKeyframesRule.appendRule(rule)`: append a keyframe. Text that is not one valid keyframe is **ignored** (CSS Animations 1: no exception): the call returns
+ *   GTEXT_CSS_OK, `*outcome` says `GTEXT_CSSOM_IGNORED_INVALID_SELECTOR` and nothing changes. A keyframe whose selector another has is appended all the same.
+ * @param rule_out NULL, or receives the new keyframe (NULL when ignored).
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_keyframes_append_rule(GTEXT_CSSOM_Rule * rule, const char * text, size_t length, GTEXT_CSSOM_Rule ** rule_out, GTEXT_CSSOM_Outcome * outcome);
+
+/** @brief `CSSKeyframesRule.deleteRule(select)`: remove the **last** keyframe whose selector list is `select` (white space does not matter; `from` and `to` are `0%` and `100%`). No match: nothing happens. */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_keyframes_delete_rule(GTEXT_CSSOM_Rule * rule, const char * select, size_t select_length, GTEXT_CSSOM_Outcome * outcome);
+
+/** @brief `CSSKeyframesRule.findRule(select)`: the last keyframe whose selector list is `select`, with an external reference of the caller's, or NULL in `*out` for none. */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_keyframes_find_rule(GTEXT_CSSOM_Rule * rule, const char * select, size_t select_length, GTEXT_CSSOM_Rule ** out);
+
+/**
+ * @brief `cssText`: CSSOM's "serialize a CSS rule", in a new buffer (release it with gtext_cssom_buffer_free()).
+ *
+ * A style rule is its selector list, ` {`, its declarations and the rules inside it, each rule on a line of its own after a newline and two spaces (the lines of a rule inside are
+ * not indented again, as the draft and both browsers have it), and a newline and `}`; with nothing inside it is `a { }`, and with declarations only `a { color: red; }`. A grouping
+ * rule is `@media print {`, the rules inside, a newline and `}`. The other rules are the typed model's serialization (css_atrule.h).
+ *
+ * A rule with no rules inside keeps its text for as long as its version stays (an unchanged leaf is O(1) to reach and O(length) to copy); a rule with rules inside keeps nothing.
+ *
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_LIMIT_OUTPUT; GTEXT_CSS_E_OOM; the limits of a declaration block.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_css_text(GTEXT_CSSOM_Rule * rule, char ** out, size_t * length);
+
+/** @brief `cssText` written to a sink, with no buffer of the whole text and no cache filled (it reads the cache). A nest of any depth is written with no recursion. */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_serialize(const GTEXT_CSSOM_Rule * rule, const GTEXT_Markup_Sink * sink);
+
 /**
  * @brief The canonical dump of a rule and everything under it (`cssom-rule 1`): ids, kinds, versions, sources and the shape of the tree, one line each; identical on every host.
  *

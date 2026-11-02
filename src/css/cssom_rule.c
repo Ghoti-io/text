@@ -63,6 +63,12 @@ GTEXT_CSS_Status css_source_new(css_core * core, GTEXT_CSS_Tree * tree, char * t
   return GTEXT_CSS_OK;
 }
 
+void css_source_set_ns(css_source * source, css_ns_env * env) {
+  css_ns_env * old = source->ns;
+  source->ns = css_ns_env_retain(env);
+  css_ns_env_release(old);
+}
+
 css_source * css_source_retain(css_source * source) {
   if (source) {
     source->refs++;
@@ -79,6 +85,7 @@ void css_source_release(css_source * source) {
   const size_t held = source->bytes - sizeof(css_source);
   core->counters.live_bytes -= source->bytes;
   core->counters.tree_bytes -= held;
+  css_ns_env_release(source->ns);
   gtext_css_tree_free(source->tree);
   gtext_allocator_free(&a, source->text);
   gtext_allocator_free(&a, source);
@@ -94,6 +101,7 @@ css_rule * css_rule_from_obj(css_obj * o) {
 static void rule_destroy(css_obj * o) {
   css_rule * r = (css_rule *)o;
   GTEXT_Allocator a = o->core->alloc;
+  css_rule_drop_cache(r);
   css_rule_list_release_all(&r->rules);
   if (r->style) {
     r->style->owner = NULL;
@@ -329,7 +337,7 @@ static GTEXT_CSS_Status rule_prepare(css_obj * owner, GTEXT_CSSOM_Decl * decl) {
 static void rule_commit(css_obj * owner, GTEXT_CSSOM_Decl * decl, css_cssom_event * event) {
   (void)decl;
   css_rule * r = (css_rule *)owner;
-  r->version++;
+  css_rule_touch(r);
   event->rule = r;
   event->rule_id = r->obj.id;
   css_sheet * s = css_rule_sheet(r);
@@ -345,7 +353,10 @@ static void rule_commit(css_obj * owner, GTEXT_CSSOM_Decl * decl, css_cssom_even
 
 static const css_decl_owner_ops rule_ops = {rule_prepare, rule_commit};
 
-static GTEXT_CSS_Status build_style(css_rule * r) {
+GTEXT_CSS_Status css_rule_build_style(css_rule * r) {
+  if (r->style) {
+    return GTEXT_CSS_OK;
+  }
   const GTEXT_CSS_Declaration * decls = NULL;
   size_t n = 0;
   if (!css_rule_declarations(r, &decls, &n)) {
@@ -377,7 +388,7 @@ GTEXT_CSS_Status gtext_cssom_rule_style(GTEXT_CSSOM_Rule * rule, GTEXT_CSSOM_Dec
     return GTEXT_CSS_E_INVALID;
   }
   if (!rule->style) {
-    const GTEXT_CSS_Status st = build_style(rule);
+    const GTEXT_CSS_Status st = css_rule_build_style(rule);
     if (st != GTEXT_CSS_OK) {
       return st;
     }

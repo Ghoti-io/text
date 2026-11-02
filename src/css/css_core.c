@@ -456,6 +456,7 @@ void css_arena_init(css_arena * arena, const GTEXT_Allocator * alloc) {
   arena->alloc = *alloc;
   arena->head = NULL;
   arena->total = 0;
+  arena->first = 0;
 }
 
 /** Bytes from an arena, aligned to 16 (css_internal.h). */
@@ -469,7 +470,7 @@ void * css_arena_alloc(css_arena * arena, size_t size) {
   }
   css_arena_chunk * c = arena->head;
   if (!c || c->cap - c->used < size) {
-    size_t cap = c ? c->cap * 2 : CHUNK_MIN;
+    size_t cap = c ? c->cap * 2 : (arena->first ? arena->first : CHUNK_MIN);
     if (cap > (size_t)8 * 1024 * 1024) {
       cap = (size_t)8 * 1024 * 1024;
     }
