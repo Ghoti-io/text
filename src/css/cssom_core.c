@@ -41,6 +41,10 @@
 #define DEFAULT_MAX_INPUT ((size_t)64 << 20)
 #define DEFAULT_MAX_OUTPUT ((size_t)64 << 20)
 #define DEFAULT_MAX_WORK ((size_t)1 << 24)
+#define DEFAULT_MAX_RULES ((size_t)1 << 20)
+#define DEFAULT_MAX_RULE_NESTING ((size_t)64)
+#define LIMIT_MAX_RULE_NESTING ((size_t)4096)
+#define DEFAULT_MAX_DIAGNOSTICS ((size_t)1024)
 
 struct GTEXT_CSSOM_Document {
   css_core * core;
@@ -59,6 +63,9 @@ GTEXT_CSSOM_Config gtext_cssom_config_default(void) {
   c.max_input_bytes = DEFAULT_MAX_INPUT;
   c.max_output_bytes = DEFAULT_MAX_OUTPUT;
   c.max_work = DEFAULT_MAX_WORK;
+  c.max_rules = DEFAULT_MAX_RULES;
+  c.max_rule_nesting = DEFAULT_MAX_RULE_NESTING;
+  c.max_diagnostics = DEFAULT_MAX_DIAGNOSTICS;
   return c;
 }
 
@@ -83,6 +90,10 @@ static void config_fill(GTEXT_CSSOM_Config * out, const GTEXT_CSSOM_Config * in)
   if (!out->max_input_bytes) out->max_input_bytes = d.max_input_bytes;
   if (!out->max_output_bytes) out->max_output_bytes = d.max_output_bytes;
   if (!out->max_work) out->max_work = d.max_work;
+  if (!out->max_rules) out->max_rules = d.max_rules;
+  if (!out->max_rule_nesting) out->max_rule_nesting = d.max_rule_nesting;
+  if (out->max_rule_nesting > LIMIT_MAX_RULE_NESTING) out->max_rule_nesting = LIMIT_MAX_RULE_NESTING;
+  if (!out->max_diagnostics) out->max_diagnostics = d.max_diagnostics;
 }
 
 GTEXT_CSS_Status gtext_cssom_document_new(const GTEXT_CSSOM_Config * config, GTEXT_CSSOM_Document ** out) {
@@ -186,6 +197,13 @@ GTEXT_CSS_Status css_cssom_enter(css_core * core) {
 }
 
 void css_cssom_commit(css_core * core, css_cssom_event * event, GTEXT_CSSOM_Outcome * outcome) {
+  if (event->silent) {
+    /* a rule that no sheet holds changed: nothing that evaluates the document can see it */
+    if (outcome) {
+      outcome->generation = core->generation;
+    }
+    return;
+  }
   core->generation++;
   event->generation = core->generation;
   if (outcome) {

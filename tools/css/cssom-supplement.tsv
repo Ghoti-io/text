@@ -1,0 +1,41 @@
+# tools/css/gen-cssom-tables.py: what CSSOM does with each kind of rule (css_cssom_rule.h). One row for each of the kinds of css_atrule.h (the C4 enumeration,
+# UNKNOWN included) and for the two that are not at-rules, the style rule and the nested-declarations rule: 29 rows. The at-rules' rows are checked against
+# tools/css/atrule_kinds.tsv (every kind of its ledger has a row, every row that is not in the ledger is one of the kinds the parse itself makes), and the places a
+# rule may be (its `parents` column) are taken from there, not written twice. Tab separated:
+#  kind        the name gtext_css_atrule_kind_name() gives, or `style` or `nested-declarations`
+#  interface   the CSSOM interface(s), `-` for none (no browser exposes the kind, or it is not a rule)
+#  type        the legacy `type` constant CSSOM lists for the rule (0 for every newer one)
+#  list        what its cssRules holds: none, rules (style, nested-declarations and at-rules), keyframes, margins
+#  style       what its `style` is: none, properties (a block of property declarations), descriptors (a block of descriptors)
+#  rule        yes: a parse makes a rule object of it (a keyframe and a margin rule only inside their parent). no: never a rule object
+#  insertable  yes: insertRule can make one at the top level or in a group
+#  note        why
+unknown	-	0	none	none	no	no	an at-rule the library does not know: CSS Syntax makes it invalid, so a parse drops it with a diagnostic and insertRule of one is SyntaxError
+charset	-	0	none	none	no	no	CSSOM has no @charset rule: the decoder has read the bytes by it; a parse drops it and insertRule of one is SyntaxError
+import	CSSImportRule	3	none	none	yes	yes	href, media, layerName, supportsText and the style sheet it loads
+namespace	CSSNamespaceRule	10	none	none	yes	yes	namespaceURI and prefix
+layer	CSSLayerBlockRule,CSSLayerStatementRule	0	rules	none	yes	yes	one kind: the block form has cssRules, the statement form has nameList
+scope	CSSScopeRule	0	rules	none	yes	yes	a grouping rule with start and end
+property	CSSPropertyRule	0	none	descriptors	yes	yes	name, syntax, inherits and initialValue; read-only
+media	CSSMediaRule	4	rules	none	yes	yes	a conditional group rule with a MediaList
+supports	CSSSupportsRule	12	rules	none	yes	yes	a conditional group rule with conditionText
+container	CSSContainerRule	0	rules	none	yes	yes	a conditional group rule with containerName and containerQuery
+starting-style	CSSStartingStyleRule	0	rules	none	yes	yes	a grouping rule
+when	-	0	rules	none	yes	yes	a conditional group rule no browser exposes: generic, in cssRules, with conditionText
+else	-	0	rules	none	yes	yes	a conditional group rule no browser exposes: generic, in cssRules, valid only after a @when or @else
+custom-media	-	0	none	none	yes	yes	recognized and inactive, exposed generically; editing one changes no conditions object
+font-face	CSSFontFaceRule	5	none	descriptors	yes	yes	a descriptor block
+font-feature-values	CSSFontFeatureValuesRule	14	none	none	yes	yes	family names and the CSSFontFeatureValuesMap of its feature blocks
+feature-block	-	0	none	none	no	no	an entry of the CSSFontFeatureValuesMap of its parent: never a member of a cssRules, not insertable
+font-palette-values	CSSFontPaletteValuesRule	0	none	descriptors	yes	yes	name, fontFamily, basePalette and overrideColors
+color-profile	CSSColorProfileRule	0	none	descriptors	yes	yes	name and a descriptor block
+counter-style	CSSCounterStyleRule	11	none	descriptors	yes	yes	a descriptor block with the descriptors as attributes
+page	CSSPageRule	6	margins	descriptors	yes	yes	selectorText, a block of page descriptors and properties, and its margin rules
+page-margin	CSSMarginRule	9	none	properties	yes	no	a member of the cssRules of its @page rule only
+keyframes	CSSKeyframesRule	7	keyframes	none	yes	yes	name and keyframe blocks
+keyframe	CSSKeyframeRule	8	none	properties	yes	no	a member of the cssRules of its @keyframes rule only (appendRule makes one)
+view-transition	CSSViewTransitionRule	0	none	descriptors	yes	yes	types and navigation
+position-try	CSSPositionTryRule	0	none	descriptors	yes	yes	name and a block of position declarations
+preserved	-	0	none	none	yes	yes	recognized and inactive (@function, @mixin ...), exposed generically
+style	CSSStyleRule	1	rules	properties	yes	yes	selectorText, style, and the rules nested in it
+nested-declarations	CSSNestedDeclarations	0	none	properties	yes	yes	the declarations that follow a nested rule; insertRule of a declaration block into a style rule makes one

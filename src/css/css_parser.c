@@ -1630,6 +1630,7 @@ static GTEXT_CSS_Status parse(entry e, const char * input, size_t length,
     else {
       memset(tree, 0, sizeof *tree);
       tree->internal = internal;
+      gcu_atomic_int_init(&internal->refs, 1);
       tree->kind = tree_kind(e);
       if (e == E_STYLESHEET && options && options->location) {
         char * loc = css_arena_strdup(&ctx.arena, options->location, strlen(options->location));

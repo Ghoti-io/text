@@ -48,13 +48,24 @@ GTEXT_CSS_Status css_core_room(css_core * core, size_t bytes) {
   return GTEXT_CSS_OK;
 }
 
+GTEXT_CSS_Status css_core_room_bytes(const css_core * core, size_t bytes) {
+  if (bytes > core->config.max_live_bytes || core->counters.live_bytes > core->config.max_live_bytes - bytes) {
+    return GTEXT_CSS_E_LIMIT_CSSOM;
+  }
+  return GTEXT_CSS_OK;
+}
+
 void css_obj_init(css_obj * o, css_core * core, GTEXT_CSSOM_Object_Kind kind, uint64_t internal, uint64_t external, size_t bytes, void (*destroy)(css_obj *)) {
+  css_obj_init_id(o, core, kind, internal, external, bytes, destroy, core->next_id++);
+}
+
+void css_obj_init_id(css_obj * o, css_core * core, GTEXT_CSSOM_Object_Kind kind, uint64_t internal, uint64_t external, size_t bytes, void (*destroy)(css_obj *), uint64_t id) {
   memset(o, 0, sizeof *o);
   o->kind = (uint8_t)kind;
   o->core = core;
   o->internal = internal;
   o->external = external;
-  o->id = core->next_id++;
+  o->id = id;
   o->destroy = destroy;
   o->bytes = bytes;
   core->counters.live_objects++;

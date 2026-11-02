@@ -317,7 +317,7 @@ GTEXT_CSS_Status gtext_cssom_inline_style(GTEXT_CSSOM_Document * document, const
     return st;
   }
   GTEXT_CSSOM_Decl * d = NULL;
-  st = css_decl_create(core, GTEXT_CSSOM_DECL_ELEMENT, 0, 1, &d);
+  st = css_decl_create(core, GTEXT_CSSOM_DECL_ELEMENT, 0, 1, 0, &d);
   if (st != GTEXT_CSS_OK) {
     gtext_css_block_free(block);
     return st;

@@ -90,6 +90,9 @@ const void * css_atrule_row_find(const char * name, size_t length);
 /// The kind of a row.
 GTEXT_CSS_Atrule_Kind css_atrule_row_kind(const void * row);
 
+/// Whether a keyframe block (a qualified rule inside `@keyframes`) has a valid selector list: `from`, `to` or a percentage, as the model reads it. A resource failure is the status.
+GTEXT_CSS_Status css_atrule_keyframe_block_valid(const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Rule * rule, bool * valid);
+
 /// Read the selectors of a page rule's prelude. *valid false: the prelude is not a `<page-selector-list>`.
 GTEXT_CSS_Status css_page_selectors_parse(const GTEXT_Allocator * alloc, css_arena * arena, const GTEXT_CSS_Component_Value * values, size_t count, size_t max,
     GTEXT_CSS_Page_Selector ** out, size_t * n, bool * valid);

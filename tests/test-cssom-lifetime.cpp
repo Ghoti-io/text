@@ -70,7 +70,7 @@ Node * make_node(css_core * core, uint64_t internal, uint64_t external) {
 /// A declaration the node owns.
 GTEXT_CSSOM_Decl * own_decl(Node * parent, size_t slot) {
   GTEXT_CSSOM_Decl * d = nullptr;
-  EXPECT_EQ(css_decl_create(parent->obj.core, GTEXT_CSSOM_DECL_RULE, 1, 0, &d), GTEXT_CSS_OK);
+  EXPECT_EQ(css_decl_create(parent->obj.core, GTEXT_CSSOM_DECL_RULE, 1, 0, 0, &d), GTEXT_CSS_OK);
   parent->kids[slot] = d;
   css_obj_set_parent(&d->obj, &parent->obj);
   return d;
@@ -317,6 +317,162 @@ TEST(CssomLifetime, AHoldOnTheLeafOfAMillionDeepChainGoesUpWithoutRecursion) {
   GTEXT_CSSOM_Counters c;
   ASSERT_EQ(gtext_cssom_document_counters(doc.d, &c), GTEXT_CSS_OK);
   EXPECT_EQ(c.live_objects, 0u);
+}
+
+/* ---- real rules and sheets ---------------------------------------------------------------------------------------------------------------------- */
+
+// "Keep-alive: hold rule = cssRules[0], release the sheet's other references and the document handle: rule.parent_sheet is the sheet; all live until rule is released; no leak."
+TEST(CssomLifetimeRules, AHeldRuleKeepsItsSheetAndEveryRuleAliveAfterTheDocumentHandleIsReleased) {
+  FaultAllocator fa;
+  GTEXT_CSSOM_Rule * held = nullptr;
+  {
+    Doc doc(nullptr, &fa.alloc);
+    Sheet s(doc, "a{color:red} @media print{ b{} c{} } d{}");
+    ASSERT_EQ(s.status, GTEXT_CSS_OK);
+    Rule media = at(s.rules(), 1);
+    held = gtext_cssom_rule_list_at(gtext_cssom_rule_css_rules(media.r), 1);
+    ASSERT_NE(held, nullptr);
+    doc.release();
+  }
+  EXPECT_FALSE(fa.live.empty()) << "alive: the rule holds the whole tree";
+  GTEXT_CSSOM_Sheet * sheet = gtext_cssom_rule_parent_sheet(held);
+  ASSERT_NE(sheet, nullptr);
+  EXPECT_EQ(gtext_cssom_sheet_document(sheet), nullptr) << "the handle is gone";
+  const GTEXT_CSSOM_Rule_List * list = nullptr;
+  ASSERT_EQ(gtext_cssom_sheet_rules(sheet, &list), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_cssom_rule_list_length(list), 3u);
+  EXPECT_EQ(shape(list), "style,media[style,style],style");
+  // the block of a rule of a sheet no document evaluates is still a block; a mutation through it acts on a graph that no document sees
+  {
+    Rule first = at(list, 0);
+    Decl style = style_of(first.r);
+    ASSERT_NE(style.d, nullptr);
+    EXPECT_EQ(set(style.d, "width", "1px").o.kind, GTEXT_CSSOM_CHANGED);
+    EXPECT_EQ(text_of(style.d), "color: red; width: 1px;");
+  }
+  EXPECT_EQ(gtext_cssom_sheet_version(sheet), 1u);
+  gtext_cssom_sheet_release(sheet);
+  gtext_cssom_rule_release(held);
+  EXPECT_TRUE(fa.live.empty()) << "no leak";
+  EXPECT_EQ(fa.bad_frees, 0u);
+}
+
+// "no strong cycle by counts": a rule's internal count is the list's one and its external count is the callers' and the holds of its held children; nothing counts twice.
+TEST(CssomLifetimeRules, TheCountsOfAGraphShowNoStrongCycle) {
+  Doc doc;
+  Sheet s(doc, "@media print{ b{ c{} } }");
+  ASSERT_EQ(s.status, GTEXT_CSS_OK);
+  Rule media = at(s.rules(), 0);
+  Rule b = at(gtext_cssom_rule_css_rules(media.r), 0);
+  Rule c = at(gtext_cssom_rule_css_rules(b.r), 0);
+  EXPECT_EQ(media.r->obj.internal, 1u) << "the sheet's list";
+  EXPECT_EQ(b.r->obj.internal, 1u);
+  EXPECT_EQ(c.r->obj.internal, 1u);
+  EXPECT_EQ(c.r->obj.external, 1u) << "the caller's";
+  EXPECT_EQ(b.r->obj.external, 2u) << "the caller's and the hold of its held child";
+  EXPECT_EQ(media.r->obj.external, 2u);
+  EXPECT_EQ(s.s->obj.external, 2u) << "the caller's and the hold of the held rule under it";
+  EXPECT_EQ(s.s->obj.internal, 0u) << "nothing owns a sheet but its callers";
+  gtext_cssom_rule_release(gtext_cssom_rule_retain(c.r));
+  EXPECT_EQ(c.r->obj.external, 1u);
+  EXPECT_EQ(b.r->obj.external, 2u);
+  Rule extra(gtext_cssom_rule_retain(c.r));
+  EXPECT_EQ(b.r->obj.external, 2u) << "a second reference to the child adds no second hold";
+}
+
+// "a finalizer runs once ... and cannot mutate": the wrapper of a rule and of a sheet.
+TEST(CssomLifetimeRules, TheUserSlotOfARuleAndOfASheetAndTheFinalizerRules) {
+  Doc doc;
+  int rule_calls = 0, sheet_calls = 0;
+  GTEXT_CSS_Status mutated = GTEXT_CSS_OK;
+  GTEXT_CSSOM_Object_Kind rule_kind = GTEXT_CSSOM_OBJECT_NONE, sheet_kind = GTEXT_CSSOM_OBJECT_NONE;
+  struct Ctx {
+    int * calls;
+    GTEXT_CSSOM_Object_Kind * kind;
+    GTEXT_CSSOM_Sheet * sheet;
+    GTEXT_CSS_Status * mutated;
+  };
+  GTEXT_CSSOM_Sheet * raw_sheet = nullptr;
+  Ctx rc{&rule_calls, &rule_kind, nullptr, &mutated}, sc{&sheet_calls, &sheet_kind, nullptr, &mutated};
+  {
+    Sheet s(doc, "a{}");
+    raw_sheet = s.s;
+    rc.sheet = s.s;
+    sc.sheet = s.s;
+    Rule a = at(s.rules(), 0);
+    ASSERT_EQ(gtext_cssom_object_set_user(a.r, &rc, [](void * p, GTEXT_CSSOM_Object_Kind k) {
+      Ctx * c = static_cast<Ctx *>(p);
+      (*c->calls)++;
+      *c->kind = k;
+      *c->mutated = gtext_cssom_sheet_set_disabled(c->sheet, true, nullptr);
+    }), GTEXT_CSS_OK);
+    ASSERT_EQ(gtext_cssom_object_set_user(s.s, &sc, [](void * p, GTEXT_CSSOM_Object_Kind k) {
+      Ctx * c = static_cast<Ctx *>(p);
+      (*c->calls)++;
+      *c->kind = k;
+    }), GTEXT_CSS_OK);
+    EXPECT_EQ(gtext_cssom_object_user(a.r), &rc);
+    EXPECT_EQ(gtext_cssom_object_kind(a.r), GTEXT_CSSOM_OBJECT_RULE);
+    EXPECT_EQ(gtext_cssom_object_kind(s.s), GTEXT_CSSOM_OBJECT_SHEET);
+    EXPECT_EQ(rule_calls, 0);
+  }
+  (void)raw_sheet;
+  EXPECT_EQ(rule_calls, 1);
+  EXPECT_EQ(sheet_calls, 1);
+  EXPECT_EQ(rule_kind, GTEXT_CSSOM_OBJECT_RULE);
+  EXPECT_EQ(sheet_kind, GTEXT_CSSOM_OBJECT_SHEET);
+  EXPECT_EQ(mutated, GTEXT_CSS_E_REENTRANT) << "a finalizer cannot mutate the sheet that is being freed";
+}
+
+// The identity of the object survives the death of its wrapper: clear the slot, ask again, and it is the same rule.
+TEST(CssomLifetimeRules, ClearingTheSlotLeavesTheSameObject) {
+  Doc doc;
+  Sheet s(doc, "a{}");
+  Rule a = at(s.rules(), 0);
+  int calls = 0;
+  ASSERT_EQ(gtext_cssom_object_set_user(a.r, &calls, [](void * p, GTEXT_CSSOM_Object_Kind) { (*static_cast<int *>(p))++; }), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_cssom_object_set_user(a.r, nullptr, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(calls, 1);
+  Rule again = at(s.rules(), 0);
+  EXPECT_EQ(again.r, a.r);
+  EXPECT_EQ(gtext_cssom_object_user(again.r), nullptr);
+}
+
+// A dying sheet frees a very wide list and a very deep nest without the C stack, and counts return to zero.
+TEST(CssomLifetimeRules, ADeepNestAndAWideListAreFreedIteratively) {
+  Doc doc([](GTEXT_CSSOM_Config & c) { c.max_rule_nesting = 4096; });
+  std::string deep;
+  for (int i = 0; i < 4000; i++) {
+    deep += "@media print{";
+  }
+  for (int i = 0; i < 4000; i++) {
+    deep += "}";
+  }
+  std::string wide;
+  for (int i = 0; i < 100000; i++) {
+    wide += "a{}";
+  }
+  {
+    Sheet a(doc, deep);
+    ASSERT_EQ(a.status, GTEXT_CSS_OK);
+    Sheet b(doc, wide);
+    ASSERT_EQ(b.status, GTEXT_CSS_OK);
+    // hold the bottom of the nest: the hold goes up four thousand levels
+    const GTEXT_CSSOM_Rule_List * list = a.rules();
+    GTEXT_CSSOM_Rule * r = gtext_cssom_rule_list_at(list, 0);
+    for (int i = 1; i < 4000; i++) {
+      GTEXT_CSSOM_Rule * next = gtext_cssom_rule_list_at(gtext_cssom_rule_css_rules(r), 0);
+      ASSERT_NE(next, nullptr) << i;
+      gtext_cssom_rule_release(r);
+      r = next;
+    }
+    EXPECT_EQ(gtext_cssom_rule_css_rules(r) ? gtext_cssom_rule_list_length(gtext_cssom_rule_css_rules(r)) : 0, 0u);
+    gtext_cssom_rule_release(r);
+  }
+  GTEXT_CSSOM_Counters c;
+  ASSERT_EQ(gtext_cssom_document_counters(doc.d, &c), GTEXT_CSS_OK);
+  EXPECT_EQ(c.live_objects, 0u);
+  EXPECT_EQ(c.live_bytes, 0u);
 }
 
 } // namespace

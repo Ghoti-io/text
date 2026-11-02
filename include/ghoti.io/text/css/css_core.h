@@ -525,11 +525,28 @@ typedef struct {
 } GTEXT_CSS_Tree;
 
 /**
- * @brief Release a tree and everything in it.
+ * @brief Take another owner of a tree.
  *
- * The tree struct itself lives in the memory this frees, so the pointer is
- * dead after the call, as is every pointer into the tree (values, strings,
- * rules); nothing in it, `kind` and the counts included, may be read.
+ * A tree is immutable once a parse has made it, and its count is atomic, so owners on any number of threads may share it: a CSSOM rule holds the tree it was parsed
+ * from, and a tree lives until the last owner lets go. gtext_css_tree_free() releases one owner.
+ *
+ * @param tree A tree a parse returned; NULL is ignored.
+ * @return `tree` (so that `x = gtext_css_tree_retain(tree)` reads as it does), or NULL for NULL.
+ */
+GTEXT_API GTEXT_CSS_Tree * gtext_css_tree_retain(const GTEXT_CSS_Tree * tree);
+
+/**
+ * @brief The bytes the tree's memory holds (every node, string and array it owns, and the blocks' bookkeeping): what an owner that counts memory charges.
+ *
+ * @param tree A tree a parse returned; NULL is 0.
+ */
+GTEXT_API size_t gtext_css_tree_bytes(const GTEXT_CSS_Tree * tree);
+
+/**
+ * @brief Release one owner of a tree; the last releases the tree and everything in it.
+ *
+ * The tree struct itself lives in the memory the last release frees, so the pointer is dead after the call when it was the last owner, as is every pointer into the tree
+ * (values, strings, rules); nothing in it, `kind` and the counts included, may be read. A parse returns a tree with one owner.
  *
  * @param tree A tree a parse returned; NULL is ignored.
  */

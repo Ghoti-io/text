@@ -1806,6 +1806,16 @@ GTEXT_CSS_Status gtext_css_atrule_parse(const GTEXT_CSS_Registry * registry, con
   return st;
 }
 
+GTEXT_CSS_Status css_atrule_keyframe_block_valid(const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Rule * rule, bool * valid) {
+  GTEXT_CSS_Atrule * a = NULL;
+  GTEXT_CSS_Atrule_Result res;
+  memset(&res, 0, sizeof res);
+  const GTEXT_CSS_Status st = parse_into(registry, rule, NULL, true, GTEXT_CSS_ATRULE_PARENT_GROUP, &a, &res);
+  gtext_css_atrule_free(a);
+  *valid = st == GTEXT_CSS_OK && res.valid;
+  return st;
+}
+
 /* ---- parsing one descriptor on its own ---------------------------------------------------------------------------------------------- */
 
 GTEXT_CSS_Status gtext_css_descriptor_parse(const GTEXT_CSS_Registry * registry, GTEXT_CSS_Descriptor_Id descriptor, const GTEXT_CSS_Component_Value * values, size_t count,

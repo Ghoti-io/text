@@ -36,6 +36,7 @@
 #ifndef GHOTI_IO_GTEXT_SRC_CSS_CSS_INTERNAL_H
 #define GHOTI_IO_GTEXT_SRC_CSS_CSS_INTERNAL_H
 
+#include <ghoti.io/cutil/atomic.h>
 #include <ghoti.io/text/css.h>
 #include <ghoti.io/text/macros.h>
 
@@ -374,6 +375,7 @@ struct GTEXT_CSS_Result_Internal {
 /// The tree's private part: its memory.
 struct GTEXT_CSS_Tree_Internal {
   css_arena arena; ///< Every node, string and array of the tree.
+  GCU_Atomic_Int refs; ///< Owners: 1 when made; gtext_css_tree_retain() adds one, gtext_css_tree_free() releases one.
 };
 
 /// Fill a result from a finished context (status, counts, errors). Returns

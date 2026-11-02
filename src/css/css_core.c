@@ -780,9 +780,25 @@ bool gtext_css_result_error_at(const GTEXT_CSS_Result * result, size_t index,
   return true;
 }
 
+GTEXT_CSS_Tree * gtext_css_tree_retain(const GTEXT_CSS_Tree * tree) {
+  if (!tree || !tree->internal) {
+    return NULL;
+  }
+  /* the count is the only thing that changes in a tree after it is made, and it changes atomically */
+  (void)gcu_atomic_int_fetch_add(&tree->internal->refs, 1);
+  return (GTEXT_CSS_Tree *)(uintptr_t)tree;
+}
+
+size_t gtext_css_tree_bytes(const GTEXT_CSS_Tree * tree) {
+  return tree && tree->internal ? tree->internal->arena.total : 0;
+}
+
 void gtext_css_tree_free(GTEXT_CSS_Tree * tree) {
   if (!tree || !tree->internal) {
     return;
+  }
+  if (gcu_atomic_int_fetch_sub(&tree->internal->refs, 1) != 1) {
+    return;   /* another owner holds it */
   }
   /* The tree struct itself is the arena's first allocation, so freeing the
      arena frees it: copy the arena out first. */

@@ -160,7 +160,10 @@ typedef struct {
   size_t max_declarations;              ///< Most declarations in one block. Default 1,048,576, at most 2^28. One more is GTEXT_CSS_E_LIMIT_DECLARATIONS.
   size_t max_input_bytes;               ///< Longest text a `cssText` set, a value or an attribute may be. Default 64 MiB. One more is GTEXT_CSS_E_LIMIT_INPUT.
   size_t max_output_bytes;              ///< Most bytes one serialization writes. Default 64 MiB. One more is GTEXT_CSS_E_LIMIT_OUTPUT.
-  size_t max_work;                      ///< Most declarations one call walks (a `cssText` set, the reload of an attribute). Default 2^24. One more is GTEXT_CSS_E_LIMIT_WORK.
+  size_t max_work;                      ///< Most declarations or rules one call walks (a `cssText` set, the reload of an attribute, the parse of a sheet). Default 2^24. One more is GTEXT_CSS_E_LIMIT_WORK.
+  size_t max_rules;                     ///< Most rules in a sheet, at every depth. Default 1,048,576 (the parse counts every rule it makes, those it drops included). One more is GTEXT_CSS_E_LIMIT_RULES.
+  size_t max_rule_nesting;              ///< Deepest nesting of rules in a sheet (a rule in a rule is 2). Default 64, at most 4,096. One more is GTEXT_CSS_E_LIMIT_RULE_NESTING.
+  size_t max_diagnostics;               ///< Most diagnostics of a sheet's parse that are kept (the rest are counted). Default 1,024.
 } GTEXT_CSSOM_Config;
 
 /** @brief The defaults, spelled out: `size` set, the registry and allocator NULL, the counters at 0 and 1, the limits as documented. */
@@ -178,6 +181,7 @@ typedef struct {
   size_t live_objects;        ///< Objects alive (any count above zero).
   size_t live_bytes;          ///< The bytes the live objects account.
   size_t inline_styles;       ///< Element-owned declarations alive.
+  size_t tree_bytes;          ///< The bytes of the syntax trees the rules hold (and the copies of the text they were read from): the part of `live_bytes` that deleting rules does not free until the last rule of a tree goes.
   uint64_t unjudgeable_preserved; ///< Declarations a parse kept as written because the library cannot judge the property (GTEXT_CSS_E_UNSUPPORTED): a property with no grammar here, or a shorthand it cannot split.
 } GTEXT_CSSOM_Counters;
 

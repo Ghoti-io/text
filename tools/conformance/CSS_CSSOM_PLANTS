@@ -19,3 +19,23 @@ opaque-shorthand-longhand-replaced-in-place	css_block.c	    if (block->items[slo
 opaque-not-written-back	css_shorthand_serialize.c	      put_declaration(out, oi.name, oi.name_length, it->raw, it->raw_length, it->important, first);	      (void)oi;	block,decl,inline
 opaque-importance-lost	css_shorthand_serialize.c	      put_declaration(out, oi.name, oi.name_length, it->raw, it->raw_length, it->important, first);	      put_declaration(out, oi.name, oi.name_length, it->raw, it->raw_length, false, first);	block,decl,inline
 opaque-same-text-counts-as-a-change	css_block.c	    if (it->opaque && it->important == important && it->raw_length == raw_length && memcmp(it->raw, raw, raw_length) == 0) {	    if (0) {	block
+treap-priority-from-an-address	cssom_rule_list.c	  rule->prio = priority_of(rule->obj.id);	  rule->prio = (uint32_t)((uintptr_t)rule >> 4);	rules
+weak-parent-left-after-detach	cssom_rule_list.c	  list->count--;\n  css_obj_set_parent(&rule->obj, NULL);	  list->count--;	rules
+parent-sheet-not-nulled-after-detach	cssom_rule_list.c	  rule->size = 1;\n  rule->list = NULL;\n  list->count--;	  rule->size = 1;\n  list->count--;	rules
+rule-edit-does-not-bump-its-sheet	cssom_rule.c	    s->version++;\n    event->sheet = s;	    event->sheet = s;	rules
+detached-rule-sends-an-event	cssom_rule.c	    event->silent = true;	    event->silent = false;	rules
+invalid-selector-kept	cssom_parse.c	    diagnose(v, GTEXT_CSSOM_PARSE_INVALID_SELECTOR, rule, "Selectors 4, 3.6: an invalid selector makes its rule invalid, with what is nested in it");\n    return false;	    diagnose(v, GTEXT_CSSOM_PARSE_INVALID_SELECTOR, rule, "Selectors 4, 3.6: an invalid selector makes its rule invalid, with what is nested in it");\n    return true;	rules
+import-accepted-after-a-rule	cssom_parse.c	    if (!v->imports_open) {	    if (0) {	rules
+namespace-accepted-after-a-rule	cssom_parse.c	    if (!v->ns_open || !css_sheet_namespace_prelude(rule, &prefix, &uri)) {	    if (!css_sheet_namespace_prelude(rule, &prefix, &uri)) {	rules
+charset-reaches-the-sheet	cssom_parse.c	  if (kind == GTEXT_CSSOM_RULE_CHARSET && parent->top_level) {	  if (0) {	rules
+declaration-run-is-a-rule-at-the-top	cssom_rule_kinds.c	    if (walk->nested && (css_kind(walk->parent_kind)->flags & CSS_KIND_LIST_RULES) && item->declaration_count > 0) {	    if ((css_kind(walk->parent_kind)->flags & CSS_KIND_LIST_RULES) && item->declaration_count > 0) {	rules
+keyframe-with-a-bad-selector-kept	cssom_parse.c	      return valid;	      return true;	rules
+compaction-keeps-the-old-trees	cssom_sheet.c	    css_source * old = r->source;\n    r->source = css_source_retain(fresh);\n    css_source_release(old);	    r->source = css_source_retain(fresh);	sheet,rulescost
+rule-limit-off-by-one	cssom_parse.c	  if (b->sheet->rule_total >= b->core->config.max_rules) {	  if (b->sheet->rule_total > b->core->config.max_rules) {	sheet
+nesting-limit-off-by-one	cssom_parse.c	  if (depth > b->core->config.max_rule_nesting) {	  if (depth > b->core->config.max_rule_nesting + 1) {	sheet
+origin-clean-ignored	cssom_sheet.c	  if (!sheet->origin_clean) {\n    return GTEXT_CSS_E_SECURITY;	  if (0) {\n    return GTEXT_CSS_E_SECURITY;	sheet
+disabled-to-the-same-value-is-a-change	cssom_sheet.c	  if (sheet->disabled == disabled) {	  if (0) {	sheet
+tree-bytes-not-counted	cssom_rule.c	  core->counters.tree_bytes += held;	  (void)held;	sheet,rulescost
+tree-released-with-the-first-owner	css_core.c	  if (gcu_atomic_int_fetch_sub(&tree->internal->refs, 1) != 1) {\n    return;   /* another owner holds it */\n  }		treeretain
+failed-parse-keeps-its-objects	cssom_sheet.c	  st = css_sheet_parse_into(core, s, copy, length);\n  if (st != GTEXT_CSS_OK) {\n    css_obj_release_external(&s->obj);	  st = css_sheet_parse_into(core, s, copy, length);\n  if (st != GTEXT_CSS_OK) {	rulesoom,sheet
+lazy-block-built-at-parse	cssom_parse.c	    css_rule_list_insert(&sheet->rules, sheet->rules.count, r);\n    if (css_kind(kind)->flags & CSS_KIND_LIST_ANY) {	    css_rule_list_insert(&sheet->rules, sheet->rules.count, r);\n    { GTEXT_CSSOM_Decl * eager = NULL; if (gtext_cssom_rule_style(r, &eager) == GTEXT_CSS_OK) { gtext_cssom_decl_release(eager); } }\n    if (css_kind(kind)->flags & CSS_KIND_LIST_ANY) {	rules,rulescost

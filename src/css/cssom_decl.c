@@ -55,7 +55,7 @@ static void decl_destroy(css_obj * o) {
   gtext_allocator_free(&a, d);
 }
 
-GTEXT_CSS_Status css_decl_create(css_core * core, GTEXT_CSSOM_Decl_Owner owner_kind, uint64_t internal, uint64_t external, GTEXT_CSSOM_Decl ** out) {
+GTEXT_CSS_Status css_decl_create(css_core * core, GTEXT_CSSOM_Decl_Owner owner_kind, uint64_t internal, uint64_t external, uint64_t id, GTEXT_CSSOM_Decl ** out) {
   GTEXT_CSS_Status st = css_core_room(core, SIZEOF_DECL);
   if (st != GTEXT_CSS_OK) {
     return st;
@@ -74,7 +74,12 @@ GTEXT_CSS_Status css_decl_create(css_core * core, GTEXT_CSSOM_Decl_Owner owner_k
     gtext_allocator_free(&a, d);
     return st;
   }
-  css_obj_init(&d->obj, core, GTEXT_CSSOM_OBJECT_DECLARATION, internal, external, SIZEOF_DECL, decl_destroy);
+  if (id) {
+    css_obj_init_id(&d->obj, core, GTEXT_CSSOM_OBJECT_DECLARATION, internal, external, SIZEOF_DECL, decl_destroy, id);
+  }
+  else {
+    css_obj_init(&d->obj, core, GTEXT_CSSOM_OBJECT_DECLARATION, internal, external, SIZEOF_DECL, decl_destroy);
+  }
   d->owner_kind = owner_kind;
   d->readonly = owner_kind == GTEXT_CSSOM_DECL_COMPUTED;
   *out = d;
@@ -85,7 +90,7 @@ GTEXT_CSS_Status gtext_cssom_decl_new(GTEXT_CSSOM_Document * document, GTEXT_CSS
   if (!document || !out) {
     return GTEXT_CSS_E_INVALID;
   }
-  return css_decl_create(css_document_core(document), GTEXT_CSSOM_DECL_FREE, 0, 1, out);
+  return css_decl_create(css_document_core(document), GTEXT_CSSOM_DECL_FREE, 0, 1, 0, out);
 }
 
 GTEXT_CSSOM_Decl * gtext_cssom_decl_retain(GTEXT_CSSOM_Decl * decl) {
@@ -451,38 +456,25 @@ static GTEXT_CSS_Status keep_opaque(css_core * core, GTEXT_CSS_Declaration_Block
   return st;
 }
 
-GTEXT_CSS_Status css_decl_parse_block(css_core * core, const char * text, size_t length, bool quirks, GTEXT_CSS_Declaration_Block ** out) {
-  if (length > core->config.max_input_bytes) {
-    return GTEXT_CSS_E_LIMIT_INPUT;
-  }
-  GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
-  po.allocator = &core->alloc;
-  po.max_input_bytes = core->config.max_input_bytes;
-  po.count_errors_only = true;
-  GTEXT_CSS_Tree * tree = NULL;
-  GTEXT_CSS_Status st = gtext_css_parse_declaration_list(text ? text : "", length, &po, &tree, NULL);
-  if (st != GTEXT_CSS_OK) {
-    return st;
+GTEXT_CSS_Status css_decl_block_from_declarations(css_core * core, const GTEXT_CSS_Declaration * declarations, size_t count, bool quirks, GTEXT_CSS_Declaration_Block ** out) {
+  if (count > core->config.max_work) {
+    return GTEXT_CSS_E_LIMIT_WORK;
   }
   GTEXT_CSS_Declaration_Options o = gtext_css_declaration_options_default();
   o.allocator = &core->alloc;
   o.max_declarations = core->config.max_declarations;
   o.max_output_bytes = core->config.max_output_bytes;
   GTEXT_CSS_Declaration_Block * block = NULL;
-  st = gtext_css_block_new(core->registry, &o, &block);
+  GTEXT_CSS_Status st = gtext_css_block_new(core->registry, &o, &block);
   if (st != GTEXT_CSS_OK) {
-    gtext_css_tree_free(tree);
     return st;
-  }
-  if (tree->declaration_count > core->config.max_work) {
-    st = GTEXT_CSS_E_LIMIT_WORK;
   }
   GTEXT_CSS_Property_Options pro;
   memset(&pro, 0, sizeof pro);
   pro.allocator = &core->alloc;
   pro.quirks = quirks;
-  for (size_t i = 0; st == GTEXT_CSS_OK && i < tree->declaration_count; i++) {
-    const GTEXT_CSS_Declaration * d = &tree->declarations[i];
+  for (size_t i = 0; st == GTEXT_CSS_OK && i < count; i++) {
+    const GTEXT_CSS_Declaration * d = &declarations[i];
     GTEXT_CSS_Property_Value pv;
     memset(&pv, 0, sizeof pv);
     st = gtext_css_parse_property_declaration(core->registry, d, &pro, &pv);
@@ -508,13 +500,30 @@ GTEXT_CSS_Status css_decl_parse_block(css_core * core, const char * text, size_t
     }
     gtext_css_property_value_free(&pv);
   }
-  gtext_css_tree_free(tree);
   if (st != GTEXT_CSS_OK) {
     gtext_css_block_free(block);
     return st;
   }
   *out = block;
   return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status css_decl_parse_block(css_core * core, const char * text, size_t length, bool quirks, GTEXT_CSS_Declaration_Block ** out) {
+  if (length > core->config.max_input_bytes) {
+    return GTEXT_CSS_E_LIMIT_INPUT;
+  }
+  GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+  po.allocator = &core->alloc;
+  po.max_input_bytes = core->config.max_input_bytes;
+  po.count_errors_only = true;
+  GTEXT_CSS_Tree * tree = NULL;
+  GTEXT_CSS_Status st = gtext_css_parse_declaration_list(text ? text : "", length, &po, &tree, NULL);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  st = css_decl_block_from_declarations(core, tree->declarations, tree->declaration_count, quirks, out);
+  gtext_css_tree_free(tree);
+  return st;
 }
 
 /* ---- mutating --------------------------------------------------------------------------------------------------------------------------------------- */

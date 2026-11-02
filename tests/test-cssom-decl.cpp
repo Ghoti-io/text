@@ -119,7 +119,7 @@ TEST(CssomDeclRead, APendingShorthandIsItsOriginalValueAndItsLonghandsAreEmpty) 
 TEST(CssomDeclSet, AReadOnlyDeclarationThrowsNoModificationAllowedForEveryMutator) {
   Doc doc;
   GTEXT_CSSOM_Decl * raw = nullptr;
-  ASSERT_EQ(css_decl_create(doc.core(), GTEXT_CSSOM_DECL_COMPUTED, 0, 1, &raw), GTEXT_CSS_OK);
+  ASSERT_EQ(css_decl_create(doc.core(), GTEXT_CSSOM_DECL_COMPUTED, 0, 1, 0, &raw), GTEXT_CSS_OK);
   Decl d(raw);
   EXPECT_TRUE(gtext_cssom_decl_readonly(d.d));
   EXPECT_EQ(set(d.d, "color", "red").st, GTEXT_CSS_E_NO_MODIFICATION);
@@ -649,7 +649,7 @@ struct OwnerLog {
 TEST(CssomDeclOwner, PrepareMayRefuseBeforeAnythingChangesAndCommitSeesTheEvent) {
   Doc doc;
   GTEXT_CSSOM_Decl * raw = nullptr;
-  ASSERT_EQ(css_decl_create(doc.core(), GTEXT_CSSOM_DECL_RULE, 0, 1, &raw), GTEXT_CSS_OK);
+  ASSERT_EQ(css_decl_create(doc.core(), GTEXT_CSSOM_DECL_RULE, 0, 1, 0, &raw), GTEXT_CSS_OK);
   Decl d(raw);
   static OwnerLog log;
   log = OwnerLog();

@@ -48,11 +48,14 @@ typedef struct {
 typedef struct {
   char * name;
   GTEXT_CSSOM_Decl * decl;
+  char * error;   /* a style handle that could not be made: every op on it fails the test that runs it with this message */
 } handle;
 
 typedef struct {
   GTEXT_CSS_Registry * registry;
   GTEXT_CSSOM_Document * doc;
+  GTEXT_CSSOM_Sheet ** sheets;   /* the <style> elements of the page, in document order */
+  size_t nsheets, capsheets;
   elem * elems;
   size_t nelems, capelems;
   handle * styles;
@@ -166,7 +169,12 @@ static void world_close(world * w) {
   for (size_t i = 0; i < w->nstyles; i++) {
     gtext_cssom_decl_release(w->styles[i].decl);
     free(w->styles[i].name);
+    free(w->styles[i].error);
   }
+  for (size_t i = 0; i < w->nsheets; i++) {
+    gtext_cssom_sheet_release(w->sheets[i]);
+  }
+  free(w->sheets);
   gtext_cssom_document_release(w->doc);
   for (size_t i = 0; i < w->nelems; i++) {
     free(w->elems[i].name);
@@ -227,11 +235,223 @@ static char * take(world * w, char * buf) {
   return s;
 }
 
+/* ---- sheets and rules: a path is S<n>, then .R<i> (the ith rule of the list of the sheet or rule so far), .P (parentRule), .PS (parentStyleSheet) -------------- */
+
+typedef struct {
+  GTEXT_CSSOM_Sheet * sheet;   /* retained, or NULL */
+  GTEXT_CSSOM_Rule * rule;     /* retained, or NULL */
+  int null_result;             /* the path ended at a parentRule that is null */
+} node_ref;
+
+static void ref_release(node_ref * r) {
+  gtext_cssom_sheet_release(r->sheet);
+  gtext_cssom_rule_release(r->rule);
+  r->sheet = NULL;
+  r->rule = NULL;
+}
+
+/// Follow a path. Returns NULL, or a message (a step of the path is `undefined` in the page's script, which throws when it is read through).
+static char * resolve(world * w, const char * path, node_ref * out) {
+  char msg[256];
+  memset(out, 0, sizeof *out);
+  const char * p = path;
+  if (*p != 'S') {
+    return dups("a path that does not begin with a sheet");
+  }
+  const size_t si = (size_t)strtoull(p + 1, (char **)&p, 10);
+  if (si >= w->nsheets) {
+    snprintf(msg, sizeof msg, "document.styleSheets[%zu] is undefined", si);
+    return dups(msg);
+  }
+  out->sheet = gtext_cssom_sheet_retain(w->sheets[si]);
+  while (*p == '.') {
+    p++;
+    if (*p == 'R') {
+      const size_t ri = (size_t)strtoull(p + 1, (char **)&p, 10);
+      const GTEXT_CSSOM_Rule_List * list = NULL;
+      if (out->rule) {
+        list = gtext_cssom_rule_css_rules(out->rule);
+      }
+      else if (out->sheet && gtext_cssom_sheet_rules(out->sheet, &list) != GTEXT_CSS_OK) {
+        ref_release(out);
+        return dups("cssRules of a sheet that is not origin-clean throws");
+      }
+      if (!list) {
+        ref_release(out);
+        return dups("cssRules is undefined for this rule");
+      }
+      GTEXT_CSSOM_Rule * r = gtext_cssom_rule_list_at(list, ri);
+      if (!r) {
+        ref_release(out);
+        snprintf(msg, sizeof msg, "cssRules[%zu] is undefined", ri);
+        return dups(msg);
+      }
+      gtext_cssom_sheet_release(out->sheet);
+      out->sheet = NULL;
+      gtext_cssom_rule_release(out->rule);
+      out->rule = r;
+    }
+    else if (strncmp(p, "PS", 2) == 0 && out->rule) {
+      p += 2;
+      GTEXT_CSSOM_Sheet * s = gtext_cssom_rule_parent_sheet(out->rule);
+      gtext_cssom_rule_release(out->rule);
+      out->rule = NULL;
+      out->sheet = s;
+      out->null_result = s == NULL;
+    }
+    else if (*p == 'P' && out->rule) {
+      p++;
+      GTEXT_CSSOM_Rule * r = gtext_cssom_rule_parent_rule(out->rule);
+      gtext_cssom_rule_release(out->rule);
+      out->rule = r;
+      out->null_result = r == NULL;
+    }
+    else {
+      ref_release(out);
+      return dups("a step of a path that does not apply");
+    }
+    if (out->null_result && *p == '.') {
+      ref_release(out);
+      return dups("a property of null is read");
+    }
+  }
+  return NULL;
+}
+
+static char * run_rule_op(world * w, const op * o) {
+  const char * name = o->f[0];
+  char msg[512];
+  if (strcmp(name, "rstyle") == 0 && o->n == 3) {
+    if (find_style(w, o->f[1])) {
+      return NULL;
+    }
+    node_ref r;
+    char * err = resolve(w, o->f[2], &r);
+    if (err) {
+      return err;
+    }
+    if (!r.rule) {
+      ref_release(&r);
+      return dups("the style of null is read");
+    }
+    GTEXT_CSSOM_Decl * d = NULL;
+    const GTEXT_CSS_Status st = gtext_cssom_rule_style(r.rule, &d);
+    ref_release(&r);
+    if (w->nstyles == w->capstyles) {
+      w->capstyles *= 2;
+      w->styles = realloc(w->styles, w->capstyles * sizeof *w->styles);
+    }
+    w->styles[w->nstyles].name = dups(o->f[1]);
+    w->styles[w->nstyles].decl = d;
+    w->styles[w->nstyles].error = NULL;
+    if (st != GTEXT_CSS_OK) {
+      snprintf(msg, sizeof msg, "style of a rule: %s", gtext_css_status_string(st));
+      w->styles[w->nstyles].error = dups(msg);
+    }
+    w->nstyles++;
+    return NULL;
+  }
+  if (strcmp(name, "sheet") == 0 && o->n == 3) {
+    GTEXT_CSSOM_Sheet * s = NULL;
+    if (gtext_cssom_sheet_new_parsed(w->doc, o->f[2], o->l[2], NULL, &s) != GTEXT_CSS_OK) {
+      return dups("a <style> element's text could not be made a sheet");
+    }
+    if (w->nsheets == w->capsheets) {
+      w->capsheets = w->capsheets ? w->capsheets * 2 : 8;
+      w->sheets = realloc(w->sheets, w->capsheets * sizeof *w->sheets);
+    }
+    w->sheets[w->nsheets++] = s;
+    return NULL;
+  }
+  if (strcmp(name, "assert_nsheets") == 0 && o->n == 2) {
+    char num[32];
+    snprintf(num, sizeof num, "%zu", w->nsheets);
+    if (strcmp(num, o->f[1]) != 0) {
+      snprintf(msg, sizeof msg, "document.styleSheets.length is %s, expected %s", num, o->f[1]);
+      return dups(msg);
+    }
+    return NULL;
+  }
+  if ((strcmp(name, "assert_rlen") == 0 || strcmp(name, "assert_rtype") == 0) && o->n == 3) {
+    node_ref r;
+    char * err = resolve(w, o->f[1], &r);
+    if (err) {
+      return err;
+    }
+    char num[32];
+    if (strcmp(name, "assert_rlen") == 0) {
+      const GTEXT_CSSOM_Rule_List * list = NULL;
+      if (r.rule) {
+        list = gtext_cssom_rule_css_rules(r.rule);
+      }
+      else if (r.sheet && gtext_cssom_sheet_rules(r.sheet, &list) != GTEXT_CSS_OK) {
+        ref_release(&r);
+        return dups("cssRules of a sheet that is not origin-clean throws a SecurityError");
+      }
+      if (!list) {
+        ref_release(&r);
+        return dups("cssRules is undefined for this rule: reading its length throws");
+      }
+      snprintf(num, sizeof num, "%zu", gtext_cssom_rule_list_length(list));
+    }
+    else {
+      if (!r.rule) {
+        ref_release(&r);
+        return dups("the type of null throws");
+      }
+      snprintf(num, sizeof num, "%u", gtext_cssom_rule_type(r.rule));
+    }
+    ref_release(&r);
+    if (strcmp(num, o->f[2]) != 0) {
+      snprintf(msg, sizeof msg, "%s %s is %s, expected %s", name, o->f[1], num, o->f[2]);
+      return dups(msg);
+    }
+    return NULL;
+  }
+  if (strcmp(name, "assert_rsame") == 0 && (o->n == 3 || o->n == 2 || o->n == 4)) {
+    /* assert_rsame PATH EXPECTED-NULL, or assert_rsame PATH-A PATH-B: identity */
+    node_ref a, b;
+    memset(&b, 0, sizeof b);
+    char * err = resolve(w, o->f[1], &a);
+    if (err) {
+      return err;
+    }
+    int same;
+    if (o->n == 3 && strcmp(o->f[2], "\x01null") == 0) {
+      same = a.sheet == NULL && a.rule == NULL;
+    }
+    else if (o->n == 3) {
+      err = resolve(w, o->f[2], &b);
+      if (err) {
+        ref_release(&a);
+        return err;
+      }
+      same = a.sheet == b.sheet && a.rule == b.rule && (a.sheet != NULL || a.rule != NULL);
+    }
+    else {
+      ref_release(&a);
+      return dups("assert_rsame has two fields");
+    }
+    int ok = same;
+    if (!ok) {
+      snprintf(msg, sizeof msg, "%s is %s, expected %s", o->f[1], a.sheet || a.rule ? "an object" : "null", o->f[2]);
+    }
+    ref_release(&a);
+    ref_release(&b);
+    return ok ? NULL : dups(msg);
+  }
+  return dups("not a sheet or rule op");
+}
+
 /// Run one op; returns NULL, or a message for a failed assertion (the caller frees it).
 static char * run_op(world * w, const op * o, int * failed_status) {
   const char * name = o->f[0];
   char msg[1024];
   *failed_status = 0;
+  if (strcmp(name, "sheet") == 0 || strcmp(name, "assert_nsheets") == 0 || strcmp(name, "assert_rlen") == 0 || strcmp(name, "assert_rtype") == 0 ||
+      strcmp(name, "assert_rsame") == 0 || strcmp(name, "rstyle") == 0) {
+    return run_rule_op(w, o);
+  }
   if (strcmp(name, "style") == 0 && o->n == 3) {
     if (!find_style(w, o->f[1])) {
       elem * e = find_elem(w, o->f[2]);
@@ -249,6 +469,7 @@ static char * run_op(world * w, const op * o, int * failed_status) {
       }
       w->styles[w->nstyles].name = dups(o->f[1]);
       w->styles[w->nstyles].decl = d;
+      w->styles[w->nstyles].error = NULL;
       w->nstyles++;
     }
     return NULL;
@@ -313,6 +534,9 @@ static char * run_op(world * w, const op * o, int * failed_status) {
   if (!h) {
     snprintf(msg, sizeof msg, "the op %s names a style the program did not make", name);
     return dups(msg);
+  }
+  if (h->error) {
+    return dups(h->error);
   }
   GTEXT_CSSOM_Decl * d = h->decl;
   GTEXT_CSS_Status st = GTEXT_CSS_OK;

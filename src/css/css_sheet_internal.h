@@ -40,6 +40,14 @@
 extern "C" {
 #endif
 
+/// Parse the prelude of a style rule as a selector list, as the compiler does (css_sheet.c; the CSSOM rule parse asks the same question). `relative`: a selector with a leading
+/// combinator, or without `&`, gets `& ` in front of it (the rule is nested). A list that is not valid is OK with `*out` NULL; any other status is a resource failure.
+GTEXT_CSS_Status css_sheet_selector_prelude(const GTEXT_Allocator * alloc, const GTEXT_CSS_Selector_Options * options, const GTEXT_CSS_Namespace_Map * namespaces,
+    const GTEXT_CSS_Component_Value * prelude, size_t count, bool relative, bool in_scope, GTEXT_CSS_Selector_List ** out);
+
+/// Read an `@namespace` rule's prelude: `[prefix] string-or-url()`. True when that is all it holds; `*prefix` is NULL for the default namespace, and both point into the rule.
+bool css_sheet_namespace_prelude(const GTEXT_CSS_Rule * rule, const GTEXT_CSS_String ** prefix, const GTEXT_CSS_String ** uri);
+
 /// One valid declaration of a rule, parsed once.
 typedef struct {
   GTEXT_CSS_Property_Value pv; ///< The typed value (shared by every element the declaration applies to).

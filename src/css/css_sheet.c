@@ -261,11 +261,10 @@ typedef struct {
 } scan;
 
 /// Whether the values contain the nesting selector, at any depth (an iteration).
-static bool has_amp(build * b, const GTEXT_CSS_Component_Value * v, size_t n, bool also_scope, bool * oom) {
+static bool has_amp(const GTEXT_Allocator * a, const GTEXT_CSS_Component_Value * v, size_t n, bool also_scope, bool * oom) {
   scan * st = NULL;
   size_t cap = 0, sp = 0;
   bool found = false;
-  const GTEXT_Allocator * a = &b->sheet->alloc;
   if (!grow(a, (void **)&st, &cap, 1, sizeof *st)) {
     *oom = true;
     return false;
@@ -297,19 +296,13 @@ static bool has_amp(build * b, const GTEXT_CSS_Component_Value * v, size_t n, bo
   return found;
 }
 
-/// Parse a selector list from a rule's prelude. `relative`: a selector with a leading combinator, or without `&`, gets `& ` in front of it. A list that is not valid is `*out` NULL.
-static GTEXT_CSS_Status parse_selector(build * b, const GTEXT_CSS_Component_Value * p, size_t n, bool relative, bool in_scope, GTEXT_CSS_Span span,
-    GTEXT_CSS_Selector_List ** out) {
-  GTEXT_CSS_Sheet * s = b->sheet;
+GTEXT_CSS_Status css_sheet_selector_prelude(const GTEXT_Allocator * alloc, const GTEXT_CSS_Selector_Options * options, const GTEXT_CSS_Namespace_Map * namespaces,
+    const GTEXT_CSS_Component_Value * p, size_t n, bool relative, bool in_scope, GTEXT_CSS_Selector_List ** out) {
   *out = NULL;
-  GTEXT_CSS_Selector_Options so = b->opt->selector;
+  GTEXT_CSS_Selector_Options so = *options;
   so.mode = GTEXT_CSS_SELECTOR_COMPLEX_LIST;
-  so.allocator = &s->alloc;
-  GTEXT_CSS_Namespace_Map map;
-  map.entries = s->ns;
-  map.count = s->nns;
-  map.default_uri = s->default_ns;
-  so.namespaces = &map;
+  so.allocator = alloc;
+  so.namespaces = namespaces;
   GTEXT_CSS_Component_Value * nv = NULL;
   const GTEXT_CSS_Component_Value * vals = p;
   size_t nvals = n;
@@ -320,9 +313,9 @@ static GTEXT_CSS_Status parse_selector(build * b, const GTEXT_CSS_Component_Valu
         groups++;
       }
     }
-    nv = gtext_allocator_calloc(&s->alloc, n + 2 * groups + 2, sizeof *nv);
+    nv = gtext_allocator_calloc(alloc, n + 2 * groups + 2, sizeof *nv);
     if (!nv) {
-      return bfail(b, GTEXT_CSS_E_OOM, NULL, NULL, NULL);
+      return GTEXT_CSS_E_OOM;
     }
     size_t k = 0, gs = 0;
     for (size_t gi = 0; gi < groups; gi++) {
@@ -337,10 +330,10 @@ static GTEXT_CSS_Status parse_selector(build * b, const GTEXT_CSS_Component_Valu
       if (f < ge) {
         const bool explicit_comb = is_delim(&p[f], '>') || is_delim(&p[f], '+') || is_delim(&p[f], '~') || (is_delim(&p[f], '|') && f + 1 < ge && is_delim(&p[f + 1], '|'));
         bool oom = false;
-        const bool amp = has_amp(b, p + f, ge - f, in_scope, &oom);
+        const bool amp = has_amp(alloc, p + f, ge - f, in_scope, &oom);
         if (oom) {
-          gtext_allocator_free(&s->alloc, nv);
-          return bfail(b, GTEXT_CSS_E_OOM, NULL, NULL, NULL);
+          gtext_allocator_free(alloc, nv);
+          return GTEXT_CSS_E_OOM;
         }
         if (explicit_comb || !amp) {
           GTEXT_CSS_Component_Value a;
@@ -385,13 +378,27 @@ static GTEXT_CSS_Status parse_selector(build * b, const GTEXT_CSS_Component_Valu
   memset(&sr, 0, sizeof sr);
   GTEXT_CSS_Selector_List * list = NULL;
   const GTEXT_CSS_Status st = gtext_css_selector_parse_values(vals, nvals, &so, &list, &sr);
-  gtext_allocator_free(&s->alloc, nv);
+  gtext_allocator_free(alloc, nv);
   gtext_css_selector_result_free(&sr);
   if (st != GTEXT_CSS_OK) {
-    (void)span;
-    return bfail(b, st, &span, NULL, NULL);
+    return st;
   }
   *out = list;
+  return GTEXT_CSS_OK;
+}
+
+/// Parse a selector list from a rule's prelude. `relative`: a selector with a leading combinator, or without `&`, gets `& ` in front of it. A list that is not valid is `*out` NULL.
+static GTEXT_CSS_Status parse_selector(build * b, const GTEXT_CSS_Component_Value * p, size_t n, bool relative, bool in_scope, GTEXT_CSS_Span span,
+    GTEXT_CSS_Selector_List ** out) {
+  GTEXT_CSS_Sheet * s = b->sheet;
+  GTEXT_CSS_Namespace_Map map;
+  map.entries = s->ns;
+  map.count = s->nns;
+  map.default_uri = s->default_ns;
+  const GTEXT_CSS_Status st = css_sheet_selector_prelude(&s->alloc, &b->opt->selector, &map, p, n, relative, in_scope, out);
+  if (st != GTEXT_CSS_OK) {
+    return bfail(b, st, &span, NULL, NULL);
+  }
   return GTEXT_CSS_OK;
 }
 
@@ -1375,8 +1382,7 @@ finish:
   return ret;
 }
 
-static GTEXT_CSS_Status namespace_rule(build * b, const GTEXT_CSS_Rule * rule, bool open) {
-  GTEXT_CSS_Sheet * s = b->sheet;
+bool css_sheet_namespace_prelude(const GTEXT_CSS_Rule * rule, const GTEXT_CSS_String ** prefix_out, const GTEXT_CSS_String ** uri_out) {
   const GTEXT_CSS_Component_Value * p = rule->prelude;
   const size_t n = rule->prelude_count;
   size_t i = 0;
@@ -1406,13 +1412,23 @@ static GTEXT_CSS_Status namespace_rule(build * b, const GTEXT_CSS_Rule * rule, b
   while (i < n && is_ws(&p[i])) {
     i++;
   }
-  if (!uri || i < n || !open) {
+  *prefix_out = prefix ? &prefix->value : NULL;
+  *uri_out = uri;
+  return uri && i >= n;
+}
+
+static GTEXT_CSS_Status namespace_rule(build * b, const GTEXT_CSS_Rule * rule, bool open) {
+  GTEXT_CSS_Sheet * s = b->sheet;
+  const GTEXT_CSS_String * prefix = NULL;
+  const GTEXT_CSS_String * uri = NULL;
+  const bool well_formed = css_sheet_namespace_prelude(rule, &prefix, &uri);
+  if (!well_formed || !open) {
     return diag(b, GTEXT_CSS_SHEET_DIAG_INVALID_RULE, rule->span, rule->id, "CSS Namespaces 3, 2.1: an @namespace rule follows @charset, @import and @layer statements only, and has a string or url") ?
         GTEXT_CSS_OK :
         b->status;
   }
   char * u = css_arena_strdup(&s->arena, uri->data ? uri->data : "", uri->length);
-  char * pf = prefix ? css_arena_strdup(&s->arena, prefix->value.data, prefix->value.length) : NULL;
+  char * pf = prefix ? css_arena_strdup(&s->arena, prefix->data, prefix->length) : NULL;
   if (!u || (prefix && !pf)) {
     return bfail(b, GTEXT_CSS_E_OOM, NULL, NULL, NULL);
   }

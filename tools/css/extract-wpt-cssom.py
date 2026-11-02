@@ -14,6 +14,11 @@ Lists every page of ``css/`` of the pin that touches the CSSOM IDL (a grep for `
 * ``UNEXTRACTED_CSSOM``: every page, or every test of a page, that is not read, with its number of tests and the reason (a page can have several lines). The list is the
   C5a partition; ``tools/conformance/UNSCORED_CSSOM`` holds the committed copy and the gate fails on any difference, so a page cannot leave the scored set unlisted.
 
+**Style sheets and rules (C5b1).** The ``<style>`` elements of a page, in the order of the document, are the sheets of its program (``sheet`` ops, parsed by the object model), and the
+tests may read the sheets and rules they hold: ``document.styleSheets[n]``, ``x.sheet`` for an element ``x`` that is a ``<style>``, ``.cssRules`` and ``.rules`` with ``.length`` and
+``[i]``, ``.type`` (a number or a ``CSSRule`` constant), ``.parentRule`` and ``.parentStyleSheet`` compared with ``null`` or with another such chain, and ``document.styleSheets.length``;
+a variable may hold any of them. A page with a ``<style>`` that has an attribute other than ``id`` (``media``, ``disabled``, ``type``: what the HTML binding decides) reads no sheet.
+
 What a recognized call is, in the order the reader tries: a ``test(function() {...}, name)`` (or an arrow function) at the top of the script, with a body of statements each of
 which is one of: ``var x = document.getElementById('id')`` / ``document.createElement('tag')``; ``var s = x.style`` (or ``document.getElementById('id').style``);
 ``s.setProperty(name, value[, priority])``; ``s.removeProperty(name)``; ``s.cssText = text``; ``s.attribute = value`` and ``s['attribute'] = value``; ``x.setAttribute('style', text)``
@@ -511,6 +516,8 @@ class Page:
         self.elements = {}      # id -> (tag, style attribute or None)
         self.quirks = False
         self.scripts = []
+        self.styles = []        # (id, attributes, text) of the <style> elements, in document order
+        self.sheets_ok = False  # every <style> has no attribute but id: document.styleSheets is the list of them
 
 
 class Collector(html.parser.HTMLParser):
@@ -521,9 +528,13 @@ class Collector(html.parser.HTMLParser):
         self.in_script = False
         self.cur = None
         self.helper_scripts = []
+        self.styles = []         # the <style> elements in document order: (id or None, attributes other than id, text)
+        self.in_style = None
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
+        if tag == 'style':
+            self.in_style = {'id': a.get('id'), 'attrs': sorted(k for k in a if k != 'id'), 'text': []}
         if 'id' in a and a['id'] is not None:
             self.elements[a['id']] = (tag, a.get('style'))
         if tag == 'script':
@@ -538,10 +549,16 @@ class Collector(html.parser.HTMLParser):
         if tag == 'script' and self.in_script:
             self.scripts.append(''.join(self.cur))
             self.in_script = False
+        if tag == 'style' and self.in_style is not None:
+            st = self.in_style
+            self.styles.append((st['id'], st['attrs'], ''.join(st['text'])))
+            self.in_style = None
 
     def handle_data(self, data):
         if self.in_script:
             self.cur.append(data)
+        if self.in_style is not None:
+            self.in_style['text'].append(data)
 
     def unknown_decl(self, data):
         pass
@@ -616,9 +633,16 @@ def elem_expr(node, env, ops):
 
 
 def style_expr(node, env, ops):
+    if node[0] == 'member' and node[2] == 'style':
+        c = try_chain(node[1], env)
+        if c and c[0] == 'rule':
+            name = 'r_' + c[1]
+            ops.append(('rstyle', name, c[1]))
+            return name
     if node[0] == 'var' and node[1] in env.vars and env.vars[node[1]][0] == 'style':
         e = env.vars[node[1]][1]
-        env.touched.add(e[2:])
+        if not e.startswith('r_'):
+            env.touched.add(e[2:])
         return e
     if node[0] == 'member' and node[2] == 'style':
         e = elem_expr(node[1], env, ops)
@@ -627,8 +651,77 @@ def style_expr(node, env, ops):
     raise Unrecognized(R_SHAPE)
 
 
+CSSRULE_CONSTANTS = {'STYLE_RULE': 1, 'CHARSET_RULE': 2, 'IMPORT_RULE': 3, 'MEDIA_RULE': 4, 'FONT_FACE_RULE': 5, 'PAGE_RULE': 6, 'KEYFRAMES_RULE': 7, 'KEYFRAME_RULE': 8,
+                     'MARGIN_RULE': 9, 'NAMESPACE_RULE': 10, 'COUNTER_STYLE_RULE': 11, 'SUPPORTS_RULE': 12, 'FONT_FEATURE_VALUES_RULE': 14}
+R_STYLEATTR = 'a <style> element with an attribute the HTML binding decides (media, type, disabled: C5c3)'
+
+
+def chain(node, env):
+    """A read of the sheets and rules a page holds: ('sheet'|'list'|'rule', path). A path is `S<n>` (the nth <style>), then `.R<i>` (the ith rule of the list of the sheet or rule
+    so far), `.P` (parentRule) and `.PS` (parentStyleSheet); a list is the `cssRules` of its owner, which the path names."""
+    page = env.page
+    if node[0] == 'var' and node[1] in env.vars and env.vars[node[1]][0] == 'chain':
+        return env.vars[node[1]][1], env.vars[node[1]][2]
+    if node[0] == 'index' and node[1] == ('member', ('var', 'document'), 'styleSheets') and node[2][0] == 'num':
+        if not page.sheets_ok:
+            raise Unrecognized(R_STYLEATTR if page.styles else R_RULES)
+        return 'sheet', 'S%d' % int(node[2][1])
+    if node[0] == 'member' and node[2] == 'sheet':
+        o = node[1]
+        name = None
+        if o[0] == 'var' and o[1] not in env.vars:
+            name = o[1]
+        elif o[0] == 'call' and o[1] == ('member', ('var', 'document'), 'getElementById') and len(o[2]) == 1 and o[2][0][0] == 'str':
+            name = o[2][0][1]
+        if name is None:
+            raise Unrecognized(R_RULES)
+        ids = [i for i, st in enumerate(page.styles) if st[0] == name]
+        if not ids:
+            raise Unrecognized(R_RULES)
+        if not page.sheets_ok:
+            raise Unrecognized(R_STYLEATTR)
+        return 'sheet', 'S%d' % ids[0]
+    if node[0] == 'member' and node[2] in ('cssRules', 'rules'):
+        kind, path = chain(node[1], env)
+        if kind not in ('sheet', 'rule'):
+            raise Unrecognized(R_RULES)
+        return 'list', path
+    if node[0] == 'index' and node[2][0] == 'num':
+        kind, path = chain(node[1], env)
+        if kind != 'list' or node[2][1] < 0 or node[2][1] != int(node[2][1]):
+            raise Unrecognized(R_RULES)
+        return 'rule', '%s.R%d' % (path, int(node[2][1]))
+    if node[0] == 'member' and node[2] in ('parentRule', 'parentStyleSheet'):
+        kind, path = chain(node[1], env)
+        if kind != 'rule':
+            raise Unrecognized(R_RULES)
+        return ('rule', path + '.P') if node[2] == 'parentRule' else ('sheet', path + '.PS')
+    raise Unrecognized(R_RULES)
+
+
+def try_chain(node, env):
+    try:
+        return chain(node, env)
+    except Unrecognized:
+        return None
+
+
 def read_expr(node, env, ops):
     """('value', S, name) etc.: the read an assertion compares: returns (op name, args)."""
+    if node[0] == 'member' and node[1] == ('var', 'document') and node[2] == 'styleSheets':
+        raise Unrecognized(R_RULES)
+    if node[0] == 'member' and node[2] == 'length' and node[1] == ('member', ('var', 'document'), 'styleSheets'):
+        if not env.page.sheets_ok:
+            raise Unrecognized(R_STYLEATTR if env.page.styles else R_RULES)
+        return ('assert_nsheets', [])
+    if node[0] == 'member' and node[2] in ('length', 'type', 'parentRule', 'parentStyleSheet'):
+        c = try_chain(node[1], env) if node[2] in ('length', 'type') else try_chain(node, env)
+        if node[2] == 'length' and c and c[0] == 'list':
+            return ('assert_rlen', [c[1]])
+        if node[2] == 'type' and c and c[0] == 'rule':
+            return ('assert_rtype', [c[1]])
+        if node[2] in ('parentRule', 'parentStyleSheet') and c:
+            return ('assert_rsame', [c[1]])
     if node[0] == 'call' and node[1][0] == 'member':
         obj, meth = node[1][1], node[1][2]
         if obj == ('var', 'CSS') and meth == 'escape' and len(node[2]) == 1:
@@ -677,6 +770,8 @@ def classify_node(node):
 
 
 def literal(node):
+    if node[0] == 'member' and node[1] == ('var', 'CSSRule') and node[2] in CSSRULE_CONSTANTS:
+        return str(CSSRULE_CONSTANTS[node[2]])
     if node[0] == 'undefined':
         return '\x01undefined'
     if node[0] == 'null':
@@ -692,6 +787,10 @@ def statement_ops(st, env, ops):
     kind = st[0]
     if kind == 'decl':
         name, e = st[1], st[2]
+        c = try_chain(e, env)
+        if c:
+            env.vars[name] = ('chain', c[0], c[1])
+            return
         if e[0] == 'member' and e[2] == 'style':
             env.vars[name] = ('style', style_expr(e, env, ops))
             return
@@ -735,6 +834,11 @@ def statement_ops(st, env, ops):
                 raise Unrecognized(R_SHAPE)
             if fn == 'assert_not_equals':
                 raise Unrecognized(R_SHAPE)
+            if args[1][0] in ('member', 'index', 'var') and not (args[1][0] == 'var' and args[1][1] not in env.vars):
+                first, second = try_chain(args[0], env), try_chain(args[1], env)
+                if first and second and first[0] == second[0] and first[0] in ('rule', 'sheet'):
+                    ops.append(('assert_rsame', first[1], second[1]))
+                    return
             op, a = read_expr(args[0], env, ops)
             exp = literal(args[1])
             ops.append((op,) + tuple(a) + (exp,))
@@ -903,6 +1007,8 @@ def scan_page(wpt, rel, programs, unextracted):
             return True
         page = Page(rel, text, False)
         page.elements = col.elements
+        page.styles = col.styles
+        page.sheets_ok = bool(col.styles) and all(not st[1] for st in col.styles)
         page.quirks = not re.match(r'\s*(<!--.*?-->\s*)*<!doctype\s+html', text, re.I | re.S) and not rel.endswith(('.xht', '.xhtml', '.svg'))
         if any(HELPERS.search(s) for s in col.helper_scripts):
             n = len(re.findall(r'\btest_\w+\s*\(|\bruntTests?\s*\(|\bruntest\s*\(', text))
@@ -914,6 +1020,8 @@ def scan_page(wpt, rel, programs, unextracted):
         scripts = col.scripts
     # the program starts with the elements the markup has
     prog = [('elem', idname(i), tag, style if style is not None else '') for i, (tag, style) in sorted(page.elements.items())]
+    if page.sheets_ok and re.search(r'styleSheets|\.sheet\b', text):
+        prog += [('sheet', str(n), st[2]) for n, st in enumerate(page.styles)]
     state = {'env': Env(page), 'poisoned': False, 'tests': 0}
     state['env'].globals = {idname(i) for i in page.elements}
     for sc in scripts:

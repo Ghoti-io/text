@@ -104,6 +104,9 @@ struct css_cssom_event {
   GTEXT_CSSOM_Event_Kind kind;
   uint64_t sheet_id, rule_id;
   void * declaration;                  ///< The declaration object, or NULL.
+  void * sheet;                        ///< The sheet, or NULL.
+  void * rule;                         ///< The rule, or NULL.
+  bool silent;                         ///< The mutation changed an object that no sheet holds: no generation, no event.
   const void * element;                ///< The owner element of an inline style.
   const GTEXT_CSS_Property_Id * properties;   ///< The longhands whose declarations changed, ascending, without repeats.
   size_t property_count;
@@ -121,6 +124,12 @@ void css_obj_init(css_obj * o, css_core * core, GTEXT_CSSOM_Object_Kind kind, ui
 
 /// Whether one more object of `bytes` is within the limits of the core.
 GTEXT_CSS_Status css_core_room(css_core * core, size_t bytes);
+
+/// Whether `bytes` more are within the live-bytes limit (what a syntax tree and the text it was read from take; they are not objects).
+GTEXT_CSS_Status css_core_room_bytes(const css_core * core, size_t bytes);
+
+/// The same as css_obj_init(), with the id given and the document's counter left alone (an object that shares the id of its owner).
+void css_obj_init_id(css_obj * o, css_core * core, GTEXT_CSSOM_Object_Kind kind, uint64_t internal, uint64_t external, size_t bytes, void (*destroy)(css_obj *), uint64_t id);
 
 /// Charge or credit bytes to a live object (a string it keeps): false if the limit would be passed (nothing charged).
 bool css_obj_charge(css_obj * o, size_t bytes);
@@ -200,7 +209,12 @@ struct GTEXT_CSSOM_Decl {
 };
 
 /// Make a declaration object of an owner; the block is empty. Counts as css_obj_init() says.
-GTEXT_CSS_Status css_decl_create(css_core * core, GTEXT_CSSOM_Decl_Owner owner_kind, uint64_t internal, uint64_t external, GTEXT_CSSOM_Decl ** out);
+/// `id` 0 takes the next id of the document's counter; another value is the owner's id, shared (a rule's declaration block).
+GTEXT_CSS_Status css_decl_create(css_core * core, GTEXT_CSSOM_Decl_Owner owner_kind, uint64_t internal, uint64_t external, uint64_t id, GTEXT_CSSOM_Decl ** out);
+
+/// Build a block from declarations the parser made (a rule's, a nested-declarations run), as a declaration list is read: an invalid declaration is dropped, one the library cannot
+/// judge is kept as written, the later of two of a property replaces the earlier. `count` is checked against the document's `max_work`.
+GTEXT_CSS_Status css_decl_block_from_declarations(css_core * core, const GTEXT_CSS_Declaration * declarations, size_t count, bool quirks, GTEXT_CSS_Declaration_Block ** out);
 
 /// Validate an element-owned declaration against its attribute (the start of every call that reads or edits it); a no-op for the others.
 GTEXT_CSS_Status css_decl_validate(GTEXT_CSSOM_Decl * decl);

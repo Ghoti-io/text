@@ -1161,8 +1161,15 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/cssom_decl.c \
 	src/css/cssom_decl_idl.c \
 	src/css/cssom_inline.c \
+	src/css/cssom_dump.c \
 	src/css/cssom_object.c \
+	src/css/cssom_parse.c \
+	src/css/cssom_rule.c \
+	src/css/cssom_rule_kinds.c \
+	src/css/cssom_rule_list.c \
+	src/css/cssom_sheet.c \
 	src/css/cssom_util.c \
+	src/css/css_tree_copy.c \
 	src/css/css_cascade.c \
 	src/css/css_color.c \
 	src/css/css_color_names.c \
@@ -2583,7 +2590,7 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=0
 # scored is listed (UNSCORED_COMPUTED), and the gate is made to fail (--controls). tools/conformance/run-css-computed.sh --regenerate writes the lists.
 CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4532 CSS_COMPUTED_MAX_DEFECTS=0
 CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=240
-CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=141 CSS_CSSOM_MIN_PAGES=48 CSS_CSSOM_MAX_DEFECTS=12
+CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=203 CSS_CSSOM_MIN_PAGES=68 CSS_CSSOM_MAX_DEFECTS=38
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
 conformance-css-computed: $(CONFORMANCE_LIB)

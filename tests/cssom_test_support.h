@@ -41,6 +41,7 @@
 #include <ghoti.io/text/css.h>
 
 #include "../src/css/cssom_internal.h"
+#include "../src/css/cssom_rule_internal.h"
 #include "css_registry_test_support.h"
 #include "markup_test_support.h"
 
@@ -319,6 +320,122 @@ inline const char * kind_name(GTEXT_CSSOM_Outcome_Kind k) {
   case GTEXT_CSSOM_IGNORED_NOT_ALLOWED_HERE: return "IGNORED_NOT_ALLOWED_HERE";
   }
   return "?";
+}
+
+/* ---- rules and sheets ------------------------------------------------------------------------------------------------------------------------ */
+
+/// A rule that releases itself (it holds one external reference, which it takes over).
+struct Rule {
+  GTEXT_CSSOM_Rule * r = nullptr;
+  Rule() = default;
+  explicit Rule(GTEXT_CSSOM_Rule * made) : r(made) {}
+  Rule(const Rule &) = delete;
+  Rule & operator=(const Rule &) = delete;
+  Rule(Rule && o) noexcept : r(o.r) {
+    o.r = nullptr;
+  }
+  Rule & operator=(Rule && o) noexcept {
+    if (this != &o) {
+      gtext_cssom_rule_release(r);
+      r = o.r;
+      o.r = nullptr;
+    }
+    return *this;
+  }
+  ~Rule() {
+    gtext_cssom_rule_release(r);
+  }
+  GTEXT_CSSOM_Rule * operator->() const {
+    return r;
+  }
+  explicit operator bool() const {
+    return r != nullptr;
+  }
+};
+
+/// A sheet that releases itself.
+struct Sheet {
+  GTEXT_CSSOM_Sheet * s = nullptr;
+  GTEXT_CSS_Status status = GTEXT_CSS_E_INTERNAL;
+  Sheet() = default;
+  Sheet(Doc & doc, const std::string & text, const GTEXT_CSSOM_Sheet_Options * options = nullptr) {
+    status = gtext_cssom_sheet_new_parsed(doc.d, text.data(), text.size(), options, &s);
+  }
+  Sheet(const Sheet &) = delete;
+  Sheet & operator=(const Sheet &) = delete;
+  ~Sheet() {
+    gtext_cssom_sheet_release(s);
+  }
+  const GTEXT_CSSOM_Rule_List * rules() const {
+    const GTEXT_CSSOM_Rule_List * l = nullptr;
+    EXPECT_EQ(gtext_cssom_sheet_rules(s, &l), GTEXT_CSS_OK);
+    return l;
+  }
+};
+
+/// The rule at an index of a list, retained.
+inline Rule at(const GTEXT_CSSOM_Rule_List * list, size_t i) {
+  return Rule(gtext_cssom_rule_list_at(list, i));
+}
+
+/// The kinds of the rules of a list, with the rules inside a rule between brackets: `style,media[style,nested-declarations],keyframes[keyframe]`.
+inline std::string shape(const GTEXT_CSSOM_Rule_List * list) {
+  std::string out;
+  for (GTEXT_CSSOM_Rule * r = gtext_cssom_rule_list_first(list); r;) {
+    if (!out.empty()) {
+      out += ",";
+    }
+    out += gtext_cssom_rule_kind_name(gtext_cssom_rule_kind(r));
+    const GTEXT_CSSOM_Rule_List * inner = gtext_cssom_rule_css_rules(r);
+    if (inner && gtext_cssom_rule_list_length(inner)) {
+      out += "[" + shape(inner) + "]";
+    }
+    GTEXT_CSSOM_Rule * next = gtext_cssom_rule_list_next(list, r);
+    gtext_cssom_rule_release(r);
+    r = next;
+  }
+  return out;
+}
+
+inline std::string shape(const Sheet & sheet) {
+  return shape(sheet.rules());
+}
+
+/// The dump of a sheet or a rule.
+inline std::string dump(const GTEXT_CSSOM_Sheet * s) {
+  std::string out;
+  GTEXT_Markup_Sink sink;
+  std::memset(&sink, 0, sizeof sink);
+  sink.user = &out;
+  sink.write = [](void * u, const char * p, size_t n) {
+    static_cast<std::string *>(u)->append(p, n);
+    return GTEXT_MARKUP_OK;
+  };
+  const GTEXT_CSS_Status st = gtext_cssom_sheet_dump(s, &sink);
+  return st == GTEXT_CSS_OK ? out : std::string("<dump: ") + gtext_css_status_string(st) + ">";
+}
+
+inline std::string dump(const GTEXT_CSSOM_Rule * r) {
+  std::string out;
+  GTEXT_Markup_Sink sink;
+  std::memset(&sink, 0, sizeof sink);
+  sink.user = &out;
+  sink.write = [](void * u, const char * p, size_t n) {
+    static_cast<std::string *>(u)->append(p, n);
+    return GTEXT_MARKUP_OK;
+  };
+  const GTEXT_CSS_Status st = gtext_cssom_rule_dump(r, &sink);
+  return st == GTEXT_CSS_OK ? out : std::string("<dump: ") + gtext_css_status_string(st) + ">";
+}
+
+/// The `style` of a rule (retained), or an empty Decl.
+inline Decl style_of(GTEXT_CSSOM_Rule * r, GTEXT_CSS_Status * status = nullptr) {
+  GTEXT_CSSOM_Decl * d = nullptr;
+  const GTEXT_CSS_Status st = gtext_cssom_rule_style(r, &d);
+  if (status) {
+    *status = st;
+  }
+  return Decl(st == GTEXT_CSS_OK ? d : nullptr);
 }
 
 } // namespace cot
