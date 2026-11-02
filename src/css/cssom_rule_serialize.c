@@ -123,6 +123,10 @@ void css_rule_drop_cache(css_rule * rule) {
 void css_rule_touch(css_rule * rule) {
   rule->version++;
   css_rule_drop_cache(rule);
+  /* its syntax node is no longer its state, nor the node of any rule above it (the invariant: a rule marked has every rule above it marked, so the walk stops at the first) */
+  for (css_rule * x = rule; x && !x->mod; x = x->list && x->list->owner->kind == GTEXT_CSSOM_OBJECT_RULE ? (css_rule *)(uintptr_t)x->list->owner : NULL) {
+    x->mod = true;
+  }
 }
 
 /// Keep the text of a leaf rule, if it fits: the entries added first make room, and a text that cannot be kept is not an error.

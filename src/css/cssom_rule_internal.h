@@ -167,6 +167,10 @@ struct GTEXT_CSSOM_Rule {
   size_t size;                     ///< Nodes in the subtree of this rule.
   uint32_t agg[4];                 ///< Rules of each order class in the subtree of this node (CSS_CLASS_*), for the order constraints of the top of a sheet in O(log n).
   size_t descendants;              ///< Rules inside this one, at every depth.
+  uint8_t canon;                   ///< For a rule with `mod` false: 0 not yet known, 1 its syntax node is what its serialization reads back as, 2 it is not (cssom_snapshot.c). The node does not change while `mod` is false.
+  bool mod;                        ///< The rule, or one inside it, was changed after its syntax node was read (or the node no longer holds the rules inside it): the node is not the rule's state. Set on the rule and on every rule above it.
+  struct GTEXT_CSSOM_Sheet * import_sheet;   ///< `@import`: the sheet the import loaded (an internal count held), or NULL.
+
   struct css_text_cache * cache;   ///< The cached `cssText` of a leaf rule, or NULL.
   uint32_t prio;
   struct GTEXT_CSSOM_Rule_List * list;   ///< The list that holds the rule, or NULL when detached from every list.
@@ -257,11 +261,20 @@ struct GTEXT_CSSOM_Sheet {
   size_t rule_total;               ///< Rules at every depth.
   css_source * source;             ///< The parse of the sheet's text, or NULL once it was compacted.
   css_ns_env * ns;                 ///< The sheet's `@namespace` rules: what a selector inserted into it is read in. NULL for none.
+  uint64_t stamp;                  ///< The core's stamp counter at the sheet's last change (css_sheet_bump()); 0 before any.
+  struct GTEXT_CSSOM_Rule * owner_rule;   ///< `ownerRule`: the `@import` rule that holds this sheet (weak: the rule holds the sheet), or NULL.
+  size_t max_import_depth;         ///< The sheet option; 0 is the default.
+  GTEXT_CSS_Sheet * snap;          ///< The snapshot last made (one owner held), or NULL; valid while `snap_stamp` is the composite stamp (cssom_snapshot.c).
+  uint64_t snap_stamp;
   css_parse_diag * diags;
   size_t ndiags, capdiags, diag_total;
 };
 
 css_sheet * css_sheet_from_obj(css_obj * o);
+
+/// A change of the sheet or of anything in it: its version moves and it gets a new stamp, greater than every stamp given before (so the greatest stamp among a sheet and the sheets it imports changes whenever anything in them does).
+void css_sheet_bump(css_sheet * sheet);
+
 
 /// Where an inserted rule goes: what its text is read in.
 typedef struct {

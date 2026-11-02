@@ -87,6 +87,7 @@ struct css_core {
   GTEXT_CSSOM_Config config;           ///< The limits, with the defaults filled in.
   uint64_t generation;
   uint64_t next_id;
+  uint64_t stamp_counter;              ///< The stamps of sheets' changes (css_sheet_bump()): monotonic, never reused, independent of the generation.
   uint64_t tree_epoch;                 ///< gtext_cssom_document_tree_changed() advances it.
   struct GTEXT_CSSOM_Document * document;   ///< NULL once the handle was released.
   unsigned in_callback;                ///< Inside a notification: nesting depth.

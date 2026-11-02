@@ -51,6 +51,10 @@ void markup_validation_invalidate(GTEXT_Markup_Document *doc) {
   doc->xml_validation_stale = 1;
 }
 
+uint64_t gtext_markup_document_generation(const GTEXT_Markup_Document * doc) {
+  return doc ? doc->generation : 0;
+}
+
 /* ---- the detached list -------------------------------------------------- */
 
 static void detached_push(GTEXT_Markup_Document * doc, node_t * node) {
@@ -488,6 +492,9 @@ bool gtext_markup_document_parsed_as_xml(const GTEXT_Markup_Document * doc) {
 void gtext_markup_document_set_mode(
     GTEXT_Markup_Document * doc, GTEXT_Markup_Mode mode) {
   if (doc) {
+    if (doc->mode != mode) {
+      doc->generation++;
+    }
     doc->mode = mode;
   }
 }
@@ -1341,6 +1348,7 @@ GTEXT_Markup_Status gtext_markup_node_set_data(
   *len_slot = length;
   node->cap_log2 = 0;
   markup_validation_invalidate(node->doc);
+  node->doc->generation++;
   return GTEXT_MARKUP_OK;
 }
 
@@ -1693,6 +1701,7 @@ GTEXT_Markup_Status gtext_markup_element_set_attribute(
     a->origin = GTEXT_MARKUP_ATTRIBUTE_EXPLICIT;
     a->normalization_changed = 0;
     markup_validation_invalidate(doc);
+    doc->generation++;
     return GTEXT_MARKUP_OK;
   }
 
@@ -1734,6 +1743,7 @@ GTEXT_Markup_Status gtext_markup_element_set_attribute(
   a->value = copy;
   a->value_length = value_length;
   markup_validation_invalidate(doc);
+  doc->generation++;
   return GTEXT_MARKUP_OK;
 }
 
@@ -1756,6 +1766,7 @@ bool gtext_markup_element_remove_attribute(
       (e->attr_count - i - 1) * sizeof(markup_attr));
   e->attr_count--;
   markup_validation_invalidate(doc);
+  doc->generation++;
   return true;
 }
 
@@ -1830,6 +1841,7 @@ GTEXT_Markup_Status gtext_markup_element_ensure_template_content(
     frag->flags = MARKUP_F_CONTENT;
     frag->parent = element;
     e->content = frag;
+    element->doc->generation++;
   }
   if (out) {
     *out = e->content;
@@ -1843,6 +1855,7 @@ GTEXT_Markup_Status gtext_markup_element_ensure_template_content(
    siblings and is on no list: the caller puts it somewhere. */
 static void unlink_child(node_t * node) {
   node_t * parent = node->parent;
+  parent->doc->generation++;
   if (node->prev) {
     node->prev->next = node->next;
   }
@@ -1863,6 +1876,7 @@ static void unlink_child(node_t * node) {
 /* Put a node, which is on no list, into `parent` before `reference`, or at the
    end. */
 static void link_before(node_t * parent, node_t * node, node_t * reference) {
+  parent->doc->generation++;
   node->parent = parent;
   if (reference) {
     node->prev = reference->prev;
@@ -2207,6 +2221,7 @@ void markup_append_unchecked(node_t * parent, node_t * child) {
 void markup_set_content_unchecked(node_t * element, node_t * fragment) {
   detached_remove(element->doc, fragment);
   fragment->flags = (uint8_t)(fragment->flags | MARKUP_F_CONTENT);
+  element->doc->generation++;
   fragment->parent = element;
   ((markup_element *)element)->content = fragment;
 }

@@ -303,6 +303,29 @@ GTEXT_API bool gtext_cssom_rule_has_attribute(const GTEXT_CSSOM_Rule * rule, con
 GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_set_attribute(GTEXT_CSSOM_Rule * rule, const char * name, size_t name_length, const char * value, size_t value_length,
     GTEXT_CSSOM_Outcome * outcome);
 
+/**
+ * @brief Give an `@import` rule the sheet it loaded (the library never fetches), or take it away with NULL.
+ *
+ * **Imports are single-owner.** The rule holds the sheet with an owning edge (the caller's own reference is not consumed: release it as usual), so the object graph has no strong
+ * cycle and no sheet has two owners. A sheet that an import already holds, that is a document's (it has an owner node), that is constructed, or that is not of this document is refused
+ * (GTEXT_CSS_E_INVALID_STATE; GTEXT_CSS_E_INVALID for another document); a sheet that is, or reaches through its imports, the sheet this rule is in is refused as well
+ * (GTEXT_CSS_E_HIERARCHY: CSS Cascade 5's cycle, applied to the live graph); a caller that wants the same text in two places makes two sheets. Nothing changes on a refusal. Giving the
+ * sheet the rule already holds, or NULL to a rule that holds none, is GTEXT_CSSOM_UNCHANGED.
+ *
+ * A change gives the sheet the rule is in a new version and stamp (the composite version of everything that imports it moves with it) and sends one GTEXT_CSSOM_EVENT_IMPORT_COMPLETED; a
+ * rule that no sheet holds changes nothing a document can see (no event). The rule itself is not modified: its `cssText` is the same, and its snapshot is the compile's import callback's
+ * answer. A sheet taken away stays a valid object that no import holds.
+ *
+ * @param rule An `@import` rule. Not NULL.
+ * @param sheet The sheet, or NULL.
+ * @param outcome NULL, or receives what the call did.
+ * @return GTEXT_CSS_OK or a status above; GTEXT_CSS_E_UNSUPPORTED (a rule that is not an `@import`); GTEXT_CSS_E_REENTRANT; GTEXT_CSS_E_LIMIT_CSSOM (the generation counter is spent).
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_import_rule_complete(GTEXT_CSSOM_Rule * rule, GTEXT_CSSOM_Sheet * sheet, GTEXT_CSSOM_Outcome * outcome);
+
+/** @brief `styleSheet` of an `@import` rule: the sheet it holds with an external reference of the caller's, or NULL in `*out`. GTEXT_CSS_E_UNSUPPORTED for another kind. */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_import_rule_sheet(const GTEXT_CSSOM_Rule * rule, GTEXT_CSSOM_Sheet ** out);
+
 /* ---- insertRule, deleteRule, cssText ------------------------------------------------------------------------------------------------------ */
 
 /**

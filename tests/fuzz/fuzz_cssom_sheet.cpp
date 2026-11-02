@@ -35,6 +35,7 @@
  *   each sheet's length, the object at each index (the same pointer: identity is stable) and the `cssText` of each equal the model's;
  *   the status is the model's, never E_INTERNAL; an ignored or failed call leaves the sheet's dump byte-identical, and a call that changes something raises the sheet's version once;
  *   a rule the model has removed or replaced is detached (`parentStyleSheet` null) and still reads the text it had; the rules inside a detached rule likewise;
+ *   the snapshot of each sheet is the compile of its serialization (the dump of one equals the dump of the other) and the same object when asked again;
  *   with one allocation failed: the call is OOM or untouched by the failure, and an OOM leaves the dump as it was;
  *   nothing leaks, and nothing is read after it is freed (under a sanitizer).
  *
@@ -184,6 +185,49 @@ std::string dump_sheet(GTEXT_CSSOM_Sheet * s) {
   return out;
 }
 
+std::string dump_compiled(const GTEXT_CSS_Sheet * s) {
+  std::string out;
+  GTEXT_Markup_Sink sink;
+  std::memset(&sink, 0, sizeof sink);
+  sink.user = &out;
+  sink.write = [](void * u, const char * p, size_t n) {
+    static_cast<std::string *>(u)->append(p, n);
+    return GTEXT_MARKUP_OK;
+  };
+  gtext_css_sheet_dump(s, &sink);
+  return out;
+}
+
+/// The dump of the compile of a text: what the cascade would have from the sheet if it were read from this serialization.
+bool rebuild_dump(const std::string & text, std::string & out) {
+  GTEXT_CSS_Tree * tree = nullptr;
+  if (gtext_css_parse_stylesheet(text.data(), text.size(), nullptr, &tree, nullptr) != GTEXT_CSS_OK) {
+    return false;
+  }
+  GTEXT_CSS_Sheet * compiled = nullptr;
+  const GTEXT_CSS_Status st = gtext_css_sheet_compile(tree, registry(), nullptr, &compiled, nullptr);
+  gtext_css_tree_free(tree);
+  if (st != GTEXT_CSS_OK) {
+    return false;
+  }
+  out = dump_compiled(compiled);
+  gtext_css_sheet_free(compiled);
+  return true;
+}
+
+std::string serialize_sheet(const GTEXT_CSSOM_Sheet * s) {
+  std::string out;
+  GTEXT_Markup_Sink sink;
+  std::memset(&sink, 0, sizeof sink);
+  sink.user = &out;
+  sink.write = [](void * u, const char * p, size_t n) {
+    static_cast<std::string *>(u)->append(p, n);
+    return GTEXT_MARKUP_OK;
+  };
+  gtext_cssom_sheet_serialize(s, &sink);
+  return out;
+}
+
 struct Sheet {
   GTEXT_CSSOM_Sheet * s = nullptr;
   bool constructed = false;
@@ -289,6 +333,27 @@ void check(World & w, const std::string & input, const char * after) {
       if (css != m.rules[i].text) {
         fail("cssText differs from the model's", std::string(after) + "\n" + css + "\n---\n" + m.rules[i].text, input);
       }
+    }
+    {
+      // the snapshot of the sheet is the compile of its serialization, and is the same object until the sheet changes
+      GTEXT_CSS_Sheet *snap = nullptr, *again = nullptr;
+      if (gtext_cssom_sheet_snapshot(m.s, &snap) != GTEXT_CSS_OK || gtext_cssom_sheet_snapshot(m.s, &again) != GTEXT_CSS_OK) {
+        fail("a snapshot could not be made", std::string(after) + " sheet " + std::to_string(k), input);
+      }
+      if (snap != again) {
+        fail("two snapshots of a sheet that did not change are two objects", std::string(after) + " sheet " + std::to_string(k), input);
+      }
+      std::string want;
+      const std::string text = serialize_sheet(m.s);
+      if (!rebuild_dump(text, want)) {
+        fail("the serialization of a sheet does not compile", text, input);
+      }
+      const std::string got = dump_compiled(snap);
+      if (got != want) {
+        fail("the snapshot of a sheet is not the compile of its serialization", std::string(after) + " sheet " + std::to_string(k) + "\n" + text + "\n--- snapshot\n" + got + "\n--- rebuild\n" + want, input);
+      }
+      gtext_css_sheet_free(snap);
+      gtext_css_sheet_free(again);
     }
     if (gtext_cssom_sheet_version(m.s) != m.version) {
       fail("the sheet's version is not the model's", std::string(after) + " sheet " + std::to_string(k) + ": " + std::to_string(gtext_cssom_sheet_version(m.s)) + " vs " + std::to_string(m.version), input);

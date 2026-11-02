@@ -114,7 +114,7 @@ void css_rule_replaced(css_rule * rule, GTEXT_CSSOM_Outcome * outcome) {
   ev.rule_id = rule->obj.id;
   css_sheet * sheet = css_rule_sheet(rule);
   if (sheet) {
-    sheet->version++;
+    css_sheet_bump(sheet);
     ev.sheet = sheet;
     ev.sheet_id = sheet->obj.id;
   }

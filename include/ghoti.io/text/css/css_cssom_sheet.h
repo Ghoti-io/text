@@ -45,6 +45,16 @@
  * **The tree lives while any rule of it is attached or held**, so deleting most of a very large sheet frees nothing until the last rule of that parse goes: the tree's bytes
  * count against the document's live-bytes limit, and gtext_cssom_sheet_compact() copies what is left into one new tree and releases the old ones.
  *
+ * ## Snapshots: what the cascade reads
+ *
+ * A live sheet is for editing; the cascade reads a @ref GTEXT_CSS_Sheet (css_sheet.h), which is immutable, atomically counted and shareable between threads. The bridge is
+ * gtext_cssom_sheet_snapshot(): it returns the compiled form of the sheet's **current** state, and the same pointer for as long as nothing in the sheet or in the sheets it
+ * imports changes, so any number of readers cost one compile. A snapshot, once handed out, is never altered by a later mutation (a test holds one across 10^5 of them). A rule that
+ * has not been changed since it was read, and whose syntax is what the text the object model writes for it reads back as, compiles from its own syntax tree, so its spans stay (a
+ * record says which source they index); any other rule (changed, with a changed rule inside it, or one whose declarations the object model writes differently from the text, such as a
+ * shorthand and its longhand, or a property written twice) compiles from the parse of its own `cssText`, which is a fixed point. Either way the dump of a snapshot equals the dump of the
+ * compile of the sheet's serialization.
+ *
  * ## Errors, limits and the strong guarantee
  *
  * Every limit is a status carrying what exceeded it, and the call fails whole: GTEXT_CSS_E_LIMIT_INPUT (the text), GTEXT_CSS_E_LIMIT_RULES (rules in the sheet),
@@ -59,6 +69,7 @@
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_cssom_core.h>
 #include <ghoti.io/text/css/css_cssom_rule.h>
+#include <ghoti.io/text/css/css_sheet.h>
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/markup/markup_escape.h>
 #include <stdbool.h>
@@ -83,6 +94,7 @@ typedef struct {
   bool alternate;               ///< The sheet is an alternate style sheet (HTML's `alternate`).
   bool origin_clean;            ///< The origin-clean flag. False for a sheet from another origin: reading `cssRules` and every mutation are then GTEXT_CSS_E_SECURITY.
   const char * media;           ///< `media`: the sheet's media query list as text (copied, kept in its canonical form); NULL for none, which matches everything.
+  size_t max_import_depth;      ///< Deepest chain of imports a snapshot of this sheet follows (the sheets its `@import` rules loaded, and theirs). 0 is the default, 16; at most 64. One more is GTEXT_CSS_E_LIMIT_RULE_NESTING.
 } GTEXT_CSSOM_Sheet_Options;
 
 /** @brief The defaults, spelled out: `size` set, no href, title, base URL or owner, not disabled, not alternate, origin-clean. */
@@ -192,6 +204,45 @@ GTEXT_API bool gtext_cssom_sheet_diagnostic(const GTEXT_CSSOM_Sheet * sheet, siz
 
 /** @brief How many rules the sheet holds, at every depth. O(1). */
 GTEXT_API size_t gtext_cssom_sheet_rule_total(const GTEXT_CSSOM_Sheet * sheet);
+
+/**
+ * @brief `ownerRule`: the `@import` rule that holds this sheet (gtext_cssom_import_rule_complete()), with an external reference of the caller's, or NULL in `*out` for a sheet no
+ *   import holds.
+ * @return GTEXT_CSS_OK or GTEXT_CSS_E_INVALID.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_sheet_owner_rule(const GTEXT_CSSOM_Sheet * sheet, GTEXT_CSSOM_Rule ** out);
+
+/**
+ * @brief The sheet's compiled form: an immutable, atomically counted @ref GTEXT_CSS_Sheet of its current state.
+ *
+ * The result is compiled by `gtext_css_sheet_compile_rules()` over the sheet's top-level rules (see the file's description) with the document's registry and allocator; the
+ * limits are the document's (`max_rule_nesting` is the rule depth, `max_diagnostics` the diagnostics kept) and the sheet's `max_import_depth`. The sheets that the sheet's `@import`
+ * rules hold (gtext_cssom_import_rule_complete()) are the snapshots of those sheets, one level down, and an import with no sheet contributes nothing (a diagnostic of the compile).
+ *
+ * **It is cached** on the sheet's composite version, the greatest change stamp among the sheet and the sheets it imports: while nothing in them changes the same pointer is returned,
+ * with a new reference each time, and a change makes the next call compile once however many changes came before. A snapshot handed out earlier is not altered and stays valid for as
+ * long as its holder keeps it, on any thread, including after the sheet, its document and the library's other objects are gone. Reading the cache or the sheet does not change the
+ * sheet: no version, no generation, no notification. A sheet that is not origin-clean is snapshotted all the same (the flag guards the script's access to the rules, not the
+ * cascade's), and so is a disabled one (whether it takes part is the document's decision).
+ *
+ * @param sheet The sheet. Not NULL.
+ * @param out Receives the snapshot with one reference of the caller's, released with gtext_css_sheet_free(); written only on success. Not NULL.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (a NULL argument); GTEXT_CSS_E_LIMIT_RULE_NESTING (imports nested deeper than `max_import_depth`, or rules deeper than the document's
+ *   `max_rule_nesting`); GTEXT_CSS_E_LIMIT_SHEET_SIZE and the limits of the compile; GTEXT_CSS_E_INTERNAL (the text of a rule does not read back as that rule: a defect, never a content
+ *   error); GTEXT_CSS_E_OOM. On any failure the sheet, its cache and the document are as they were.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_sheet_snapshot(GTEXT_CSSOM_Sheet * sheet, GTEXT_CSS_Sheet ** out);
+
+/**
+ * @brief The sheet's composite version: the greatest change stamp among the sheet and the sheets it imports, through every level.
+ *
+ * Every change of a sheet or of anything in it (a rule inserted, deleted, replaced or edited, `disabled`, `media`, an import completed) gives the sheet a new stamp, greater than every
+ * stamp given before it in the document, so the composite version of a sheet **changes (and only increases) exactly when something in it or in what it imports changed**; a sheet
+ * the import holds being replaced by one that was last changed long ago is a change of the importing sheet. Equal values mean an unchanged sheet; the value is otherwise opaque.
+ *
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_LIMIT_RULE_NESTING (imports nested deeper than the sheet's `max_import_depth`).
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_sheet_composite_version(const GTEXT_CSSOM_Sheet * sheet, uint64_t * out);
 
 /**
  * @brief The text the sheet was parsed from, in a new buffer (release it with gtext_cssom_buffer_free()).

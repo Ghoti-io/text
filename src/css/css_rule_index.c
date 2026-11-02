@@ -98,6 +98,7 @@ struct req_slot {
 };
 
 struct GTEXT_CSS_Rule_Index {
+  GCU_Atomic_Int refs;               ///< Owners: 1 when made; gtext_css_rule_index_retain() adds one, gtext_css_rule_index_free() releases one.
   const GTEXT_CSS_Registry * registry;
   GTEXT_Allocator alloc;
   GTEXT_CSS_Rule_Index_Options opt;
@@ -278,6 +279,7 @@ GTEXT_CSS_Status gtext_css_rule_index_new(const GTEXT_CSS_Registry * registry, c
   if (!x) {
     return GTEXT_CSS_E_OOM;
   }
+  gcu_atomic_int_init(&x->refs, 1);
   x->registry = registry;
   x->alloc = alloc;
   x->opt = o;
@@ -292,8 +294,18 @@ GTEXT_CSS_Status gtext_css_rule_index_new(const GTEXT_CSS_Registry * registry, c
   return GTEXT_CSS_OK;
 }
 
+GTEXT_CSS_Rule_Index * gtext_css_rule_index_retain(GTEXT_CSS_Rule_Index * x) {
+  if (x) {
+    (void)gcu_atomic_int_fetch_add(&x->refs, 1);
+  }
+  return x;
+}
+
 void gtext_css_rule_index_free(GTEXT_CSS_Rule_Index * x) {
   if (!x) {
+    return;
+  }
+  if (gcu_atomic_int_fetch_sub(&x->refs, 1) != 1) {
     return;
   }
   const GTEXT_Allocator a = x->alloc;

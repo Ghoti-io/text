@@ -22,7 +22,7 @@ opaque-same-text-counts-as-a-change	css_block.c	    if (it->opaque && it->import
 treap-priority-from-an-address	cssom_rule_list.c	  rule->prio = priority_of(rule->obj.id);	  rule->prio = (uint32_t)((uintptr_t)rule >> 4);	rules
 weak-parent-left-after-detach	cssom_rule_list.c	  list->count--;\n  css_obj_set_parent(&rule->obj, NULL);	  list->count--;	rules
 parent-sheet-not-nulled-after-detach	cssom_rule_list.c	  reset_leaf(rule);\n  rule->list = NULL;\n  list->count--;	  reset_leaf(rule);\n  list->count--;	rules
-rule-edit-does-not-bump-its-sheet	cssom_rule.c	    s->version++;\n    event->sheet = s;	    event->sheet = s;	rules
+rule-edit-does-not-bump-its-sheet	cssom_rule.c	    css_sheet_bump(s);\n    event->sheet = s;	    event->sheet = s;	rules
 detached-rule-sends-an-event	cssom_rule.c	    event->silent = true;	    event->silent = false;	rules
 invalid-selector-kept	cssom_parse.c	    diagnose(v, GTEXT_CSSOM_PARSE_INVALID_SELECTOR, rule, "Selectors 4, 3.6: an invalid selector makes its rule invalid, with what is nested in it");\n    return false;	    diagnose(v, GTEXT_CSSOM_PARSE_INVALID_SELECTOR, rule, "Selectors 4, 3.6: an invalid selector makes its rule invalid, with what is nested in it");\n    return true;	rules
 import-accepted-after-a-rule	cssom_parse.c	    if (!v->imports_open) {	    if (0) {	rules
@@ -56,7 +56,7 @@ inserted-rule-sends-no-event	cssom_insert.c	    css_obj_retain_external(&rule->o
 detached-insertion-sends-an-event	cssom_insert.c	    ev->silent = true;   /* a rule that no sheet holds changed	    ev->silent = false;   /* a rule that no sheet holds changed	insert
 rule-total-not-given-back-by-a-deletion	cssom_insert.c	      sheet->rule_total -= count;	      (void)count;	insert
 descendants-not-updated-by-a-deletion	cssom_insert.c	      x->descendants -= count;	      (void)count;	insert
-sheet-version-not-bumped-by-an-insertion	cssom_insert.c	    sheet->version++;\n    ev->sheet = sheet;	    ev->sheet = sheet;	insert
+sheet-version-not-bumped-by-an-insertion	cssom_insert.c	    css_sheet_bump(sheet);\n    ev->sheet = sheet;	    ev->sheet = sheet;	insert
 namespace-declaration-not-kept-by-the-sheet	cssom_insert.c	      css_ns_env_release(pl->sheet->ns);\n      pl->sheet->ns = new_env;\n      new_env = NULL;	      css_ns_env_release(new_env);\n      new_env = NULL;	insert
 rule-forgets-its-namespaces	cssom_insert.c	  css_source_set_ns(source, (css_ns_env *)(uintptr_t)pl->ctx.ns);		insert
 keyframes-find-takes-the-first	cssom_insert.c	      *found = k;\n    }\n    gtext_allocator_free(&a, have);	      if (!*found) {\n        *found = k;\n      }\n    }\n    gtext_allocator_free(&a, have);	insert
@@ -99,7 +99,7 @@ a-medium-already-there-is-appended-again	cssom_media.c	          present = prese
 deleting-a-medium-that-is-not-there-succeeds	cssom_media.c	        st = GTEXT_CSS_E_NOT_FOUND;   /* "If nothing was removed, then throw a NotFoundError exception." */	        st = GTEXT_CSS_OK;	media
 the-import-prefix-is-lost-from-a-media-change	cssom_media.c	    if (!tb_puts(&header, "@import ") || !tb_put(&header, p, from) || (n && !tb_put(&header, canon, n))) {	    if (!tb_puts(&header, "@import ") || !tb_put(&header, p, 0) || (n && !tb_put(&header, canon, n))) {	media
 a-list-past-the-end-is-not-null	cssom_media.c	    *is_null = !found;	    *is_null = false;	media
-a-sheets-media-change-sends-no-version	cssom_media.c	    s->media_text = copy;\n    s->version++;	    s->media_text = copy;	media
+a-sheets-media-change-sends-no-version	cssom_media.c	    s->media_text = copy;\n    css_sheet_bump(s);	    s->media_text = copy;	media
 a-media-list-is-made-each-time	cssom_media.c	  if (!*slot) {\n    css_core * core = owner->core;	  if (1) {\n    css_core * core = owner->core;	media
 a-constructed-sheet-keeps-imports	cssom_parse.c	    if (v->constructed) {	    if (0) {	media
 replace-leaves-the-old-rules-attached	cssom_sheet.c	    css_rule_list_remove(&sheet->rules, old);   /* "set the parent CSS style sheet and parent CSS rule of every rule to null": the chain ends here, for the nested ones too */	    css_rule_list_remove(&sheet->rules, old);\n    old->list = &sheet->rules;   /* planted */	media
@@ -109,7 +109,55 @@ a-completed-replace-stays-pending	cssom_sheet.c	    sheet->pending_replace--;\n 
 a-failed-replace-keeps-its-ids	cssom_sheet.c	    core->next_id = saved_id;\n    return st;\n  }\n  /* the first change */	    return st;\n  }\n  /* the first change */	settersoom
 a-replace-sends-no-event	cssom_sheet.c	  css_obj_release_external(&tmp->obj);\n  css_cssom_commit(core, &ev, outcome);	  css_obj_release_external(&tmp->obj);	media
 a-setter-grows-with-the-sheet	cssom_setters.c	  css_source * old = rule->source;\n  rule->source = own->source;	  css_source * old = rule->source;\n  css_source_retain(old);\n  rule->source = own->source;	setterscost
-fuzz-replace-raises-no-version	cssom_sheet.c	  sheet->version++;\n  css_cssom_event ev;\n  memset(&ev, 0, sizeof ev);\n  ev.kind = GTEXT_CSSOM_EVENT_RULE_REPLACED;   /* with no rule: all of the sheet's */	  css_cssom_event ev;\n  memset(&ev, 0, sizeof ev);\n  ev.kind = GTEXT_CSSOM_EVENT_RULE_REPLACED;   /* with no rule: all of the sheet's */	sheetseeds
-fuzz-a-setter-forgets-the-sheet-version	cssom_setters.c	  if (sheet) {\n    sheet->version++;\n    ev.sheet = sheet;	  if (sheet) {\n    ev.sheet = sheet;	sheetseeds
+fuzz-replace-raises-no-version	cssom_sheet.c	  css_sheet_bump(sheet);\n  css_cssom_event ev;\n  memset(&ev, 0, sizeof ev);\n  ev.kind = GTEXT_CSSOM_EVENT_RULE_REPLACED;   /* with no rule: all of the sheet's */	  css_cssom_event ev;\n  memset(&ev, 0, sizeof ev);\n  ev.kind = GTEXT_CSSOM_EVENT_RULE_REPLACED;   /* with no rule: all of the sheet's */	sheetseeds
+fuzz-a-setter-forgets-the-sheet-version	cssom_setters.c	  if (sheet) {\n    css_sheet_bump(sheet);\n    ev.sheet = sheet;	  if (sheet) {\n    ev.sheet = sheet;	sheetseeds
 fuzz-a-rule-is-inserted-one-place-early	cssom_insert.c	    css_rule_list_insert(pl->list, index, rule);	    css_rule_list_insert(pl->list, index > 0 && index < pl->list->count ? index - 1 : index, rule);	sheetseeds,insert
 fuzz-a-replaced-rule-is-not-detached	cssom_sheet.c	    css_rule_touch(old);\n    css_obj_release_internal(&old->obj);	    css_rule_touch(old);\n    old->list = &sheet->rules;\n    css_obj_release_internal(&old->obj);	sheetseeds,media
+array-compile-leaves-the-previous-trees-declarations	css_sheet.c	          b.decl_count[id] = 0;\n	          (void)id;\n	compilerules,snapshot
+array-compile-sizes-the-tables-for-the-first-tree	css_sheet.c	    if (sources[i].tree && sources[i].tree->node_count > nodes) {	    if (i == 0 && sources[i].tree && sources[i].tree->node_count > nodes) {	compilerules
+array-compile-forgets-the-touched-ids	css_sheet.c	  if (!touch(b, rule)) {\n    return;\n  }\n  if (!grow(&b->sheet->alloc, (void **)&b->decl_layers	  if (!grow(&b->sheet->alloc, (void **)&b->decl_layers	compilerules,snapshot
+array-compile-source-id-not-on-the-run	css_sheet.c	  r->source_id = b->src_id;\n	  r->source_id = 0;\n	compilerules,snapshot
+array-compile-source-index-not-on-the-run	css_sheet.c	  r->source_index = b->src_index;\n	  r->source_index = 0;\n	compilerules
+array-compile-source-id-not-on-the-diagnostic	css_sheet.c	  d->source_id = b->src_id;\n	  d->source_id = 0;\n	compilerules
+array-compile-source-index-not-on-the-diagnostic	css_sheet.c	  d->source_index = b->src_index;\n	  d->source_index = 0;\n	compilerules
+array-compile-never-takes-the-sources-id	css_sheet.c	        b.src_id = sources[i].source_id;\n	        b.src_id = 0;\n	compilerules,snapshot
+array-compile-source-index-not-advanced	css_sheet.c	      b.src_index = i;\n	      b.src_index = 0;\n	compilerules
+snapshot-ignores-its-cache	cssom_snapshot.c	  if (sheet->snap && sheet->snap_stamp == stamp) {	  if (0) {	snapshot,snapshotcost,snapshotoom
+snapshot-cache-stamp-is-never-current	cssom_snapshot.c	  sheet->snap_stamp = stamp;\n	  sheet->snap_stamp = stamp + 1;\n	snapshot,snapshotcost
+snapshot-reads-a-changed-rule-from-its-old-node	cssom_snapshot.c	    const bool own = !r->mod && r->node	    const bool own = r->node	snapshot,snapshotcost
+snapshot-rereads-every-rule	cssom_snapshot.c	    const bool own = !r->mod && r->node	    const bool own = false && r->node	snapshotcost,snapshot
+snapshot-reparse-forgets-its-tree	cssom_snapshot.c	  c->trees[c->ntrees++] = tree;\n	  gtext_css_tree_free(tree);\n  tree = NULL;\n  return GTEXT_CSS_E_INTERNAL;\n  c->trees[c->ntrees++] = tree;\n	snapshot,snapshotoom
+composite-ignores-the-imports	cssom_snapshot.c	    if (sub > best) {	    if (0) {	snapshot
+composite-ignores-the-sheets-own-stamp	cssom_snapshot.c	  uint64_t best = sheet->stamp;	  uint64_t best = 0;	snapshot
+composite-does-not-limit-the-depth	cssom_snapshot.c	    if (levels == 0) {\n      return GTEXT_CSS_E_LIMIT_RULE_NESTING;\n    }\n    uint64_t sub = 0;	    if (levels == 0) {\n      continue;\n    }\n    uint64_t sub = 0;	snapshot
+import-cycle-allowed	cssom_snapshot.c	    if (reaches(sheet, host)) {	    if (0) {	snapshot
+import-accepts-a-sheet-that-has-an-owner	cssom_snapshot.c	    if (sheet->owner_rule || sheet->owner_node || sheet->constructed) {	    if (sheet->constructed) {	snapshot
+import-owner-not-recorded	cssom_snapshot.c	    sheet->owner_rule = rule;\n		snapshot
+import-change-does-not-move-the-importer	cssom_snapshot.c	    css_sheet_bump(host);\n    ev.sheet = host;	    ev.sheet = host;	snapshot
+import-again-is-a-change	cssom_snapshot.c	    if (sheet == rule->import_sheet) {\n      return GTEXT_CSS_OK;   /* UNCHANGED */\n    }\n		snapshot
+rule-touch-marks-only-the-rule	cssom_rule_serialize.c	x = x->list && x->list->owner->kind == GTEXT_CSSOM_OBJECT_RULE ? (css_rule *)(uintptr_t)x->list->owner : NULL) {	x = NULL) {	snapshot
+compaction-leaves-a-groups-node-without-its-rules	cssom_sheet.c	    if (r->rules.count) {\n      r->mod = true;	    if (0) {\n      r->mod = true;	snapshot
+sheet-change-gets-no-new-stamp	cssom_sheet.c	  sheet->stamp = ++sheet->obj.core->stamp_counter;	  sheet->stamp = sheet->stamp;	snapshot,snapshotcost
+sheet-stamps-are-per-sheet	cssom_sheet.c	  sheet->stamp = ++sheet->obj.core->stamp_counter;	  sheet->stamp = sheet->stamp + 1;	snapshot
+snapshot-of-an-unchanged-sheet-counts-a-compile	cssom_snapshot.c	    core->counters.snapshot_hits++;	    core->counters.snapshot_compiles++;	snapshot
+index-retain-adds-no-owner	css_rule_index.c	    (void)gcu_atomic_int_fetch_add(&x->refs, 1);	    (void)x;	indexretain
+index-free-frees-at-the-first-release	css_rule_index.c	  if (gcu_atomic_int_fetch_sub(&x->refs, 1) != 1) {\n    return;\n  }	  (void)gcu_atomic_int_fetch_sub(&x->refs, 1);	indexretain
+markup-link-does-not-advance-the-generation	../markup/markup_tree.c	static void link_before(node_t * parent, node_t * node, node_t * reference) {\n  parent->doc->generation++;\n	static void link_before(node_t * parent, node_t * node, node_t * reference) {\n	markupgen
+markup-unlink-does-not-advance-the-generation	../markup/markup_tree.c	  node_t * parent = node->parent;\n  parent->doc->generation++;\n	  node_t * parent = node->parent;\n	markupgen
+markup-new-attribute-does-not-advance-the-generation	../markup/markup_tree.c	  a->value_length = value_length;\n  markup_validation_invalidate(doc);\n  doc->generation++;\n	  a->value_length = value_length;\n  markup_validation_invalidate(doc);\n	markupgen
+markup-replaced-attribute-does-not-advance-the-generation	../markup/markup_tree.c	    a->normalization_changed = 0;\n    markup_validation_invalidate(doc);\n    doc->generation++;\n	    a->normalization_changed = 0;\n    markup_validation_invalidate(doc);\n	markupgen
+markup-removed-attribute-does-not-advance-the-generation	../markup/markup_tree.c	  e->attr_count--;\n  markup_validation_invalidate(doc);\n  doc->generation++;\n	  e->attr_count--;\n  markup_validation_invalidate(doc);\n	markupgen
+markup-set-data-does-not-advance-the-generation	../markup/markup_tree.c	  markup_validation_invalidate(node->doc);\n  node->doc->generation++;\n	  markup_validation_invalidate(node->doc);\n	markupgen
+markup-reading-the-generation-advances-it	../markup/markup_tree.c	  return doc ? doc->generation : 0;	  if (doc) {\n    ((GTEXT_Markup_Document *)(uintptr_t)doc)->generation++;\n  }\n  return doc ? doc->generation : 0;	markupgen
+markup-removing-an-absent-attribute-advances-the-generation	../markup/markup_tree.c	    return false;\n  }\n  GTEXT_Markup_Document * doc = element->doc;\n  markup_atom_release(doc, e->attrs[i].ns);	    element->doc->generation++;\n    return false;\n  }\n  GTEXT_Markup_Document * doc = element->doc;\n  markup_atom_release(doc, e->attrs[i].ns);	markupgen
+markup-same-mode-advances-the-generation	../markup/markup_tree.c	    if (doc->mode != mode) {	    if (1) {	markupgen
+markup-mode-change-does-not-advance-the-generation	../markup/markup_tree.c	    if (doc->mode != mode) {\n      doc->generation++;\n    }	    if (doc->mode != mode) {\n    }	markupgen
+markup-template-content-asked-again-advances-the-generation	../markup/markup_tree.c	    e->content = frag;\n    element->doc->generation++;\n  }	    e->content = frag;\n  }\n  element->doc->generation++;	markupgen
+markup-doctype-edit-does-not-advance-the-generation	../markup/markup_dtd_edit.c	  node->doc->generation++;\n		markupgen
+canonical-check-trusts-every-rule	cssom_snapshot.c	      r->canon = same ? CANON_YES : CANON_NO;\n	      r->canon = CANON_YES;\n	snapshot
+canonical-check-is-not-remembered	cssom_snapshot.c	      r->canon = same ? CANON_YES : CANON_NO;\n	      r->canon = CANON_UNKNOWN;\n	snapshot
+canonical-check-does-not-look-inside-nested-rules	cssom_snapshot.c	      st = push_pair(&sh, &x->rules[i], &y->rules[i]);\n		snapshot
+canonical-check-ignores-the-values	cssom_snapshot.c	same_text(&dx->name, &dy->name) && dx->important == dy->important && lx == ly && (lx == 0 || memcmp(tx, ty, lx) == 0);	same_text(&dx->name, &dy->name) && dx->important == dy->important;	snapshot
+canonical-check-ignores-the-names	cssom_snapshot.c	same_text(&dx->name, &dy->name) && dx->important == dy->important && lx == ly	dx->important == dy->important && lx == ly	snapshot
+canonical-check-reads-no-declarations	cssom_snapshot.c	    st = same_run(&sh, x->declarations, x->declaration_count, y->declarations, y->declaration_count, &ok);\n		snapshot
+canonical-check-reads-no-declarations-among-the-contents	cssom_snapshot.c	      else {\n        st = same_run(&sh, ix->declarations, ix->declaration_count, iy->declarations, iy->declaration_count, &ok);\n      }	      else {\n      }	snapshot

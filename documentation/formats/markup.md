@@ -56,6 +56,14 @@ visits the content before the children, iteratively.
 | Two names are the same | when namespace and local name are equal; the prefix is spelling |
 | Whether a name is an XML name | **not checked by the tree.** The HTML parser builds elements called `a$b` and `x:y`. `gtext_markup_is_xml_name()` and `_ncname()` are what an XML writer asks |
 
+## The generation
+
+`gtext_markup_document_generation()` is a counter that advances on **every change of the document**: a node linked into or out of a parent (insertion, removal, replacement, a fragment's children
+moving in), an attribute set or removed, a node's data replaced, a `<template>`'s content made, a doctype's internal subset edited and a change of the document mode. Reads, a refused change, a
+removal of what is already out of the tree, an attribute removal that finds nothing, and a node's recorded location do not advance it. Two reads that return the same value saw the same document, so
+a consumer that derives something from the tree (the CSS object model's style sheets from the `<style>` elements) can skip its walk when the value is the one it saw last. Only equality and "greater"
+mean anything; the value is not a count of anything. It is not synchronized with a writer, as no read of a document is.
+
 ## What may hold what
 
 | Parent | May hold |

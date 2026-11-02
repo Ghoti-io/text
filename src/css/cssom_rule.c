@@ -103,6 +103,10 @@ static void rule_destroy(css_obj * o) {
   css_rule * r = (css_rule *)o;
   GTEXT_Allocator a = o->core->alloc;
   css_rule_drop_cache(r);
+  if (r->import_sheet) {
+    r->import_sheet->owner_rule = NULL;
+    css_obj_release_internal(&r->import_sheet->obj);
+  }
   css_rule_list_release_all(&r->rules);
   if (r->style) {
     r->style->owner = NULL;
@@ -344,7 +348,7 @@ static void rule_commit(css_obj * owner, GTEXT_CSSOM_Decl * decl, css_cssom_even
   event->rule_id = r->obj.id;
   css_sheet * s = css_rule_sheet(r);
   if (s) {
-    s->version++;
+    css_sheet_bump(s);
     event->sheet = s;
     event->sheet_id = s->obj.id;
   }

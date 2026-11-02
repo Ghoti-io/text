@@ -542,6 +542,86 @@ old rule: parentStyleSheet is null; sheet rules: 1
 replaceSync on a parsed sheet: NotAllowedError
 ```
 
+## Snapshots and imports
+
+The cascade reads a `GTEXT_CSS_Sheet` (\ref format_css_sheets "css-sheets.md"), which is immutable, atomically counted and shareable between threads; a live sheet is for editing. `gtext_cssom_sheet_snapshot()` is the bridge: it returns a reference to the compiled form of the sheet's **current** state, and **the same object for as long as nothing in the sheet, or in the sheets it imports, changes**, so any number of readers cost one compile. A snapshot, once handed out, is never altered by a later mutation (a test holds one across 10^5 of them) and is valid on any thread for as long as its holder keeps it, the sheet and its document included. Asking changes nothing: no version, no generation, no event. A sheet that is not origin-clean or is disabled is snapshotted all the same (the first guards the script's access to the rules, the second is the document's decision about whether the sheet takes part).
+
+**What is compiled.** The compile of \ref format_css_sheets "css-sheets.md" over an array of sources (`gtext_css_sheet_compile_rules()`: each top-level rule with the syntax tree it was read from, because a live sheet's rules come from different parses). A rule that has not been changed since it was read, **and whose own syntax is what the text the object model writes for it reads back as**, is compiled from that syntax, so its spans stay (a record says which source they index, `source_id`, which is the rule's `gtext_cssom_rule_source()`). A rule that was changed, or has a changed rule inside it, or whose declarations the object model writes differently from the text (`margin: 1px; margin-top: 2px` is one `margin` in a declaration block; a property written twice is written once) is compiled from the parse of its own `cssText`, whose bytes are not kept (`source_id` 0). Which of the two a rule is, is decided once and remembered. So **the dump of a snapshot is the dump of the compile of the sheet's serialization, after every step of every sequence of mutations** (`snapshot(live) == compile(serialize(live))`), and the cascade sees exactly the state the object model shows. The counters `snapshot_compiles`, `snapshot_hits`, `snapshot_rules_reused`, `snapshot_rules_reparsed` and `snapshot_rules_checked` say what a call did.
+
+**What it costs: the known quadratic shape.** A compile is O(the sheet): every top-level rule is walked, and the ones changed since the last are parsed from their text again. So *n* mutations and then one ask is one compile (O(n + S) for S rules), and *n* times "one mutation, one ask" is *n* compiles of S rules each, *n* x S, with only the changed rule parsed each time. C5 does not hide it (`tests/test-cssom-snapshot-cost.cpp` asserts both figures exactly); C6 removes it. A change in one sheet compiles that sheet only; a rule that was not changed is not read again when another is.
+
+**Imports are single-owner.** `gtext_cssom_import_rule_complete(rule, sheet, outcome)` gives an `@import` rule the sheet the caller loaded (the library never fetches), or takes it away with NULL; `gtext_cssom_import_rule_sheet()` and `gtext_cssom_sheet_owner_rule()` read the link both ways. The rule holds the sheet with an owning edge, so there is no strong cycle and no sheet has two owners: a sheet that an import already holds, that has an owner node, or that is constructed is refused (`GTEXT_CSS_E_INVALID_STATE`), a sheet that is, or reaches through its imports, the sheet the rule is in is refused as a cycle (`GTEXT_CSS_E_HIERARCHY`), and a caller that wants the same text in two places makes two sheets. The snapshot of the importer holds the **snapshot of the imported sheet**, one level down (the same object the imported sheet's own snapshot is while it is unchanged), through the compile's import callback; an import with no sheet contributes nothing and is a diagnostic. A held imported sheet keeps the import rule that owns it, and so the sheet that holds the rule. Imports nest to the sheet option `max_import_depth` (default 16, at most 64): one more is `GTEXT_CSS_E_LIMIT_RULE_NESTING`.
+
+**The composite version.** Every change of a sheet or of anything in it gives the sheet a new *stamp* from a counter of the document that only rises, and `gtext_cssom_sheet_composite_version()` is the greatest stamp among the sheet and the sheets it imports at every level. It therefore changes exactly when something in them does (a change in an imported sheet is the importer's; replacing the imported sheet by one that was last changed long ago is a change of the importer, because completing the import is), and a snapshot is kept with the stamp it was made at. The value is otherwise opaque.
+
+An allocation failure in a snapshot is `GTEXT_CSS_E_OOM` with the sheet, its cache and the document as they were; a call that finds its cache allocates nothing, and importing a sheet allocates nothing (`tests/test-cssom-snapshot-oom.cpp` fails every allocation in turn).
+
+```c
+#include <ghoti.io/text/css.h>
+#include <stdio.h>
+#include <string.h>
+
+/* The cascade reads a snapshot: the compiled form of a live sheet as it is now, the same object until something in the sheet changes. */
+static void cssom_snapshot(void) {
+  GTEXT_CSS_Registry * registry = NULL;
+  gtext_css_registry_new(NULL, &registry);
+  GTEXT_CSSOM_Config config = gtext_cssom_config_default();
+  config.registry = registry;
+  GTEXT_CSSOM_Document * document = NULL;
+  gtext_cssom_document_new(&config, &document);
+
+  const char * text = "@import url(base.css); a { color: red } @media print { b { width: 1px } }";
+  GTEXT_CSSOM_Sheet * sheet = NULL;
+  gtext_cssom_sheet_new_parsed(document, text, strlen(text), NULL, &sheet);
+  GTEXT_CSS_Sheet * first = NULL;
+  gtext_cssom_sheet_snapshot(sheet, &first);
+  printf("records: %zu, imports: %zu\n", gtext_css_sheet_record_count(first), gtext_css_sheet_import_count(first));
+
+  /* the caller fetched base.css: the import rule holds the sheet it loaded, and the importer changed */
+  const char * base = "c { margin: 0 }";
+  GTEXT_CSSOM_Sheet * child = NULL;
+  gtext_cssom_sheet_new_parsed(document, base, strlen(base), NULL, &child);
+  const GTEXT_CSSOM_Rule_List * rules = NULL;
+  gtext_cssom_sheet_rules(sheet, &rules);
+  GTEXT_CSSOM_Rule * import = gtext_cssom_rule_list_at(rules, 0);
+  gtext_cssom_import_rule_complete(import, child, NULL);
+
+  GTEXT_CSS_Sheet * second = NULL;
+  GTEXT_CSS_Sheet * again = NULL;
+  gtext_cssom_sheet_snapshot(sheet, &second);
+  gtext_cssom_sheet_snapshot(sheet, &again);
+  printf("after the import: records %zu, imports %zu, imported records %zu\n", gtext_css_sheet_record_count(second), gtext_css_sheet_import_count(second),
+      gtext_css_sheet_record_count(gtext_css_sheet_import(second, 0)));
+  printf("asked again: %s object\n", again == second ? "the same" : "another");
+
+  /* a change inside the imported sheet is a change of the sheet that imports it; a snapshot handed out is never altered */
+  gtext_cssom_sheet_insert_rule(child, "d { top: 0 }", 12, 0, NULL, NULL);
+  GTEXT_CSS_Sheet * third = NULL;
+  gtext_cssom_sheet_snapshot(sheet, &third);
+  printf("after a change in the import: %s object, imported records %zu; the second still has %zu\n", third == second ? "the same" : "a new",
+      gtext_css_sheet_record_count(gtext_css_sheet_import(third, 0)), gtext_css_sheet_record_count(gtext_css_sheet_import(second, 0)));
+
+  gtext_css_sheet_free(first);
+  gtext_css_sheet_free(second);
+  gtext_css_sheet_free(again);
+  gtext_css_sheet_free(third);
+  gtext_cssom_rule_release(import);
+  gtext_cssom_sheet_release(child);
+  gtext_cssom_sheet_release(sheet);
+  gtext_cssom_document_release(document);
+  gtext_css_registry_free(registry);
+}
+```
+
+prints
+
+```
+records: 2, imports: 0
+after the import: records 2, imports 1, imported records 1
+asked again: the same object
+after a change in the import: a new object, imported records 2; the second still has 1
+```
+
 ## Utilities
 
 `gtext_cssom_escape()` is `CSS.escape()`: CSSOM's "serialize an identifier" of well-formed UTF-8 (or WTF-8, where a lone surrogate is one code point). The empty text is the empty text, a NUL is U+FFFD, and the result always reads back as the text. A character from U+0080 up is written as it is only where it is a non-ASCII ident code point of CSS Syntax; otherwise it is escaped, which is what the served text says and what the browsers do not do for every such character.

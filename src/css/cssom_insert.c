@@ -275,7 +275,7 @@ static void settle(place * pl, css_rule * rule, size_t count, bool inserted, css
     else {
       sheet->rule_total -= count;
     }
-    sheet->version++;
+    css_sheet_bump(sheet);
     ev->sheet = sheet;
     ev->sheet_id = sheet->obj.id;
   }

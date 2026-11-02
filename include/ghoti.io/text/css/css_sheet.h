@@ -160,6 +160,8 @@ typedef struct {
   GTEXT_CSS_Span span;            ///< Where, in the bytes of the style sheet.
   GTEXT_CSS_Id id;                ///< The id of the rule or declaration in the syntax tree.
   const char * reference;         ///< A static reference to the sentence of the draft that decides it, never NULL.
+  size_t source_index;            ///< Which top-level rule of the tree or of the array of sources it was in: with the source's `id`, what an id of a syntax tree needs to be told apart from the same number in another tree.
+  uint64_t source_id;             ///< The `source_id` of that source (gtext_css_sheet_compile_rules()); 0 for a sheet compiled from one tree.
 } GTEXT_CSS_Sheet_Diagnostic;
 
 /** @brief What compiling reports. Plain data; filled whatever happens. */
@@ -185,6 +187,36 @@ typedef struct {
 GTEXT_API GTEXT_CSS_Status gtext_css_sheet_compile(const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Sheet_Options * options,
     GTEXT_CSS_Sheet ** out, GTEXT_CSS_Sheet_Result * result);
 
+/**
+ * @brief One top-level rule of a style sheet and the syntax tree it belongs to: the element of the array form of the compile.
+ *
+ * A sheet's rules need not come from one tree: a live sheet (css_cssom_sheet.h) holds rules read at different times, each from the tree of its own parse. The tree owns the nodes
+ * the ids index, and ids are numbered from 1 **in each tree**, so two rules of different trees may have the same id; nothing is renumbered: a diagnostic and a record say which
+ * source they belong to (`source_index`, `source_id`), and a span is a position in the bytes of that source.
+ */
+typedef struct {
+  const GTEXT_CSS_Tree * tree;   ///< The tree that holds `rule` (not NULL). It must outlive the call, and no longer: everything is copied.
+  const GTEXT_CSS_Rule * rule;   ///< A top-level rule of `tree` (not NULL): a node of `tree->rules`.
+  uint64_t source_id;            ///< The caller's number for the bytes this tree's spans index; passed through to the records and diagnostics, never read.
+} GTEXT_CSS_Rule_Source;
+
+/**
+ * @brief Compile the top-level rules of a style sheet given as an array of sources.
+ *
+ * The same compile as gtext_css_sheet_compile(), which calls it: `sources[i]` is the `i`th top-level rule of the sheet, and the order of appearance, the layers, the
+ * namespaces and the imports are those of the array. Compiling the rules of one tree through this function and through gtext_css_sheet_compile() gives sheets with equal dumps.
+ *
+ * @param sources The rules, in order. NULL with a `count` of 0 is an empty sheet.
+ * @param count How many.
+ * @param registry The property registry. Not NULL; it must outlive the sheet.
+ * @param options NULL for the defaults.
+ * @param out Receives the sheet (one owner). Not NULL; written only on success.
+ * @param result NULL, or filled.
+ * @return As gtext_css_sheet_compile(); GTEXT_CSS_E_INVALID for a NULL `sources` with a `count`, a source with no tree or no rule.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_sheet_compile_rules(const GTEXT_CSS_Rule_Source * sources, size_t count, const GTEXT_CSS_Registry * registry,
+    const GTEXT_CSS_Sheet_Options * options, GTEXT_CSS_Sheet ** out, GTEXT_CSS_Sheet_Result * result);
+
 /** @brief Another owner of the sheet (it is freed when the last lets go). Returns `sheet`; NULL is ignored. */
 GTEXT_API GTEXT_CSS_Sheet * gtext_css_sheet_retain(GTEXT_CSS_Sheet * sheet);
 
@@ -204,6 +236,8 @@ typedef struct {
   uint32_t dependencies;                    ///< GTEXT_CSS_DEP_* of the selector.
   uint32_t condition;                       ///< The innermost condition node the rule is under (0: none); gtext_css_sheet_condition() reads it.
   GTEXT_CSS_Span span;                      ///< The rule.
+  uint64_t source_id;                       ///< The `source_id` of the source the span indexes (gtext_css_sheet_compile_rules()); 0 for a sheet compiled from one tree.
+  size_t source_index;                      ///< Which top-level rule of the tree or of the array of sources the record is in.
 } GTEXT_CSS_Sheet_Record;
 
 /** @brief How many records the sheet has (not those of the sheets it imports). */
@@ -313,7 +347,15 @@ typedef struct {
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_rule_index_new(const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Rule_Index_Options * options, GTEXT_CSS_Rule_Index ** out);
 
-/** @brief Free an index; NULL is ignored. The sheets are released (they are retained by the index). */
+/**
+ * @brief One owner more of the index (the count is atomic). Returns `index`; NULL is ignored.
+ *
+ * A frozen index is read-only and may be read by any number of threads, and a thread that reads one while another builds the next keeps it alive by holding an owner: the
+ * writer that replaces an index lets go of its own, and the index is freed when the last reader does. An index that is not frozen has the one owner that made it.
+ */
+GTEXT_API GTEXT_CSS_Rule_Index * gtext_css_rule_index_retain(GTEXT_CSS_Rule_Index * index);
+
+/** @brief One owner fewer; the last frees the index and releases the sheets it retains. NULL is ignored. (The release of gtext_css_rule_index_new() and of gtext_css_rule_index_retain().) */
 GTEXT_API void gtext_css_rule_index_free(GTEXT_CSS_Rule_Index * index);
 
 /**

@@ -188,6 +188,11 @@ typedef struct {
   uint64_t cache_fills;       ///< Texts put in that cache.
   uint64_t cache_hits;        ///< Reads answered from it.
   uint64_t rule_inserts;      ///< Rules made by `insertRule` and `appendRule` that were linked (with the rules inside them), the work counter of the insertion cost tests.
+  uint64_t snapshot_compiles;       ///< Snapshots compiled (gtext_cssom_sheet_snapshot() that did not find a current one).
+  uint64_t snapshot_hits;           ///< Snapshots answered from the sheet's cache.
+  uint64_t snapshot_rules_reused;   ///< Top-level rules of those compiles that were read from their own syntax tree (not changed since they were read).
+  uint64_t snapshot_rules_reparsed; ///< ... and those read from the parse of their own `cssText` (changed, or with a changed rule inside, or whose syntax is not what the object model writes).
+  uint64_t snapshot_rules_checked;  ///< Rules whose syntax was compared once with the syntax of their serialization to decide which of the two to read.
 } GTEXT_CSSOM_Counters;
 
 /**

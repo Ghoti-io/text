@@ -154,7 +154,12 @@ typedef struct {
   GTEXT_CSS_Sheet * sheet;
   const GTEXT_CSS_Sheet_Options * opt;
   GTEXT_CSS_Sheet_Result * res;
-  const GTEXT_CSS_Tree * tree;
+  const GTEXT_CSS_Tree * tree;   ///< The tree of the top-level rule being read (the id tables are indexed by its ids).
+  bool multi;                    ///< The rules come from several trees (gtext_css_sheet_compile_rules()): the id tables are cleared between rules.
+  size_t src_index;              ///< Which top-level rule is being read (its index in the tree or in the array).
+  uint64_t src_id;               ///< The `source_id` of its source (0 for the tree form).
+  uint32_t * touched;            ///< multi: the ids the layer walker set in the tables while the rule was read, cleared before the next rule.
+  size_t ntouched, captouched;
   frame * stack;
   size_t sp, max_depth;
   uint32_t * layer_of;   ///< By rule id: the layer an `@layer` block's contents or a layered import is in.
@@ -202,6 +207,8 @@ static bool diag(build * b, GTEXT_CSS_Sheet_Diag_Kind kind, GTEXT_CSS_Span span,
   d->span = span;
   d->id = id;
   d->reference = reference;
+  d->source_index = b->src_index;
+  d->source_id = b->src_id;
   return true;
 }
 
@@ -223,10 +230,26 @@ static bool always_active(void * user, const GTEXT_CSS_Rule * rule) {
   return true;
 }
 
+/// multi: remember that the tables have an entry at this rule's id, so that the next rule (of another tree, whose ids start again) does not read it.
+static bool touch(build * b, const GTEXT_CSS_Rule * rule) {
+  if (!b->multi) {
+    return true;
+  }
+  if (!grow(&b->sheet->alloc, (void **)&b->touched, &b->captouched, b->ntouched + 1, sizeof *b->touched)) {
+    bfail(b, GTEXT_CSS_E_OOM, NULL, NULL, NULL);
+    return false;
+  }
+  b->touched[b->ntouched++] = (uint32_t)rule->id;
+  return true;
+}
+
 /// One layer occurrence: the walker's note that a rule declared (or found again) a layer.
 static void declare_thunk(void * user, const GTEXT_CSS_Rule * rule, GTEXT_CSS_Layer_Id layer) {
   build * b = (build *)user;
   if (b->status != GTEXT_CSS_OK) {
+    return;
+  }
+  if (!touch(b, rule)) {
     return;
   }
   if (!grow(&b->sheet->alloc, (void **)&b->decl_layers, &b->capdecl, b->ndecl + 1, sizeof *b->decl_layers)) {
@@ -242,6 +265,9 @@ static void declare_thunk(void * user, const GTEXT_CSS_Rule * rule, GTEXT_CSS_La
 
 static void layer_thunk(void * user, const GTEXT_CSS_Rule * rule, GTEXT_CSS_Layer_Id layer) {
   build * b = (build *)user;
+  if (b->status != GTEXT_CSS_OK || !touch(b, rule)) {
+    return;
+  }
   b->layer_of[rule->id] = (uint32_t)layer;
 }
 
@@ -490,6 +516,8 @@ static GTEXT_CSS_Status make_run(build * b, const GTEXT_CSS_Declaration * d, siz
   r->ndecl = m;
   r->rule_id = rule_id;
   r->span = span;
+  r->source_id = b->src_id;
+  r->source_index = b->src_index;
   *run_index = (uint32_t)s->nruns;
   s->nruns++;
   *made = true;
@@ -1513,19 +1541,15 @@ static GTEXT_CSS_Status drain(build * b, size_t base) {
   return b->status;
 }
 
-GTEXT_CSS_Status gtext_css_sheet_compile(const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Sheet_Options * options,
-    GTEXT_CSS_Sheet ** out, GTEXT_CSS_Sheet_Result * result) {
-  if (result) {
-    memset(result, 0, sizeof *result);
-    result->message = gtext_css_status_string(GTEXT_CSS_OK);
-  }
-  if (!tree || !registry || !out || (tree->kind != GTEXT_CSS_TREE_STYLESHEET && tree->kind != GTEXT_CSS_TREE_STYLESHEET_CONTENTS)) {
-    if (result) {
-      result->status = GTEXT_CSS_E_INVALID;
-      result->message = gtext_css_status_string(GTEXT_CSS_E_INVALID);
-      result->detail = "a NULL argument, or a tree that is not a style sheet";
+/// Both forms: the rules of one tree (`tree`, in `tree->rules`) or of an array of sources (`sources`, `count`, `tree` NULL).
+static GTEXT_CSS_Status compile_impl(const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Rule_Source * sources, size_t count, const GTEXT_CSS_Registry * registry,
+    const GTEXT_CSS_Sheet_Options * options, GTEXT_CSS_Sheet ** out, GTEXT_CSS_Sheet_Result * result) {
+  const bool multi = tree == NULL;
+  size_t nodes = multi ? 0 : tree->node_count;
+  for (size_t i = 0; multi && i < count; i++) {
+    if (sources[i].tree && sources[i].tree->node_count > nodes) {
+      nodes = sources[i].tree->node_count;
     }
-    return GTEXT_CSS_E_INVALID;
   }
   GTEXT_CSS_Sheet_Options def;
   if (!options) {
@@ -1538,6 +1562,7 @@ GTEXT_CSS_Status gtext_css_sheet_compile(const GTEXT_CSS_Tree * tree, const GTEX
   b.opt = options;
   b.res = result;
   b.tree = tree;
+  b.multi = multi;
   GTEXT_CSS_Sheet * s = gtext_allocator_calloc(&alloc, 1, sizeof *s);
   if (!s) {
     return bfail(&b, GTEXT_CSS_E_OOM, NULL, NULL, NULL);
@@ -1557,9 +1582,9 @@ GTEXT_CSS_Status gtext_css_sheet_compile(const GTEXT_CSS_Tree * tree, const GTEX
   lopt.allocator = &s->alloc;
   GTEXT_CSS_Status st = gtext_css_layer_registry_new(&lopt, &s->layers);
   b.stack = gtext_allocator_calloc(&s->alloc, b.max_depth + 1, sizeof *b.stack);
-  b.layer_of = gtext_allocator_calloc(&s->alloc, tree->node_count + 1, sizeof *b.layer_of);
-  b.decl_first = gtext_allocator_calloc(&s->alloc, tree->node_count + 1, sizeof *b.decl_first);
-  b.decl_count = gtext_allocator_calloc(&s->alloc, tree->node_count + 1, sizeof *b.decl_count);
+  b.layer_of = gtext_allocator_calloc(&s->alloc, nodes + 1, sizeof *b.layer_of);
+  b.decl_first = gtext_allocator_calloc(&s->alloc, nodes + 1, sizeof *b.decl_first);
+  b.decl_count = gtext_allocator_calloc(&s->alloc, nodes + 1, sizeof *b.decl_count);
   if (st != GTEXT_CSS_OK || !b.stack || !b.layer_of || !b.decl_first || !b.decl_count) {
     bfail(&b, st != GTEXT_CSS_OK ? st : GTEXT_CSS_E_OOM, NULL, NULL, NULL);
     goto done;
@@ -1570,8 +1595,25 @@ GTEXT_CSS_Status gtext_css_sheet_compile(const GTEXT_CSS_Tree * tree, const GTEX
     top.nspec = gtext_css_specificity_make(0, 1, 0);
     bool imports_open = true, ns_open = true;
     uint32_t top_chain = 0;
-    for (size_t i = 0; i < tree->rule_count && b.status == GTEXT_CSS_OK; i++) {
-      const GTEXT_CSS_Rule * r = &tree->rules[i];
+    for (size_t i = 0; i < count && b.status == GTEXT_CSS_OK; i++) {
+      const GTEXT_CSS_Rule * r = multi ? sources[i].rule : &tree->rules[i];
+      if (multi) {
+        /* the previous rule's entries in the id tables are of another tree's ids: clear them before the ids start again */
+        for (size_t k = 0; k < b.ntouched; k++) {
+          const uint32_t id = b.touched[k];
+          b.layer_of[id] = 0;
+          b.decl_first[id] = 0;
+          b.decl_count[id] = 0;
+        }
+        b.ntouched = 0;
+        if (!r || !sources[i].tree) {
+          bfail(&b, GTEXT_CSS_E_INVALID, NULL, NULL, "a source with no tree or no rule");
+          break;
+        }
+        b.tree = sources[i].tree;
+        b.src_id = sources[i].source_id;
+      }
+      b.src_index = i;
       if (r->kind == GTEXT_CSS_RULE_AT && css_ascii_ieq(&r->name, "charset")) {
         continue;
       }
@@ -1622,12 +1664,47 @@ done:
   gtext_allocator_free(&s->alloc, b.decl_first);
   gtext_allocator_free(&s->alloc, b.decl_count);
   gtext_allocator_free(&s->alloc, b.decl_layers);
+  gtext_allocator_free(&s->alloc, b.touched);
   if (b.status != GTEXT_CSS_OK) {
     sheet_destroy(s);
     return b.status;
   }
   *out = s;
   return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_css_sheet_compile(const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Sheet_Options * options,
+    GTEXT_CSS_Sheet ** out, GTEXT_CSS_Sheet_Result * result) {
+  if (result) {
+    memset(result, 0, sizeof *result);
+    result->message = gtext_css_status_string(GTEXT_CSS_OK);
+  }
+  if (!tree || !registry || !out || (tree->kind != GTEXT_CSS_TREE_STYLESHEET && tree->kind != GTEXT_CSS_TREE_STYLESHEET_CONTENTS)) {
+    if (result) {
+      result->status = GTEXT_CSS_E_INVALID;
+      result->message = gtext_css_status_string(GTEXT_CSS_E_INVALID);
+      result->detail = "a NULL argument, or a tree that is not a style sheet";
+    }
+    return GTEXT_CSS_E_INVALID;
+  }
+  return compile_impl(tree, NULL, tree->rule_count, registry, options, out, result);
+}
+
+GTEXT_CSS_Status gtext_css_sheet_compile_rules(const GTEXT_CSS_Rule_Source * sources, size_t count, const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Sheet_Options * options,
+    GTEXT_CSS_Sheet ** out, GTEXT_CSS_Sheet_Result * result) {
+  if (result) {
+    memset(result, 0, sizeof *result);
+    result->message = gtext_css_status_string(GTEXT_CSS_OK);
+  }
+  if ((!sources && count) || !registry || !out) {
+    if (result) {
+      result->status = GTEXT_CSS_E_INVALID;
+      result->message = gtext_css_status_string(GTEXT_CSS_E_INVALID);
+      result->detail = "a NULL argument";
+    }
+    return GTEXT_CSS_E_INVALID;
+  }
+  return compile_impl(NULL, sources, count, registry, options, out, result);
 }
 
 /* ---- reading a sheet ---------------------------------------------------------------------------------------------- */
@@ -1653,6 +1730,8 @@ bool gtext_css_sheet_record(const GTEXT_CSS_Sheet * sheet, size_t index, GTEXT_C
   out->dependencies = r->list->complex[r->cx].dependencies;
   out->condition = r->cond;
   out->span = sheet->runs[r->run].span;
+  out->source_id = sheet->runs[r->run].source_id;
+  out->source_index = sheet->runs[r->run].source_index;
   return true;
 }
 

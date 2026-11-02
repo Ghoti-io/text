@@ -152,6 +152,11 @@ nothing and is a diagnostic. The grammar is `[ layer | layer(name) ] || [ scope 
 `scope((<start>) to (<end>))` and `scope()` (the implicit root) wrap the imported sheet's rules in an implicit `@scope`; a selector that names `&` or `:scope` keeps its meaning, and the
 others have the implied `:where(:scope)` in front of them. An `@import` after a style rule is ignored. A sheet that imports deeper than `max_import_depth` (default 16) is `GTEXT_CSS_E_LIMIT_RULE_NESTING`.
 
+**A sheet whose rules come from several parses.** `gtext_css_sheet_compile_rules()` is the same compile over an array of `GTEXT_CSS_Rule_Source` (a tree, one of its top-level rules, and a number the
+caller gives the bytes its spans index): `gtext_css_sheet_compile()` is it over the rules of one tree. Rule ids are numbered from 1 **in each tree**, so rules of different trees can have the same id;
+nothing is renumbered, and a record and a diagnostic say which source they are in (`source_index`, the position in the array, and `source_id`). Compiling the rules of a sheet from one tree each gives the
+sheet of the one tree (the dumps are equal; `tests/test-css-sheet-compile-rules.cpp`). A live style sheet (\ref format_css_cssom "css-cssom.md") is compiled this way.
+
 `gtext_css_sheet_record()` and `gtext_css_sheet_record_declarations()` read what was compiled, `gtext_css_sheet_diagnostic()` what was dropped and why (with a reference to the
 sentence of the draft that decides it), and `gtext_css_sheet_dump()` writes a canonical, versioned text of the sheet that is the same on every platform.
 
@@ -160,7 +165,9 @@ sentence of the draft that decides it), and `gtext_css_sheet_dump()` writes a ca
 `gtext_css_rule_index_new()`, then `gtext_css_rule_index_add_sheet()` for each sheet in the order they appear in the document, then `gtext_css_rule_index_freeze()`. The index
 **flattens** the sheets: an imported sheet goes in before the sheet that imports it, at the place of the import, and every sheet and rule has one order of appearance; the layers of
 each sheet are merged into the layer registry of the sheet's context, in that order, so the first-appearance order of the cascade layers holds across sheets. A frozen index is
-read only and may be used by any number of threads, each with a match context of its own. The records are in buckets by the id, a class or the local name of the subject
+read only and may be used by any number of threads, each with a match context of its own, and it is **reference counted with an atomic count**: `gtext_css_rule_index_retain()` adds an owner and
+`gtext_css_rule_index_free()` is the release, the last of which frees the index and the sheets it retains. A thread that computes styles against one index keeps it alive while the writer builds the next
+and lets go of its own. The records are in buckets by the id, a class or the local name of the subject
 (the rest in one list), so the work to style an element is the records of the keys it has and not the number of rules (`make test` asserts the same count of rules considered
 for 100 rules as for 8,000).
 

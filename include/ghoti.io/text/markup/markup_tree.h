@@ -246,6 +246,18 @@ GTEXT_API void gtext_markup_document_set_mode(
     GTEXT_Markup_Document * doc, GTEXT_Markup_Mode mode);
 
 /**
+ * @brief The document's generation: a counter that advances on **every** change of the document.
+ *
+ * A node linked into, or unlinked from, a parent (an insertion, a removal, a replacement, a fragment's children moving), an element's attribute set or removed, a node's data
+ * replaced, a `<template>`'s content created, a doctype's internal subset edited and a change of the document mode each advance it by at least one. A change of a node's
+ * recorded location does not. Two reads that return the same value saw the same tree, so a consumer that derives something from the tree (a style sheet from a `<style>`
+ * element's text) can skip its walk when the value is the one it saw last. The value is not a count of anything: only equality and "greater" mean something. It is 0 for NULL.
+ *
+ * Like every read of a document, this is not synchronized with a writer.
+ */
+GTEXT_API uint64_t gtext_markup_document_generation(const GTEXT_Markup_Document * doc);
+
+/**
  * @brief Record the document's encoding and how it was decided.
  *
  * @param doc The document.

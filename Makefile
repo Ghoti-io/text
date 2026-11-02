@@ -1171,6 +1171,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/cssom_rule_list.c \
 	src/css/cssom_rule_serialize.c \
 	src/css/cssom_sheet.c \
+	src/css/cssom_snapshot.c \
 	src/css/cssom_util.c \
 	src/css/css_tree_copy.c \
 	src/css/css_cascade.c \

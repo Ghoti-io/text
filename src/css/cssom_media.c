@@ -418,7 +418,7 @@ static GTEXT_CSS_Status store(GTEXT_CSSOM_Media_List * list, const char * canon,
     GTEXT_Allocator a = core->alloc;
     gtext_allocator_free(&a, s->media_text);
     s->media_text = copy;
-    s->version++;
+    css_sheet_bump(s);
     css_cssom_event ev;
     memset(&ev, 0, sizeof ev);
     ev.kind = GTEXT_CSSOM_EVENT_SHEET_MEDIA_CHANGED;

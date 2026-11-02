@@ -257,6 +257,7 @@ struct GTEXT_Markup_Document {
   struct GTEXT_Markup_Node * root;
   struct GTEXT_Markup_Node * detached; ///< Head of the detached-node list.
   GTEXT_Markup_Mode mode;
+  uint64_t generation; ///< Advances on every change of the tree, of an attribute, of a node's data and of the mode (gtext_markup_document_generation()).
   char * encoding;
   GTEXT_Markup_Encoding_Source encoding_source;
   char * xml_version;

@@ -68,6 +68,8 @@ typedef struct {
   size_t ndecl;
   GTEXT_CSS_Id rule_id;
   GTEXT_CSS_Span span;
+  uint64_t source_id;     ///< The `source_id` of the source (gtext_css_sheet_compile_rules()) of the top-level rule it is in; 0 for the tree form.
+  size_t source_index;    ///< The index of that top-level rule in the tree or the array.
 } sheet_run;
 
 /// One `@scope` rule.

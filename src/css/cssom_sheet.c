@@ -42,9 +42,15 @@ css_sheet * css_sheet_from_obj(css_obj * o) {
   return (css_sheet *)o;
 }
 
+void css_sheet_bump(css_sheet * sheet) {
+  sheet->version++;
+  sheet->stamp = ++sheet->obj.core->stamp_counter;
+}
+
 static void sheet_destroy(css_obj * o) {
   css_sheet * s = (css_sheet *)o;
   GTEXT_Allocator a = o->core->alloc;
+  gtext_css_sheet_free(s->snap);
   css_rule_list_release_all(&s->rules);
   css_media_owner_gone(&s->media);
   gtext_allocator_free(&a, s->media_text);
@@ -98,6 +104,7 @@ static GTEXT_CSS_Status sheet_make(GTEXT_CSSOM_Document * document, const char *
   s->disabled = o.disabled;
   s->alternate = o.alternate;
   s->origin_clean = o.origin_clean;
+  s->max_import_depth = o.max_import_depth;
   s->constructed = constructed;
   s->owner_node = constructed ? NULL : o.owner_node;
   size_t strings = 0;
@@ -254,7 +261,7 @@ GTEXT_CSS_Status gtext_cssom_sheet_set_disabled(GTEXT_CSSOM_Sheet * sheet, bool 
     return GTEXT_CSS_OK;
   }
   sheet->disabled = disabled;
-  sheet->version++;
+  css_sheet_bump(sheet);
   css_cssom_event ev;
   memset(&ev, 0, sizeof ev);
   ev.kind = GTEXT_CSSOM_EVENT_SHEET_DISABLED_CHANGED;
@@ -424,6 +431,9 @@ GTEXT_CSS_Status css_sheet_compact(css_sheet * sheet) {
     r->run = plan[i].run;
     r->run_count = plan[i].run_count;
     r->source_kind = GTEXT_CSSOM_SOURCE_MODIFIED;
+    if (r->rules.count) {
+      r->mod = true;   /* the copy of its syntax has not the rules inside it: those are objects of their own (see plan_moves) */
+    }
   }
   css_source * old_sheet_source = sheet->source;
   sheet->source = NULL;
@@ -486,7 +496,7 @@ static GTEXT_CSS_Status replace_rules(css_sheet * sheet, const char * text, size
   tmp->diag_total = dt;
   sheet->rule_total = tmp->rule_total;
   tmp->rule_total = 0;
-  sheet->version++;
+  css_sheet_bump(sheet);
   css_cssom_event ev;
   memset(&ev, 0, sizeof ev);
   ev.kind = GTEXT_CSSOM_EVENT_RULE_REPLACED;   /* with no rule: all of the sheet's */
