@@ -57,7 +57,7 @@ sys.path.insert(0, HERE)
 import css_prop_gen  # noqa: E402
 import oracle_env  # noqa: E402
 
-CLASSES = ("standard-newer", "reference-old", "reference-wrong", "legacy-compat", "unspecified", "ours")
+CLASSES = ("standard-newer", "reference-old", "reference-wrong", "legacy-compat", "unspecified", "browsers-differ", "ours")
 ENGINES = ("chromium", "firefox")
 LIST = os.path.join(HERE, "css_prop_divergences.txt")
 WITNESSES = os.path.join(HERE, "css_prop_witnesses.txt")
@@ -419,6 +419,15 @@ def gate(items, ours, answers, headers, list_path, args):
         if listed[key][3] != features[key]["digest"]:
             bad.append("DIGEST: %s: the %d items of the key are not the ones the list pinned (it says %s, they hash to %s): an answer of this library or "
                        "of an engine changed for one of them; look at each and write the list again" % (key, features[key]["count"], listed[key][3], features[key]["digest"]))
+    # class browsers-differ: the served text is silent and the two engines answer differently, so the value is kept as this library writes it. The class says a fact about the
+    # engines, and the gate checks it: every item of the key has to be accepted by one engine and refused by the other, or written differently by the two.
+    for key in sorted(set(listed) & set(features)):
+        if listed[key][1] == "browsers-differ":
+            for m in features[key].get("members", [features[key]["rep"]]):
+                if engine_view(answers["chromium"][m]) == engine_view(answers["firefox"][m]):
+                    bad.append("BROWSERS: %s is class browsers-differ and the engines answer alike for %s: %s (the class says they differ)" % (
+                        key, items[m][0], json.dumps(items[m][1])))
+                    break
     ours_keys = [k for k in listed if listed[k][1] == "ours" and k in features]
     if len(ours_keys) > args.max_ours:
         bad.append("OURS: %d keys are class ours (defects of this library) and the ceiling is %d; class ours is never allowed in a finished list, "
@@ -437,13 +446,13 @@ def gate(items, ours, answers, headers, list_path, args):
             if i is None:
                 bad.append("WITNESS: %s: %s: %s is not in the population" % (key, p, json.dumps(v)))
                 continue
-            got_o = ("OK=" + ours[i][1]) if ours[i][0] == "OK" else ours[i][0]
+            got_o = css_prop_gen.esc(("OK=" + ours[i][1]) if ours[i][0] == "OK" else ours[i][0])
             if got_o != ours_want:
                 bad.append("WITNESS: %s: ours says %r for %s: %s, the witness says %r" % (key, got_o, p, json.dumps(v), ours_want))
             refs = []
             for e in ENGINES:
                 ok, s = engine_view(answers[e][i])
-                refs.append(("OK=" + s) if ok else "NO")
+                refs.append(css_prop_gen.esc(("OK=" + s) if ok else "NO"))
             if ref_want not in refs and ref_want != "-":
                 bad.append("WITNESS: %s: the engines say %r for %s: %s, the witness says one of them says %r" % (key, refs, p, json.dumps(v), ref_want))
     return bad, features, listed, undecided, unanswered
@@ -699,7 +708,8 @@ def write_list(path, items, ours, answers, features, listed, headers, binary, wi
                 ok, s = engine_view(answers[e][rep])
                 refs.append(("OK=" + s) if ok else "NO")
             ref = next((r for r in refs if r != o), refs[0])
-            wit.append("%s\t%s\t%s\t%s\t%s" % (key, p, css_prop_gen.esc(v), o, ref))
+            # a text with a line break in it (the text of a value that holds a substitution function is kept as it was written) is written escaped, as the value is
+            wit.append("%s\t%s\t%s\t%s\t%s" % (key, p, css_prop_gen.esc(v), css_prop_gen.esc(o), css_prop_gen.esc(ref)))
     for rx, _c, _r, text, _k in rules:
         if text not in used:
             print("css_prop_diff: the rule %s matched no key" % text, file=sys.stderr)

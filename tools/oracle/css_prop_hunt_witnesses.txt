@@ -32,6 +32,7 @@ acc:010:alignment-baseline:auto	alignment-baseline	auto	NO	OK=auto
 acc:010:animation:auto , auto , D , D auto backwards normal , linear infinite D , D , auto , auto none none alternate-reverse	animation	auto, auto, 10s, -0.001ms auto backwards normal, linear infinite 0.001s, 0ms, auto, auto none none alternate-reverse	NO	OK=auto ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, 10s ease 0s 1 normal none running none, auto ease -0.001ms 1 normal backwards running none, 0.001s linear 0s infinite normal none running none, 0ms ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, auto ease 0s 1 alternate-reverse none running none
 acc:010:animation:auto , auto , D , auto --a-b forwards step-end , linear infinite D , D , auto , auto none none alternate-reverse	animation	auto, auto, -0.001ms, auto --a-b forwards step-end, linear infinite 0.001s, 0ms, auto, auto none none alternate-reverse	NO	OK=auto ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, auto ease -0.001ms 1 normal none running none, auto step-end 0s 1 normal forwards running --a-b, 0.001s linear 0s infinite normal none running none, 0ms ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, auto ease 0s 1 alternate-reverse none running none
 acc:010:baseline-shift:N	baseline-shift	5	NO	OK=5
+acc:010:color:rgb( sign( P - D ) , N , N )	color	rgb(sign(0% - 0px), 0, 0)	NO	OK=rgb(sign(0% - 0px) 0 0)
 acc:010:column-rule-color:repeat( auto , rgb( N N N ) , rgb( N N N ) , canvas ) ,	column-rule-color	repeat(auto, rgb(1 2 3), rgb(1 2 3), Canvas) , 	NO	OK=repeat(auto, rgb(1, 2, 3), rgb(1, 2, 3), canvas)
 acc:010:column-rule-width:repeat( auto , medium , D , thick ) ,	column-rule-width	repeat(auto, medium, 0vw, thick) , 	NO	OK=repeat(auto, medium, 0vw, thick)
 acc:010:column-rule:repeat( auto , D , D #H ) ,	column-rule	repeat(auto, 1rem, 0.001cm #fff) , 	NO	OK=repeat(auto, 1rem, 0.001cm rgb(255, 255, 255))
@@ -42,23 +43,9 @@ acc:010:cursor:light-dark( url( S ) , url( S ) ) , pointer	cursor	light-dark(url
 acc:010:cursor:light-dark( url( S ) , url( S ) ) N N , grab	cursor	light-dark(url("https://example.com/light"), url("https://example.com/dark")) 5 6, grab	NO	OK=light-dark(url("https://example.com/light"), url("https://example.com/dark")) 5 6, grab
 acc:010:cursor:url( S ) , light-dark( url( S ) , url( S ) ) N N , move	cursor	url("https://example.com/"), light-dark(url("https://example.com/light"), url("https://example.com/dark")) 3 4, move	NO	OK=url("https://example.com/"), light-dark(url("https://example.com/light"), url("https://example.com/dark")) 3 4, move
 acc:010:cx:N	cx	1	NO	OK=1
-acc:010:font-size:random( ua-font-size , D , D )	font-size	random(ua-font-size, 0px, 100px)	NO	OK=random(ua-font-size, 0px, 100px)
 acc:010:font-style:oblique D	font-style	oblique -89.999rad	NO	OK=oblique -89.999rad
-acc:010:height:random( --foo element-scoped ua \ -height , D , D )	height	random(--foo element-scoped ua\\-height, 0px, 100px)	NO	OK=random(--foo element-scoped ua-height, 0px, 100px)
-acc:010:height:random( element-scoped ua-height , D , D )	height	random(element-scoped ua-height, 0px, 100px)	NO	OK=random(element-scoped ua-height, 0px, 100px)
-acc:010:height:random( element-scoped ua-height-1 , D , D )	height	random(element-scoped ua-height-1, 0px, 100px)	NO	OK=random(element-scoped ua-height-1, 0px, 100px)
 acc:010:resize:auto	resize	auto	NO	OK=auto
-acc:010:rotate:random( element-scoped ua-rotate-1 , D , D )	rotate	random(element-scoped ua-rotate-1, 25deg, 360deg)	NO	OK=random(element-scoped ua-rotate-1, 25deg, 360deg)
 acc:010:rx:N	rx	2	NO	OK=2
-acc:010:transition-delay:random( element-scoped ua-transition-delay-1 , D , D )	transition-delay	random(element-scoped ua-transition-delay-1, 0.025s, 50s)	NO	OK=random(element-scoped ua-transition-delay-1, 0.025s, 50s)
-acc:010:width:random( element-scoped ua- \ { , D , D , D )	width	random(element-scoped ua-\\{, 0px, 100px, 3px)	NO	OK=random(element-scoped ua-\{, 0px, 100px, 3px)
-acc:010:width:random( element-scoped ua-height-1 , D , P )	width	random(element-scoped ua-height-1, 10px, 20%)	NO	OK=random(element-scoped ua-height-1, 10px, 20%)
-acc:010:width:random( element-scoped ua-width , D , D )	width	random(element-scoped ua-width, 0px, 100px)	NO	OK=random(element-scoped ua-width, 0px, 100px)
-acc:010:width:random( ua-width , D , D , D )	width	random(ua-width, 0px, 100px, 3px)	NO	OK=random(ua-width, 0px, 100px, 3px)
-acc:010:width:random( ua-width , D , P )	width	random(ua-width, 10px, 20%)	NO	OK=random(ua-width, 10px, 20%)
-acc:010:width:random( ua-width-1 , D , D )	width	random(ua-width-1, 0px, 100px)	NO	OK=random(ua-width-1, 0px, 100px)
-acc:010:width:random( ua-width-1 , D , P )	width	random(ua-width-1, 10px, 20%)	NO	OK=random(ua-width-1, 10px, 20%)
-acc:010:width:random( ua-x , D , P )	width	random(ua-x, 10px, 20%)	NO	OK=random(ua-x, 10px, 20%)
 acc:010:y:N	y	6	NO	OK=6
 acc:011:-webkit-perspective:N	-webkit-perspective	1000	NO	OK=1000px
 acc:011:-webkit-transform:perspective( N )	-webkit-transform	\t perspective(25)	NO	OK=perspective(25px)
@@ -188,7 +175,8 @@ acc:100:background-image:cross-fade( image( green ) , red )	background-image	cro
 acc:100:background-image:cross-fade( light-dark( red , blue ) P ) , element( #H )	background-image	cross-fade(light-dark(red, blue) 0%), element(#zz)	OK=cross-fade(light-dark(red, blue) 0%), element(#zz)	NO
 acc:100:background-image:cross-fade( red P , white P , blue )	background-image	cross-fade(red 33%, white 33%, blue)	OK=cross-fade(red 33%, white 33%, blue)	NO
 acc:100:background-image:image( url( foo . png ) )	background-image	image(url(foo.png))	OK=image(url("foo.png"))	NO
-acc:100:background-image:none , none , image-set( cross-fade( light-dark( none , none ) P ) ) , none	background-image	none, none, image-set(cross-fade(light-dark(none, none) 0%) ), none	OK=none, none, image-set(cross-fade(light-dark(none, none) 0%)), none	NO
+acc:100:background-image:none , none , image-set( cross-fade( light-dark( none , none ) P ) ) , none	background-image	none, none, image-set(cross-fade(light-dark(none, none) 0%) ), none	OK=none, none, image-set(cross-fade(light-dark(none, none) 0%) 1x), none	NO
+acc:100:background-image:paint( mypaint	background-image	paint( mypaint	OK=paint(mypaint)	NO
 acc:100:background-image:url( S cross-origin( anonymous ) cross-origin( anonymous ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) cross-origin(anonymous))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) cross-origin(anonymous))	NO
 acc:100:background-image:url( S cross-origin( anonymous ) cross-origin( use-credentials ) )	background-image	url("http://{{hosts,][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) cross-origin(use-credentials))	OK=url("http://{{hosts,][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) cross-origin(use-credentials))	NO
 acc:100:background-image:url( S crossorigin( anonymous ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" crossorigin(anonymous))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" crossorigin(anonymous))	NO
@@ -371,9 +359,9 @@ acc:100:clip-path:ellipse( D at left D y-end D )	clip-path	ellipse(1cap at left 
 acc:100:clip-path:ellipse( P )	clip-path	ellipse(0% )	OK=ellipse(0%)	NO
 acc:100:clip-path:ellipse( closest-side )	clip-path	ellipse(closest-side)	OK=ellipse()	NO
 acc:100:color:random-item( -- , rgb( N , N , N ) , rgb( N , N , N ) )	color	random-item(--, rgb(1, 0, 0), rgb(0, 1, 0))	OK=random-item(--, rgb(1, 0, 0), rgb(0, 1, 0))	NO
-acc:100:color:random-item( --key , rgb( N , N , N ) , rgb( N , N , N ) , rgb( N , N , N ) )	color	\t random-item(--key,   rgb(1,\n0,   0) \n ,rgb(0, 1, 0), \n rgb(0, \n 0,\n1) )  	OK=random-item(--key, rgb(1, 0, 0) ,rgb(0, 1, 0), rgb(0, 0, 1) )	NO
+acc:100:color:random-item( --key , rgb( N , N , N ) , rgb( N , N , N ) , rgb( N , N , N ) )	color	\t random-item(--key,   rgb(1,\n0,   0) \n ,rgb(0, 1, 0), \n rgb(0, \n 0,\n1) )  	OK=random-item(--key,   rgb(1,\n0,   0) \n ,rgb(0, 1, 0), \n rgb(0, \n 0,\n1) )	NO
 acc:100:color:random-item( auto , red , green , blue )	color	random-item(auto, red, green, blue)	OK=random-item(auto, red, green, blue)	NO
-acc:100:color:random-item( auto , red , gren , blue )	color	random-item(auto, red, /*\n*/ gren, blue)	OK=random-item(auto, red, gren, blue)	NO
+acc:100:color:random-item( auto , red , gren , blue )	color	random-item(auto, red, /*\n*/ gren, blue)	OK=random-item(auto, red, /*\n*/ gren, blue)	NO
 acc:100:color:random-item( auto , rgb( N , N , N ) )	color	random-item(auto, rgb(1, 0, 0))	OK=random-item(auto, rgb(1, 0, 0))	NO
 acc:100:color:random-item( element-scoped , rgb( N , N , N ) , rgb( N , N , N ) )	color	random-item(element-scoped, rgb(1, 0, 0), rgb(0, 1, 0))	OK=random-item(element-scoped, rgb(1, 0, 0), rgb(0, 1, 0))	NO
 acc:100:color:random-item( fixed N , rgb( N , N , N ) )	color	random-item(fixed 0, rgb(1, 0, 0))	OK=random-item(fixed 0, rgb(1, 0, 0))	NO
@@ -426,9 +414,9 @@ acc:100:font-palette:palette-mix( palette-mix( in --foo , dark ) , --a-b P , dar
 acc:100:font-style:left	font-style	left	OK=left	NO
 acc:100:font-style:right	font-style	right	OK=right	NO
 acc:100:font-variant-alternates:stylistic( ident( S calc( D / D ) ) )	font-variant-alternates	stylistic(ident("test-" calc(1em / 1px)))	OK=stylistic(ident("test-" calc(1em / 1px)))	NO
-acc:100:font:D / D generic( fangsong ) , generic( fangsong ) , S , generic( kai ) , S , sans-serif , ui-rounded	font	 \n 0.001svw \n / \n 1vw \n generic(fangsong),    generic(fangsong), \n"a", \ngeneric(kai ), "\\"q\\"",   sans-serif,   ui-rounded	OK=0.001svw/1vw generic(fangsong), generic(fangsong), a, generic(kai), "\"q\"", sans-serif, ui-rounded	NO
-acc:100:font:P / D generic( fangsong ) , generic( fangsong ) , S , generic( kai ) , S , sans-serif , ui-rounded	font	 1.5% / 0vw generic(fangsong), generic(fangsong), "a", generic(kai), "\\"q\\"", sans-serif, ui-rounded	OK=1.5%/0vw generic(fangsong), generic(fangsong), a, generic(kai), "\"q\"", sans-serif, ui-rounded	NO
-acc:100:font:normal oblique D smaller / N monospace , math , S , generic( fangsong ) , S	font	normal oblique 0rad smaller / 0.1 monospace, math, 'b', generic(fangsong), "a b"	OK=smaller/0.1 monospace, math, b, generic(fangsong), a b	NO
+acc:100:font:D / D generic( fangsong ) , generic( fangsong ) , S , generic( kai ) , S , sans-serif , ui-rounded	font	 \n 0.001svw \n / \n 1vw \n generic(fangsong),    generic(fangsong), \n"a", \ngeneric(kai ), "\\"q\\"",   sans-serif,   ui-rounded	OK=0.001svw / 1vw generic(fangsong), generic(fangsong), a, generic(kai), "\\"q\\"", sans-serif, ui-rounded	NO
+acc:100:font:P / D generic( fangsong ) , generic( fangsong ) , S , generic( kai ) , S , sans-serif , ui-rounded	font	 1.5% / 0vw generic(fangsong), generic(fangsong), "a", generic(kai), "\\"q\\"", sans-serif, ui-rounded	OK=1.5% / 0vw generic(fangsong), generic(fangsong), a, generic(kai), "\\"q\\"", sans-serif, ui-rounded	NO
+acc:100:font:normal oblique D smaller / N monospace , math , S , generic( fangsong ) , S	font	normal oblique 0rad smaller / 0.1 monospace, math, 'b', generic(fangsong), "a b"	OK=oblique 0rad smaller / 0.1 monospace, math, b, generic(fangsong), a b	NO
 acc:100:font:small-caps smaller generic( nastaliq ) , S , ui-monospace , S	font	small-caps smaller  generic(nastaliq), "\\41 ", ui-monospace, "a"	OK=small-caps smaller generic(nastaliq), A, ui-monospace, a	NO
 acc:100:gap:hairline D	gap	hairline 360rem	OK=hairline 360rem	NO
 acc:100:gap:medium D	gap	medium 0.001ic	OK=medium 0.001ic	NO
@@ -466,9 +454,9 @@ acc:100:grid-template-rows:repeat( auto-fit , auto D auto )	grid-template-rows	r
 acc:100:grid-template-rows:repeat( auto-fit , fit-content( D ) D fit-content( D ) )	grid-template-rows	repeat(auto-fit, fit-content(200px) 100px fit-content(200px))	OK=repeat(auto-fit, fit-content(200px) 100px fit-content(200px))	NO
 acc:100:grid-template-rows:repeat( auto-fit , max-content D max-content )	grid-template-rows	repeat(auto-fit, max-content 100px max-content)	OK=repeat(auto-fit, max-content 100px max-content)	NO
 acc:100:grid-template-rows:repeat( auto-fit , min-content D min-content )	grid-template-rows	repeat(auto-fit, min-content 100px min-content)	OK=repeat(auto-fit, min-content 100px min-content)	NO
-acc:100:grid:[ ] minmax( D , D ) D repeat( auto-fill , [ x \ y bar-baz ] max-content [ bar-baz x \ y ] ) minmax( P , D ) repeat( N , minmax( D , auto ) [ foo x \ y ] D [ _x x \ y ] minmax( D , max-content ) [ a1 foo ] ) [ ] / auto-flow minmax( D , auto )	grid	[] minmax(65535pc, 0ic)  0.1rem  repeat(auto-fill, [x\\ y bar-baz] max-content [bar-baz x\\ y])  minmax(0%, 0dvh)  repeat(1,  minmax(0.1rem, auto) [Foo x\\ y] 2147483648lvi [_x x\\ y] minmax(0svw, max-content) [a1 foo]) [] / auto-flow  minmax(360cqw, auto)	OK=minmax(65535pc, 0ic) 0.1rem repeat(auto-fill, [x\ y bar-baz] max-content [bar-baz x\ y]) minmax(0%, 0dvh) repeat(1, minmax(0.1rem, auto) [Foo x\ y] 2147483648lvi [_x x\ y] minmax(0svw, max-content) [a1 foo]) / auto-flow minmax(360cqw, auto)	NO
-acc:100:grid:auto-flow fit-content( D ) fit-content( D ) fit-content( D ) / [ bar-baz none-of foo ] minmax( P , D ) [ x \ y ] minmax( D , auto ) repeat( auto-fit , P D [ bar-baz x \ y ] minmax( max-content , D ) [ a1 _x _x ] )	grid	 auto-flow fit-content(0lh) fit-content(1000pc) fit-content(0cqw) / [bar-baz none-of foo] minmax(1%, 0.1fr) [x\\ y] minmax(0.5dvh, auto)  repeat(auto-fit,  100%  360fr [bar-baz x\\ y] minmax(max-content, 1pc) [a1 _x _x])  	OK=auto-flow fit-content(0lh) fit-content(1000pc) fit-content(0cqw) / [bar-baz none-of foo] minmax(1%, 0.1fr) [x\ y] minmax(0.5dvh, auto) repeat(auto-fit, 100% 360fr [bar-baz x\ y] minmax(max-content, 1pc) [a1 _x _x])	NO
-acc:100:grid:auto-flow fit-content( P ) minmax( max-content , D ) fit-content( D ) / [ bar-baz none-of foo ] minmax( P , D ) [ x \ y ] minmax( D , auto ) repeat( auto-fit , P D [ bar-baz x \ y ] minmax( max-content , D ) [ a1 _x _x ] )	grid	 aUTo-floW FIT-COnTEnt(0%) mINMaX(MaX-CoNTenT, 1e-07pC) fIT-CONteNt(0CQW) / [BAR-BAz nOne-oF fOo] MInmaX(1%, 0.1FR) [X\\ Y] mInMAX(0.5DvH, aUTo)  RepEAt(autO-Fit,  100%  360Fr [bAr-bAz x\\ y] MINMax(MaX-CONteNT, 1pC) [a1 _x _x])  	OK=auto-flow fit-content(0%) minmax(max-content, 0pc) fit-content(0cqw) / [BAR-BAz nOne-oF fOo] minmax(1%, 0.1fr) [X\ Y] minmax(0.5dvh, auto) repeat(auto-fit, 100% 360fr [bAr-bAz x\ y] minmax(max-content, 1pc) [a1 _x _x])	NO
+acc:100:grid:[ ] minmax( D , D ) D repeat( auto-fill , [ x \ y bar-baz ] max-content [ bar-baz x \ y ] ) minmax( P , D ) repeat( N , minmax( D , auto ) [ foo x \ y ] D [ _x x \ y ] minmax( D , max-content ) [ a1 foo ] ) [ ] / auto-flow minmax( D , auto )	grid	[] minmax(65535pc, 0ic)  0.1rem  repeat(auto-fill, [x\\ y bar-baz] max-content [bar-baz x\\ y])  minmax(0%, 0dvh)  repeat(1,  minmax(0.1rem, auto) [Foo x\\ y] 2147483648lvi [_x x\\ y] minmax(0svw, max-content) [a1 foo]) [] / auto-flow  minmax(360cqw, auto)	OK=minmax(65535pc, 0ic) 0.1rem repeat(auto-fill, [x\\ y bar-baz] max-content [bar-baz x\\ y]) minmax(0%, 0dvh) repeat(1, minmax(0.1rem, auto) [Foo x\\ y] 2147483648lvi [_x x\\ y] minmax(0svw, max-content) [a1 foo]) / auto-flow minmax(360cqw, auto)	NO
+acc:100:grid:auto-flow fit-content( D ) fit-content( D ) fit-content( D ) / [ bar-baz none-of foo ] minmax( P , D ) [ x \ y ] minmax( D , auto ) repeat( auto-fit , P D [ bar-baz x \ y ] minmax( max-content , D ) [ a1 _x _x ] )	grid	 auto-flow fit-content(0lh) fit-content(1000pc) fit-content(0cqw) / [bar-baz none-of foo] minmax(1%, 0.1fr) [x\\ y] minmax(0.5dvh, auto)  repeat(auto-fit,  100%  360fr [bar-baz x\\ y] minmax(max-content, 1pc) [a1 _x _x])  	OK=auto-flow fit-content(0lh) fit-content(1000pc) fit-content(0cqw) / [bar-baz none-of foo] minmax(1%, 0.1fr) [x\\ y] minmax(0.5dvh, auto) repeat(auto-fit, 100% 360fr [bar-baz x\\ y] minmax(max-content, 1pc) [a1 _x _x])	NO
+acc:100:grid:auto-flow fit-content( P ) minmax( max-content , D ) fit-content( D ) / [ bar-baz none-of foo ] minmax( P , D ) [ x \ y ] minmax( D , auto ) repeat( auto-fit , P D [ bar-baz x \ y ] minmax( max-content , D ) [ a1 _x _x ] )	grid	 aUTo-floW FIT-COnTEnt(0%) mINMaX(MaX-CoNTenT, 1e-07pC) fIT-CONteNt(0CQW) / [BAR-BAz nOne-oF fOo] MInmaX(1%, 0.1FR) [X\\ Y] mInMAX(0.5DvH, aUTo)  RepEAt(autO-Fit,  100%  360Fr [bAr-bAz x\\ y] MINMax(MaX-CONteNT, 1pC) [a1 _x _x])  	OK=auto-flow fit-content(0%) minmax(max-content, 0pc) fit-content(0cqw) / [BAR-BAz nOne-oF fOo] minmax(1%, 0.1fr) [X\\ Y] minmax(0.5dvh, auto) repeat(auto-fit, 100% 360fr [bAr-bAz x\\ y] minmax(max-content, 1pc) [a1 _x _x])	NO
 acc:100:height:fit-content( D )	height	fit-content( 123456789vmax)\n	OK=fit-content(123456789vmax)	NO
 acc:100:height:fit-content( P )	height	fit-content(10%)	OK=fit-content(10%)	NO
 acc:100:image-orientation:D	image-orientation	-1deg	OK=-1deg	NO
@@ -487,7 +475,8 @@ acc:100:left:anchor( inside , D --a-b )	left	anchor(inside , 2147483648lh --a-b)
 acc:100:left:inherit( --x )	left	inherit(--x)	OK=inherit(--x)	NO
 acc:100:list-style-image:cross-fade( color-mix( in srgb , red , blue ) P )	list-style-image	cross-fade(color-mix(in srgb, red, blue) 0%)	OK=cross-fade(color-mix(in srgb, red, blue) 0%)	NO
 acc:100:list-style-image:element( #H )	list-style-image	element(#zz)	OK=element(#zz)	NO
-acc:100:list-style-type:symbols( S light-dark( image( rtl S ) , none ) S cross-fade( P url( S ) , P red ) )	list-style-type	symbols( "\\41 " light-dark(image(rtl "\\"q\\"" ), none) 'b' cross-fade(0% url('d'), 0% RED))	OK=symbols("A" light-dark(image(rtl "\"q\""), none) "b" cross-fade(url("d") 0%, red 0%))	NO
+acc:100:list-style-image:light-dark( none , light-dark( none , paint( _x ) ) )	list-style-image	light-dark(none, light-dark(none, paint(_x )))	OK=light-dark(none, light-dark(none, paint(_x)))	NO
+acc:100:list-style-type:symbols( S light-dark( image( rtl S ) , none ) S cross-fade( P url( S ) , P red ) )	list-style-type	symbols( "\\41 " light-dark(image(rtl "\\"q\\"" ), none) 'b' cross-fade(0% url('d'), 0% RED))	OK=symbols("A" light-dark(image(rtl "\\"q\\""), none) "b" cross-fade(url("d") 0%, red 0%))	NO
 acc:100:list-style-type:symbols( alphabetic S light-dark( element( #H ) , cross-fade( url( S ) , hwb( N P P ) , rgb( N N N ) , P paint( foo , D ) ) ) )	list-style-type	symbols(alphabetic "\\41 " light-dark(element(#zz), cross-fade(url("b c.png") , hwb(0 10% 20%) , rgb(1 2 3) , 0% paint(foo , 1px))))	OK=symbols(alphabetic "A" light-dark(element(#zz), cross-fade(url("b c.png"), rgb(204, 26, 26), rgb(1, 2, 3), paint(foo, 1px) 0%)))	NO
 acc:100:list-style-type:symbols( fixed url( S ) )	list-style-type	symbols(fixed url("https://example.com"))	OK=symbols(fixed url("https://example.com"))	NO
 acc:100:list-style-type:symbols( numeric S image-set( S type( S ) , S type( S ) ) )	list-style-type	symbols(numeric "\\41 " image-set("a" type("\\41 "), "" type("a")))	OK=symbols(numeric "A" image-set("a" type("A"), "" type("a")))	NO
@@ -497,6 +486,7 @@ acc:100:list-style:cross-fade( light-dark( red , blue ) P , P hsl( N P P ) , col
 acc:100:list-style:cross-fade( light-dark( red , blue ) P , P url( S ) , #H P ) inside	list-style	cross-fade(light-dark(red, blue) 0%, 10% url("b c.png"), #fff 0%) inside	OK=inside cross-fade(light-dark(red, blue) 0%, url("b c.png") 10%, rgb(255, 255, 255) 0%)	NO
 acc:100:list-style:cross-fade( rgb( N N N ) , color( srgb N N N / P ) , red )	list-style	cross-fade(rgb(1 2 3) , color(srgb 1 0 0 / /*x*/ 50%) ,  RED)	OK=cross-fade(rgb(1, 2, 3), color(srgb 1 0 0 / 0.5), red)	NO
 acc:100:list-style:element( #H ) bar-baz	list-style	element(#zz) bar-baz	OK=element(#zz) bar-baz	NO
+acc:100:list-style:light-dark( paint( foo ) , none ) foo outside	list-style	light-dark(paint(foo ), none) Foo outside	OK=light-dark(paint(foo), none) Foo	NO
 acc:100:list-style:repeating-radial-gradient( at y-start in --a-b , red D , D , red D , #H D , rgb( N N N ) , hsl( N P P ) P ) none-of	list-style	repeating-radial-gradient( at y-start in --a-b , RED -1e+20rlh , 1mm , RED 0.1rem, #fff 255dvh, rgb(1 2 3) , hsl(120 50% 50%) 1.5%) none-of	OK=repeating-radial-gradient(at y-start in --a-b, red -100000000000000000000rlh, 1mm, red 0.1rem, rgb(255, 255, 255) 255dvh, rgb(1, 2, 3), rgb(64, 191, 64) 1.5%) none-of	NO
 acc:100:list-style:repeating-radial-gradient( at y-start in --a-b , red D , lab( N N N ) , D , #H , #H D ) outside	list-style	repeating-radial-gradient( at y-start in --a-b , RED 0lvi , lab(50 20 30) , 0.001vh , #ff00ff80 , #fff 255dvh) outside	OK=repeating-radial-gradient(at y-start in --a-b, red 0lvi, lab(50 20 30), 0.001vh, rgba(255, 0, 255, 0.5), rgb(255, 255, 255) 255dvh)	NO
 acc:100:list-style:repeating-radial-gradient( at y-start in --a-b , red D , lab( N N N ) , D , #H , #H P ) inside foo	list-style	Repeating-Radial-Gradient( At Y-Start In --A-B , RED 100lvi , Lab(50 20 30) , 0.001vh , #Ff00ff80 , #Fff 1%) Inside Foo	OK=inside repeating-radial-gradient(at y-start in --A-B, red 100lvi, lab(50 20 30), 0.001vh, rgba(255, 0, 255, 0.5), rgb(255, 255, 255) 1%) Foo	NO
@@ -633,7 +623,7 @@ acc:100:place-self:unsafe flow-end anchor-center	place-self	unsafe flow-end anch
 acc:100:position-anchor:match-parent	position-anchor	match-parent	OK=match-parent	NO
 acc:100:position-visibility:anchor-valid	position-visibility	anchor-valid	OK=anchor-valid	NO
 acc:100:position-visibility:anchor-visible	position-visibility	anchor-visible	OK=anchor-visible	NO
-acc:100:position:running( x \ y )	position	running(x\\ y)	OK=running(x\ y)	NO
+acc:100:position:running( x \ y )	position	running(x\\ y)	OK=running(x\\ y)	NO
 acc:100:quotes:bikeshed-this	quotes	bikeshed-this	OK=bikeshed-this	NO
 acc:100:row-gap:thick	row-gap	thick	OK=thick	NO
 acc:100:ruby-position:inter-character	ruby-position	inter-character	OK=inter-character	NO
@@ -673,6 +663,7 @@ acc:100:text-wrap:avoid-short-last-line	text-wrap	avoid-short-last-line	OK=avoid
 acc:100:top:--func( --myident : )	top	--func( --myident : )	OK=--func( --myident : )	NO
 acc:100:top:anchor( left , P --a-b )	top	anchor(left , 0.1% --a-b)	OK=anchor(--a-b left, 0.1%)	NO
 acc:100:transition-timing-function:steps( N , jump-none ) , linear( N P , P P N , N , P P N ) , cubic-bezier( N , N , N , N ) , linear( N )	transition-timing-function	steps(2 , jump-none), linear(0.001 2%, 10% -0.5% 0, 1 , -0.5% -0.5% 255), cubic-bezier(0, 65535, 0, -100), linear(0.001 )	OK=steps(2, jump-none), linear(0.001 2%, 0 10%, 0 10%, 1, 255 10%, 255 10%), cubic-bezier(0, 65535, 0, -100), linear(0.001)	NO
+acc:100:transition:normal linear , allow-discrete all step-start , D normal ease D , all D linear( N P ) normal	transition	normal linear, allow-discrete all step-start, 10s normal ease 2147483648s, all 0.5s linear(1000 100%) normal	OK=linear, steps(1, start) allow-discrete, 10s 2147483648s, 0.5s linear(1000 100%)	NO
 acc:100:user-select:contain	user-select	contain	OK=contain	NO
 acc:100:vector-effect:fixed-position	vector-effect	fixed-position	OK=fixed-position	NO
 acc:100:vector-effect:non-rotation	vector-effect	non-rotation	OK=non-rotation	NO
@@ -682,11 +673,11 @@ acc:100:visibility:force-hidden	visibility	force-hidden	OK=force-hidden	NO
 acc:100:white-space-collapse:discard	white-space-collapse	discard	OK=discard	NO
 acc:100:white-space:preserve-breaks wrap discard-inner	white-space	preserve-breaks wrap discard-inner	OK=preserve-breaks wrap discard-inner	NO
 acc:100:white-space:preserve-spaces discard-after discard-before	white-space	preserve-spaces discard-after discard-before	OK=preserve-spaces discard-before discard-after	NO
-acc:100:width:env( safe-area-inset-top ( ) )	width	\t env(safe-area-inset-top \n ())\n	OK=env(safe-area-inset-top ())	NO
+acc:100:width:env( safe-area-inset-top ( ) )	width	\t env(safe-area-inset-top \n ())\n	OK=env(safe-area-inset-top \n ())	NO
 acc:100:width:env( safe-area-inset-top( ) )	width	env(safe-area-inset-top() )	OK=env(safe-area-inset-top() )	NO
 acc:100:width:fit-content( D )	width	fit-content(0.5em)	OK=fit-content(0.5em)	NO
 acc:100:width:fit-content( P )	width	fit-content(0%)	OK=fit-content(0%)	NO
-acc:100:width:random( property-index-scoped , D , D )	width	RANDOM(PROPERTY-INDEX-SCOPED, \t0PX,    100PX)	OK=random(PROPERTY-INDEX-SCOPED, 0px, 100px)	NO
+acc:100:width:random( property-index-scoped , D , D )	width	RANDOM(PROPERTY-INDEX-SCOPED, \t0PX,    100PX)	OK=random(ua-width-1, 0px, 100px)	NO
 acc:100:width:random-item( auto , D , D , D )	width	random-item(auto, 1px, 2px, 3px)	OK=random-item(auto, 1px, 2px, 3px)	NO
 acc:100:width:stretch( D )	width	stretch(0.001em)	OK=stretch(0.001em)	NO
 acc:100:width:var( --x ( ) )	width	var(--x () )	OK=var(--x () )	NO
@@ -715,7 +706,7 @@ acc:101:dominant-baseline:text-top	dominant-baseline	text-top	OK=text-top	NO
 acc:101:font-style:oblique D	font-style	oblique -90.001grad	OK=oblique -90.001grad	NO
 acc:101:font-synthesis-style:oblique-only	font-synthesis-style	oblique-only	OK=oblique-only	NO
 acc:101:font-synthesis:position	font-synthesis	position	OK=position	NO
-acc:101:font:normal oblique D x-large / D monospace , math , S , ui-serif	font	NORMAL OBLIQUE 90.001GRAD X-LARGE / 2147483648IC MONOSPACE, MATH, 'B', UI-SERIF	OK=oblique 90.001grad x-large/2147483648ic monospace, math, B, ui-serif	NO
+acc:101:font:normal oblique D x-large / D monospace , math , S , ui-serif	font	NORMAL OBLIQUE 90.001GRAD X-LARGE / 2147483648IC MONOSPACE, MATH, 'B', UI-SERIF	OK=oblique 90.001grad x-large / 2147483648ic monospace, math, B, ui-serif	NO
 acc:101:hyphenate-limit-chars:N N	hyphenate-limit-chars	0 360	OK=0 360	NO
 acc:101:hyphenate-limit-chars:N auto	hyphenate-limit-chars	0 auto	OK=0 auto	NO
 acc:101:image-rendering:smooth	image-rendering	smooth	OK=smooth	NO
@@ -828,6 +819,7 @@ acc:110:container-type:anchored	container-type	anchored	OK=anchored	NO
 acc:110:container-type:scroll-state	container-type	scroll-state	OK=scroll-state	NO
 acc:110:container:foo foo bar-baz / inline-size anchored scroll-state	container	foo Foo bar-baz / inline-size anchored scroll-state	OK=foo Foo bar-baz / inline-size scroll-state anchored	NO
 acc:110:container:none / scroll-state anchored	container	none / scroll-state anchored	OK=none / scroll-state anchored	NO
+acc:110:content:S / counter( cnt )	content	"" / counter(cnt)	OK="" / counter(cnt)	NO
 acc:110:flex-basis:calc-size( any , D )	flex-basis	calc-size(any, 50px)	OK=calc-size(any, 50px)	NO
 acc:110:flex-basis:calc-size( auto , size )	flex-basis	calc-size(auto, size)	OK=calc-size(auto, size)	NO
 acc:110:flex-basis:calc-size( content , size )	flex-basis	calc-size(content, size)	OK=calc-size(content, size)	NO
@@ -843,15 +835,19 @@ acc:110:font-palette:palette-mix( in oklab , P light , dark )	font-palette	palet
 acc:110:font-palette:palette-mix( in oklab , light P , light )	font-palette	palette-mix(in oklab, light 30%, light)	OK=palette-mix(light 30%, light 70%)	OK=palette-mix(in oklab, light 30%, light 70%)
 acc:110:font-palette:palette-mix( in oklab , light P , normal )	font-palette	palette-mix(in oklab, light 30%, normal)	OK=palette-mix(light 30%, normal 70%)	OK=palette-mix(in oklab, light 30%, normal 70%)
 acc:110:font-palette:palette-mix( in srgb , dark , light )	font-palette	palette-mix(in srgb, dark,           light)	OK=palette-mix(in srgb, dark, light)	NO
-acc:110:font-size:random( property-scoped , D , D )	font-size	random(property-scoped, 0px, 100px)	OK=random(property-scoped, 0px, 100px)	OK=random(ua-font-size, 0px, 100px)
+acc:110:font-size:random( property-scoped , D , D )	font-size	random(property-scoped, 0px, 100px)	OK=random(ua-font-size, 0px, 100px)	NO
+acc:110:font-size:random( ua-font-size , D , D )	font-size	random(ua-font-size, 0px, 100px)	OK=random(ua-font-size, 0px, 100px)	NO
 acc:110:forced-color-adjust:preserve-parent-color	forced-color-adjust	preserve-parent-color	OK=preserve-parent-color	NO
 acc:110:height:anchor-size( P )	height	anchor-size(-1%)	OK=anchor-size(-1%)	NO
 acc:110:height:calc-size( auto , size )	height	calc-size(auto, size)	OK=calc-size(auto, size)	NO
 acc:110:height:calc-size( max-content , size )	height	calc-size(max-content, size)	OK=calc-size(max-content, size)	NO
 acc:110:height:calc-size( min-content , N * size )	height	calc-size(min-content, 2 * size)	OK=calc-size(min-content, 2 * size)	NO
-acc:110:height:random( D , D , D )	height	random(0px, 100px, 3px)	OK=random(0px, 100px, 3px)	OK=random(element-scoped ua-height-1, 0px, 100px, 3px)
-acc:110:height:random( auto , D , D )	height	random(auto, 0px, 100px)	OK=random(auto, 0px, 100px)	OK=random(element-scoped ua-height-1, 0px, 100px)
-acc:110:height:random( property-scoped element-scoped , D , D )	height	random(property-scoped element-scoped, 0px, 100px)	OK=random(property-scoped element-scoped, 0px, 100px)	OK=random(element-scoped ua-height, 0px, 100px)
+acc:110:height:random( --foo element-scoped ua \ -height , D , D )	height	random(--foo element-scoped ua\\-height, 0px, 100px)	OK=random(--foo element-scoped ua-height, 0px, 100px)	NO
+acc:110:height:random( D , D , D )	height	random(0px, 100px, 3px)	OK=random(element-scoped ua-height-1, 0px, 100px, 3px)	NO
+acc:110:height:random( auto , D , D )	height	random(auto, 0px, 100px)	OK=random(element-scoped ua-height-1, 0px, 100px)	NO
+acc:110:height:random( element-scoped ua-height , D , D )	height	random(element-scoped ua-height, 0px, 100px)	OK=random(element-scoped ua-height, 0px, 100px)	NO
+acc:110:height:random( element-scoped ua-height-1 , D , D )	height	random(element-scoped ua-height-1, 0px, 100px)	OK=random(element-scoped ua-height-1, 0px, 100px)	NO
+acc:110:height:random( property-scoped element-scoped , D , D )	height	random(property-scoped element-scoped, 0px, 100px)	OK=random(element-scoped ua-height, 0px, 100px)	NO
 acc:110:height:stretch	height	stretch	OK=stretch	NO
 acc:110:inline-size:anchor-size( block --foo , D )	inline-size	anchor-size(block --foo , -1dvh)	OK=anchor-size(--foo block, -1dvh)	NO
 acc:110:inline-size:calc-size( max-content , size )	inline-size	calc-size(max-content, size)	OK=calc-size(max-content, size)	NO
@@ -893,8 +889,9 @@ acc:110:offset-path:shape( nonzero from D D , line to D D )	offset-path	shape(no
 acc:110:overflow-clip-margin:D	overflow-clip-margin	-100lvi	OK=-100lvi	NO
 acc:110:place-content:flow-end	place-content	 flow-end 	OK=flow-end	NO
 acc:110:place-content:flow-start	place-content	flow-start	OK=flow-start	NO
-acc:110:rotate:random( D , D )	rotate	random(25deg, 1turn)	OK=random(25deg, 360deg)	OK=random(element-scoped ua-rotate-1, 25deg, 360deg)
+acc:110:rotate:random( D , D )	rotate	random(25deg, 1turn)	OK=random(element-scoped ua-rotate-1, 25deg, 360deg)	NO
 acc:110:scale:random( --foo , N , N )	scale	random(--foo, 0.5, 2.5)	OK=random(--foo, 0.5, 2.5)	NO
+acc:110:scroll-snap-type:pair	scroll-snap-type	pair	OK=pair	NO
 acc:110:shape-outside:path( S )	shape-outside	path("M 0 0 A 25 25 0 0 1 50 0")	OK=path("M 0 0 A 25 25 0 0 1 50 0")	NO
 acc:110:shape-outside:polygon( round D , D D , D D )	shape-outside	polygon(round 0px, 1px 2px, 3px 4px)	OK=polygon(1px 2px, 3px 4px)	NO
 acc:110:shape-outside:polygon( round D , P P )	shape-outside	polygon(round 1px, 1% 2%)	OK=polygon(round 1px, 1% 2%)	NO
@@ -912,7 +909,7 @@ acc:110:text-wrap:pretty	text-wrap	pretty	OK=pretty	NO
 acc:110:top:--func( )	top	--func()	OK=--func()	NO
 acc:110:touch-action:pan-left	touch-action	pan-left	OK=pan-left	NO
 acc:110:touch-action:pan-right pan-up pinch-zoom	touch-action	pan-right pan-up pinch-zoom	OK=pan-right pan-up pinch-zoom	NO
-acc:110:transition-delay:random( D , D )	transition-delay	random(25ms, 50s)	OK=random(0.025s, 50s)	OK=random(element-scoped ua-transition-delay-1, 0.025s, 50s)
+acc:110:transition-delay:random( D , D )	transition-delay	random(25ms, 50s)	OK=random(element-scoped ua-transition-delay-1, 0.025s, 50s)	NO
 acc:110:transition-timing-function:steps( calc( N * sign( D - D ) ) , jump-none )	transition-timing-function	steps(calc(2 * sign(1em - 1000px)), jump-none)	OK=steps(calc(2 * sign(1em - 1000px)), jump-none)	NO
 acc:110:transition-timing-function:steps( calc( N * sign( D - D ) ) , start )	transition-timing-function	steps(calc(2 * sign(1em - 1000px)), start)	OK=steps(calc(2 * sign(1em - 1000px)), start)	NO
 acc:110:transition-timing-function:steps( sibling-index( ) , jump-none )	transition-timing-function	steps(sibling-index(), jump-none)	OK=steps(sibling-index(), jump-none)	NO
@@ -925,8 +922,12 @@ acc:110:width:calc-size( calc-size( min-content , size ) , size )	width	calc-siz
 acc:110:width:calc-size( fit-content , size )	width	calc-size(fit-content, size)	OK=calc-size(fit-content, size)	NO
 acc:110:width:calc-size( max-content , size )	width	calc-size(max-content, size)	OK=calc-size(max-content, size)	NO
 acc:110:width:random( --foo , D , P )	width	random(--foo, 10px, 20%)	OK=random(--foo, 10px, 20%)	NO
-acc:110:width:random( D , D )	width	random(0px, 100px)	OK=random(0px, 100px)	OK=random(element-scoped ua-width-1, 0px, 100px)
+acc:110:width:random( D , D )	width	random(0px, 100px)	OK=random(element-scoped ua-width-1, 0px, 100px)	NO
+acc:110:width:random( element-scoped ua-height-1 , D , P )	width	random(element-scoped ua-height-1, 10px, 20%)	OK=random(element-scoped ua-height-1, 10px, 20%)	NO
 acc:110:width:random( fixed calc( N ) , P , P )	width	random(fixed calc(0.5), 0%, 100%)	OK=random(fixed calc(0.5), 0%, 100%)	NO
+acc:110:width:random( ua-width , D , P )	width	random(ua-width, 10px, 20%)	OK=random(ua-width, 10px, 20%)	NO
+acc:110:width:random( ua-width-1 , D , P )	width	random(ua-width-1, 10px, 20%)	OK=random(ua-width-1, 10px, 20%)	NO
+acc:110:width:random( ua-x , D , P )	width	random(ua-x, 10px, 20%)	OK=random(ua-x, 10px, 20%)	NO
 acc:110:width:stretch	width	stretch	OK=stretch	NO
 acc:110:word-break:auto-phrase	word-break	auto-phrase	OK=auto-phrase	NO
 acc:110:z-index:random( --foo , N , N )	z-index	random(--foo, 25, 50)	OK=random(--foo, 25, 50)	NO
@@ -945,6 +946,8 @@ ser:A=B|C:backdrop-filter:invert( )	backdrop-filter	invert()	OK=invert()	OK=inve
 ser:A=B|C:backdrop-filter:opacity( )	backdrop-filter	opacity()	OK=opacity()	OK=opacity(1)
 ser:A=B|C:backdrop-filter:saturate( )	backdrop-filter	saturate()	OK=saturate()	OK=saturate(1)
 ser:A=B|C:backdrop-filter:sepia( )	backdrop-filter	sepia()	OK=sepia()	OK=sepia(1)
+ser:A=B|C:color:color( display-p3 P none N / P )	color	color(display-p3 100% none 0.2 / 2.37%)	OK=color(display-p3 1 none 0.2 / 0.0237)	OK=color(display-p3 1 none 0.2 / 0.024)
+ser:A=B|C:color:hwb( calc( D + ( sign( D - D ) * D ) ) N N / P )	color	hwb(calc(110deg + (sign(2cqw - 10px) * 10deg)) 30 50 / 51%)	OK=hwb(calc(110deg + (10deg * sign(2cqw - 10px))) 30 50 / 0.51)	OK=hwb(calc(110deg + (10deg * sign(2cqw - 10px))) 30 50 / 51%)
 ser:A=B|C:column-rule:D	column-rule	0.001px	OK=0.001px	OK=0.001px none currentcolor
 ser:A=B|C:column-rule:blue	column-rule	blue	OK=blue	OK=medium none blue
 ser:A=B|C:column-rule:dotted	column-rule	dotted	OK=dotted	OK=medium dotted currentcolor
@@ -953,6 +956,8 @@ ser:A=B|C:column-rule:medium	column-rule	medium	OK=medium	OK=medium none current
 ser:A=B|C:column-rule:red	column-rule	red	OK=red	OK=medium none red
 ser:A=B|C:column-rule:thick double	column-rule	thick double	OK=thick double	OK=thick double currentcolor
 ser:A=B|C:column-rule:thin	column-rule	thin	OK=thin	OK=thin none currentcolor
+ser:A=B|C:contain:inline-size layout	contain	inline-size layout	OK=inline-size layout	OK=layout inline-size
+ser:A=B|C:cursor:image-set( url( S ) , url( S ) D , url( a . png ) , S D ) , url( e ) , url( e ) N N , pointer	cursor	image-set(url('d') , url('d') 10dpi, url(a.png) , "\\41 " 255dpi)  , url(  e  )  , url(  e  ) 123456789 10 , pointer	OK=image-set(url("d") 1x, url("d") 10dpi, url("a.png") 1x, url("A") 255dpi), url("e"), url("e") 123456789 10, pointer	OK=image-set(url("d") 1x, url("d") 10dpi, url("a.png") 1x, url("A") 255dpi), url("e"), url("e") 123457000 10, pointer
 ser:A=B|C:filter:blur( )	filter	blur()	OK=blur()	OK=blur(0px)
 ser:A=B|C:filter:brightness( )	filter	brightness()	OK=brightness()	OK=brightness(1)
 ser:A=B|C:filter:contrast( )	filter	contrast()	OK=contrast()	OK=contrast(1)
@@ -962,12 +967,16 @@ ser:A=B|C:filter:invert( )	filter	invert()	OK=invert()	OK=invert(1)
 ser:A=B|C:filter:opacity( )	filter	opacity()	OK=opacity()	OK=opacity(1)
 ser:A=B|C:filter:saturate( )	filter	saturate()	OK=saturate()	OK=saturate(1)
 ser:A=B|C:filter:sepia( )	filter	sepia()	OK=sepia()	OK=sepia(1)
+ser:A=B|C:font-style:oblique D	font-style	oblique 14deg	OK=oblique 14deg	OK=oblique
+ser:A=B|C:grid-auto-columns:minmax( min-content , min-content ) minmax( auto , D ) fit-content( P )	grid-auto-columns	minmax(min-content, min-content) minmax(auto, 360fr) fit-content(360%)	OK=minmax(min-content, min-content) minmax(auto, 360fr) fit-content(360%)	OK=minmax(min-content, min-content) 360fr fit-content(360%)
 ser:A=B|C:hyphenate-limit-chars:N N N	hyphenate-limit-chars	5 2 2	OK=5 2 2	OK=5 2
 ser:A=B|C:hyphenate-limit-chars:N auto	hyphenate-limit-chars	1 auto	OK=1 auto	OK=1
 ser:A=B|C:hyphenate-limit-chars:auto auto	hyphenate-limit-chars	auto auto	OK=auto auto	OK=auto
+ser:A=B|C:mask:none , linear-gradient( to left bottom , red , blue ) padding-box	mask	none, linear-gradient(to left bottom, red, blue) padding-box	OK=none, linear-gradient(to left bottom, red, blue) padding-box	OK=none
 ser:A=B|C:opacity:clamp( P , P , P )	opacity	clamp(50%, 0%, 70%)	OK=clamp(50%, 0%, 70%)	OK=calc(50%)
 ser:A=B|C:opacity:max( P , P )	opacity	max(0%, 50%)	OK=max(0%, 50%)	OK=calc(50%)
 ser:A=B|C:opacity:min( P , P )	opacity	min(-40%, 50%)	OK=min(-40%, 50%)	OK=calc(-40%)
+ser:A=B|C:outline:currentcolor	outline	currentcolor	OK=currentcolor	OK=none
 ser:A=B|C:stroke-dashoffset:N	stroke-dashoffset	-1	OK=-1	OK=-1px
 ser:A=B|C:text-box:cap text trim-both	text-box	cap text trim-both	OK=cap text	OK=cap
 ser:A=B|C:text-box:cap text trim-end	text-box	cap text trim-end	OK=trim-end cap text	OK=trim-end cap
@@ -983,6 +992,9 @@ ser:A=B|C:text-emphasis:none	text-emphasis	none	OK=none	OK=none currentcolor
 ser:A=B|C:text-emphasis:rgb( N N N )	text-emphasis	rgb(1 2 3)	OK=rgb(1, 2, 3)	OK=none rgb(1, 2, 3)
 ser:A=B|C:text-emphasis:transparent	text-emphasis	transparent	OK=transparent	OK=none transparent
 ser:A=B|C:text-emphasis:triangle filled red	text-emphasis	triangle filled red	OK=filled triangle red	OK=triangle red
+ser:A=B|C:width:calc( D * progress( abs( P ) , ( P - P ) , P / N ) )	width	calc(1px * progress(abs(10%), (10% - 10%), 100% / 10))	OK=calc(1px * progress(abs(10%), 0%, 10%))	OK=calc(1px)
+ser:A=B|C:width:calc( infinity * D - max( infinity * P , P ) )	width	calc(infinity * 1px - max(infinity * 1%, 0%))	OK=calc(infinity * 1px - max(infinity * 1%, 0%))	OK=calc(infinity * 1px + min(-infinity * 1%, 0%))
+ser:A=B|C:zoom:calc( N + ( sign( D - D ) * N ) )	zoom	calc(1 + (sign(2cqw - 3cqw) * 0.5))	OK=calc(1 + (0.5 * sign(-1cqw)))	OK=calc(0.5)
 ser:A=C|B:-webkit-border-radius:D D	-webkit-border-radius	1px 2px	OK=1px 2px	OK=1px / 2px
 ser:A=C|B:-webkit-border-radius:D P	-webkit-border-radius	1px 5%	OK=1px 5%	OK=1px / 5%
 ser:A=C|B:-webkit-text-stroke-width:D	-webkit-text-stroke-width	1e+20lh	OK=100000000000000000000lh	OK=1e+20lh
@@ -1000,6 +1012,7 @@ ser:A=C|B:animation:none	animation	none	OK=none	OK=auto ease 0s 1 normal none ru
 ser:A=C|B:animation:paused	animation	PAUSED	OK=paused	OK=auto ease 0s 1 normal none paused none
 ser:A=C|B:animation:reverse	animation	reverse	OK=reverse	OK=auto ease 0s 1 reverse none running none
 ser:A=C|B:backdrop-filter:drop-shadow( light-dark( red , blue ) D D D )	backdrop-filter	drop-shadow(light-dark(red, blue) -1e+20svw 1000ch 0cqw)	OK=drop-shadow(light-dark(red, blue) -100000000000000000000svw 1000ch 0cqw)	OK=drop-shadow(light-dark(red, blue) -1e+20svw 1000ch 0cqw)
+ser:A=C|B:background-image:none , repeating-conic-gradient( color( srgb N N N / P ) P P , color( srgb N N N / P ) ) , none , none	background-image	none, repeating-conic-gradient(color(srgb 1 0 0 / 50%) -1e+20% -1% , color(srgb 1 0 0 / 50%) ), none, none	OK=none, repeating-conic-gradient(color(srgb 1 0 0 / 0.5) -100000000000000000000%, color(srgb 1 0 0 / 0.5) -1%, color(srgb 1 0 0 / 0.5)), none, none	OK=none, repeating-conic-gradient(color(srgb 1 0 0 / 0.5) -1e+20%, color(srgb 1 0 0 / 0.5) -1%, color(srgb 1 0 0 / 0.5)), none, none
 ser:A=C|B:background-position-x:D	background-position-x	 -1e+20svw	OK=-100000000000000000000svw	OK=-1e+20svw
 ser:A=C|B:background-position:center top D , top left	background-position	center top -1e+20ch, top left	OK=center top -100000000000000000000ch, left top	OK=center top -1e+20ch, left top
 ser:A=C|B:background-position:left P bottom	background-position	left -1e+20% bottom	OK=left -100000000000000000000% bottom	OK=left -1e+20% bottom
@@ -1083,6 +1096,12 @@ ser:A=C|B:contain-intrinsic-inline-size:D	contain-intrinsic-inline-size	 1e+20cm
 ser:A=C|B:contain-intrinsic-size:auto D	contain-intrinsic-size	auto 1e+20ex	OK=auto 100000000000000000000ex	OK=auto 1e+20ex
 ser:A=C|B:contain-intrinsic-size:none D	contain-intrinsic-size	 none  1e+20em	OK=none 100000000000000000000em	OK=none 1e+20em
 ser:A=C|B:contain-intrinsic-width:D	contain-intrinsic-width	 1e+20rlh	OK=100000000000000000000rlh	OK=1e+20rlh
+ser:A=C|B:content:image-set( conic-gradient( oklch( P N N ) ) type( S ) D , S type( S ) D )	content	image-set(conic-gradient(oklch(50% 0.1 120)  ) type('b') 0.001dpi, 'b' type("\\"q\\"") 1e+20x) 	OK=image-set(conic-gradient(oklch(0.5 0.1 120)) 0.001dpi type("b"), url("b") 100000000000000000000x type("\\"q\\""))	OK=image-set(conic-gradient(oklch(0.5 0.1 120)) 0.001dpi type("b"), url("b") 1e+20x type("\\"q\\""))
+ser:A=C|B:cursor:image-set( url( S ) , url( S ) D , S , url( e ) D type( S ) ) , url( e ) , url( e ) N N , s-resize	cursor	image-set(url('d') , url('d') 1e+20dpcm, "a" , url(  e  ) 255dppx type("\\41 "))  , url(  e  )  , url(  e  ) 10 1000 , s-resize	OK=image-set(url("d") 1x, url("d") 100000000000000000000dpcm, url("a") 1x, url("e") 255dppx type("A")), url("e"), url("e") 10 1000, s-resize	OK=image-set(url("d") 1x, url("d") 1e+20dpcm, url("a") 1x, url("e") 255dppx type("A")), url("e"), url("e") 10 1000, s-resize
+ser:A=C|B:cursor:image-set( url( S ) , url( S ) D , url( a . png ) , S D ) , url( e ) , url( e ) N N , pointer	cursor	image-set(url('d') , url('d') 10dpi, url(a.png) , "\\41 " 255dpi)  , url(  e  )  , url(  e  ) -1e+20 10 , pointer	OK=image-set(url("d") 1x, url("d") 10dpi, url("a.png") 1x, url("A") 255dpi), url("e"), url("e") -100000000000000000000 10, pointer	OK=image-set(url("d") 1x, url("d") 10dpi, url("a.png") 1x, url("A") 255dpi), url("e"), url("e") -2147483648 10, pointer
+ser:A=C|B:cursor:image-set( url( S ) , url( S ) D , url( a . png ) , S D type( S ) ) , url( e ) , url( e ) N N , s-resize	cursor	image-set(url('d') , url('d') 10dpi, url(a.png) , "\\41 " 1e+20dppx type("\\41 "))  , url(  e  )  , url(  e  ) 10 1000 , s-resize	OK=image-set(url("d") 1x, url("d") 10dpi, url("a.png") 1x, url("A") 100000000000000000000dppx type("A")), url("e"), url("e") 10 1000, s-resize	OK=image-set(url("d") 1x, url("d") 10dpi, url("a.png") 1x, url("A") 1e+20dppx type("A")), url("e"), url("e") 10 1000, s-resize
+ser:A=C|B:cursor:image-set( url( S ) D , S , url( S ) D , url( a . png ) D ) N N , auto	cursor	image-set(url('d') 0.001dppx, "\\"q\\"" , url("b c.png") 1e+20x, url(a.png) 1e+20x) 1e+20 -1 , auto	OK=image-set(url("d") 0.001dppx, url("\\"q\\"") 1x, url("b c.png") 100000000000000000000x, url("a.png") 100000000000000000000x) 100000000000000000000 -1, auto	OK=image-set(url("d") 0.001dppx, url("\\"q\\"") 1x, url("b c.png") 1e+20x, url("a.png") 1e+20x) 2147483647 -1, auto
+ser:A=C|B:cursor:url( S ) N N , image-set( S D type( S ) , S ) N N , auto	cursor	url('d') -0.5 255 , image-set("a b" 0dpi type("\\41 "), "\\"q\\"" ) 100 255 , auto	OK=url("d") -0.5 255, image-set(url("a b") 0dpi type("A"), url("\\"q\\"") 1x) 100 255, auto	OK=url("d") 0 255, image-set(url("a b") 0dpi type("A"), url("\\"q\\"") 1x) 100 255, auto
 ser:A=C|B:cursor:url( S ) N N , url( e ) N N , col-resize	cursor	\t url('s')\t-0.5 \n 1e+20\t, \nurl( e\n)\n1e+20   1e+20 \n , \n col-resize	OK=url("s") -0.5 100000000000000000000, url("e") 100000000000000000000 100000000000000000000, col-resize	OK=url("s") 0 2147483647, url("e") 2147483647 2147483647, col-resize
 ser:A=C|B:cursor:url( S ) N calc( N ) , copy	cursor	url("https://example.com/") 1 calc(2), copy	OK=url("https://example.com/") 1 calc(2), copy	OK=url("https://example.com/") 1 2, copy
 ser:A=C|B:cursor:url( e ) N N , url( S ) , ew-resize	cursor	url(  e  ) -0.5 -1 , url('d')  , ew-resize	OK=url("e") -0.5 -1, url("d"), ew-resize	OK=url("e") 0 -1, url("d"), ew-resize
@@ -1104,7 +1123,7 @@ ser:A=C|B:font-family:serif , sa ns-serif , cursive , fantasy , monospace , syst
 ser:A=C|B:font-size-adjust:N	font-size-adjust	 1e+20	OK=100000000000000000000	OK=1e+20
 ser:A=C|B:font-size:D	font-size	1e+20ic	OK=100000000000000000000ic	OK=1e+20ic
 ser:A=C|B:font-size:P	font-size	1e+20%	OK=100000000000000000000%	OK=1e+20%
-ser:A=C|B:font-style:oblique calc( D / D * D )	font-style	oblique calc(1em / 1px * 1deg)	OK=oblique calc(1deg * 1em / 1px)	OK=oblique calc((1em / 1px) * 1deg)
+ser:A=C|B:font-style:oblique D	font-style	oblique 0rad	OK=oblique 0rad	OK=normal
 ser:A=C|B:font-variant-ligatures:historical-ligatures common-ligatures no-contextual	font-variant-ligatures	historical-ligatures common-ligatures no-contextual	OK=common-ligatures historical-ligatures no-contextual	OK=historical-ligatures common-ligatures no-contextual
 ser:A=C|B:font-variant-ligatures:no-common-ligatures contextual discretionary-ligatures	font-variant-ligatures	no-common-ligatures contextual discretionary-ligatures	OK=no-common-ligatures discretionary-ligatures contextual	OK=no-common-ligatures contextual discretionary-ligatures
 ser:A=C|B:font-variant-numeric:lining-nums slashed-zero tabular-nums	font-variant-numeric	lining-nums slashed-zero tabular-nums	OK=lining-nums tabular-nums slashed-zero	OK=lining-nums slashed-zero tabular-nums
@@ -1118,10 +1137,10 @@ ser:A=C|B:grid-auto-rows:D	grid-auto-rows	1e+20px	OK=100000000000000000000px	OK=
 ser:A=C|B:grid-template-columns:[ none-of ] minmax( max-content , max-content ) minmax( min-content , D ) [ ] repeat( N , [ _x none-of ] minmax( P , auto ) [ bar-baz _x ] )	grid-template-columns	[none-of] minmax(max-content, max-content)  minmax(min-content, 1fr) [] repeat(2, [_x none-of] minmax(1e+20%, auto) [bar-baz _x]) 	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 1fr) repeat(2, [_x none-of] minmax(100000000000000000000%, auto) [bar-baz _x])	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 1fr) repeat(2, [_x none-of] minmax(1e+20%, auto) [bar-baz _x])
 ser:A=C|B:grid-template-columns:[ none-of ] minmax( max-content , max-content ) minmax( min-content , D ) [ a1 ] repeat( N , [ _x none-of ] minmax( P , max-content ) )	grid-template-columns	[none-of] minmax(max-content, max-content)  minmax(min-content, 1e+20fr) [a1] repeat(2, [_x none-of] minmax(1.5%, max-content) ) 	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 100000000000000000000fr) [a1] repeat(2, [_x none-of] minmax(1.5%, max-content))	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 1e+20fr) [a1] repeat(2, [_x none-of] minmax(1.5%, max-content))
 ser:A=C|B:grid-template-rows:repeat( N , minmax( D , max-content ) [ _x bar-baz foo ] max-content [ _x ] ) [ ]	grid-template-rows	 repeat(1,  minmax(1e+20px, max-content) [_x bar-baz foo] max-content [_x]) []	OK=repeat(1, minmax(100000000000000000000px, max-content) [_x bar-baz foo] max-content [_x])	OK=repeat(1, minmax(1e+20px, max-content) [_x bar-baz foo] max-content [_x])
-ser:A=C|B:grid-template:none / D [ foo x \ y ] repeat( N , [ foo ] minmax( min-content , min-content ) [ x \ y ] ) repeat( N , [ ] min-content [ bar-baz x \ y bar-baz ] D ) minmax( min-content , min-content )	grid-template	none /  1e+20mm [Foo x\\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\\ y])  repeat(1, [] min-content [bar-baz x\\ y bar-baz] 255fr )  minmax(min-content, min-content) 	OK=none / 100000000000000000000mm [Foo x\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\ y]) repeat(1, min-content [bar-baz x\ y bar-baz] 255fr) minmax(min-content, min-content)	OK=none / 1e+20mm [Foo x\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\ y]) repeat(1, min-content [bar-baz x\ y bar-baz] 255fr) minmax(min-content, min-content)
-ser:A=C|B:grid-template:none / P [ foo x \ y ] repeat( N , [ foo ] minmax( min-content , min-content ) [ x \ y ] ) repeat( N , [ bar-baz a1 a1 ] fit-content( D ) [ x \ y none-of ] fit-content( P ) [ _x ] ) fit-content( P )	grid-template	none /  1e+20% [Foo x\\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\\ y])  repeat(1, [bar-baz a1 a1] fit-content(1000ex) [x\\ y none-of] fit-content(0.5%) [_x])  fit-content(1e+20%) 	OK=none / 100000000000000000000% [Foo x\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\ y]) repeat(1, [bar-baz a1 a1] fit-content(1000ex) [x\ y none-of] fit-content(0.5%) [_x]) fit-content(100000000000000000000%)	OK=none / 1e+20% [Foo x\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\ y]) repeat(1, [bar-baz a1 a1] fit-content(1000ex) [x\ y none-of] fit-content(0.5%) [_x]) fit-content(1e+20%)
+ser:A=C|B:grid-template:none / D [ foo x \ y ] repeat( N , [ foo ] minmax( min-content , min-content ) [ x \ y ] ) repeat( N , [ ] min-content [ bar-baz x \ y bar-baz ] D ) minmax( min-content , min-content )	grid-template	none /  1e+20mm [Foo x\\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\\ y])  repeat(1, [] min-content [bar-baz x\\ y bar-baz] 255fr )  minmax(min-content, min-content) 	OK=none / 100000000000000000000mm [Foo x\\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\\ y]) repeat(1, min-content [bar-baz x\\ y bar-baz] 255fr) minmax(min-content, min-content)	OK=none / 1e+20mm [Foo x\\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\\ y]) repeat(1, min-content [bar-baz x\\ y bar-baz] 255fr) minmax(min-content, min-content)
+ser:A=C|B:grid-template:none / P [ foo x \ y ] repeat( N , [ foo ] minmax( min-content , min-content ) [ x \ y ] ) repeat( N , [ bar-baz a1 a1 ] fit-content( D ) [ x \ y none-of ] fit-content( P ) [ _x ] ) fit-content( P )	grid-template	none /  1e+20% [Foo x\\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\\ y])  repeat(1, [bar-baz a1 a1] fit-content(1000ex) [x\\ y none-of] fit-content(0.5%) [_x])  fit-content(1e+20%) 	OK=none / 100000000000000000000% [Foo x\\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\\ y]) repeat(1, [bar-baz a1 a1] fit-content(1000ex) [x\\ y none-of] fit-content(0.5%) [_x]) fit-content(100000000000000000000%)	OK=none / 1e+20% [Foo x\\ y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\\ y]) repeat(1, [bar-baz a1 a1] fit-content(1000ex) [x\\ y none-of] fit-content(0.5%) [_x]) fit-content(1e+20%)
 ser:A=C|B:grid:auto-flow fit-content( D ) minmax( max-content , D ) P / subgrid	grid	 auto-flow fit-content(1e+20cqw) minmax(max-content, 0pt) 0% / subgrid 	OK=auto-flow fit-content(100000000000000000000cqw) minmax(max-content, 0pt) 0% / subgrid	OK=auto-flow fit-content(1e+20cqw) minmax(max-content, 0pt) 0% / subgrid
-ser:A=C|B:grid:none / [ foo x \ y none-of ] fit-content( D ) [ _x foo _x ] repeat( N , [ x \ y _x ] fit-content( P ) P )	grid	none / [Foo x\\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\\ y _x] fit-content(1e+20%)  1% ) 	OK=none / [Foo x\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\ y _x] fit-content(100000000000000000000%) 1%)	OK=none / [Foo x\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\ y _x] fit-content(1e+20%) 1%)
+ser:A=C|B:grid:none / [ foo x \ y none-of ] fit-content( D ) [ _x foo _x ] repeat( N , [ x \ y _x ] fit-content( P ) P )	grid	none / [Foo x\\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\\ y _x] fit-content(1e+20%)  1% ) 	OK=none / [Foo x\\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\\ y _x] fit-content(100000000000000000000%) 1%)	OK=none / [Foo x\\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\\ y _x] fit-content(1e+20%) 1%)
 ser:A=C|B:height:P	height	1e+20%	OK=100000000000000000000%	OK=1e+20%
 ser:A=C|B:inline-size:P	inline-size	1e+20%	OK=100000000000000000000%	OK=1e+20%
 ser:A=C|B:inset-block-end:D	inset-block-end	-1e+20pt	OK=-100000000000000000000pt	OK=-1e+20pt
@@ -1168,6 +1187,7 @@ ser:A=C|B:margin-right:P	margin-right	-1e+20%	OK=-100000000000000000000%	OK=-1e+
 ser:A=C|B:margin-top:D	margin-top	-1e+20lh	OK=-100000000000000000000lh	OK=-1e+20lh
 ser:A=C|B:margin-top:P	margin-top	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
 ser:A=C|B:margin:D	margin	-1e+20px	OK=-100000000000000000000px	OK=-1e+20px
+ser:A=C|B:mask-image:image-set( S ) , url( S ) , none , light-dark( none , repeating-radial-gradient( hsl( N P P ) P ) )	mask-image	image-set("\\"q\\"" ), url("b c.png"), none, light-dark(none, repeating-radial-gradient(hsl(120 50% 50%) -1e+20% ))	OK=image-set(url("\\"q\\"") 1x), url("b c.png"), none, light-dark(none, repeating-radial-gradient(rgb(64, 191, 64) -100000000000000000000%))	OK=image-set(url("\\"q\\"") 1x), url("b c.png"), none, light-dark(none, repeating-radial-gradient(rgb(64, 191, 64) -1e+20%))
 ser:A=C|B:mask-position:center , D , right D bottom D	mask-position	center, -1e+20vw, right 1e+20rem bottom -1rex	OK=center center, -100000000000000000000vw center, right 100000000000000000000rem bottom -1rex	OK=center center, -1e+20vw center, right 1e+20rem bottom -1rex
 ser:A=C|B:mask-size:D	mask-size	1e+20px	OK=100000000000000000000px auto	OK=1e+20px auto
 ser:A=C|B:max-block-size:anchor-size( --a-b , D )	max-block-size	anchor-size(--a-b , 1e+20ic)	OK=anchor-size(--a-b, 100000000000000000000ic)	OK=anchor-size(--a-b, 1e+20ic)
@@ -1333,12 +1353,16 @@ ser:A|B:animation-range:D P	animation-range	-1e+20mm 65535%	OK=-1000000000000000
 ser:A|B:animation-range:entry calc( P ) entry calc( P )	animation-range	entry calc(0%) entry calc(100%)	OK=entry calc(0%) entry calc(100%)	OK=entry
 ser:A|B:animation:auto , auto , D , D auto backwards normal , linear infinite D , D , auto , auto none none alternate-reverse	animation	auto, auto, 10s, 0.001ms auto backwards normal, linear infinite 0.001s, 0ms, auto, auto none none alternate-reverse	OK=auto, auto, 10s, 0.001ms normal backwards auto, 0.001s, 0ms, auto, auto linear infinite alternate-reverse none none	OK=auto ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, 10s ease 0s 1 normal none running none, 0.001ms ease 0s 1 normal backwards running auto, 0.001s linear 0s infinite normal none running none, 0ms ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, auto ease 0s 1 alternate-reverse none running none
 ser:A|B:animation:forwards infinite D , D , auto none --a-b	animation	forwards infinite 0ms, 0ms, auto none --a-b	OK=0ms, 0ms, auto infinite forwards none --a-b	OK=0ms ease 0s infinite normal forwards running none, 0ms ease 0s 1 normal none running none, auto ease 0s 1 normal none running --a-b
+ser:A|B:background-image:url( S integrity( S ) cross-origin( anonymous ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" integrity("sha384-foobar") cross-origin(anonymous))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" integrity("sha384-foobar") cross-origin(anonymous))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) integrity("sha384-foobar"))
+ser:A|B:background-image:url( S referrer-policy( no-referrer ) cross-origin( anonymous ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(no-referrer) cross-origin(anonymous))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(no-referrer) cross-origin(anonymous))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" cross-origin(anonymous) referrer-policy(no-referrer))
+ser:A|B:background-image:url( S referrer-policy( no-referrer ) integrity( S ) )	background-image	url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(no-referrer) integrity("sha384-foobar"))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" referrer-policy(no-referrer) integrity("sha384-foobar"))	OK=url("http://{{hosts[][]}}:{{ports[http][0]}}/css/support/1x1-green.png" integrity("sha384-foobar") referrer-policy(no-referrer))
+ser:A|B:background-image:url( S referrer-policy( unsafe-url ) )	background-image	Url("Http://{{Hosts[][]}}:{{Ports[Http][0]}}/Css/Support/1x1-Green.Png" Referrer-Policy(Unsafe-Url))	OK=url("Http://{{Hosts[][]}}:{{Ports[Http][0]}}/Css/Support/1x1-Green.Png" Referrer-Policy(Unsafe-Url))	OK=url("Http://{{Hosts[][]}}:{{Ports[Http][0]}}/Css/Support/1x1-Green.Png" referrer-policy(unsafe-url))
 ser:A|B:background:padding-box scroll border-area	background	padding-box scroll border-area	OK=padding-box border-area	OK=scroll padding-box border-area
 ser:A|B:border-shape:circle( ) border-box circle( ) border-box	border-shape	circle() border-box circle() border-box	OK=circle() border-box circle() border-box	OK=circle() border-box
 ser:A|B:border-shape:circle( ) half-border-box circle( ) half-border-box	border-shape	circle() half-border-box circle() half-border-box	OK=circle() half-border-box circle() half-border-box	OK=circle() half-border-box
 ser:A|B:border-shape:xywh( D D D D )	border-shape	xywh(-1e+20in 360px 1.5rex 65535in ) 	OK=xywh(-100000000000000000000in 360px 1.5rex 65535in)	OK=xywh(-1e+20in 360px 1.5rex 65535in)
 ser:A|B:border-shape:xywh( D D P D )	border-shape	XyWh(-100PT -1e+20Lh 1% 0Vmin ) 	OK=xywh(-100pt -100000000000000000000lh 1% 0vmin)	OK=xywh(-100pt -1e+20lh 1% 0vmin)
-ser:A|B:color:rgb( sign( P - D ) , N , N )	color	rgb(sign(0% - 0px), 0, 0)	OK=rgb(sign(0% + 0px) 0 0)	OK=rgb(sign(0% - 0px) 0 0)
+ser:A|B:color:rgb( from blue r g random( --foo , b , N + b ) )	color	rgb(from blue r g random(--foo, b, 150 + b))	OK=rgb(from blue r g random(--foo, b, 150 + b))	OK=rgb(from blue r g random(--foo, b, (150 + b)))
 ser:A|B:column-height:D	column-height	123456789cm	OK=123456789cm	OK=1.23457e+08cm
 ser:A|B:column-rule-inset-cap-end:D	column-rule-inset-cap-end	 123456789svw	OK=123456789svw	OK=1.23457e+08svw
 ser:A|B:column-rule-inset-cap-end:P	column-rule-inset-cap-end	-1e+20%	OK=-100000000000000000000%	OK=-1e+20%
@@ -1490,7 +1514,6 @@ ser:A|B:timeline-trigger:none auto , none P , normal , D , cover D , D , exit D 
 ser:A|B:timeline-trigger:none auto , none P , normal , D , cover D , entry-crossing P , D , D , P P , D , entry D , contain P / D entry , exit	timeline-trigger	NoNE aUto, nOne 2%, NOrMAL, 2147483648pT , cOvER 0lh, EntRy-CroSsing -1% , 2147483647dVh, -1Ic  , 1% 1.5%, 1000em, ENtrY  -0.5eM, conTAIN 2% / 1Pt EnTrY , Exit 	OK=none auto, none 2%, normal, 2147483648pt, cover 0lh, entry-crossing -1%, 2147483647dvh, -1ic, 1% 1.5%, 1000em, entry -0.5em, contain 2% / 1pt entry, exit	OK=none, 2%, none, 2.14748e+09pt, cover 0lh, entry-crossing -1%, 2.14748e+09dvh, -1ic, 1% 1.5%, 1000em, entry -0.5em, contain 2% / 1pt entry, exit
 ser:A|B:timeline-trigger:none auto , none P , normal , D , cover P , D , exit D , D , P P , D , entry D , contain P / D entry , exit	timeline-trigger	none auto, none 2%, normal, 0pt , cover 2147483647%, 0.5cm , exit 2147483647dvh, -1ic  , 1% 1.5%, 1000em, entry  -0.5em, contain 2% / 1pt entry , exit 	OK=none auto, none 2%, normal, 0pt, cover 2147483647%, 0.5cm, exit 2147483647dvh, -1ic, 1% 1.5%, 1000em, entry -0.5em, contain 2% / 1pt entry, exit	OK=none, 2%, none, 0pt, cover 2.14748e+09%, 0.5cm, exit 2.14748e+09dvh, -1ic, 1% 1.5%, 1000em, entry -0.5em, contain 2% / 1pt entry, exit
 ser:A|B:timeline-trigger:none auto , none P , normal , D , normal P , entry-crossing P , exit D , D , P / cover P , normal , normal normal , entry , exit-crossing D , exit-crossing D , auto , D , contain D entry-crossing , D cover , exit D , normal cover D , D , entry-crossing D / auto , exit-crossing P , D , D D , P , exit , normal	timeline-trigger	nONE AUto, nOne 2%, nOrmal, -1E+20EM , nOrMaL 2147483647%, eNtRY-CROssING -1%, ExIt 2147483647dVH, -1iC, 65535%  / cOver 1.5%, NorMal, nOrmal nOrmAL, EnTRy , ExiT-croSSiNG -0.5Em, ExIT-CroSsing 0.5CH, AUtO, 1PT, coNtAin 255ReX entry-croSsinG , -1in cOveR , EXit 1cqW, NORmal COVEr 0.001REm, 100pT, eNTrY-CROssiNg -1in  / AUTo, ExIT-crOsSInG 360%, 100LH, 0.001rLh 1.5rEX, 0.1%, exIT , nORMAL	OK=none auto, none 2%, normal, -100000000000000000000em, normal 2147483647%, entry-crossing -1%, exit 2147483647dvh, -1ic, 65535% / cover 1.5%, normal, normal normal, entry, exit-crossing -0.5em, exit-crossing 0.5ch, auto, 1pt, contain 255rex entry-crossing, -1in cover, exit 1cqw, normal cover 0.001rem, 100pt, entry-crossing -1in / auto, exit-crossing 360%, 100lh, 0.001rlh 1.5rex, 0.1%, exit, normal	OK=none, 2%, none, -1e+20em, 2.14748e+09%, entry-crossing -1%, exit 2.14748e+09dvh, -1ic, 65535% / cover 1.5%, none, none, entry, exit-crossing -0.5em, exit-crossing 0.5ch, none, 1pt, contain 255rex entry-crossing, -1in cover, exit 1cqw, cover 0.001rem, 100pt, entry-crossing -1in, exit-crossing 360%, 100lh, 0.001rlh 1.5rex, 0.1%, exit, none
-101px  ,	#fff)
 ser:A|B:view-timeline-inset:D P	view-timeline-inset	-1e+20vmax 0%	OK=-100000000000000000000vmax 0%	OK=-1e+20vmax 0%
 ser:A|B:view-timeline-inset:auto , D auto	view-timeline-inset	auto, 2147483647em auto	OK=auto, 2147483647em auto	OK=auto, 2.14748e+09em auto
 ser:A|B:view-timeline-inset:auto auto , P , auto auto	view-timeline-inset	auto auto, 2147483648%, auto auto	OK=auto auto, 2147483648%, auto auto	OK=auto, 2.14748e+09%, auto
@@ -1498,20 +1521,14 @@ ser:A|B:view-timeline-inset:auto auto , auto auto , auto auto , auto	view-timeli
 ser:A|B:view-timeline:none , --foo , --foo , --a-b , --a-b P , --a-b , --foo block , none	view-timeline	none , --foo, --foo, --a-b, --a-b 360%, --a-b, --foo block, none 	OK=none, --foo, --foo, --a-b, --a-b 360%, --a-b, --foo block, none	OK=none, --foo, --foo, --a-b, --a-b 360%, --a-b, --foo, none
 ser:A|B=C:-webkit-text-stroke:D oklch( P N N )	-webkit-text-stroke	0px oklch(50% 0.1 120)	OK=oklch(0.5 0.1 120)	OK=0px oklch(0.5 0.1 120)
 ser:A|B=C:animation-timing-function:linear( N , N )	animation-timing-function	linear(0, 1)	OK=linear(0, 1)	OK=linear(0 0%, 1 100%)
-ser:A|B=C:background-image:none , repeating-conic-gradient( color( srgb N N N / P ) P P , color( srgb N N N / P ) ) , none , none	background-image	none, repeating-conic-gradient(color(srgb 1 0 0 / 50%) -1% -1% , color(srgb 1 0 0 / 50%) ), none, none	OK=none, repeating-conic-gradient(color(srgb 1 0 0 / 0.5) -1% -1%, color(srgb 1 0 0 / 0.5)), none, none	OK=none, repeating-conic-gradient(color(srgb 1 0 0 / 0.5) -1%, color(srgb 1 0 0 / 0.5) -1%, color(srgb 1 0 0 / 0.5)), none, none
-ser:A|B=C:border-image-source:image-set( S )	border-image-source	image-set("\\41 " )	OK=image-set("A")	OK=image-set(url("A") 1x)
+ser:A|B=C:background-color:contrast-color( color( srgb calc( N ) calc( N ) N / N ) )	background-color	contrast-color(color(srgb calc(0.5) calc(2) 1 / 0.5))	OK=contrast-color(color(srgb calc(0.5) calc(2) 1 / 0.5))	OK=contrast-color(color(srgb 0.5 2 1 / 0.5))
+ser:A|B=C:background-color:contrast-color( color( srgb calc( N + ( sign( D - D ) * N ) ) calc( N + ( sign( D - D ) * N ) ) calc( N + ( sign( D - D ) * N ) ) ) )	background-color	contrast-color(color(srgb calc(1 + (sign(20cqw - 10px) * 1)) calc(1 + (sign(20cqw - 10px) * 1)) calc(1 + (sign(20cqw - 10px) * 1))))	OK=contrast-color(color(srgb calc(1 + (1 * sign(20cqw - 10px))) calc(1 + (1 * sign(20cqw - 10px))) calc(1 + (1 * sign(20cqw - 10px)))))	OK=contrast-color(color(srgb calc(1 + sign(20cqw - 10px)) calc(1 + sign(20cqw - 10px)) calc(1 + sign(20cqw - 10px))))
 ser:A|B=C:clip-path:shape( from D D , arc by D D of P P cw rotate D )	clip-path	shape(from 20px 40px, arc by 20px 20px of 10% 20% cw rotate 3.14159265rad)	OK=shape(from 20px 40px, arc by 20px 20px of 10% 20% cw rotate 3.141593rad)	OK=shape(from 20px 40px, arc by 20px 20px of 10% 20% cw rotate 3.14159rad)
-ser:A|B=C:content:image-set( conic-gradient( oklch( P N N ) ) type( S ) D , S type( S ) D )	content	image-set(conic-gradient(oklch(50% 0.1 120)  ) type('b') 0.001dpi, 'b' type("\\"q\\"") 0.5x) 	OK=image-set(conic-gradient(oklch(0.5 0.1 120)) 0.001dpi type("b"), "b" 0.5x type("\"q\""))	OK=image-set(conic-gradient(oklch(0.5 0.1 120)) 0.001dpi type("b"), url("b") 0.5x type("\"q\""))
-ser:A|B=C:cursor:image-set( url( S ) , url( S ) D , S , url( e ) D type( S ) ) , url( e ) , url( e ) N N , s-resize	cursor	image-set(url('d') , url('d') 0.5dpcm, "a" , url(  e  ) 255dppx type("\\41 "))  , url(  e  )  , url(  e  ) 10 1000 , s-resize	OK=image-set(url("d"), url("d") 0.5dpcm, url("a"), url("e") 255dppx type("A")), url("e"), url("e") 10 1000, s-resize	OK=image-set(url("d") 1x, url("d") 0.5dpcm, url("a") 1x, url("e") 255dppx type("A")), url("e"), url("e") 10 1000, s-resize
-ser:A|B=C:cursor:image-set( url( S ) , url( S ) D , url( a . png ) , S D ) , url( e ) , url( e ) N N , pointer	cursor	image-set(url('d') , url('d') 10dpi, url(a.png) , "\\41 " 255dpi)  , url(  e  )  , url(  e  ) -1 10 , pointer	OK=image-set(url("d"), url("d") 10dpi, url("a.png"), url("A") 255dpi), url("e"), url("e") -1 10, pointer	OK=image-set(url("d") 1x, url("d") 10dpi, url("a.png") 1x, url("A") 255dpi), url("e"), url("e") -1 10, pointer
-ser:A|B=C:cursor:image-set( url( S ) , url( S ) D , url( a . png ) , S D ) , url( e ) , url( e ) N N , s-resize	cursor	image-set(url('d') , url('d') 0dpi, url(a.png) , "\\41 " 255dpi)  , url(  e  )  , url(  e  ) 10 1000 , s-resize	OK=image-set(url("d"), url("d") 0dpi, url("a.png"), url("A") 255dpi), url("e"), url("e") 10 1000, s-resize	OK=image-set(url("d") 1x, url("d") 0dpi, url("a.png") 1x, url("A") 255dpi), url("e"), url("e") 10 1000, s-resize
-ser:A|B=C:cursor:url( S ) , url( S ) N N , image-set( S , S D , url( a . png ) type( S ) ) , context-menu	cursor	url("b c.png")  , url('d') -1 2 , image-set("a" , "a b" 10dpcm, url(a.png) type("a b"))  , context-menu	OK=url("b c.png"), url("d") -1 2, image-set(url("a"), url("a b") 10dpcm, url("a.png") type("a b")), context-menu	OK=url("b c.png"), url("d") -1 2, image-set(url("a") 1x, url("a b") 10dpcm, url("a.png") 1x type("a b")), context-menu
+ser:A|B=C:color:alpha( from rebeccapurple / calc( alpha / N ) )	color	alpha(from rebeccapurple / calc(alpha / 1))	OK=alpha(from rebeccapurple / calc(1 * alpha))	OK=alpha(from rebeccapurple / calc(alpha))
+ser:A|B=C:color:alpha( from rgb( N none N ) / alpha )	color	alpha(from rgb(0 none 0) / alpha)	OK=alpha(from rgb(0 none 0) / alpha)	OK=alpha(from rgb(0, 0, 0) / alpha)
+ser:A|B=C:color:alpha( from rgb( none none none ) / alpha )	color	alpha(from rgb(none none none) / alpha)	OK=alpha(from rgb(none none none) / alpha)	OK=alpha(from rgb(0, 0, 0) / alpha)
+ser:A|B=C:color:rgb( N , N , N )	color	rgb(2.5, 3.4, 4.6)	OK=rgb(2.5, 3.4, 4.6)	OK=rgb(3, 3, 5)
 ser:A|B=C:grid-template:[ foo ] repeat( N , [ ] minmax( min-content , auto ) [ ] minmax( min-content , auto ) auto minmax( P , max-content ) [ ] ) [ ] repeat( N , [ foo none-of ] minmax( min-content , D ) [ ] fit-content( D ) ) repeat( N , minmax( D , auto ) [ a1 ] fit-content( D ) ) / subgrid repeat( N , [ foo foo ] ) [ ] repeat( N , [ _x _x ] [ _x ] )	grid-template	[Foo] repeat(1, [] minmax(min-content, auto) [] minmax(min-content, auto)  auto  minmax(0.1%, max-content) []) [] repeat(2, [Foo none-of] minmax(min-content, 65535fr) [] fit-content(1mm) )  repeat(1,  minmax(0pt, auto) [a1] fit-content(360ic) )  / subgrid repeat(2, [Foo Foo]) [] repeat(1, [_x _x] [_x])	OK=[Foo] repeat(1, minmax(min-content, auto) minmax(min-content, auto) auto minmax(0.1%, max-content)) repeat(2, [Foo none-of] minmax(min-content, 65535fr) fit-content(1mm)) repeat(1, minmax(0pt, auto) [a1] fit-content(360ic)) / subgrid repeat(2, [Foo Foo]) repeat(1, [_x _x] [_x])	OK=[Foo] repeat(1, minmax(min-content, auto) minmax(min-content, auto) auto minmax(0.1%, max-content)) repeat(2, [Foo none-of] minmax(min-content, 65535fr) fit-content(1mm)) repeat(1, minmax(0pt, auto) [a1] fit-content(360ic)) / subgrid repeat(2, [Foo Foo]) [] repeat(1, [_x _x] [_x])
-ser:A|B=C:list-style-image:image-set( S type( S ) , url( S ) , S )	list-style-image	image-set("a b" type("\\"q\\""), url("b c.png") , "\\41 " )	OK=image-set("a b" type("\"q\""), url("b c.png"), "A")	OK=image-set(url("a b") 1x type("\"q\""), url("b c.png") 1x, url("A") 1x)
-ser:A|B=C:list-style-image:radial-gradient( black P D , P , green P P , calc( P * N / N ) , white calc( P - P ) P	list-style-image	radial-gradient(black 0% 0.5em, 25%, green 30% 60%, calc(100% * 3 / 4), white calc(100% - 20%) 100%	OK=radial-gradient(black 0% 0.5em, 25%, green 30% 60%, calc(75%), white calc(80%) 100%)	OK=radial-gradient(black 0%, black 0.5em, 25%, green 30%, green 60%, calc(75%), white calc(80%), white 100%)
-ser:A|B=C:list-style:inside repeating-linear-gradient( hsl( N P P ) , D , rgb( N N N ) D D ) S	list-style	inside repeating-linear-gradient(hsl(120 50% 50%)  , -1rem , rgb(1 2 3) 1vh 0.5vh) 'b'	OK=inside repeating-linear-gradient(rgb(64, 191, 64), -1rem, rgb(1, 2, 3) 1vh 0.5vh) "b"	OK=inside repeating-linear-gradient(rgb(64, 191, 64), -1rem, rgb(1, 2, 3) 1vh, rgb(1, 2, 3) 0.5vh) "b"
-ser:A|B=C:mask-image:image-set( S ) , url( S ) , none , light-dark( none , repeating-radial-gradient( hsl( N P P ) P ) )	mask-image	image-set("\\"q\\"" ), url("b c.png"), none, light-dark(none, repeating-radial-gradient(hsl(120 50% 50%) -1% ))	OK=image-set("\"q\""), url("b c.png"), none, light-dark(none, repeating-radial-gradient(rgb(64, 191, 64) -1%))	OK=image-set(url("\"q\"") 1x), url("b c.png"), none, light-dark(none, repeating-radial-gradient(rgb(64, 191, 64) -1%))
-ser:A|B=C:shape-outside:radial-gradient( black P D , P , green P P , calc( P * N / N ) , white calc( P - P ) P	shape-outside	radial-gradient( black\n0%\t0.5em,\n25%, green \n 30% 60%, \n calc(100%\t*  3   /\t4),\nwhite\tcalc(100%\n- \n 20% )\t100% 	OK=radial-gradient(black 0% 0.5em, 25%, green 30% 60%, calc(75%), white calc(80%) 100%)	OK=radial-gradient(black 0%, black 0.5em, 25%, green 30%, green 60%, calc(75%), white calc(80%), white 100%)
 ser:A|B=C:text-decoration-thickness:calc( D - D )	text-decoration-thickness	calc(0.5em - 0px)	OK=calc(0.5em + 0px)	OK=calc(0.5em - 0px)
 ser:A|B=C:text-decoration-thickness:calc( P - D )	text-decoration-thickness	calc(200% - 0px)	OK=calc(200% + 0px)	OK=calc(200% - 0px)
 ser:A|B=C:text-underline-offset:calc( D - D )	text-underline-offset	calc(0.5em - 0px)	OK=calc(0.5em + 0px)	OK=calc(0.5em - 0px)
@@ -1521,7 +1538,9 @@ ser:A|B=C:transform:rotate( calc( D - D ) )	transform	rotate(calc(30rad - 10grad
 ser:A|B=C:transform:rotate( calc( D / N ) )	transform	rotate(calc(90rad / 2))	OK=rotate(calc(2578.310078deg))	OK=rotate(calc(2578.31deg))
 ser:A|B=C:transform:rotate( calc( N * D ) )	transform	rotate(calc(2 * 45rad))	OK=rotate(calc(5156.620156deg))	OK=rotate(calc(5156.62deg))
 ser:A|B=C:transition-timing-function:cubic-bezier( N , N , N , N ) , linear , linear( N , N ) , ease-in	transition-timing-function	cubic-bezier(0.5, 1, 0, 1000), linear, linear(1 , 1.5 ), ease-in	OK=cubic-bezier(0.5, 1, 0, 1000), linear, linear(1, 1.5), ease-in	OK=cubic-bezier(0.5, 1, 0, 1000), linear, linear(1 0%, 1.5 100%), ease-in
+ser:A|B=C:width:calc( nan * D )	width	calc(NaN * 1rem)	OK=calc(NaN * 1px)	OK=calc(NaN * 1rem)
 ser:A|B|C:-webkit-text-stroke-width:D	-webkit-text-stroke-width	123456789lh	OK=123456789lh	OK=1.23457e+08lh
+ser:A|B|C:-webkit-text-stroke:D	-webkit-text-stroke	123456789Q	OK=123456789q	OK=1.23457e+08q
 ser:A|B|C:animation-delay:D	animation-delay	123456789s 	OK=123456789s	OK=1.23457e+08s
 ser:A|B|C:animation-duration:D , D	animation-duration	123456789ms, 100ms	OK=123456789ms, 100ms	OK=1.23457e+08ms, 100ms
 ser:A|B|C:animation-iteration-count:N	animation-iteration-count	123456789	OK=123456789	OK=1.23457e+08
@@ -1532,10 +1551,12 @@ ser:A|B|C:animation-timing-function:linear , step-start , linear( N P , N , N , 
 ser:A|B|C:animation-timing-function:step-end , linear , ease-in , linear( N , N , N P , N )	animation-timing-function	step-end, \n linear,    ease-in,  linear(\t2,   1e+20,\n0.001   -100%,  0.5)\n	OK=steps(1), linear, ease-in, linear(2, 100000000000000000000, 0.001 -100%, 0.5)	OK=step-end, linear, ease-in, linear(2 0%, 1.00000e+20 0%, 0.001 0%, 0.5 100%)
 ser:A|B|C:animation-timing-function:steps( N , jump-both ) , ease , linear( N P P , N P ) , linear	animation-timing-function	steps(1 , jump-both), ease, linear(10 65535% 2147483647%, 0.001 0%), linear	OK=steps(1, jump-both), ease, linear(10 65535%, 10 2147483647%, 0.001 2147483647%), linear	OK=steps(1, jump-both), ease, linear(10 65535%, 10 2.14748e+9%, 0.001 2.14748e+9%), linear
 ser:A|B|C:animation:auto	animation	auto	OK=none	OK=auto ease 0s 1 normal none running none
+ser:A|B|C:animation:forwards infinite D , D , D normal	animation	forwards\tinfinite  255ms, \n 0.001s, \t2ms   normal 	OK=255ms, 0.001s, 2ms infinite forwards	OK=255ms ease 0s infinite normal forwards running none, 0.001s ease 0s 1 normal none running none, 2ms ease 0s 1 normal none running none
 ser:A|B|C:backdrop-filter:drop-shadow( light-dark( red , blue ) D D D )	backdrop-filter	drop-shadow(light-dark(red, blue) 10pt 0.5cap 123456789cm)	OK=drop-shadow(light-dark(red, blue) 10pt 0.5cap 123456789cm)	OK=drop-shadow(light-dark(red, blue) 10pt 0.5cap 1.23457e+08cm)
 ser:A|B|C:backdrop-filter:invert( N ) hue-rotate( D ) url( a . png )	backdrop-filter	invert(1e-07) hue-rotate(255rad) url(a.png)	OK=invert(0) hue-rotate(255rad) url("a.png")	OK=invert(1e-07) hue-rotate(255rad) url("a.png")
 ser:A|B|C:backdrop-filter:sepia( N ) hue-rotate( N ) grayscale( ) url( a . png )	backdrop-filter	sepia(1e-07) hue-rotate(0) grayscale() url(a.png)	OK=sepia(0) hue-rotate(0deg) grayscale() url("a.png")	OK=sepia(1e-07) hue-rotate(0deg) grayscale() url("a.png")
 ser:A|B|C:backdrop-filter:sepia( N ) url( S ) url( a . png ) invert( N )	backdrop-filter	sepia(0.1) url("b c.png") url(a.png) invert(1e-07)	OK=sepia(0.1) url("b c.png") url("a.png") invert(0)	OK=sepia(0.1) url("b c.png") url("a.png") invert(1e-07)
+ser:A|B|C:background-image:none , repeating-conic-gradient( color( srgb N N N / P ) P P , color( srgb N N N / P ) ) , none , none	background-image	none, repeating-conic-gradient(color(srgb 1 0 0 / 50%) 123456789% -1% , color(srgb 1 0 0 / 50%) ), none, none	OK=none, repeating-conic-gradient(color(srgb 1 0 0 / 0.5) 123456789%, color(srgb 1 0 0 / 0.5) -1%, color(srgb 1 0 0 / 0.5)), none, none	OK=none, repeating-conic-gradient(color(srgb 1 0 0 / 0.5) 1.23457e+08%, color(srgb 1 0 0 / 0.5) -1%, color(srgb 1 0 0 / 0.5)), none, none
 ser:A|B|C:background-position-x:D	background-position-x	 123456789svw	OK=123456789svw	OK=1.23457e+08svw
 ser:A|B|C:background-position:bottom P right D	background-position	bottom -1% right 2147483648svw	OK=right 2147483648svw bottom -1%	OK=right 2.14748e+09svw bottom -1%
 ser:A|B|C:background-position:center top D , top D center	background-position	center top 2147483647vh, top 0cqw center	OK=center top 2147483647vh, center top 0cqw	OK=center top 2.14748e+09vh, center top 0cqw
@@ -1548,6 +1569,7 @@ ser:A|B|C:block-size:P	block-size	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:border-block-end-width:D	border-block-end-width	123456789pt	OK=123456789pt	OK=1.23457e+08pt
 ser:A|B|C:border-block-end:D	border-block-end	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:border-block-start-width:D	border-block-start-width	123456789em	OK=123456789em	OK=1.23457e+08em
+ser:A|B|C:border-block-start:D	border-block-start	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:border-block-width:D	border-block-width	123456789lh	OK=123456789lh	OK=1.23457e+08lh
 ser:A|B|C:border-block:D	border-block	123456789ch	OK=123456789ch	OK=1.23457e+08ch
 ser:A|B|C:border-bottom-left-radius:D	border-bottom-left-radius	123456789cqw 	OK=123456789cqw	OK=1.23457e+08cqw
@@ -1560,12 +1582,16 @@ ser:A|B|C:border-end-start-radius:D	border-end-start-radius	123456789dvh 	OK=123
 ser:A|B|C:border-end-start-radius:P P	border-end-start-radius	123456789% 1000%	OK=123456789% 1000%	OK=1.23457e+08% 1000%
 ser:A|B|C:border-image-outset:D	border-image-outset	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:border-image-outset:N	border-image-outset	123456789	OK=123456789	OK=1.23457e+08
+ser:A|B|C:border-image-slice:N	border-image-slice	123456789 	OK=123456789	OK=1.23457e+08
 ser:A|B|C:border-image-slice:P P	border-image-slice	 2147483648% 360%	OK=2147483648% 360%	OK=2.14748e+09% 360%
 ser:A|B|C:border-image-slice:fill P	border-image-slice	fill 2147483647%	OK=2147483647% fill	OK=2.14748e+09% fill
 ser:A|B|C:border-image-width:D	border-image-width	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:border-image-width:P N	border-image-width	123456789% 65535	OK=123456789% 65535	OK=1.23457e+08% 65535
 ser:A|B|C:border-image-width:auto N	border-image-width	auto 123456789	OK=auto 123456789	OK=auto 1.23457e+08
+ser:A|B|C:border-image:P P N none	border-image	0.5% 1e+20% 123456789   none	OK=0.5% 100000000000000000000% 123456789	OK=none 0.5% 1e+20% 1.23457e+08 / 1 / 0 stretch
+ser:A|B|C:border-image:space stretch none N	border-image	space stretch none 123456789  	OK=123456789 space stretch	OK=none 1.23457e+08 / 1 / 0 space stretch
 ser:A|B|C:border-inline-end-width:D	border-inline-end-width	123456789cqw	OK=123456789cqw	OK=1.23457e+08cqw
+ser:A|B|C:border-inline-end:D	border-inline-end	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:border-inline-start-width:D	border-inline-start-width	123456789ch	OK=123456789ch	OK=1.23457e+08ch
 ser:A|B|C:border-inline-start:D	border-inline-start	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:border-inline-width:D	border-inline-width	123456789cqw	OK=123456789cqw	OK=1.23457e+08cqw
@@ -1590,10 +1616,12 @@ ser:A|B|C:border:D	border	123456789mm	OK=123456789mm	OK=1.23457e+08mm
 ser:A|B|C:bottom:D	bottom	2147483647mm	OK=2147483647mm	OK=2.14748e+09mm
 ser:A|B|C:bottom:P	bottom	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:clip-path:fill-box circle( D at top left )	clip-path	fill-box circle(123456789in at top left)	OK=circle(123456789in at left top) fill-box	OK=circle(1.23457e+08in at left top) fill-box
+ser:A|B|C:clip-path:rect( auto D D auto round D )	clip-path	rect(auto 1e+20svw -100dvh auto round 123456789in )	OK=rect(auto 100000000000000000000svw -100dvh auto round 123456789in)	OK=rect(auto 1e+20svw -100dvh auto round 1.23457e+08in)
 ser:A|B|C:clip-path:rect( auto P D auto )	clip-path	rect(auto 123456789% 2svw auto )	OK=rect(auto 123456789% 2svw auto)	OK=rect(auto 1.23457e+08% 2svw auto)
 ser:A|B|C:clip:rect( D , D , auto , D )	clip	rect(0.1ic, 255lh, auto, 2147483648dvh)	OK=rect(0.1ic, 255lh, auto, 2147483648dvh)	OK=rect(0.1ic, 255lh, auto, 2.14748e+09dvh)
 ser:A|B|C:column-gap:D	column-gap	123456789ex	OK=123456789ex	OK=1.23457e+08ex
 ser:A|B|C:column-rule-width:D	column-rule-width	123456789px	OK=123456789px	OK=1.23457e+08px
+ser:A|B|C:column-rule:D	column-rule	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:column-width:D	column-width	123456789em	OK=123456789em	OK=1.23457e+08em
 ser:A|B|C:contain-intrinsic-block-size:D	contain-intrinsic-block-size	 123456789lh	OK=123456789lh	OK=1.23457e+08lh
 ser:A|B|C:contain-intrinsic-height:D	contain-intrinsic-height	 123456789cqw	OK=123456789cqw	OK=1.23457e+08cqw
@@ -1601,6 +1629,10 @@ ser:A|B|C:contain-intrinsic-inline-size:D	contain-intrinsic-inline-size	 1234567
 ser:A|B|C:contain-intrinsic-size:auto D	contain-intrinsic-size	auto 123456789ex	OK=auto 123456789ex	OK=auto 1.23457e+08ex
 ser:A|B|C:contain-intrinsic-size:none D	contain-intrinsic-size	 none  123456789em	OK=none 123456789em	OK=none 1.23457e+08em
 ser:A|B|C:contain-intrinsic-width:D	contain-intrinsic-width	 123456789rlh	OK=123456789rlh	OK=1.23457e+08rlh
+ser:A|B|C:content:image-set( conic-gradient( oklch( P N N ) ) type( S ) D , S type( S ) D )	content	image-set(conic-gradient(oklch(50% 0.1 120)  ) type('b') 0.001dpi, 'b' type("\\"q\\"") 123456789x) 	OK=image-set(conic-gradient(oklch(0.5 0.1 120)) 0.001dpi type("b"), url("b") 123456789x type("\\"q\\""))	OK=image-set(conic-gradient(oklch(0.5 0.1 120)) 0.001dpi type("b"), url("b") 1.23457e+08x type("\\"q\\""))
+ser:A|B|C:cursor:image-set( url( S ) , url( S ) D , S , url( e ) D type( S ) ) , url( e ) , url( e ) N N , s-resize	cursor	image-set(url('d') , url('d') 123456789dpcm, "a" , url(  e  ) 255dppx type("\\41 "))  , url(  e  )  , url(  e  ) 10 1000 , s-resize	OK=image-set(url("d") 1x, url("d") 123456789dpcm, url("a") 1x, url("e") 255dppx type("A")), url("e"), url("e") 10 1000, s-resize	OK=image-set(url("d") 1x, url("d") 1.23457e+08dpcm, url("a") 1x, url("e") 255dppx type("A")), url("e"), url("e") 10 1000, s-resize
+ser:A|B|C:cursor:image-set( url( S ) , url( S ) D , url( a . png ) , S D type( S ) ) , url( e ) , url( e ) N N , s-resize	cursor	image-set(url('d') , url('d') 10dpi, url(a.png) , "\\41 " 123456789dppx type("\\41 "))  , url(  e  )  , url(  e  ) 10 1000 , s-resize	OK=image-set(url("d") 1x, url("d") 10dpi, url("a.png") 1x, url("A") 123456789dppx type("A")), url("e"), url("e") 10 1000, s-resize	OK=image-set(url("d") 1x, url("d") 10dpi, url("a.png") 1x, url("A") 1.23457e+08dppx type("A")), url("e"), url("e") 10 1000, s-resize
+ser:A|B|C:cursor:url( S ) N N , url( e ) N N , col-resize	cursor	url('d') -0.5 123456789 , url(  e  ) 1e+20 1e+20 , col-resize	OK=url("d") -0.5 123456789, url("e") 100000000000000000000 100000000000000000000, col-resize	OK=url("d") 0 123456789, url("e") 2147483647 2147483647, col-resize
 ser:A|B|C:cx:D	cx	123456789cap	OK=123456789cap	OK=1.23457e+08cap
 ser:A|B|C:cx:P	cx	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:cy:D	cy	\n123456789PX	OK=123456789px	OK=1.23457e+08px
@@ -1618,17 +1650,21 @@ ser:A|B|C:flood-opacity:N	flood-opacity	123456789	OK=123456789	OK=1.23457e+08
 ser:A|B|C:font-size-adjust:N	font-size-adjust	 123456789	OK=123456789	OK=1.23457e+08
 ser:A|B|C:font-size:D	font-size	123456789ic	OK=123456789ic	OK=1.23457e+08ic
 ser:A|B|C:font-size:P	font-size	123456789%	OK=123456789%	OK=1.23457e+08%
+ser:A|B|C:font-style:oblique D	font-style	oblique 1e-07grad	OK=oblique 0grad	OK=oblique 1e-07grad
+ser:A|B|C:font:normal oblique D x-large / D monospace , math , S , ui-serif	font	 normal   oblique   -89.999grad   x-large /\n2147483648ic monospace, math, \n 'b',   ui-serif	OK=oblique -89.999grad x-large / 2147483648ic monospace, math, b, ui-serif	OK=oblique -89.999grad x-large / 2.14748e+09ic monospace, math, b, ui-serif
+ser:A|B|C:font:normal oblique N x-large / D monospace , math , S , ui-serif	font	normal oblique 90 x-large / 2147483648ic monospace, math, 'b', ui-serif	OK=oblique 90 x-large / 2147483648ic monospace, math, b, ui-serif	OK=oblique 90 x-large / 2.14748e+09ic monospace, math, b, ui-serif
 ser:A|B|C:gap:D	gap	123456789lh 	OK=123456789lh	OK=1.23457e+08lh
 ser:A|B|C:grid-auto-columns:D	grid-auto-columns	123456789fr	OK=123456789fr	OK=1.23457e+08fr
 ser:A|B|C:grid-auto-rows:D	grid-auto-rows	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:grid-auto-rows:minmax( auto , P ) min-content P minmax( max-content , max-content )	grid-auto-rows	minmax(auto, 2147483648%) min-content 1000% minmax(max-content, max-content)	OK=minmax(auto, 2147483648%) min-content 1000% minmax(max-content, max-content)	OK=minmax(auto, 2.14748e+09%) min-content 1000% minmax(max-content, max-content)
 ser:A|B|C:grid-template-columns:[ none-of ] minmax( max-content , max-content ) minmax( min-content , D ) [ ] repeat( N , [ _x none-of ] minmax( P , auto ) [ bar-baz _x ] )	grid-template-columns	[none-of] minmax(max-content, max-content)  minmax(min-content, 1fr) [] repeat(2, [_x none-of] minmax(123456789%, auto) [bar-baz _x]) 	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 1fr) repeat(2, [_x none-of] minmax(123456789%, auto) [bar-baz _x])	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 1fr) repeat(2, [_x none-of] minmax(1.23457e+08%, auto) [bar-baz _x])
 ser:A|B|C:grid-template-columns:[ none-of ] minmax( max-content , max-content ) minmax( min-content , D ) [ a1 ] repeat( N , [ _x none-of ] minmax( P , max-content ) )	grid-template-columns	[none-of] minmax(max-content, max-content)  minmax(min-content, 123456789fr) [a1] repeat(2, [_x none-of] minmax(1.5%, max-content) ) 	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 123456789fr) [a1] repeat(2, [_x none-of] minmax(1.5%, max-content))	OK=[none-of] minmax(max-content, max-content) minmax(min-content, 1.23457e+08fr) [a1] repeat(2, [_x none-of] minmax(1.5%, max-content))
-ser:A|B|C:grid-template-rows:[ a1 x \ y ] D [ _x foo ]	grid-template-rows	[a1 x\\ y] 2147483647fr [_x Foo]	OK=[a1 x\ y] 2147483647fr [_x Foo]	OK=[a1 x\ y] 2.14748e+09fr [_x Foo]
+ser:A|B|C:grid-template-rows:[ a1 x \ y ] D [ _x foo ]	grid-template-rows	[a1 x\\ y] 2147483647fr [_x Foo]	OK=[a1 x\\ y] 2147483647fr [_x Foo]	OK=[a1 x\\ y] 2.14748e+09fr [_x Foo]
 ser:A|B|C:grid-template-rows:repeat( N , minmax( D , max-content ) [ _x bar-baz foo ] max-content [ _x ] ) [ ]	grid-template-rows	 repeat(1,  minmax(123456789px, max-content) [_x bar-baz foo] max-content [_x]) []	OK=repeat(1, minmax(123456789px, max-content) [_x bar-baz foo] max-content [_x])	OK=repeat(1, minmax(1.23457e+08px, max-content) [_x bar-baz foo] max-content [_x])
-ser:A|B|C:grid-template:none / D minmax( auto , D ) [ x \ y none-of ] repeat( N , [ x \ y ] minmax( D , P ) [ x \ y none-of ] fit-content( P ) [ _x ] fit-content( P ) ) repeat( N , [ foo ] fit-content( D ) [ foo ] minmax( min-content , auto ) auto )	grid-template	none /  0ex  minmax(auto, 2147483648em) [x\\ y none-of] repeat(1, [x\\ y] minmax(255cm, 1000%) [x\\ y none-of] fit-content(0.5%) [_x] fit-content(0%) )  repeat(1, [Foo] fit-content(0vmin) [Foo] minmax(min-content, auto)  auto ) 	OK=none / 0ex minmax(auto, 2147483648em) [x\ y none-of] repeat(1, [x\ y] minmax(255cm, 1000%) [x\ y none-of] fit-content(0.5%) [_x] fit-content(0%)) repeat(1, [Foo] fit-content(0vmin) [Foo] minmax(min-content, auto) auto)	OK=none / 0ex minmax(auto, 2.14748e+09em) [x\ y none-of] repeat(1, [x\ y] minmax(255cm, 1000%) [x\ y none-of] fit-content(0.5%) [_x] fit-content(0%)) repeat(1, [Foo] fit-content(0vmin) [Foo] minmax(min-content, auto) auto)
+ser:A|B|C:grid-template:none / D [ foo x \ y ] repeat( N , [ foo ] minmax( min-content , min-content ) [ x \ y ] ) repeat( N , [ ] min-content [ bar-baz x \ y bar-baz ] D ) minmax( min-content , min-content )	grid-template	none\t/ \n 123456789mm  [Foo\nx\\ \n y]   repeat(2147483647,\n[foo]   minmax(min-content, \nmin-content) \n [x\\ y])\nrepeat(1, \n []\nmin-content [bar-baz\tx\\ \n y\tbar-baz]  255fr\n)\nminmax(min-content,\tmin-content ) \n	OK=none / 123456789mm [Foo x\\  y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\\ y]) repeat(1, min-content [bar-baz x\\  y bar-baz] 255fr) minmax(min-content, min-content)	OK=none / 1.23457e+08mm [Foo x\\  y] repeat(2147483647, [foo] minmax(min-content, min-content) [x\\ y]) repeat(1, min-content [bar-baz x\\  y bar-baz] 255fr) minmax(min-content, min-content)
+ser:A|B|C:grid-template:none / D minmax( auto , D ) [ x \ y none-of ] repeat( N , [ x \ y ] minmax( D , P ) [ x \ y none-of ] fit-content( P ) [ _x ] fit-content( P ) ) repeat( N , [ foo ] fit-content( D ) [ foo ] minmax( min-content , auto ) auto )	grid-template	none /  0ex  minmax(auto, 2147483648em) [x\\ y none-of] repeat(1, [x\\ y] minmax(255cm, 1000%) [x\\ y none-of] fit-content(0.5%) [_x] fit-content(0%) )  repeat(1, [Foo] fit-content(0vmin) [Foo] minmax(min-content, auto)  auto ) 	OK=none / 0ex minmax(auto, 2147483648em) [x\\ y none-of] repeat(1, [x\\ y] minmax(255cm, 1000%) [x\\ y none-of] fit-content(0.5%) [_x] fit-content(0%)) repeat(1, [Foo] fit-content(0vmin) [Foo] minmax(min-content, auto) auto)	OK=none / 0ex minmax(auto, 2.14748e+09em) [x\\ y none-of] repeat(1, [x\\ y] minmax(255cm, 1000%) [x\\ y none-of] fit-content(0.5%) [_x] fit-content(0%)) repeat(1, [Foo] fit-content(0vmin) [Foo] minmax(min-content, auto) auto)
 ser:A|B|C:grid:auto-flow fit-content( D ) minmax( max-content , D ) P / subgrid	grid	 Auto-Flow Fit-Content(123456789cqw) Minmax(Max-Content, 0pt) 0% / Subgrid 	OK=auto-flow fit-content(123456789cqw) minmax(max-content, 0pt) 0% / subgrid	OK=auto-flow fit-content(1.23457e+08cqw) minmax(max-content, 0pt) 0% / subgrid
-ser:A|B|C:grid:none / [ foo x \ y none-of ] fit-content( D ) [ _x foo _x ] repeat( N , [ x \ y _x ] fit-content( P ) P )	grid	none / [Foo x\\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\\ y _x] fit-content(123456789%)  1% ) 	OK=none / [Foo x\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\ y _x] fit-content(123456789%) 1%)	OK=none / [Foo x\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\ y _x] fit-content(1.23457e+08%) 1%)
+ser:A|B|C:grid:none / [ foo x \ y none-of ] fit-content( D ) [ _x foo _x ] repeat( N , [ x \ y _x ] fit-content( P ) P )	grid	none / [Foo x\\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\\ y _x] fit-content(123456789%)  1% ) 	OK=none / [Foo x\\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\\ y _x] fit-content(123456789%) 1%)	OK=none / [Foo x\\ y none-of] fit-content(0.5ic) [_x foo _x] repeat(1, [x\\ y _x] fit-content(1.23457e+08%) 1%)
 ser:A|B|C:height:P	height	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:inline-size:P	inline-size	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:inset-block-end:D	inset-block-end	123456789pt	OK=123456789pt	OK=1.23457e+08pt
@@ -1646,6 +1682,7 @@ ser:A|B|C:inset-inline:auto anchor-size( D	inset-inline	auto anchor-size(1234567
 ser:A|B|C:inset:anchor( --foo top , P ) D anchor-size( )	inset	anchor(--foo top , 123456789%) 0.001pc anchor-size()	OK=anchor(--foo top, 123456789%) 0.001pc anchor-size()	OK=anchor(--foo top, 1.23457e+08%) 0.001pc anchor-size()
 ser:A|B|C:inset:anchor-size( ) D anchor( self-start , D )	inset	anchor-size( ) 360rlh anchor( self-start , 123456789vmin)	OK=anchor-size() 360rlh anchor(self-start, 123456789vmin)	OK=anchor-size() 360rlh anchor(self-start, 1.23457e+08vmin)
 ser:A|B|C:inset:anchor-size( ) D auto	inset	anchor-size(   ) \n 1e-07vmin  auto	OK=anchor-size() 0vmin auto	OK=anchor-size() 1e-07vmin auto
+ser:A|B|C:inset:auto auto auto D	inset	auto auto auto -1e+220px	OK=auto auto auto -340282346638528860000000000000000000000px	OK=auto auto auto -3.40282e+38px
 ser:A|B|C:left:D	left	123456789dvh	OK=123456789dvh	OK=1.23457e+08dvh
 ser:A|B|C:letter-spacing:D	letter-spacing	123456789cm	OK=123456789cm	OK=1.23457e+08cm
 ser:A|B|C:letter-spacing:P	letter-spacing	123456789%	OK=123456789%	OK=1.23457e+08%
@@ -1671,6 +1708,8 @@ ser:A|B|C:margin-right:P	margin-right	-1e-07%	OK=0%	OK=-1e-07%
 ser:A|B|C:margin-top:D	margin-top	123456789lh	OK=123456789lh	OK=1.23457e+08lh
 ser:A|B|C:margin-top:P	margin-top	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:margin:D	margin	123456789px	OK=123456789px	OK=1.23457e+08px
+ser:A|B|C:mask-image:image-set( S ) , url( S ) , none , light-dark( none , repeating-radial-gradient( hsl( N P P ) P ) )	mask-image	image-set("\\"q\\"" ), url("b c.png"), none, light-dark(none, repeating-radial-gradient(hsl(120 50% 50%) 123456789% ))	OK=image-set(url("\\"q\\"") 1x), url("b c.png"), none, light-dark(none, repeating-radial-gradient(rgb(64, 191, 64) 123456789%))	OK=image-set(url("\\"q\\"") 1x), url("b c.png"), none, light-dark(none, repeating-radial-gradient(rgb(64, 191, 64) 1.23457e+08%))
+ser:A|B|C:mask-image:image-set( S , url( e ) D , light-dark( none , none ) ) , url( S )	mask-image	image-set('b' , url(  e  ) 2147483647dpi, light-dark(none, none) ), url("b c.png")	OK=image-set(url("b") 1x, url("e") 2147483647dpi, light-dark(none, none) 1x), url("b c.png")	OK=image-set(url("b") 1x, url("e") 2.14748e+09dpi, light-dark(none, none) 1x), url("b c.png")
 ser:A|B|C:mask-position:center , D , right D bottom D	mask-position	center, 123456789vw, right 1e+20rem bottom -1rex	OK=center center, 123456789vw center, right 100000000000000000000rem bottom -1rex	OK=center center, 1.23457e+08vw center, right 1e+20rem bottom -1rex
 ser:A|B|C:mask-size:D	mask-size	123456789px	OK=123456789px auto	OK=1.23457e+08px auto
 ser:A|B|C:mask-size:contain , P auto , contain	mask-size	contain, 2147483647% auto, contain	OK=contain, 2147483647% auto, contain	OK=contain, 2.14748e+09% auto, contain
@@ -1691,6 +1730,7 @@ ser:A|B|C:offset-path:polygon( D D , P P ) fill-box	offset-path	polygon(0Q 10rem
 ser:A|B|C:offset-path:xywh( D D D D )	offset-path	xywh(-1cqw 1e+20Q 2147483647em 65535ic )	OK=xywh(-1cqw 100000000000000000000q 2147483647em 65535ic)	OK=xywh(-1cqw 1e+20q 2.14748e+09em 65535ic)
 ser:A|B|C:offset-path:xywh( P D D D )	offset-path	 xywh( 360%  0Q  2147483647em   65535ic ) 	OK=xywh(360% 0q 2147483647em 65535ic)	OK=xywh(360% 0q 2.14748e+09em 65535ic)
 ser:A|B|C:offset-position:top P right D	offset-position	top \n 1e-07%  right\t0.5vh	OK=right 0.5vh top 0%	OK=right 0.5vh top 1e-07%
+ser:A|B|C:offset-rotate:D	offset-rotate	123456789rad	OK=123456789rad	OK=1.23457e+08rad
 ser:A|B|C:offset:auto none D	offset	auto none 123456789vh 	OK=auto none 123456789vh	OK=auto none 1.23457e+08vh
 ser:A|B|C:offset:normal / P	offset	normal  / 123456789%	OK=normal / 123456789% center	OK=normal / 1.23457e+08% center
 ser:A|B|C:opacity:N	opacity	123456789	OK=123456789	OK=1.23457e+08
@@ -1698,12 +1738,13 @@ ser:A|B|C:opacity:P	opacity	123456789%	OK=1234567.89	OK=1.23457e+06
 ser:A|B|C:outline-offset:D	outline-offset	123456789ic	OK=123456789ic	OK=1.23457e+08ic
 ser:A|B|C:outline-width:D	outline-width	123456789cm	OK=123456789cm	OK=1.23457e+08cm
 ser:A|B|C:outline:D	outline	123456789px	OK=123456789px	OK=1.23457e+08px
-ser:A|B|C:overflow-clip-margin:D	overflow-clip-margin	 1e-07pt	OK=0pt	OK=1e-07pt
+ser:A|B|C:overflow-clip-margin:D	overflow-clip-margin	 1e-07pt	OK=0px	OK=1e-07pt
 ser:A|B|C:padding-block-end:D	padding-block-end	123456789ch	OK=123456789ch	OK=1.23457e+08ch
 ser:A|B|C:padding-block-end:P	padding-block-end	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:padding-block-start:D	padding-block-start	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:padding-block-start:P	padding-block-start	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:padding-block:D	padding-block	123456789px	OK=123456789px	OK=1.23457e+08px
+ser:A|B|C:padding-block:P P	padding-block	123456789% 0%	OK=123456789% 0%	OK=1.23457e+08% 0%
 ser:A|B|C:padding-bottom:D	padding-bottom	123456789mm	OK=123456789mm	OK=1.23457e+08mm
 ser:A|B|C:padding-bottom:P	padding-bottom	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:padding-inline-end:D	padding-inline-end	123456789lvi	OK=123456789lvi	OK=1.23457e+08lvi
@@ -1773,6 +1814,8 @@ ser:A|B|C:shape-image-threshold:P	shape-image-threshold	123456789%	OK=1234567.89
 ser:A|B|C:shape-margin:D	shape-margin	123456789Q	OK=123456789q	OK=1.23457e+08q
 ser:A|B|C:shape-outside:xywh( D D P D )	shape-outside	xywh(-1e+20pt 2147483647rlh 0% 65535cqw )	OK=xywh(-100000000000000000000pt 2147483647rlh 0% 65535cqw)	OK=xywh(-1e+20pt 2.14748e+09rlh 0% 65535cqw)
 ser:A|B|C:stop-opacity:N	stop-opacity	123456789	OK=123456789	OK=1.23457e+08
+ser:A|B|C:stroke-dasharray:D D	stroke-dasharray	1e+20vmax 65535vh	OK=100000000000000000000vmax 65535vh	OK=1e+20vmax, 65535vh
+ser:A|B|C:stroke-dasharray:N N N P	stroke-dasharray	0 1 255 360%	OK=0 1 255 360%	OK=0, 1, 255, 360%
 ser:A|B|C:stroke-dashoffset:D	stroke-dashoffset	123456789px	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:stroke-dashoffset:N	stroke-dashoffset	-1e+20	OK=-100000000000000000000	OK=-1e+20
 ser:A|B|C:stroke-dashoffset:P	stroke-dashoffset	123456789%	OK=123456789%	OK=1.23457e+08%
@@ -1787,6 +1830,7 @@ ser:A|B|C:text-decoration-thickness:P	text-decoration-thickness	123456789%	OK=12
 ser:A|B|C:text-decoration:D blink overline	text-decoration	123456789mm blink overline	OK=overline blink 123456789mm	OK=overline blink 1.23457e+08mm
 ser:A|B|C:text-decoration:grammar-error D	text-decoration	grammar-error 123456789rlh	OK=grammar-error 123456789rlh	OK=grammar-error 1.23457e+08rlh
 ser:A|B|C:text-decoration:spelling-error #H D	text-decoration	spelling-error #abc 123456789ch	OK=spelling-error 123456789ch rgb(170, 187, 204)	OK=spelling-error 1.23457e+08ch rgb(170, 187, 204)
+ser:A|B|C:text-emphasis:currentcolor	text-emphasis	currentcolor	OK=none	OK=currentcolor
 ser:A|B|C:text-indent:D	text-indent	123456789px  	OK=123456789px	OK=1.23457e+08px
 ser:A|B|C:text-indent:P each-line	text-indent	123456789%  each-line	OK=123456789% each-line	OK=1.23457e+08% each-line
 ser:A|B|C:text-underline-offset:D	text-underline-offset	123456789mm	OK=123456789mm	OK=1.23457e+08mm
@@ -1810,8 +1854,11 @@ ser:A|B|C:transition-timing-function:linear , ease , linear( N P P , N P , N P )
 ser:A|B|C:transition-timing-function:linear( N , N P , N P ) , linear , step-start , step-end	transition-timing-function	 linear(\n0,\n2147483647   0.001%,  255  360%),  linear,\nstep-start,  step-end 	OK=linear(0, 2147483647 0.001%, 255 360%), linear, steps(1, start), steps(1)	OK=linear(0 0%, 2.14748e+9 0.001%, 255 360%), linear, step-start, step-end
 ser:A|B|C:transition-timing-function:step-end , linear( P P N , P P N ) , ease-in-out , step-end	transition-timing-function	step-end,  \n linear(2%   2147483648%   2,   0.5% \n 100% 0),  ease-in-out, \n step-end\n	OK=steps(1), linear(2 2%, 2 2147483648%, 0 2147483648%, 0 2147483648%), ease-in-out, steps(1)	OK=step-end, linear(2 2%, 2 2.14748e+9%, 0 2.14748e+9%, 0 2.14748e+9%), ease-in-out, step-end
 ser:A|B|C:transition-timing-function:steps( N , jump-none ) , linear( N , N , P N ) , linear( N P P , P P N , N , P P N )	transition-timing-function	steps( 2147483647   ,  jump-none),\nlinear(1e+20\t,   360, \n 100%  100),\nlinear(0\t1e+20%\t-1%,\n2147483648%\n0.1%   -0.5,\t0.001,   360%\t-0.5%\n-100)\n	OK=steps(2147483647, jump-none), linear(100000000000000000000, 360, 100 100%), linear(0 100000000000000000000%, 0 100000000000000000000%, -0.5 100000000000000000000%, -0.5 100000000000000000000%, 0.001, -100 100000000000000000000%, -100 100000000000000000000%)	OK=steps(2147483647, jump-none), linear(1.00000e+20 0%, 360 50%, 100 100%), linear(0 1.00000e+20%, 0 1.00000e+20%, -0.5 1.00000e+20%, -0.5 1.00000e+20%, 0.001 1.00000e+20%, -100 1.00000e+20%, -100 1.00000e+20%)
+ser:A|B|C:transition:allow-discrete D	transition	allow-discrete 123456789s	OK=123456789s allow-discrete	OK=1.23457e+08s allow-discrete
+ser:A|B|C:translate:D	translate	123456789cm 	OK=123456789cm	OK=1.23457e+08cm
 ser:A|B|C:vertical-align:D	vertical-align	123456789pc	OK=123456789pc	OK=1.23457e+08pc
 ser:A|B|C:vertical-align:P	vertical-align	123456789%	OK=123456789%	OK=1.23457e+08%
+ser:A|B|C:width:D	width	123456789cqw	OK=123456789cqw	OK=1.23457e+08cqw
 ser:A|B|C:word-spacing:D	word-spacing	123456789em	OK=123456789em	OK=1.23457e+08em
 ser:A|B|C:word-spacing:P	word-spacing	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:x:D	x	\n123456789cm	OK=123456789cm	OK=1.23457e+08cm
@@ -1821,7 +1868,15 @@ ser:A|B|C:y:P	y	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|B|C:zoom:N	zoom	123456789	OK=123456789	OK=1.23457e+08
 ser:A|B|C:zoom:P	zoom	123456789%	OK=123456789%	OK=1.23457e+08%
 ser:A|C:font-width:P	font-width	123456789%	OK=123456789%	NO
+ser:A|C:font:normal oblique D x-large / D monospace , math , S , ui-serif	font	NORMAL OBLIQUE 90.001GRAD X-LARGE / 2147483648IC MONOSPACE, MATH, 'B', UI-SERIF	OK=oblique 90.001grad x-large / 2147483648ic monospace, math, B, ui-serif	NO
+ser:A|C:hyphenate-limit-chars:N auto	hyphenate-limit-chars	0 auto	OK=0 auto	NO
+ser:A|C:text-decoration-inset:D	text-decoration-inset	123456789mm	OK=123456789mm	NO
 ser:A|C:vertical-align:D first	vertical-align	123456789vh first	OK=first 123456789vh	NO
+ser:A|C:width:calc( D * progress( no-clamp abs( P ) , ( P - P ) , P / N ) )	width	calc(1px * progress(no-clamp abs(10%), (10% - 10%), 100% / 10))	OK=calc(1px * progress(no-clamp abs(10%), 0%, 10%))	NO
+ser:B|C:animation:auto , auto , D , D none none , infinite D , D , D , D none D	animation	auto, auto, 10s, 0ms none none, infinite -1e+20ms, 255s, 0.001ms, 2147483647s none 2147483648ms	NO	OK=auto ease 0s 1 normal none running none, auto ease 0s 1 normal none running none, 10s ease 0s 1 normal none running none, 0ms ease 0s 1 normal none running none, auto ease -1e+20ms infinite normal none running none, 255s ease 0s 1 normal none running none, 0.001ms ease 0s 1 normal none running none, 2.14748e+09s ease 2.14748e+09ms 1 normal none running none
+ser:B|C:animation:forwards infinite D , D , D normal	animation	forwards infinite -0.001ms, 1s, 2ms normal	NO	OK=auto ease -0.001ms infinite normal forwards running none, 1s ease 0s 1 normal none running none, 2ms ease 0s 1 normal none running none
+ser:B|C:stroke-miterlimit:N	stroke-miterlimit	1e-07	NO	OK=1e-07
+ser:B|C:transition:allow-discrete D	transition	allow-discrete -1e+20s	NO	OK=-1e+20s allow-discrete
 support:chromium+firefox:animation-delay-end	animation-delay-end	initial	OK=initial	NO
 support:chromium+firefox:animation-delay-start	animation-delay-start	initial	OK=initial	NO
 support:chromium+firefox:animation-range-center	animation-range-center	initial	OK=initial	NO
