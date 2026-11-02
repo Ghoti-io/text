@@ -64,10 +64,12 @@ TEST(CssomRulesCost, ObjectsBytesAndDepthGrowAsTheSourceDoes) {
   for (int k = 0; k < 2; k++) {
     const double b = static_cast<double>(bytes[k + 1]) / static_cast<double>(bytes[k]);
     const double t = static_cast<double>(trees[k + 1]) / static_cast<double>(trees[k]);
-    /* four times the rules is a little under four times the bytes (the names are a digit longer) and never more */
-    EXPECT_GT(b, 3.2) << "live bytes";
+    /* four times the rules is a little under four times the bytes (the names are a digit longer) and never more. On a 32-bit target a rule is half the size and the fixed part of a tree
+       (its first block, the tables) a larger share of the smallest sheet, so the lower bound is a fourfold growth less that share (measured 2.5 on i686); the upper bound is the claim */
+    const double floor_ratio = sizeof(void *) == 4 ? 2.2 : 3.2;
+    EXPECT_GT(b, floor_ratio) << "live bytes";
     EXPECT_LT(b, 4.4) << "live bytes";
-    EXPECT_GT(t, 3.2) << "tree bytes";
+    EXPECT_GT(t, floor_ratio) << "tree bytes";
     EXPECT_LT(t, 4.4) << "tree bytes";
     EXPECT_LE(depth[k + 1], depth[k] + 6) << "four times the rules, a few levels more";
   }
