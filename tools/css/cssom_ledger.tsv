@@ -1,0 +1,267 @@
+# The CSSOM interface ledger (C5e): one row for every member of the interfaces of the CSSOM family in the pinned WebIDL (tools/css/WEBREF_IDL_SHA256), checked by tools/css/check-cssom-ledger.py
+# interface	member	kind	idl file	status	api or reason	test
+# implemented: the API (comma separated; each is declared in an installed header) and a test program of tests/ that calls the first; binding: the member is the binding's (a Promise, an event handler, a dictionary of an event), with the reason; out: this library has no such member, with the reason
+MediaList	mediaText	attribute	cssom	implemented	gtext_cssom_media_text,gtext_cssom_media_set_text	test-cssom-media.cpp
+MediaList	length	attribute	cssom	implemented	gtext_cssom_media_length	test-cssom-media.cpp
+MediaList	item	operation	cssom	implemented	gtext_cssom_media_item	test-cssom-media.cpp
+MediaList	appendMedium	operation	cssom	implemented	gtext_cssom_media_append	test-cssom-media.cpp
+MediaList	deleteMedium	operation	cssom	implemented	gtext_cssom_media_delete	test-cssom-media.cpp
+StyleSheet	type	attribute	cssom	implemented	gtext_cssom_sheet_type	test-cssom-sheet.cpp
+StyleSheet	href	attribute	cssom	implemented	gtext_cssom_sheet_href	test-cssom-sheet.cpp
+StyleSheet	ownerNode	attribute	cssom	implemented	gtext_cssom_sheet_owner_node	test-cssom-document.cpp
+StyleSheet	parentStyleSheet	attribute	cssom	implemented	gtext_cssom_sheet_owner_rule,gtext_cssom_rule_parent_sheet	test-cssom-imports.cpp
+StyleSheet	title	attribute	cssom	implemented	gtext_cssom_sheet_title	test-cssom-markup.cpp
+StyleSheet	media	attribute	cssom	implemented	gtext_cssom_sheet_media	test-cssom-media.cpp
+StyleSheet	disabled	attribute	cssom	implemented	gtext_cssom_sheet_disabled,gtext_cssom_sheet_set_disabled	test-cssom-markup.cpp
+CSSStyleSheet	constructor	constructor	cssom	implemented	gtext_cssom_sheet_new_constructed	test-cssom-media.cpp
+CSSStyleSheet	ownerRule	attribute	cssom	implemented	gtext_cssom_sheet_owner_rule	test-cssom-imports.cpp
+CSSStyleSheet	cssRules	attribute	cssom	implemented	gtext_cssom_sheet_rules	test-cssom-sheet.cpp
+CSSStyleSheet	insertRule	operation	cssom	implemented	gtext_cssom_sheet_insert_rule	test-cssom-insert.cpp
+CSSStyleSheet	deleteRule	operation	cssom	implemented	gtext_cssom_sheet_delete_rule	test-cssom-insert.cpp
+CSSStyleSheet	replace	operation	cssom	implemented	gtext_cssom_sheet_replace_begin,gtext_cssom_sheet_replace_complete	test-cssom-media.cpp
+CSSStyleSheet	replaceSync	operation	cssom	implemented	gtext_cssom_sheet_replace_sync	test-cssom-media.cpp
+CSSStyleSheetInit	baseURL	key	cssom	implemented	gtext_cssom_sheet_base_url	test-cssom-sheet.cpp
+CSSStyleSheetInit	media	key	cssom	implemented	gtext_cssom_sheet_new_constructed	test-cssom-media.cpp
+CSSStyleSheetInit	disabled	key	cssom	implemented	gtext_cssom_sheet_new_constructed	test-cssom-media.cpp
+CSSStyleSheet	rules	attribute	cssom	implemented	gtext_cssom_sheet_rules	test-cssom-sheet.cpp
+CSSStyleSheet	addRule	operation	cssom	implemented	gtext_cssom_sheet_add_rule	test-cssom-insert.cpp
+CSSStyleSheet	removeRule	operation	cssom	implemented	gtext_cssom_sheet_remove_rule	test-cssom-insert.cpp
+StyleSheetList	item	operation	cssom	implemented	gtext_cssom_scope_sheet_at	test-cssom-document.cpp
+StyleSheetList	length	attribute	cssom	implemented	gtext_cssom_scope_sheet_count	test-cssom-document.cpp
+DocumentOrShadowRoot	styleSheets	attribute	cssom	implemented	gtext_cssom_scope_sheet_at,gtext_cssom_scope_sheet_count	test-cssom-document.cpp
+DocumentOrShadowRoot	adoptedStyleSheets	attribute	cssom	implemented	gtext_cssom_scope_adopted_set,gtext_cssom_scope_adopted_at	test-cssom-document.cpp
+LinkStyle	sheet	attribute	cssom	implemented	gtext_cssom_markup_sheet_of	test-cssom-markup.cpp
+CSSRuleList	item	operation	cssom	implemented	gtext_cssom_rule_list_at	test-cssom-rules.cpp
+CSSRuleList	length	attribute	cssom	implemented	gtext_cssom_rule_list_length	test-cssom-rules.cpp
+CSSRule	cssText	attribute	cssom	implemented	gtext_cssom_rule_css_text	test-cssom-serialize.cpp
+CSSRule	parentRule	attribute	cssom	implemented	gtext_cssom_rule_parent_rule	test-cssom-rules.cpp
+CSSRule	parentStyleSheet	attribute	cssom	implemented	gtext_cssom_rule_parent_sheet	test-cssom-rules.cpp
+CSSRule	type	attribute	cssom	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSRule	STYLE_RULE	const	cssom	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSRule	CHARSET_RULE	const	cssom	binding	a constant of the interface that a binding defines; gtext_cssom_rule_type() never returns it because an @charset is not a rule (CSSOM: "ignored")	-
+CSSRule	IMPORT_RULE	const	cssom	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSRule	MEDIA_RULE	const	cssom	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSRule	FONT_FACE_RULE	const	cssom	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSRule	PAGE_RULE	const	cssom	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSRule	MARGIN_RULE	const	cssom	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSRule	NAMESPACE_RULE	const	cssom	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSStyleRule	selectorText	attribute	cssom	implemented	gtext_cssom_rule_selector_text,gtext_cssom_rule_set_selector_text	test-cssom-setters.cpp
+CSSStyleRule	style	attribute	cssom	implemented	gtext_cssom_rule_style	test-cssom-rules.cpp
+CSSImportRule	href	attribute	cssom	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSImportRule	media	attribute	cssom	implemented	gtext_cssom_rule_media	test-cssom-media.cpp
+CSSImportRule	styleSheet	attribute	cssom	implemented	gtext_cssom_import_rule_sheet	test-cssom-imports.cpp
+CSSImportRule	layerName	attribute	cssom	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSImportRule	supportsText	attribute	cssom	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSGroupingRule	cssRules	attribute	cssom	implemented	gtext_cssom_rule_css_rules	test-cssom-rules.cpp
+CSSGroupingRule	insertRule	operation	cssom	implemented	gtext_cssom_rule_insert_rule	test-cssom-insert.cpp
+CSSGroupingRule	deleteRule	operation	cssom	implemented	gtext_cssom_rule_delete_rule	test-cssom-insert.cpp
+CSSPageDescriptors	margin	attribute	cssom	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPageDescriptors	marginTop	attribute	cssom	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPageDescriptors	marginRight	attribute	cssom	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPageDescriptors	marginBottom	attribute	cssom	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPageDescriptors	marginLeft	attribute	cssom	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPageDescriptors	top	attribute	cssom	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSPageDescriptors	right	attribute	cssom	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSPageDescriptors	bottom	attribute	cssom	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSPageDescriptors	left	attribute	cssom	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSPageDescriptors	size	attribute	cssom	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPageDescriptors	pageOrientation	attribute	cssom	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPageDescriptors	orientation	attribute	cssom	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSPageDescriptors	marks	attribute	cssom	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPageDescriptors	bleed	attribute	cssom	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPageRule	selectorText	attribute	cssom	implemented	gtext_cssom_rule_selector_text,gtext_cssom_rule_set_selector_text	test-cssom-setters.cpp
+CSSPageRule	style	attribute	cssom	implemented	gtext_cssom_rule_style	test-cssom-setters.cpp
+CSSMarginRule	name	attribute	cssom	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSMarginRule	style	attribute	cssom	implemented	gtext_cssom_rule_style	test-cssom-setters.cpp
+CSSNamespaceRule	namespaceURI	attribute	cssom	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSNamespaceRule	prefix	attribute	cssom	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSStyleDeclaration	cssText	attribute	cssom	implemented	gtext_cssom_decl_css_text,gtext_cssom_decl_set_css_text	test-cssom-decl.cpp
+CSSStyleDeclaration	length	attribute	cssom	implemented	gtext_cssom_decl_length	test-cssom-decl.cpp
+CSSStyleDeclaration	item	operation	cssom	implemented	gtext_cssom_decl_item	test-cssom-decl.cpp
+CSSStyleDeclaration	getPropertyValue	operation	cssom	implemented	gtext_cssom_decl_get_property_value	test-cssom-decl.cpp
+CSSStyleDeclaration	getPropertyPriority	operation	cssom	implemented	gtext_cssom_decl_get_property_priority	test-cssom-decl.cpp
+CSSStyleDeclaration	setProperty	operation	cssom	implemented	gtext_cssom_decl_set_property	test-cssom-decl.cpp
+CSSStyleDeclaration	removeProperty	operation	cssom	implemented	gtext_cssom_decl_remove_property	test-cssom-decl.cpp
+CSSStyleDeclaration	parentRule	attribute	cssom	implemented	gtext_cssom_decl_owner	test-cssom-decl.cpp
+CSSStyleProperties	cssFloat	attribute	cssom	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-decl.cpp
+ElementCSSInlineStyle	style	attribute	cssom	implemented	gtext_cssom_inline_style	test-cssom-inline.cpp
+Window	getComputedStyle	operation	cssom	implemented	gtext_cssom_computed_style	test-cssom-computed.cpp
+CSS	escape	operation	cssom	implemented	gtext_cssom_escape	test-cssom-util.cpp
+CSSRule	SUPPORTS_RULE	const	css-conditional	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSConditionRule	conditionText	attribute	css-conditional	implemented	gtext_cssom_rule_condition_text	test-cssom-setters.cpp
+CSSMediaRule	media	attribute	css-conditional	implemented	gtext_cssom_rule_media	test-cssom-media.cpp
+CSSMediaRule	matches	attribute	css-conditional	out	the attribute is in the pinned IDL only; neither pinned browser has it (tools/oracle/css_cssom_idl_probe.json) and no served sentence says what it answers, so there is nothing to implement but a guess	-
+CSSSupportsRule	matches	attribute	css-conditional	out	the attribute is in the pinned IDL only; neither pinned browser has it (tools/oracle/css_cssom_idl_probe.json) and no served sentence says what it answers, so there is nothing to implement but a guess	-
+CSS	supports	operation	css-conditional	implemented	gtext_cssom_supports,gtext_cssom_supports_text	test-cssom-media-query.cpp
+CSSContainerCondition	name	key	css-conditional-5	out	a key of the dictionary CSSContainerRule.conditions holds, which is not built (see that row); the dictionary has no object to give it to	-
+CSSContainerCondition	query	key	css-conditional-5	out	a key of the dictionary CSSContainerRule.conditions holds, which is not built (see that row); the dictionary has no object to give it to	-
+CSSContainerRule	containerName	attribute	css-conditional-5	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSContainerRule	containerQuery	attribute	css-conditional-5	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSContainerRule	conditions	attribute	css-conditional-5	out	both pinned browsers have the attribute (tools/oracle/css_cssom_idl_probe.json) but the served text pinned here is the IDL line only: what it holds for a container rule with a name and a query, and for none, is not stated, so it is listed as not built until a served sentence and the browsers' recorded answers are pinned	-
+CSSSupportsConditionRule	name	attribute	css-conditional-5	out	the interface is in the pinned IDL of a newer draft; neither pinned browser has the member (tools/oracle/css_cssom_idl_probe.json) and no served sentence defines it, so it is not built	-
+CSSNestedDeclarations	style	attribute	css-nesting	implemented	gtext_cssom_rule_style	test-cssom-rules.cpp
+CSSLayerBlockRule	name	attribute	css-cascade	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSLayerStatementRule	nameList	attribute	css-cascade	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSScopeRule	start	attribute	css-cascade-6	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSScopeRule	end	attribute	css-cascade-6	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSRule	COUNTER_STYLE_RULE	const	css-counter-styles	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSCounterStyleRule	name	attribute	css-counter-styles	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSCounterStyleRule	system	attribute	css-counter-styles	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSCounterStyleRule	symbols	attribute	css-counter-styles	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSCounterStyleRule	additiveSymbols	attribute	css-counter-styles	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSCounterStyleRule	negative	attribute	css-counter-styles	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSCounterStyleRule	prefix	attribute	css-counter-styles	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSCounterStyleRule	suffix	attribute	css-counter-styles	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSCounterStyleRule	range	attribute	css-counter-styles	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSCounterStyleRule	pad	attribute	css-counter-styles	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSCounterStyleRule	speakAs	attribute	css-counter-styles	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSCounterStyleRule	fallback	attribute	css-counter-styles	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSRule	KEYFRAMES_RULE	const	css-animations	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSRule	KEYFRAME_RULE	const	css-animations	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSKeyframeRule	keyText	attribute	css-animations	implemented	gtext_cssom_rule_key_text,gtext_cssom_rule_set_key_text	test-cssom-setters.cpp
+CSSKeyframeRule	style	attribute	css-animations	implemented	gtext_cssom_rule_style	test-cssom-setters.cpp
+CSSKeyframesRule	name	attribute	css-animations	implemented	gtext_cssom_rule_get_attribute,gtext_cssom_rule_set_attribute	test-cssom-setters.cpp
+CSSKeyframesRule	cssRules	attribute	css-animations	implemented	gtext_cssom_rule_css_rules	test-cssom-rules.cpp
+CSSKeyframesRule	length	attribute	css-animations	implemented	gtext_cssom_rule_list_length	test-cssom-rules.cpp
+CSSKeyframesRule	getter	getter	css-animations	implemented	gtext_cssom_rule_list_at	test-cssom-rules.cpp
+CSSKeyframesRule	appendRule	operation	css-animations	implemented	gtext_cssom_keyframes_append_rule	test-cssom-insert.cpp
+CSSKeyframesRule	deleteRule	operation	css-animations	implemented	gtext_cssom_keyframes_delete_rule	test-cssom-insert.cpp
+CSSKeyframesRule	findRule	operation	css-animations	implemented	gtext_cssom_keyframes_find_rule	test-cssom-insert.cpp
+CSSRule	FONT_FEATURE_VALUES_RULE	const	css-fonts	implemented	gtext_cssom_rule_type	test-cssom-rules.cpp
+CSSFontFeatureValuesRule	fontFamily	attribute	css-fonts	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSFontFeatureValuesRule	annotation	attribute	css-fonts	implemented	gtext_cssom_feature_map_type,gtext_cssom_feature_map_size	test-cssom-feature-map.cpp
+CSSFontFeatureValuesRule	ornaments	attribute	css-fonts	implemented	gtext_cssom_feature_map_type,gtext_cssom_feature_map_size	test-cssom-feature-map.cpp
+CSSFontFeatureValuesRule	stylistic	attribute	css-fonts	implemented	gtext_cssom_feature_map_type,gtext_cssom_feature_map_size	test-cssom-feature-map.cpp
+CSSFontFeatureValuesRule	swash	attribute	css-fonts	implemented	gtext_cssom_feature_map_type,gtext_cssom_feature_map_size	test-cssom-feature-map.cpp
+CSSFontFeatureValuesRule	characterVariant	attribute	css-fonts	implemented	gtext_cssom_feature_map_type,gtext_cssom_feature_map_size	test-cssom-feature-map.cpp
+CSSFontFeatureValuesRule	styleset	attribute	css-fonts	implemented	gtext_cssom_feature_map_type,gtext_cssom_feature_map_size	test-cssom-feature-map.cpp
+CSSFontFeatureValuesRule	historicalForms	attribute	css-fonts	implemented	gtext_cssom_feature_map_type,gtext_cssom_feature_map_size	test-cssom-feature-map.cpp
+CSSFontFeatureValuesMap	maplike	maplike	css-fonts	implemented	gtext_cssom_feature_map_size,gtext_cssom_feature_map_at,gtext_cssom_feature_map_get,gtext_cssom_feature_map_delete,gtext_cssom_feature_map_clear	test-cssom-feature-map.cpp
+CSSFontFeatureValuesMap	set	operation	css-fonts	implemented	gtext_cssom_feature_map_set	test-cssom-feature-map.cpp
+CSSFontPaletteValuesRule	name	attribute	css-fonts	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSFontPaletteValuesRule	fontFamily	attribute	css-fonts	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSFontPaletteValuesRule	basePalette	attribute	css-fonts	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSFontPaletteValuesRule	overrideColors	attribute	css-fonts	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSFontFaceDescriptors	src	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	fontFamily	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	family	attribute	css-fonts-5	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFontFaceDescriptors	fontStyle	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	style	attribute	css-fonts-5	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFontFaceDescriptors	fontWeight	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	weight	attribute	css-fonts-5	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFontFaceDescriptors	fontStretch	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	stretch	attribute	css-fonts-5	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFontFaceDescriptors	fontWidth	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	width	attribute	css-fonts-5	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFontFaceDescriptors	fontSize	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	size	attribute	css-fonts-5	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFontFaceDescriptors	sizeAdjust	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	adjust	attribute	css-fonts-5	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFontFaceDescriptors	unicodeRange	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	range	attribute	css-fonts-5	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFontFaceDescriptors	fontFeatureSettings	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	settings	attribute	css-fonts-5	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFontFaceDescriptors	fontVariationSettings	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	fontNamedInstance	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	instance	attribute	css-fonts-5	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFontFaceDescriptors	fontDisplay	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	display	attribute	css-fonts-5	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFontFaceDescriptors	fontLanguageOverride	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	override	attribute	css-fonts-5	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFontFaceDescriptors	ascentOverride	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	descentOverride	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	lineGapOverride	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	superscriptPositionOverride	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	subscriptPositionOverride	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	superscriptSizeOverride	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceDescriptors	subscriptSizeOverride	attribute	css-fonts-5	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSFontFaceRule	style	attribute	css-fonts-5	implemented	gtext_cssom_rule_style	test-cssom-setters.cpp
+PropertyDefinition	name	key	css-properties-values-api	out	the dictionary of CSS.registerProperty, which is C6's registry-epoch decision, not a CSSOM call here	-
+PropertyDefinition	syntax	key	css-properties-values-api	out	the dictionary of CSS.registerProperty, which is C6's registry-epoch decision, not a CSSOM call here	-
+PropertyDefinition	inherits	key	css-properties-values-api	out	the dictionary of CSS.registerProperty, which is C6's registry-epoch decision, not a CSSOM call here	-
+PropertyDefinition	initialValue	key	css-properties-values-api	out	the dictionary of CSS.registerProperty, which is C6's registry-epoch decision, not a CSSOM call here	-
+CSS	registerProperty	operation	css-properties-values-api	out	CSS.registerProperty is the registry-epoch decision of C6 and the Typed OM spec ("planned, not built" in the CSSOM spec risks): a registration changes every computed value of a document, so it is not a CSSOM call here	-
+CSSPropertyRule	name	attribute	css-properties-values-api	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSPropertyRule	syntax	attribute	css-properties-values-api	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSPropertyRule	inherits	attribute	css-properties-values-api	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSPropertyRule	initialValue	attribute	css-properties-values-api	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSViewTransitionRule	navigation	attribute	css-view-transitions	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSViewTransitionRule	types	attribute	css-view-transitions	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSPositionTryRule	name	attribute	css-anchor-position	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSPositionTryRule	style	attribute	css-anchor-position	implemented	gtext_cssom_rule_style	test-cssom-setters.cpp
+CSSPositionTryDescriptors	margin	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	marginTop	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	marginRight	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	marginBottom	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	marginLeft	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	marginBlock	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	marginBlockStart	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	marginBlockEnd	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	marginInline	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	marginInlineStart	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	marginInlineEnd	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	top	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	right	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	bottom	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	left	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	block	attribute	css-anchor-position	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSPositionTryDescriptors	start	attribute	css-anchor-position	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSPositionTryDescriptors	end	attribute	css-anchor-position	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSPositionTryDescriptors	inline	attribute	css-anchor-position	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSPositionTryDescriptors	inset	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	insetBlock	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	insetBlockStart	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	insetBlockEnd	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	insetInline	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	insetInlineStart	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	insetInlineEnd	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	width	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	minWidth	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	maxWidth	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	height	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	minHeight	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	maxHeight	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	blockSize	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	minBlockSize	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	maxBlockSize	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	inlineSize	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	minInlineSize	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	maxInlineSize	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	size	attribute	css-anchor-position	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSPositionTryDescriptors	placeSelf	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	alignSelf	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	justifySelf	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	self	attribute	css-anchor-position	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSPositionTryDescriptors	positionAnchor	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	anchor	attribute	css-anchor-position	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSPositionTryDescriptors	positionArea	attribute	css-anchor-position	implemented	gtext_cssom_decl_idl_get,gtext_cssom_decl_idl_set	test-cssom-ledger.cpp
+CSSPositionTryDescriptors	area	attribute	css-anchor-position	out	a short attribute name of the newer descriptor interface: the pinned IDL lists it beside the long one, neither pinned browser has the interface (tools/oracle/css_cssom_idl_probe.json), and no served sentence says which descriptor it names, so the block has the attribute its dashed name derives and not this one	-
+CSSFunctionRule	name	attribute	css-mixins	out	the interface is in the pinned IDL of a newer draft; Chromium 156 has it and Firefox 158 does not (tools/oracle/css_cssom_idl_probe.json), and @function is a slice of its own (the C2e note): the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSFunctionRule	getParameters	operation	css-mixins	out	the interface is in the pinned IDL of a newer draft; Chromium 156 has it and Firefox 158 does not (tools/oracle/css_cssom_idl_probe.json), and @function is a slice of its own (the C2e note): the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSFunctionRule	returnType	attribute	css-mixins	out	the interface is in the pinned IDL of a newer draft; Chromium 156 has it and Firefox 158 does not (tools/oracle/css_cssom_idl_probe.json), and @function is a slice of its own (the C2e note): the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSFunctionDescriptors	result	attribute	css-mixins	out	the interface is in the pinned IDL of a newer draft; Chromium 156 has it and Firefox 158 does not (tools/oracle/css_cssom_idl_probe.json), and @function is a slice of its own (the C2e note): the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSFunctionDeclarations	style	attribute	css-mixins	out	the interface is in the pinned IDL of a newer draft; Chromium 156 has it and Firefox 158 does not (tools/oracle/css_cssom_idl_probe.json), and @function is a slice of its own (the C2e note): the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSMixinRule	name	attribute	css-mixins	out	the interface is in the pinned IDL of a newer draft; neither pinned browser has it (tools/oracle/css_cssom_idl_probe.json) and the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSMixinRule	getParameters	operation	css-mixins	out	the interface is in the pinned IDL of a newer draft; neither pinned browser has it (tools/oracle/css_cssom_idl_probe.json) and the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSMixinRule	contents	attribute	css-mixins	out	the interface is in the pinned IDL of a newer draft; neither pinned browser has it (tools/oracle/css_cssom_idl_probe.json) and the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSApplyBlockRule	name	attribute	css-mixins	out	the interface is in the pinned IDL of a newer draft; neither pinned browser has it (tools/oracle/css_cssom_idl_probe.json) and the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSApplyBlockRule	getArguments	operation	css-mixins	out	the interface is in the pinned IDL of a newer draft; neither pinned browser has it (tools/oracle/css_cssom_idl_probe.json) and the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSApplyStatementRule	name	attribute	css-mixins	out	the interface is in the pinned IDL of a newer draft; neither pinned browser has it (tools/oracle/css_cssom_idl_probe.json) and the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSApplyStatementRule	getArguments	operation	css-mixins	out	the interface is in the pinned IDL of a newer draft; neither pinned browser has it (tools/oracle/css_cssom_idl_probe.json) and the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSColorProfileRule	name	attribute	css-color-5	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSColorProfileRule	src	attribute	css-color-5	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSColorProfileRule	renderingIntent	attribute	css-color-5	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSColorProfileRule	components	attribute	css-color-5	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSCustomMediaRule	name	attribute	mediaqueries-5	out	the interface is in the pinned IDL of a newer draft; neither pinned browser has it (tools/oracle/css_cssom_idl_probe.json) and the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+CSSCustomMediaRule	query	attribute	mediaqueries-5	out	the interface is in the pinned IDL of a newer draft; neither pinned browser has it (tools/oracle/css_cssom_idl_probe.json) and the kind is not one of the 27 this library reads, so there is no rule object to give the member to	-
+Window	matchMedia	operation	cssom-view	implemented	gtext_cssom_match_media	test-cssom-media-query.cpp
+MediaQueryList	media	attribute	cssom-view	implemented	gtext_cssom_media_query_list_media	test-cssom-media-query.cpp
+MediaQueryList	matches	attribute	cssom-view	implemented	gtext_cssom_media_query_list_matches	test-cssom-media-query.cpp
+MediaQueryList	addListener	operation	cssom-view	implemented	gtext_cssom_media_query_list_add_listener	test-cssom-media-query.cpp
+MediaQueryList	removeListener	operation	cssom-view	implemented	gtext_cssom_media_query_list_remove_listener	test-cssom-media-query.cpp
+MediaQueryList	onchange	attribute	cssom-view	binding	an EventHandler attribute is the binding's: the library reports a change to the listeners added with gtext_cssom_media_query_list_add_listener(), and a binding stores the handler	-
+MediaQueryListEvent	constructor	constructor	cssom-view	binding	the event object belongs to the binding: the library calls the listener with the new matches and media (GTEXT_CSSOM_Media_Query_List_Event), and a binding makes the DOM Event from them	-
+MediaQueryListEvent	media	attribute	cssom-view	binding	the event object belongs to the binding: the library calls the listener with the new matches and media (GTEXT_CSSOM_Media_Query_List_Event), and a binding makes the DOM Event from them	-
+MediaQueryListEvent	matches	attribute	cssom-view	binding	the event object belongs to the binding: the library calls the listener with the new matches and media (GTEXT_CSSOM_Media_Query_List_Event), and a binding makes the DOM Event from them	-
+MediaQueryListEventInit	media	key	cssom-view	binding	a dictionary of the event constructor, which is the binding's	-
+MediaQueryListEventInit	matches	key	cssom-view	binding	a dictionary of the event constructor, which is the binding's	-

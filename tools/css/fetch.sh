@@ -164,3 +164,45 @@ else
 	rm -rf "$pkgdir"
 	mv "$pkgdir.partial" "$pkgdir"
 fi
+
+# ---- w3c/webref, ed/idl: the WebIDL of the CSSOM family ---------------------------------------------------------------
+# The interface ledger (tools/css/cssom_ledger.tsv) is checked against these files of the same pinned commit as the CSS data:
+# tools/css/WEBREF_IDL_SHA256 lists them with their SHA-256, and a checkout with a missing, changed or extra file is not kept.
+idl_manifest="$root/tools/css/WEBREF_IDL_SHA256"
+idl="$dest/webref-idl"
+idl_verify() {
+	bad=0
+	while read -r sum file; do
+		case "$sum" in '#'*|'') continue ;; esac
+		if [ ! -f "$1/$file" ]; then
+			printf 'webref-idl: %s is missing\n' "$file" >&2
+			bad=1
+		elif [ "$(sha256sum "$1/$file" | cut -d' ' -f1)" != "$sum" ]; then
+			printf 'webref-idl: %s does not hash as pinned\n' "$file" >&2
+			bad=1
+		fi
+	done < "$idl_manifest"
+	[ "$(git -C "$1" rev-parse HEAD 2>/dev/null)" = "$want_webref" ] || { printf 'webref-idl: not at %s\n' "$want_webref" >&2; bad=1; }
+	return $bad
+}
+if [ -d "$idl/.git" ] && idl_verify "$idl"; then
+	printf 'have    webref-idl @ %s\n' "$want_webref"
+else
+	printf 'fetch   webref-idl (ed/idl, the files of WEBREF_IDL_SHA256) @ %s\n' "$want_webref"
+	rm -rf "$idl.partial"
+	mkdir -p "$idl.partial"
+	git -C "$idl.partial" init --quiet
+	git -C "$idl.partial" remote add origin https://github.com/w3c/webref.git
+	git -C "$idl.partial" sparse-checkout init --no-cone
+	# shellcheck disable=SC2046
+	git -C "$idl.partial" sparse-checkout set $(grep -v '^#' "$idl_manifest" | sed 's/^[0-9a-f]*  /\//')
+	git -C "$idl.partial" fetch --quiet --depth 1 --filter=blob:none origin "$want_webref"
+	git -C "$idl.partial" checkout --quiet --detach FETCH_HEAD
+	if ! idl_verify "$idl.partial"; then
+		rm -rf "$idl.partial"
+		printf 'webref-idl: nothing was kept. Raising the pin is a deliberate edit of tools/css/WEBREF_COMMIT and WEBREF_IDL_SHA256.\n' >&2
+		exit 1
+	fi
+	rm -rf "$idl"
+	mv "$idl.partial" "$idl"
+fi

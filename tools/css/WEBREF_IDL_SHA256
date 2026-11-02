@@ -1,0 +1,18 @@
+# w3c/webref curated d20af004eff967a9b8e562ea3423c29402a5ce61: SHA-256 of the WebIDL files the CSSOM interface ledger (tools/css/cssom_ledger.tsv, tools/css/check-cssom-ledger.py) is checked against; tools/css/fetch.sh verifies
+41d65d4ffbdf129a2659f2a6aaafa4f9cc1657d180c990190e8dc38cd0d06542  ed/idl/cssom.idl
+9cbaa508b4e2da41904e9f935020a6528184d9f2796672493e4c4d8c36c220ac  ed/idl/css-conditional.idl
+c52b6349f2ac6d8592f5e05d710f4d6247ad703289b92effb8f8b8a1ef6c729b  ed/idl/css-conditional-5.idl
+1badc5b04ec0ed16dbaa8a7e8af9d71a63211bc43d05e4777d5bde9ccd3961e3  ed/idl/css-nesting.idl
+0ea5bed826c255a775531d80f407b042f7124c3da07b0046475687376e080a89  ed/idl/css-cascade.idl
+65fd8b36d9052e25d81bbf3400684329b014eb40c66da87240e135eb579b67bc  ed/idl/css-cascade-6.idl
+cbc1bee2e2b07fa58547ca3eac3ee0f736dff25bfb75172af553a3b9b991969a  ed/idl/css-counter-styles.idl
+737b5ba09ee4b6a43fa1d1b4fcea15d9bb75e0fa183657ee8e244e78205c156d  ed/idl/css-animations.idl
+9fe3d8e4e849843294c20b64e0a6f358cb8627ed42c8798e6aa2e6322dd9aacb  ed/idl/css-fonts.idl
+78490b443d790882b4d88839616c9afbe2f66556299b23f18ca2656304a94313  ed/idl/css-fonts-5.idl
+1d281d9543ba2db4b01c65997d94f87800b48fb0e394b64f333c37edf2ccc798  ed/idl/css-properties-values-api.idl
+6487cab53a8a20c966c7f4534e9ed5dffe6a20128d96753a309a553d089895f2  ed/idl/css-view-transitions.idl
+673fe61e87a9685537da432d733354787da65317405c60eb6b39afd7805e44a9  ed/idl/css-anchor-position.idl
+4ce063d45eb61154479fb24d999003fbec4b6b6e8b29372d6882ac31f7fab9e0  ed/idl/css-mixins.idl
+3837fe5435e4b391479e091a8209d34781c0ab708d9ce917408a070bb446a81f  ed/idl/css-color-5.idl
+e012643932772988b6cc637840a0868af230cead9287347b40cadd1dfa0a3e92  ed/idl/mediaqueries-5.idl
+0f412b71a6ac125c375569f7d260a04e1aec6b8a81010f5c4833fad46c761cff  ed/idl/cssom-view.idl
