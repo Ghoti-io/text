@@ -67,8 +67,141 @@ const PROBE = `(json) => {
   return JSON.stringify({ p: out });
 }`;
 
-// The function that answers a sequence of CSSOM operations (see css_cssom_gen.py).
-const OPS = `(json) => { return JSON.stringify({ r: ['unsupported'], o: [] }); }`;
+// The function that answers a sequence of CSSOM operations (see css_cssom_ours.cpp for the list and css_cssom_gen.py for the population).
+const OPS = `(json) => {
+  const doc = JSON.parse(json);
+  const NULL = '\\u0001null';
+  for (const e of Array.from(document.head.querySelectorAll('style'))) {
+    e.remove();
+  }
+  try {
+    document.adoptedStyleSheets = [];
+  } catch (x) { /* an engine without adopted style sheets */ }
+  const sheets = [];
+  let sheet = null;
+  const find = (path) => {
+    if (path === '') {
+      return sheet;
+    }
+    let list = sheet.cssRules;
+    let rule = null;
+    for (const i of path.split('.')) {
+      rule = list[Number(i)];
+      if (!rule) {
+        return null;
+      }
+      list = rule.cssRules;
+    }
+    return rule;
+  };
+  const str = (v) => (v === null ? NULL : String(v));
+  const results = [];
+  for (const op of doc.ops) {
+    let r = 'ok';
+    try {
+      const k = op[0];
+      if (k === 'S') {
+        const e = document.createElement('style');
+        e.textContent = op[1];
+        document.head.appendChild(e);
+        sheet = e.sheet;
+        sheets.push(sheet);
+      } else if (k === 'C') {
+        sheet = new CSSStyleSheet();
+        sheets.push(sheet);
+      } else if (k === 'U') {
+        if (sheets[Number(op[1])]) {
+          sheet = sheets[Number(op[1])];
+        }
+      } else if (k === 'R') {
+        sheet.replaceSync(op[1]);
+      } else if (k === 'DIS') {
+        sheet.disabled = op[1] === '1';
+      } else if (k === 'AD') {
+        const list = op[1] === '' ? [] : op[1].split(',').map((i) => sheets[Number(i)]).filter((x) => x);
+        document.adoptedStyleSheets = list;
+      } else if (k === 'MM') {
+        const m = window.matchMedia(op[1]);
+        r = m.media + '|' + m.matches;
+      } else {
+        const t = find(op[1]);
+        if (t === null || t === undefined) {
+          throw new TypeError('no such object');
+        }
+        if (k === 'I') {
+          if (op[2] === null) {
+            t.insertRule(op[3]);
+          } else {
+            t.insertRule(op[3], op[2]);
+          }
+        } else if (k === 'D') {
+          t.deleteRule(op[2]);
+        } else if (k === 'X') {
+          t.deleteRule(op[2]);
+        } else if (k === 'A') {
+          t.appendRule(op[2]);
+        } else if (k === 'F') {
+          const f = t.findRule(op[2]);
+          r = f ? f.cssText : NULL;
+        } else if (k === 'T') {
+          if (op[1] !== '') { t.selectorText = op[2]; }   // on a sheet it would make a property of the object, which a read then finds
+        } else if (k === 'K') {
+          if (op[1] !== '') { t.keyText = op[2]; }
+        } else if (k === 'N') {
+          if (op[1] !== '') { t.name = op[2]; }
+        } else if (k === 'E') {
+          if (op[1] !== '') { t[op[2]] = op[3]; }
+        } else if (k === 'Z') {
+          if (op[1] !== '') { t.cssText = op[2]; }
+        } else if (k === 'P') {
+          t.style.setProperty(op[2], op[3], op[4]);
+        } else if (k === 'Q') {
+          r = t.style.removeProperty(op[2]);
+        } else if (k === 'Y') {
+          t.style.cssText = op[2];
+        } else if (k === 'VS') {
+          r = t.style.getPropertyValue(op[2]);
+        } else if (k === 'VP') {
+          r = t.style.getPropertyPriority(op[2]);
+        } else if (k === 'VL') {
+          r = String(t.style.length);
+        } else if (k === 'M') {
+          t.media.mediaText = op[2];
+        } else if (k === 'MA') {
+          t.media.appendMedium(op[2]);
+        } else if (k === 'MD') {
+          t.media.deleteMedium(op[2]);
+        } else if (k === 'W') {
+          const values = op[4] === '' ? [] : op[4].split(',').map(Number);
+          t[op[2]].set(op[3], values.length === 1 ? values[0] : values);
+        } else if (k === 'V') {
+          r = str(t[op[2]]);
+        } else {
+          r = '?';
+        }
+      }
+    } catch (x) {
+      r = x && x.name ? x.name : 'throw';
+    }
+    results.push(r);
+  }
+  const state = sheets.map((s) => {
+    let rules;
+    let media = '';
+    let disabled = false;
+    try {
+      rules = Array.from(s.cssRules).map((x) => x.cssText);
+    } catch (x) {
+      rules = ['T:' + (x && x.name)];
+    }
+    try {
+      media = s.media.mediaText;
+      disabled = s.disabled;
+    } catch (x) { /* none */ }
+    return { r: rules, m: media, d: disabled };
+  });
+  return JSON.stringify({ r: results.map((x) => (x === NULL ? null : x)), t: state });
+}`;
 
 const ENGINES = {
   chromium: {

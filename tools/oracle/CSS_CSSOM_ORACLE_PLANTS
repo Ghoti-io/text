@@ -1,0 +1,4 @@
+# the planted defects of the library that the population of css_cssom_gen.py can see: names in tools/conformance/CSS_CSSOM_PLANTS (edited in a copy of the source and measured against browsers that did not change)
+an-ambiguous-medium-is-appended
+parsed-list-replaces-in-place
+typed-css-text-is-not-the-declaration-blocks
