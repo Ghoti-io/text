@@ -605,4 +605,128 @@ TEST(CssBlockEditOom, EverySetAndRemoveIsAtomicUnderAllocationFailure) {
   }
 }
 
+/* ---- declarations the library cannot judge: kept as they were written ---------------------------------------------------------------- */
+
+/// Set a declaration that is kept as written.
+GTEXT_CSS_Status set_opaque(GTEXT_CSS_Declaration_Block * b, const std::string & name, const std::string & raw, bool important = false, GTEXT_CSS_Block_Change * change = nullptr) {
+  return gtext_css_block_set_opaque(b, find(R(), name), raw.data(), raw.size(), important, change);
+}
+
+// CSSOM "serialize a CSS declaration block" writes what the declarations hold; a declaration whose value the library cannot judge holds its value as it was written, in its place.
+TEST(CssBlockOpaque, IsKeptInOrderReportedAndWrittenBack) {
+  GTEXT_CSS_Declaration_Block * b = nullptr;
+  ASSERT_EQ(gtext_css_block_new(R(), nullptr, &b), GTEXT_CSS_OK);
+  EXPECT_EQ(set(b, "color", "red"), GTEXT_CSS_OK);
+  GTEXT_CSS_Block_Change change{};
+  EXPECT_EQ(set_opaque(b, "voice-family", "preserve male", true, &change), GTEXT_CSS_OK);
+  EXPECT_TRUE(change.changed);
+  EXPECT_EQ(changed_names(change), "voice-family");
+  gtext_css_block_change_free(&change);
+  EXPECT_EQ(set(b, "width", "1px"), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_block_count(b), 3u);
+  EXPECT_EQ(order_of(b), "color voice-family width");
+  EXPECT_EQ(css_of(b), "color: red; voice-family: preserve male !important; width: 1px;");
+  GTEXT_CSS_Declaration_Item it;
+  ASSERT_TRUE(gtext_css_block_item(b, 1, &it));
+  EXPECT_TRUE(it.opaque);
+  EXPECT_EQ(std::string(it.raw.data, it.raw.length), "preserve male");
+  EXPECT_TRUE(it.important);
+  ASSERT_TRUE(gtext_css_block_item(b, 0, &it));
+  EXPECT_FALSE(it.opaque);
+  ASSERT_TRUE(gtext_css_block_find(b, find(R(), "voice-family"), nullptr, 0, &it));
+  EXPECT_TRUE(it.opaque);
+  // a clone keeps it
+  GTEXT_CSS_Declaration_Block * c = nullptr;
+  ASSERT_EQ(gtext_css_block_clone(b, &c), GTEXT_CSS_OK);
+  EXPECT_EQ(css_of(c), css_of(b));
+  gtext_css_block_free(c);
+  gtext_css_block_free(b);
+}
+
+// "set a CSS declaration": the same property is replaced in its place; one that says the same is not a change; removing it removes it.
+TEST(CssBlockOpaque, ReplacedInPlaceUnchangedWhenSameAndRemovable) {
+  GTEXT_CSS_Declaration_Block * b = nullptr;
+  ASSERT_EQ(gtext_css_block_new(R(), nullptr, &b), GTEXT_CSS_OK);
+  ASSERT_EQ(set(b, "color", "red"), GTEXT_CSS_OK);
+  ASSERT_EQ(set_opaque(b, "voice-family", "male"), GTEXT_CSS_OK);
+  ASSERT_EQ(set(b, "width", "1px"), GTEXT_CSS_OK);
+  GTEXT_CSS_Block_Change change{};
+  EXPECT_EQ(set_opaque(b, "voice-family", "male", false, &change), GTEXT_CSS_OK);
+  EXPECT_FALSE(change.changed) << "the same text, the same importance";
+  EXPECT_EQ(set_opaque(b, "voice-family", "male", true, &change), GTEXT_CSS_OK);
+  EXPECT_TRUE(change.changed) << "the importance is part of the declaration";
+  gtext_css_block_change_free(&change);
+  EXPECT_EQ(set_opaque(b, "voice-family", "female"), GTEXT_CSS_OK);
+  EXPECT_EQ(css_of(b), "color: red; voice-family: female; width: 1px;") << "replaced in its place";
+  EXPECT_EQ(gtext_css_block_remove(b, find(R(), "voice-family"), nullptr, 0, &change), GTEXT_CSS_OK);
+  EXPECT_TRUE(change.changed);
+  gtext_css_block_change_free(&change);
+  EXPECT_EQ(css_of(b), "color: red; width: 1px;");
+  gtext_css_block_free(b);
+}
+
+// A shorthand the library cannot split (a system font needs the environment's table) is kept as one declaration; a longhand declared before it is overridden by it, so a
+// later set of that longhand goes after it, where it takes effect.
+TEST(CssBlockOpaque, ASetLonghandOfAnOpaqueShorthandGoesAfterIt) {
+  GTEXT_CSS_Declaration_Block * b = nullptr;
+  ASSERT_EQ(gtext_css_block_new(R(), nullptr, &b), GTEXT_CSS_OK);
+  ASSERT_EQ(set(b, "font-size", "10px"), GTEXT_CSS_OK);
+  ASSERT_EQ(set(b, "color", "red"), GTEXT_CSS_OK);
+  ASSERT_EQ(set_opaque(b, "font", "caption"), GTEXT_CSS_OK);
+  ASSERT_EQ(set(b, "width", "1px"), GTEXT_CSS_OK);
+  EXPECT_EQ(css_of(b), "font-size: 10px; color: red; font: caption; width: 1px;");
+  EXPECT_EQ(set(b, "font-size", "12px"), GTEXT_CSS_OK);
+  EXPECT_EQ(css_of(b), "color: red; font: caption; width: 1px; font-size: 12px;") << "an in-place replacement before the shorthand would have been overridden by it";
+  EXPECT_EQ(set(b, "font-size", "13px"), GTEXT_CSS_OK);
+  EXPECT_EQ(css_of(b), "color: red; font: caption; width: 1px; font-size: 13px;") << "now after it: replaced in place";
+  // a later declaration of the whole shorthand supersedes the opaque one
+  ASSERT_EQ(set(b, "font", "12px serif"), GTEXT_CSS_OK);
+  EXPECT_EQ(css_of(b).find("caption"), std::string::npos);
+  gtext_css_block_free(b);
+}
+
+TEST(CssBlockOpaque, OnlyAPropertyOfTheRegistryAndTextThatIsNotEmptyIsTaken) {
+  GTEXT_CSS_Declaration_Block * b = nullptr;
+  ASSERT_EQ(gtext_css_block_new(R(), nullptr, &b), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_block_set_opaque(b, 0, "x", 1, false, nullptr), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(gtext_css_block_set_opaque(nullptr, find(R(), "color"), "x", 1, false, nullptr), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(gtext_css_block_set_opaque(b, find(R(), "voice-family"), nullptr, 3, false, nullptr), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(gtext_css_block_set_opaque(b, find(R(), "voice-family"), "", 0, false, nullptr), GTEXT_CSS_E_INVALID) << "an empty value is no declaration";
+  EXPECT_EQ(gtext_css_block_count(b), 0u);
+  gtext_css_block_free(b);
+}
+
+// The strong guarantee: an allocation failure at any point of the set leaves the block as it was.
+TEST(CssBlockOpaque, AnAllocationFailureLeavesTheBlockAsItWas) {
+  size_t failures = 0;
+  for (size_t n = 1; n < 1000; n++) {
+    FaultAllocator fa;
+    GTEXT_CSS_Declaration_Options o = gtext_css_declaration_options_default();
+    o.allocator = &fa.alloc;
+    GTEXT_CSS_Declaration_Block * b = nullptr;
+    ASSERT_EQ(gtext_css_block_new(R(), &o, &b), GTEXT_CSS_OK);
+    ASSERT_EQ(set_opaque(b, "voice-family", "male"), GTEXT_CSS_OK);
+    ASSERT_EQ(set_opaque(b, "font", "caption"), GTEXT_CSS_OK);
+    const std::string before = css_of(b);
+    fa.arm(n);
+    GTEXT_CSS_Block_Change change{};
+    const GTEXT_CSS_Status st = set_opaque(b, n % 2 ? "voice-family" : "voice-pitch", "female", false, &change);
+    fa.disarm();
+    if (!fa.failed) {
+      EXPECT_EQ(st, GTEXT_CSS_OK);
+      gtext_css_block_change_free(&change);
+      gtext_css_block_free(b);
+      EXPECT_TRUE(fa.live.empty());
+      break;
+    }
+    failures++;
+    EXPECT_EQ(st, GTEXT_CSS_E_OOM);
+    EXPECT_EQ(css_of(b), before);
+    gtext_css_block_change_free(&change);
+    gtext_css_block_free(b);
+    EXPECT_TRUE(fa.live.empty());
+  }
+  EXPECT_GT(failures, 0u);
+}
+
 } // namespace

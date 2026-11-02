@@ -132,7 +132,7 @@ static bool sctx_init(sctx * c, const GTEXT_CSS_Declaration_Block * b) {
   }
   for (size_t i = 0; i < b->count; i++) {
     const blk_item * it = &b->items[i];
-    if (!it->dead && it->property && it->property <= c->nprops && !it->custom_name) {
+    if (!it->dead && !it->opaque && it->property && it->property <= c->nprops && !it->custom_name) {
       c->last[it->property] = (uint32_t)(i + 1);
     }
   }
@@ -2170,6 +2170,14 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
   for (size_t i = 0; i < n && status == GTEXT_CSS_OK; i++) {
     const blk_item * it = &block->items[i];
     if (it->dead) {
+      continue;
+    }
+    if (it->opaque) {
+      /* kept as written (gtext_css_block_set_opaque()): the property and its value, in its place */
+      GTEXT_CSS_Property_Info oi;
+      gtext_css_registry_property_info(c.reg, it->property, &oi);
+      put_declaration(out, oi.name, oi.name_length, it->raw, it->raw_length, it->important, first);
+      first = false;
       continue;
     }
     if (it->custom_name) {

@@ -97,6 +97,32 @@ TEST(CssomInline, MutationWritesTheAttributeBackAndAnExternalChangeIsSeenByConte
   EXPECT_EQ(length(d.d), 0u) << "no attribute: an empty block";
 }
 
+// CSSOM "update style attribute for": the attribute is the serialization of the declarations, so a declaration the library cannot judge must be in them, or an edit of
+// another property would take it out of the element: data loss. It survives byte for byte, in its place, whatever else is set, removed or written as the text.
+TEST(CssomInline, ADeclarationTheLibraryCannotJudgeSurvivesTheWriteBack) {
+  Fixture f;
+  f.attrs.change(ea(), "color: red; voice-family: male !important; margin: 1px; font: caption");
+  Decl d(f.style(ea()));
+  EXPECT_EQ(length(d.d), 7u) << "margin is four longhands, the others are one each";
+  EXPECT_EQ(set(d.d, "color", "green").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(f.attrs.get(ea()), "color: green; voice-family: male !important; margin: 1px; font: caption;");
+  EXPECT_EQ(set(d.d, "width", "2px").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(f.attrs.get(ea()), "color: green; voice-family: male !important; margin: 1px; font: caption; width: 2px;");
+  EXPECT_EQ(remove(d.d, "color").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(f.attrs.get(ea()), "voice-family: male !important; margin: 1px; font: caption; width: 2px;");
+  // the text setter writes what it parsed, the declaration it cannot judge included
+  EXPECT_EQ(set_text(d.d, "glyph-orientation-vertical: auto; color: blue").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(f.attrs.get(ea()), "glyph-orientation-vertical: auto; color: blue;");
+  // a change behind its back is read again, the declaration the library cannot judge included
+  f.attrs.change(ea(), "glyph-orientation-vertical: auto; width: 1px");
+  EXPECT_EQ(get(d.d, "glyph-orientation-vertical"), "auto");
+  EXPECT_EQ(set(d.d, "width", "3px").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(f.attrs.get(ea()), "glyph-orientation-vertical: auto; width: 3px;");
+  // and it cannot be set
+  EXPECT_EQ(set(d.d, "glyph-orientation-vertical", "none").st, GTEXT_CSS_E_UNSUPPORTED);
+  EXPECT_EQ(f.attrs.get(ea()), "glyph-orientation-vertical: auto; width: 3px;");
+}
+
 // "update style attribute for": an empty block sets the empty string; the attribute is removed only by the specification's steps.
 TEST(CssomInline, AnEmptyBlockSetsTheEmptyStringAndNeverRemovesTheAttribute) {
   Fixture f;

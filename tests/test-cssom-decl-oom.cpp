@@ -157,6 +157,8 @@ TEST(CssomDeclOom, EveryMutatorIsAtomicUnderAllocationFailureForFreeAndInlineDec
         {"remove nothing", inl, "color: red", [](World & w) { return remove(w.d, "width").st; }},
         {"set an empty value", inl, "color: red", [](World & w) { return set(w.d, "color", "").st; }},
         {"cssText of a list", inl, "color: red", [](World & w) { return set_text(w.d, "margin: 1px 2px; color: blue !important; --a: 1; width: 3px; color: green; bogus: 1").st; }},
+        {"cssText with declarations kept as written", inl, "color: red; voice-family: male", [](World & w) { return set_text(w.d, "voice-family: female !important; font: caption; color: blue; width: 1px; voice-family: male").st; }},
+        {"an edit beside a declaration kept as written", inl, "voice-family: male; font: caption; color: red", [](World & w) { return set(w.d, "color", "blue").st; }},
         {"cssText the same", inl, "color: red; width: 1px", [](World & w) { return set_text(w.d, "color: red; width: 1px").st; }},
         {"cssText empty", inl, "color: red", [](World & w) { return set_text(w.d, "").st; }},
         {"cssText a shorthand list", inl, "", [](World & w) { return set_text(w.d, "font: italic bold 12px/1.5 serif; border: 1px solid red; grid-template: [a] \"x y\" 1fr / auto 1fr").st; }},

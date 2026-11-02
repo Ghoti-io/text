@@ -178,7 +178,7 @@ typedef struct {
   size_t live_objects;        ///< Objects alive (any count above zero).
   size_t live_bytes;          ///< The bytes the live objects account.
   size_t inline_styles;       ///< Element-owned declarations alive.
-  uint64_t unjudgeable_dropped; ///< Declarations a parse dropped because the property is one the library cannot judge (GTEXT_CSS_E_UNSUPPORTED), as the cascade drops them.
+  uint64_t unjudgeable_preserved; ///< Declarations a parse kept as written because the library cannot judge the property (GTEXT_CSS_E_UNSUPPORTED): a property with no grammar here, or a shorthand it cannot split.
 } GTEXT_CSSOM_Counters;
 
 /**

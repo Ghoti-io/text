@@ -259,8 +259,9 @@ TEST(CssomDeclSet, ASetOfTheCurrentValueIsUnchangedAndEveryChangeBumpsOnce) {
   EXPECT_EQ(gtext_cssom_decl_version(d.d), 3u);
 }
 
-// The property the registry has and the library cannot judge is reported on a set, never guessed.
-TEST(CssomDeclSet, APropertyTheLibraryCannotJudgeIsReportedNamingIt) {
+// The property the registry has and the library cannot judge is reported on a set, never guessed; a declaration of it that is read is kept as it was written ("preserved as
+// the cascade does": the cascade drops it only for computing).
+TEST(CssomDeclSet, APropertyTheLibraryCannotJudgeIsReportedNamingItAndKeptWhenRead) {
   Doc doc;
   Decl d(doc);
   const Result r = set(d.d, "voice-family", "male");
@@ -269,12 +270,33 @@ TEST(CssomDeclSet, APropertyTheLibraryCannotJudgeIsReportedNamingIt) {
   EXPECT_NE(r.o.detail, nullptr);
   EXPECT_EQ(length(d.d), 0u);
   EXPECT_TRUE(doc.events.empty());
-  // and a parse of a list that has one drops it, as the cascade does, and counts it
-  ASSERT_EQ(set_text(d.d, "color: red; voice-family: male; width: 1px").st, GTEXT_CSS_OK);
-  EXPECT_EQ(text_of(d.d), "color: red; width: 1px;");
+  // a parse of a list that has one keeps it, in its place, and counts it
+  ASSERT_EQ(set_text(d.d, "color: red; voice-family: male !important; width: 1px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "color: red; voice-family: male !important; width: 1px;");
+  EXPECT_EQ(length(d.d), 3u);
+  EXPECT_EQ(item(d.d, 1), "voice-family");
+  EXPECT_EQ(get(d.d, "voice-family"), "male");
+  EXPECT_EQ(priority(d.d, "voice-family"), "important");
   GTEXT_CSSOM_Counters c;
   ASSERT_EQ(gtext_cssom_document_counters(doc.d, &c), GTEXT_CSS_OK);
-  EXPECT_EQ(c.unjudgeable_dropped, 1u);
+  EXPECT_EQ(c.unjudgeable_preserved, 1u);
+  // it can be set only as the error, and it is removed like any declaration
+  EXPECT_EQ(set(d.d, "voice-family", "female").st, GTEXT_CSS_E_UNSUPPORTED);
+  EXPECT_EQ(text_of(d.d), "color: red; voice-family: male !important; width: 1px;");
+  EXPECT_EQ(set(d.d, "color", "blue").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text_of(d.d), "color: blue; voice-family: male !important; width: 1px;") << "another property's edit leaves it alone";
+  const Result rm = remove(d.d, "voice-family");
+  EXPECT_EQ(rm.o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(rm.old, "male");
+  EXPECT_EQ(text_of(d.d), "color: blue; width: 1px;");
+  // the same text again is no change
+  ASSERT_EQ(set_text(d.d, "voice-family: male").st, GTEXT_CSS_OK);
+  EXPECT_EQ(set_text(d.d, "voice-family: male").o.kind, GTEXT_CSSOM_UNCHANGED);
+  // a shorthand the library cannot split is kept too, and is its own value
+  ASSERT_EQ(set_text(d.d, "font: caption; color: red").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "font: caption; color: red;");
+  EXPECT_EQ(get(d.d, "font"), "caption");
+  EXPECT_EQ(length(d.d), 2u);
 }
 
 // A shorthand and its CSS-wide keywords, `revert` kept as written, the legacy alias as its property.

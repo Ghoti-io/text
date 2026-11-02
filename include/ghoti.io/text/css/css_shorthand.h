@@ -189,7 +189,7 @@ GTEXT_API GTEXT_CSS_Declaration_Options gtext_css_declaration_options_default(vo
 
 /** @brief One declaration of a block. The pointers are owned by the block and valid until it is changed or freed. */
 typedef struct {
-  GTEXT_CSS_Property_Id property;      ///< The property (a longhand, `all` or a custom property's `--*`; never a shorthand other than `all`).
+  GTEXT_CSS_Property_Id property;      ///< The property (a longhand, `all` or a custom property's `--*`; never a shorthand other than `all`, or an opaque declaration's).
   GTEXT_CSS_String custom_name;        ///< For a custom property: its name as written, case kept; else empty.
   bool important;                      ///< Declared `!important`.
   GTEXT_CSS_Property_Outcome outcome;  ///< VALID, WIDE or PENDING.
@@ -197,6 +197,8 @@ typedef struct {
   const GTEXT_CSS_Value_Set * set;     ///< VALID, PENDING: the value; NULL for WIDE.
   GTEXT_CSS_Property_Id shorthand;     ///< The shorthand it was declared through, or 0.
   size_t declaration;                  ///< The index of the source declaration, equal for the longhands of one shorthand.
+  bool opaque;                         ///< A declaration the library cannot judge (gtext_css_block_set_opaque()): `outcome` and `set` mean nothing, `raw` is its value, and `property` may be a shorthand.
+  GTEXT_CSS_String raw;                ///< For an opaque declaration, its value as it was written (trimmed, owned by the block); else empty.
 } GTEXT_CSS_Declaration_Item;
 
 /**
@@ -279,6 +281,33 @@ typedef struct {
 
 /** @brief Free what a change holds (`ids`) and clear it; a zeroed or NULL change is ignored. */
 GTEXT_API void gtext_css_block_change_free(GTEXT_CSS_Block_Change * change);
+
+/**
+ * @brief Keep a declaration whose value the library cannot judge, as it was written.
+ *
+ * A property the registry has but whose grammar this library cannot decide (`voice-family`), and a shorthand whose value it cannot split into longhands (`font: caption`, a
+ * system font), are valid declarations that a browser keeps and writes back. A block that held typed values only would lose them from a `style` attribute the first time
+ * another property was edited, so the block can hold such a declaration as an **opaque** item: the property and the value text, in its place in the order, importance
+ * kept. It is CSSOM's "set a CSS declaration" for a value that is not parsed: it replaces the block's declaration of the same property in its place, else it is appended;
+ * a replacement that says what the item already says is not a change. It is written back as `name: raw[ !important]`, reported by gtext_css_block_item() and _find()
+ * with `opaque` set, and removed by gtext_css_block_remove() like any declaration (a shorthand's removal removes the opaque item of the shorthand itself too). It is not
+ * judged, expanded or computed: the cascade does not see it.
+ *
+ * **A longhand of an opaque shorthand.** An opaque shorthand is atomic, since its longhands are not known. A later declaration of one of its longhands that the block
+ * already holds *before* it is placed after it, because an in-place replacement would be overridden by the shorthand; a declaration of the whole shorthand replaces it.
+ * Removing one longhand does not change the shorthand.
+ *
+ * @param block The block. Not NULL.
+ * @param property A property of the registry that is not a custom property and not `all` (an alias is followed).
+ * @param raw The value as written, trimmed; not NULL, not empty (an empty value is no declaration). Copied.
+ * @param raw_length Its length.
+ * @param important `!important`.
+ * @param change NULL, or a zeroed or reused struct that receives what changed (the property, unless it is a shorthand).
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (a NULL or empty argument, a property that is not one); GTEXT_CSS_E_LIMIT_DECLARATIONS; GTEXT_CSS_E_OOM. All or nothing.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_block_set_opaque(GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Property_Id property, const char * raw, size_t raw_length,
+    bool important, GTEXT_CSS_Block_Change * change);
+
 
 /**
  * @brief CSSOM's "set a CSS declaration" for a parsed value: the declaration replaces the block's declaration of the same property **in its place**, else it is appended.

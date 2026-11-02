@@ -44,6 +44,15 @@ def main():
             for _ in range(length):
                 body += bytes([rng.randrange(5), rng.randrange(24), rng.randrange(24), rng.randrange(5), rng.randrange(12), 0])
             seeds.add(bytes(body))
+    # a second batch that leans on the entries of the tables that are declarations the library cannot judge and the shorthand it cannot split: names 24 to 26, values 24 and 25, texts 12 to 14
+    rng = random.Random(0x0b4c)
+    for length in [2, 4, 8, 12, 20, 40]:
+        for _ in range(20):
+            body = bytearray()
+            for _ in range(length):
+                body += bytes([rng.randrange(5), rng.choice([24, 25, 26, 6, 1, 2, rng.randrange(27)]), rng.choice([24, 25, 0, 1, rng.randrange(26)]), rng.randrange(5),
+                               rng.choice([12, 13, 14, rng.randrange(15)]), 0])
+            seeds.add(bytes(body))
     for s in sorted(seeds):
         name = "own-%s.seed" % hashlib.sha256(s).hexdigest()[:12]
         with open(os.path.join(OUT, name), "wb") as f:

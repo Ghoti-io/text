@@ -1586,6 +1586,7 @@
 #define gtext_css_block_remove GHOTIIO_TEXT(gtext_css_block_remove)
 #define gtext_css_block_set GHOTIIO_TEXT(gtext_css_block_set)
 #define gtext_css_block_set_custom GHOTIIO_TEXT(gtext_css_block_set_custom)
+#define gtext_css_block_set_opaque GHOTIIO_TEXT(gtext_css_block_set_opaque)
 #define gtext_cssom_buffer_free GHOTIIO_TEXT(gtext_cssom_buffer_free)
 #define gtext_cssom_config_default GHOTIIO_TEXT(gtext_cssom_config_default)
 #define gtext_cssom_decl_css_text GHOTIIO_TEXT(gtext_cssom_decl_css_text)

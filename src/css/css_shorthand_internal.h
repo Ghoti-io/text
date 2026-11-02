@@ -84,6 +84,9 @@ typedef struct {
   GTEXT_CSS_Value_Set * set;   ///< Retained.
   GTEXT_CSS_Property_Id shorthand;
   size_t declaration;
+  bool opaque;                 ///< A declaration kept as written (gtext_css_block_set_opaque()): `raw` holds the value; `set` is NULL.
+  char * raw;                  ///< Opaque: the value text (NUL-terminated).
+  size_t raw_length;
   bool dead;                   ///< Removed (gtext_css_block_remove()): a slot that every reader skips until the next compaction. Its set and name are released.
   size_t prev;                 ///< With the index: the slot + 1 of the previous item of the same property or custom name (0: none); the chain is what a removal kills whole.
 } blk_item;
@@ -102,6 +105,8 @@ struct GTEXT_CSS_Declaration_Block {
   size_t index_cap;            ///< A power of two.
   size_t index_used;           ///< Entries that are not empty (tombstones included).
   size_t index_tombs;          ///< Tombstones.
+  uint32_t * covered;          ///< NULL, or one count per property id: the live opaque shorthands whose longhands include it (built by the first opaque shorthand).
+  size_t opaque_shorthands;    ///< Live opaque items whose property is a shorthand.
   uint64_t probes;             ///< Entries looked at by the index since the block was made (the counter the cost tests assert).
 };
 
@@ -117,6 +122,9 @@ GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTE
     GTEXT_CSS_Block_Change * change, GTEXT_CSS_Shorthand_Result * result);
 GTEXT_CSS_Status css_block_set_custom_ex(GTEXT_CSS_Declaration_Block * block, const char * name, size_t name_length, const GTEXT_CSS_Property_Value * value,
     bool important, bool keep_important, GTEXT_CSS_Block_Change * change);
+/// gtext_css_block_set_opaque() with the rule of a list of declarations: `keep_important` leaves an important declaration of the property alone when the new one is not.
+GTEXT_CSS_Status css_block_set_opaque_ex(GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Property_Id property, const char * raw, size_t raw_length, bool important,
+    bool keep_important, GTEXT_CSS_Block_Change * change);
 /// Build the block's index now (the first operation that needs it does anyway): the only step of a find that can fail.
 GTEXT_CSS_Status css_block_prepare(GTEXT_CSS_Declaration_Block * block);
 

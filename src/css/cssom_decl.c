@@ -160,6 +160,11 @@ static void pref_resolve(const css_core * core, const char * name, size_t length
 
 /// The text of a declaration as getPropertyValue writes it: the empty string for a longhand left pending by a shorthand.
 static GTEXT_CSS_Status item_value_text(css_core * core, const GTEXT_CSS_Declaration_Item * it, char ** out, size_t * n) {
+  if (it->opaque) {
+    *out = css_core_dup(core, it->raw.data, it->raw.length);
+    *n = it->raw.length;
+    return *out ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  }
   if (it->outcome == GTEXT_CSS_PROP_RESULT_WIDE) {
     const char * k = gtext_css_wide_keyword_name(it->wide);
     *out = css_core_dup(core, k, strlen(k));
@@ -315,6 +320,12 @@ GTEXT_CSS_Status gtext_cssom_decl_get_property_priority(GTEXT_CSSOM_Decl * decl,
     }
     return GTEXT_CSS_OK;
   }
+  if (gtext_css_block_find(decl->block, p.id, NULL, 0, &it) && it.opaque) {
+    if (it.important) {
+      *out = "important";
+    }
+    return GTEXT_CSS_OK;   /* a shorthand kept as written */
+  }
   /* CSSOM getPropertyPriority: for a shorthand, important when every longhand it maps to is in the declarations and is important */
   GTEXT_CSS_Property_Id leaves[256];
   size_t n = 0;
@@ -343,8 +354,8 @@ GTEXT_CSS_Status gtext_cssom_decl_value_set(GTEXT_CSSOM_Decl * decl, const char 
   pref_resolve(decl->obj.core, name, name_length, &p);
   *found = false;
   GTEXT_CSS_Declaration_Item it;
-  if (!p.known || p.shorthand || !gtext_css_block_find(decl->block, p.id, p.custom ? p.name : NULL, p.length, &it)) {
-    return GTEXT_CSS_OK;
+  if (!p.known || p.shorthand || !gtext_css_block_find(decl->block, p.id, p.custom ? p.name : NULL, p.length, &it) || it.opaque) {
+    return GTEXT_CSS_OK;   /* a declaration kept as written has no typed value */
   }
   *out = it.set ? gtext_css_value_set_retain(it.set) : NULL;
   if (wide) {
@@ -409,6 +420,37 @@ GTEXT_CSS_Status gtext_cssom_decl_serialize(GTEXT_CSSOM_Decl * decl, const GTEXT
 
 /* ---- parsing a list of declarations ---------------------------------------------------------------------------------------------------------- */
 
+/// A declaration the library cannot judge, kept as written (CSSOM keeps it; the cascade drops it only for computing): the property of the registry and the value's tokens
+/// written out and trimmed. A name the registry does not have is not a declaration.
+static GTEXT_CSS_Status keep_opaque(css_core * core, GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Declaration * d) {
+  GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(core->registry, d->name.data, d->name.length);
+  if (id) {
+    id = gtext_css_registry_resolve_alias(core->registry, id);
+  }
+  if (!id) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+  so.allocator = &core->alloc;
+  char * text = NULL;
+  size_t n = 0;
+  GTEXT_CSS_Status st = gtext_css_serialize_values_buffer(d->value, d->value_count, &so, &text, &n);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  const char * p = text;
+  size_t m = n;
+  css_trim_value_text(&p, &m);
+  if (m != 0) {
+    st = css_block_set_opaque_ex(block, id, p, m, d->important, true, NULL);
+    if (st == GTEXT_CSS_OK) {
+      core->counters.unjudgeable_preserved++;
+    }
+  }
+  gtext_css_serialize_buffer_free(&so, text);
+  return st;
+}
+
 GTEXT_CSS_Status css_decl_parse_block(css_core * core, const char * text, size_t length, bool quirks, GTEXT_CSS_Declaration_Block ** out) {
   if (length > core->config.max_input_bytes) {
     return GTEXT_CSS_E_LIMIT_INPUT;
@@ -445,10 +487,9 @@ GTEXT_CSS_Status css_decl_parse_block(css_core * core, const char * text, size_t
     memset(&pv, 0, sizeof pv);
     st = gtext_css_parse_property_declaration(core->registry, d, &pro, &pv);
     if (st == GTEXT_CSS_E_UNSUPPORTED) {
-      /* a property the registry has and the library cannot judge: the cascade drops the declaration with a diagnostic, and so does a block, which holds typed values only */
-      core->counters.unjudgeable_dropped++;
+      /* a property the registry has and the library cannot judge: the cascade drops the declaration for computing, but a declaration block keeps it, as written */
       gtext_css_property_value_free(&pv);
-      st = GTEXT_CSS_OK;
+      st = keep_opaque(core, block, d);
       continue;
     }
     if (st == GTEXT_CSS_OK && pv.outcome != GTEXT_CSS_PROP_RESULT_UNKNOWN && pv.outcome != GTEXT_CSS_PROP_RESULT_INVALID) {
@@ -461,8 +502,7 @@ GTEXT_CSS_Status css_decl_parse_block(css_core * core, const char * text, size_t
         GTEXT_CSS_Shorthand_Result sr;
         st = css_block_set_ex(block, &pv, d->important, true, NULL, &sr);
         if (st == GTEXT_CSS_E_UNSUPPORTED) {
-          core->counters.unjudgeable_dropped++;
-          st = GTEXT_CSS_OK;
+          st = keep_opaque(core, block, d);   /* a shorthand the library cannot split: kept as one declaration */
         }
       }
     }
@@ -890,6 +930,7 @@ GTEXT_CSS_Status gtext_cssom_decl_dump(const GTEXT_CSSOM_Decl * decl, const GTEX
     GTEXT_CSS_Property_Info info;
     gtext_css_registry_property_info(core->registry, it.property, &info);
     static const char * const outcomes[] = {"unknown", "valid", "wide", "pending", "invalid"};
+    const char * outcome_name = it.opaque ? "opaque" : outcomes[it.outcome];
     st = puts_(sink, "decl ");
     if (st == GTEXT_CSS_OK) {
       st = it.custom_name.data ? put(sink, it.custom_name.data, it.custom_name.length) : put(sink, info.name, info.name_length);
@@ -898,7 +939,7 @@ GTEXT_CSS_Status gtext_cssom_decl_dump(const GTEXT_CSSOM_Decl * decl, const GTEX
       st = puts_(sink, it.important ? " important " : " normal ");
     }
     if (st == GTEXT_CSS_OK) {
-      st = puts_(sink, outcomes[it.outcome]);
+      st = puts_(sink, outcome_name);
     }
     if (st == GTEXT_CSS_OK) {
       st = puts_(sink, " ");

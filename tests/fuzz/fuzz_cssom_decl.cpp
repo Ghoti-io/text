@@ -67,17 +67,20 @@ namespace cssom_declfuzz {
 }
 
 const char * const kNames[] = {"color", "margin", "margin-top", "padding", "border", "background", "font", "--a", "--A", "word-wrap", "overflow-wrap", "all", "width", "bogus", "MARGIN",
-    "grid-template", "flex", "border-radius", "text-decoration", "animation", "inset", "margin-inline", "z-index", "--"};
+    "grid-template", "flex", "border-radius", "text-decoration", "animation", "inset", "margin-inline", "z-index", "--",
+    "voice-family", "font-size", "glyph-orientation-vertical"};
 const char * const kValues[] = {"red", "1px", "1px 2px", "1px 2px 3px 4px", "var(--x)", "inherit", "", "nonsense", "red !important", "10", "url(a) no-repeat", "italic bold 12px/1.5 serif",
-    "a b", "  x  ", "solid red 2px", "5", "break-word", "0", "initial", "revert", "none", "1 1 10px", "10px / 20px", "underline"};
+    "a b", "  x  ", "solid red 2px", "5", "break-word", "0", "initial", "revert", "none", "1 1 10px", "10px / 20px", "underline", "caption", "preserve male"};
 const char * const kPriorities[] = {"", "important", "IMPORTANT", "bad", ""};
 const char * const kTexts[] = {"color: red; margin: 1px", "", "color: red; color: blue !important; color: green", "margin-top: 1px !important; margin: 2px", "a{color:red}", "--a: 1; --A: 2; --a: 3",
     "all: inherit; color: red", "width: 1px; bogus: 2; height: 3px", "border: 1px solid red; border-top-color: blue", "font: 12px serif; font-size: 20px", "color: red;;; width: 5px;",
-    "margin: var(--x); margin-top: 1px"};
+    "margin: var(--x); margin-top: 1px", "font-size: 1px; font: caption; font-size: 2px", "voice-family: male !important; color: red; voice-family: female",
+    "color: red; font: caption; font-style: italic; font: caption !important"};
 
 struct Entry {
   std::string key;
   bool important;
+  bool opaque_shorthand = false;   ///< A shorthand the library cannot split, kept as written: atomic, and it overrides the longhands before it.
 };
 using Model = std::vector<Entry>;
 
@@ -137,11 +140,54 @@ int find(Model & m, const std::string & key) {
   return -1;
 }
 
+/// A declaration the library cannot judge, in a list of declarations: kept as written, in the place of the declaration of the same property.
+void model_opaque(Model & m, const std::string & name, bool important, bool shorthand_kept) {
+  GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(registry(), name.data(), name.size());
+  if (!id) {
+    return;
+  }
+  id = gtext_css_registry_resolve_alias(registry(), id);
+  const std::string key = name_of(id);
+  const int at = find(m, key);
+  if (at >= 0) {
+    if (m[at].important && !important) {
+      return;
+    }
+    m[at].important = important;
+    m[at].opaque_shorthand = shorthand_kept;
+  }
+  else {
+    m.push_back({key, important, shorthand_kept});
+  }
+}
+
+/// Whether an opaque shorthand after position `at` sets the longhand `key`.
+bool opaque_covers_after(const Model & m, int at, const std::string & key) {
+  for (size_t j = static_cast<size_t>(at) + 1; j < m.size(); j++) {
+    if (!m[j].opaque_shorthand) {
+      continue;
+    }
+    std::vector<GTEXT_CSS_Property_Id> ls;
+    leaves(gtext_css_registry_find_property(registry(), m[j].key.data(), m[j].key.size()), ls);
+    for (GTEXT_CSS_Property_Id l : ls) {
+      if (name_of(l) == key) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /// CSSOM "set a CSS declaration" for the longhands the parse and the expansion give. `keep_important` is the list rule of cssText.
 void model_set(Model & m, const std::string & name, const std::string & value, bool important, bool keep_important) {
   GTEXT_CSS_Property_Value pv;
   const bool custom = name.size() >= 2 && name[0] == '-' && name[1] == '-';
   const GTEXT_CSS_Status st = gtext_css_parse_property_text(registry(), name.data(), name.size(), value.data(), value.size(), nullptr, &pv);
+  if (st == GTEXT_CSS_E_UNSUPPORTED && keep_important) {
+    gtext_css_property_value_free(&pv);
+    model_opaque(m, name, important, false);   // a list of declarations keeps what it cannot judge
+    return;
+  }
   if (st != GTEXT_CSS_OK || (pv.outcome != GTEXT_CSS_PROP_RESULT_VALID && pv.outcome != GTEXT_CSS_PROP_RESULT_WIDE && pv.outcome != GTEXT_CSS_PROP_RESULT_PENDING)) {
     gtext_css_property_value_free(&pv);
     return;
@@ -156,13 +202,24 @@ void model_set(Model & m, const std::string & name, const std::string & value, b
   }
   else if (is_shorthand(pv.property)) {
     GTEXT_CSS_Longhand_List * list = nullptr;
-    if (gtext_css_shorthand_expand(registry(), &pv, nullptr, &list, nullptr) == GTEXT_CSS_OK) {
+    const GTEXT_CSS_Status ex = gtext_css_shorthand_expand(registry(), &pv, nullptr, &list, nullptr);
+    if (ex == GTEXT_CSS_OK) {
       for (size_t i = 0; i < gtext_css_longhand_list_count(list); i++) {
         GTEXT_CSS_Longhand lh;
         gtext_css_longhand_list_at(list, i, &lh);
         keys.push_back(name_of(lh.property));
       }
       gtext_css_longhand_list_free(list);
+      const int sup = find(m, name_of(pv.property));
+      if (sup >= 0 && m[sup].opaque_shorthand) {
+        m.erase(m.begin() + sup);   // a declaration of the whole shorthand supersedes the one kept as written
+      }
+    }
+    else if (ex == GTEXT_CSS_E_UNSUPPORTED && keep_important) {
+      const std::string kept = name_of(pv.property);
+      gtext_css_property_value_free(&pv);
+      model_opaque(m, kept, important, true);
+      return;
     }
   }
   else {
@@ -170,7 +227,11 @@ void model_set(Model & m, const std::string & name, const std::string & value, b
   }
   gtext_css_property_value_free(&pv);
   for (const std::string & k : keys) {
-    const int at = find(m, k);
+    int at = find(m, k);
+    if (at >= 0 && opaque_covers_after(m, at, k)) {
+      m.erase(m.begin() + at);   // declared before an opaque shorthand that sets it: the new declaration goes after the shorthand
+      at = -1;
+    }
     if (at >= 0) {
       if (keep_important && m[at].important && !important) {
         continue;
@@ -200,6 +261,7 @@ void model_remove(Model & m, const std::string & name) {
       for (GTEXT_CSS_Property_Id l : ls) {
         keys.push_back(name_of(l));
       }
+      keys.push_back(name_of(id));   // a declaration of the shorthand itself, kept as written
     }
     else {
       keys.push_back(name_of(id));

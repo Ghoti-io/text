@@ -48,7 +48,7 @@
  * value is `removeProperty`; a priority that is neither empty nor an ASCII case-insensitive `important` is ignored; an invalid value, and a value that contains
  * `!important`, is ignored with nothing changed. The value is parsed by gtext_css_parse_property_text(), the function the cascade uses; a registered custom
  * property's value is not validated at set time, as the specification says. A property the registry has but the library cannot judge (the properties of
- * GTEXT_CSS_E_UNSUPPORTED) is preserved on a read and **reported** on a set, never guessed: the call returns GTEXT_CSS_E_UNSUPPORTED and the outcome names it.
+ * GTEXT_CSS_E_UNSUPPORTED), and a shorthand it cannot split, is **kept as written** on a read (an opaque item of the block: in its place, with its importance, written back verbatim) and **reported** on a set, never guessed: the call returns GTEXT_CSS_E_UNSUPPORTED and the outcome names it.
  *
  * A shorthand expands through the registry's rules: a longhand already in the block is replaced **in place**, a new one is appended in the shorthand's order. A
  * mutation that leaves the affected declaration byte-identical (the same longhand value text and importance) is UNCHANGED: no version, no generation, no
@@ -184,8 +184,8 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_decl_css_text(GTEXT_CSSOM_Decl * decl, ch
 GTEXT_API GTEXT_CSS_Status gtext_cssom_decl_serialize(GTEXT_CSSOM_Decl * decl, const GTEXT_Markup_Sink * sink);
 
 /**
- * @brief The `cssText` setter: parse the text as a list of declarations and replace the whole list; a declaration that does not parse is dropped, nested rules in the
- *   text are dropped, and the later of two declarations of a property replaces the earlier and takes its place.
+ * @brief The `cssText` setter: parse the text as a list of declarations and replace the whole list; a declaration that does not parse is dropped, one the library cannot
+ *   judge is kept as written, nested rules in the text are dropped, and the later of two declarations of a property replaces the earlier and takes its place.
  *
  * The write-back of an element-owned declaration is unconditional (CSSOM's step 4): `attribute_written` is true even when the text was byte-identical, in which case
  * the outcome is UNCHANGED, with no version and no notification.

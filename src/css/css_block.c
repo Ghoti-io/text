@@ -83,7 +83,9 @@ void gtext_css_block_free(GTEXT_CSS_Declaration_Block * block) {
   for (size_t i = 0; i < block->count; i++) {
     gtext_css_value_set_free(block->items[i].set);
     gtext_allocator_free(&a, block->items[i].custom_name);
+    gtext_allocator_free(&a, block->items[i].raw);
   }
+  gtext_allocator_free(&a, block->covered);
   gtext_allocator_free(&a, block->items);
   gtext_allocator_free(&a, block->index);
   gtext_allocator_free(&a, block);
@@ -517,6 +519,9 @@ static void item_out(const blk_item * it, GTEXT_CSS_Declaration_Item * out) {
   out->set = it->set;
   out->shorthand = it->shorthand;
   out->declaration = it->declaration;
+  out->opaque = it->opaque;
+  out->raw.data = it->raw;
+  out->raw.length = it->raw_length;
 }
 
 bool gtext_css_block_item(const GTEXT_CSS_Declaration_Block * block, size_t index, GTEXT_CSS_Declaration_Item * out) {
@@ -584,7 +589,7 @@ static void change_note(GTEXT_CSS_Block_Change * change, GTEXT_CSS_Property_Id i
 static GTEXT_CSS_Status item_same(const GTEXT_CSS_Declaration_Block * b, const blk_item * it, GTEXT_CSS_Property_Outcome outcome,
     GTEXT_CSS_Wide_Keyword wide, const GTEXT_CSS_Value_Set * set, bool important, bool * same) {
   *same = false;
-  if (it->important != important || it->outcome != outcome) {
+  if (it->opaque || it->important != important || it->outcome != outcome) {
     return GTEXT_CSS_OK;
   }
   if (outcome == GTEXT_CSS_PROP_RESULT_WIDE) {
@@ -640,6 +645,9 @@ static bool value_usable(const GTEXT_CSS_Property_Value * value) {
       value->outcome == GTEXT_CSS_PROP_RESULT_PENDING);
 }
 
+static bool kill_key(GTEXT_CSS_Declaration_Block * b, GTEXT_CSS_Property_Id property, const char * name, size_t length);
+static bool opaque_covers_after(const GTEXT_CSS_Declaration_Block * b, size_t from, GTEXT_CSS_Property_Id longhand);
+
 GTEXT_CSS_Status gtext_css_block_set(GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Property_Value * value, bool important,
     GTEXT_CSS_Block_Change * change, GTEXT_CSS_Shorthand_Result * result) {
   return css_block_set_ex(block, value, important, false, change, result);
@@ -680,17 +688,21 @@ GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTE
   /* everything that can fail comes first: the index, the places of the existing declarations, whether each differs, room for the new ones, the change list */
   size_t * slots = NULL;
   unsigned char * same = NULL;
+  unsigned char * moved = NULL;   /* a longhand declared before an opaque shorthand that sets it: the new declaration goes after the shorthand */
   size_t fresh = 0;
   st = index_ready(block, n);
   if (st == GTEXT_CSS_OK && n) {
-    slots = gtext_allocator_calloc(&block->alloc, n, sizeof *slots + 1);
+    slots = gtext_allocator_calloc(&block->alloc, n, sizeof *slots + 2);
     if (!slots) {
       st = GTEXT_CSS_E_OOM;
     }
     else {
       same = (unsigned char *)(slots + n);
+      moved = same + n;
     }
   }
+  /* a declaration of the whole shorthand supersedes the opaque one that kept its place */
+  const size_t superseded = shorthand ? block_lookup(block, prop, NULL, 0) : 0;
   for (size_t i = 0; st == GTEXT_CSS_OK && i < n; i++) {
     GTEXT_CSS_Longhand lh;
     if (shorthand) {
@@ -705,6 +717,11 @@ GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTE
     }
     slots[i] = block_lookup(block, lh.property, NULL, 0);
     if (!slots[i]) {
+      fresh++;
+      continue;
+    }
+    if (block->items[slots[i] - 1].opaque || opaque_covers_after(block, slots[i] - 1, lh.property)) {
+      moved[i] = 1;
       fresh++;
       continue;
     }
@@ -743,6 +760,10 @@ GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTE
   /* nothing below can fail */
   size_t decl = 0;
   bool numbered = false;
+  if (superseded) {
+    kill_key(block, prop, NULL, 0);
+    change_note(change, 0);
+  }
   for (size_t i = 0; i < n; i++) {
     GTEXT_CSS_Longhand lh;
     if (shorthand) {
@@ -761,6 +782,10 @@ GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTE
     if (!numbered) {
       decl = block->next_declaration++;
       numbered = true;
+    }
+    if (moved[i]) {
+      kill_key(block, lh.property, NULL, 0);
+      slots[i] = 0;
     }
     if (slots[i]) {
       item_replace(&block->items[slots[i] - 1], lh.outcome, lh.wide, lh.set, important, shorthand ? prop : 0, decl);
@@ -838,6 +863,54 @@ GTEXT_CSS_Status css_block_set_custom_ex(GTEXT_CSS_Declaration_Block * block, co
   return GTEXT_CSS_OK;
 }
 
+/// Whether a property is a shorthand that is written as its longhands (`all` is one declaration).
+static bool is_shorthand_id(const GTEXT_CSS_Registry * reg, GTEXT_CSS_Property_Id id) {
+  GTEXT_CSS_Property_Info info;
+  return gtext_css_registry_property_info(reg, id, &info) && (info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(reg, id);
+}
+
+/// Count (`delta` 1) or uncount (-1) an opaque shorthand against each longhand it sets. The table exists once any opaque shorthand was added.
+static void cover_adjust(GTEXT_CSS_Declaration_Block * b, GTEXT_CSS_Property_Id shorthand, int delta) {
+  if (!b->covered) {
+    return;
+  }
+  GTEXT_CSS_Property_Id leaves[256];
+  size_t n = 0;
+  if (!css_shorthand_leaves(b->registry, shorthand, leaves, 256, &n)) {
+    return;
+  }
+  const size_t np = gtext_css_registry_property_count(b->registry);
+  for (size_t i = 0; i < n; i++) {
+    if (leaves[i] && leaves[i] <= np) {
+      b->covered[leaves[i]] = (uint32_t)((int64_t)b->covered[leaves[i]] + delta);
+    }
+  }
+}
+
+/// Whether a live opaque shorthand after the slot `from` sets the longhand: a declaration of the longhand before that shorthand is overridden by it.
+static bool opaque_covers_after(const GTEXT_CSS_Declaration_Block * b, size_t from, GTEXT_CSS_Property_Id longhand) {
+  const size_t np = gtext_css_registry_property_count(b->registry);
+  if (!b->covered || longhand > np || b->covered[longhand] == 0) {
+    return false;
+  }
+  for (size_t j = from + 1; j < b->count; j++) {
+    const blk_item * it = &b->items[j];
+    if (it->dead || !it->opaque || !is_shorthand_id(b->registry, it->property)) {
+      continue;
+    }
+    GTEXT_CSS_Property_Id leaves[256];
+    size_t n = 0;
+    if (css_shorthand_leaves(b->registry, it->property, leaves, 256, &n)) {
+      for (size_t i = 0; i < n; i++) {
+        if (leaves[i] == longhand) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 /// Kill every live item of a key (the whole chain), release what they hold, and unname the key. True when there was one.
 static bool kill_key(GTEXT_CSS_Declaration_Block * b, GTEXT_CSS_Property_Id property, const char * name, size_t length) {
   bool found = false;
@@ -851,8 +924,16 @@ static bool kill_key(GTEXT_CSS_Declaration_Block * b, GTEXT_CSS_Property_Id prop
   while (s) {
     blk_item * it = &b->items[s - 1];
     const size_t next = it->prev;
+    if (it->opaque && b->opaque_shorthands && is_shorthand_id(b->registry, it->property)) {
+      cover_adjust(b, it->property, -1);
+      b->opaque_shorthands--;
+    }
     gtext_css_value_set_free(it->set);
     gtext_allocator_free(&b->alloc, it->custom_name);
+    gtext_allocator_free(&b->alloc, it->raw);
+    it->raw = NULL;
+    it->raw_length = 0;
+    it->opaque = false;
     it->set = NULL;
     it->custom_name = NULL;
     it->custom_length = 0;
@@ -870,7 +951,7 @@ GTEXT_CSS_Status gtext_css_block_remove(GTEXT_CSS_Declaration_Block * block, GTE
   if (!block || (name ? name_length < 3 || name[0] != '-' || name[1] != '-' : !property)) {
     return GTEXT_CSS_E_INVALID;
   }
-  GTEXT_CSS_Property_Id leaves[256];
+  GTEXT_CSS_Property_Id leaves[257];
   size_t nleaf = 1;
   if (name) {
     leaves[0] = 0;
@@ -883,8 +964,12 @@ GTEXT_CSS_Status gtext_css_block_remove(GTEXT_CSS_Declaration_Block * block, GTE
     }
     if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(block->registry, id)) {
       if (!css_shorthand_leaves(block->registry, id, leaves, 256, &nleaf)) {
-        return GTEXT_CSS_E_UNSUPPORTED;
+        if (!block_lookup(block, id, NULL, 0)) {
+          return GTEXT_CSS_E_UNSUPPORTED;
+        }
+        nleaf = 0;   /* a shorthand with no rule for its longhands, kept as written: only the declaration itself can go */
       }
+      leaves[nleaf++] = id;   /* an opaque declaration of the shorthand itself */
     }
     else {
       leaves[0] = id;
@@ -923,6 +1008,120 @@ bool gtext_css_block_find(const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_P
   return true;
 }
 
+/// Append an opaque item (the room was made by the caller's reserve; the copy and the coverage table are the only allocations).
+static GTEXT_CSS_Status push_opaque(GTEXT_CSS_Declaration_Block * b, GTEXT_CSS_Property_Id property, const char * raw, size_t raw_length, bool important, size_t declaration) {
+  const bool sh = is_shorthand_id(b->registry, property);
+  GTEXT_CSS_Status st = block_reserve(b, 1);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (sh && !b->covered) {
+    b->covered = gtext_allocator_calloc(&b->alloc, gtext_css_registry_property_count(b->registry) + 1, sizeof *b->covered);
+    if (!b->covered) {
+      return GTEXT_CSS_E_OOM;
+    }
+  }
+  char * copy = gtext_allocator_malloc(&b->alloc, raw_length + 1);
+  if (!copy) {
+    return GTEXT_CSS_E_OOM;
+  }
+  memcpy(copy, raw, raw_length);
+  copy[raw_length] = '\0';
+  blk_item * it = &b->items[b->count++];
+  memset(it, 0, sizeof *it);
+  it->property = property;
+  it->important = important;
+  it->opaque = true;
+  it->raw = copy;
+  it->raw_length = raw_length;
+  it->declaration = declaration;
+  if (declaration >= b->next_declaration) {
+    b->next_declaration = declaration + 1;
+  }
+  block_appended(b);
+  if (sh) {
+    b->opaque_shorthands++;
+    cover_adjust(b, property, 1);
+  }
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_css_block_set_opaque(GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Property_Id property, const char * raw, size_t raw_length,
+    bool important, GTEXT_CSS_Block_Change * change) {
+  return css_block_set_opaque_ex(block, property, raw, raw_length, important, false, change);
+}
+
+GTEXT_CSS_Status css_block_set_opaque_ex(GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Property_Id property, const char * raw, size_t raw_length, bool important,
+    bool keep_important, GTEXT_CSS_Block_Change * change) {
+  change_reset(change);
+  if (!block || !raw || raw_length == 0 || !property) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  const GTEXT_CSS_Property_Id id = gtext_css_registry_resolve_alias(block->registry, property);
+  GTEXT_CSS_Property_Info info;
+  if (!id || !gtext_css_registry_property_info(block->registry, id, &info) || (info.flags & GTEXT_CSS_PROP_CUSTOM) || is_all(block->registry, id)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  const bool sh = is_shorthand_id(block->registry, id);
+  GTEXT_CSS_Status st = index_ready(block, 1);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  const size_t at = block_lookup(block, id, NULL, 0);
+  if (at) {
+    blk_item * it = &block->items[at - 1];
+    if (keep_important && !important && it->important) {
+      return GTEXT_CSS_OK;
+    }
+    if (it->opaque && it->important == important && it->raw_length == raw_length && memcmp(it->raw, raw, raw_length) == 0) {
+      return GTEXT_CSS_OK;
+    }
+    if (sh && !block->covered) {
+      block->covered = gtext_allocator_calloc(&block->alloc, gtext_css_registry_property_count(block->registry) + 1, sizeof *block->covered);
+      if (!block->covered) {
+        return GTEXT_CSS_E_OOM;
+      }
+    }
+    char * copy = gtext_allocator_malloc(&block->alloc, raw_length + 1);
+    if (!copy) {
+      return GTEXT_CSS_E_OOM;
+    }
+    st = change_reserve(block, change, 1);
+    if (st != GTEXT_CSS_OK) {
+      gtext_allocator_free(&block->alloc, copy);
+      return st;
+    }
+    memcpy(copy, raw, raw_length);
+    copy[raw_length] = '\0';
+    gtext_css_value_set_free(it->set);
+    it->set = NULL;
+    gtext_allocator_free(&block->alloc, it->raw);
+    if (!it->opaque && sh) {
+      block->opaque_shorthands++;
+      cover_adjust(block, id, 1);
+    }
+    it->opaque = true;
+    it->raw = copy;
+    it->raw_length = raw_length;
+    it->important = important;
+    it->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+    it->shorthand = 0;
+    it->declaration = block->next_declaration++;
+    change_note(change, sh ? 0 : id);
+    return GTEXT_CSS_OK;
+  }
+  st = change_reserve(block, change, 1);
+  if (st == GTEXT_CSS_OK) {
+    st = push_opaque(block, id, raw, raw_length, important, block->next_declaration);
+  }
+  if (st != GTEXT_CSS_OK) {
+    change_reset(change);
+    return st;
+  }
+  change_note(change, sh ? 0 : id);
+  return GTEXT_CSS_OK;
+}
+
 GTEXT_CSS_Status gtext_css_block_clone(const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Declaration_Block ** out) {
   if (!block || !out) {
     return GTEXT_CSS_E_INVALID;
@@ -938,6 +1137,10 @@ GTEXT_CSS_Status gtext_css_block_clone(const GTEXT_CSS_Declaration_Block * block
   for (size_t i = 0; st == GTEXT_CSS_OK && i < block->count; i++) {
     const blk_item * it = &block->items[i];
     if (it->dead) {
+      continue;
+    }
+    if (it->opaque) {
+      st = push_opaque(c, it->property, it->raw, it->raw_length, it->important, it->declaration);
       continue;
     }
     st = css_block_push(c, it->property, it->custom_name, it->custom_length, it->important, it->outcome, it->wide, it->set, it->shorthand, it->declaration);
@@ -957,6 +1160,10 @@ GTEXT_CSS_Status css_block_prepare(GTEXT_CSS_Declaration_Block * block) {
 
 /// Whether the live item at `a` of `x` and the one at `b` of `y` are the same declaration: the same value text and importance.
 static GTEXT_CSS_Status items_equal(const GTEXT_CSS_Declaration_Block * x, const blk_item * a, const GTEXT_CSS_Declaration_Block * y, const blk_item * b, bool * same) {
+  if (a->opaque || b->opaque) {
+    *same = a->opaque && b->opaque && a->important == b->important && a->raw_length == b->raw_length && (a->raw_length == 0 || memcmp(a->raw, b->raw, a->raw_length) == 0);
+    return GTEXT_CSS_OK;
+  }
   if (a->outcome != b->outcome || a->important != b->important || (a->outcome == GTEXT_CSS_PROP_RESULT_WIDE && a->wide != b->wide)) {
     *same = false;
     return GTEXT_CSS_OK;
@@ -1074,6 +1281,24 @@ GTEXT_CSS_Status gtext_css_block_shorthand_value(const GTEXT_CSS_Declaration_Blo
   if (!id || !gtext_css_registry_property_info(block->registry, id, &info) || !(info.flags & GTEXT_CSS_PROP_SHORTHAND)) {
     return GTEXT_CSS_E_INVALID;
   }
+  const size_t kept = block_lookup(block, id, NULL, 0);
+  if (kept && block->items[kept - 1].opaque) {
+    /* a shorthand kept as written is its own value */
+    const blk_item * it = &block->items[kept - 1];
+    GTEXT_Allocator da = *gtext_allocator_default();
+    char * copy = gtext_allocator_malloc(&da, it->raw_length + 1);
+    if (!copy) {
+      return GTEXT_CSS_E_OOM;
+    }
+    memcpy(copy, it->raw, it->raw_length);
+    copy[it->raw_length] = '\0';
+    *out = copy;
+    *out_length = it->raw_length;
+    if (important) {
+      *important = it->important;
+    }
+    return GTEXT_CSS_OK;
+  }
   if (gtext_css_shorthand_kind(block->registry, id) == GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {
     return GTEXT_CSS_E_UNSUPPORTED;
   }
@@ -1107,6 +1332,18 @@ GTEXT_CSS_Status gtext_css_block_get_property_value(const GTEXT_CSS_Declaration_
     const blk_item * it = &block->items[at - 1];
     if (important) {
       *important = it->important;
+    }
+    if (it->opaque) {
+      GTEXT_Allocator da = *gtext_allocator_default();
+      char * copy = gtext_allocator_malloc(&da, it->raw_length + 1);
+      if (!copy) {
+        return GTEXT_CSS_E_OOM;
+      }
+      memcpy(copy, it->raw, it->raw_length);
+      copy[it->raw_length] = '\0';
+      *out = copy;
+      *out_length = it->raw_length;
+      return GTEXT_CSS_OK;
     }
     if (it->outcome != GTEXT_CSS_PROP_RESULT_PENDING) {
       char * t = NULL;
