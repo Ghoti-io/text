@@ -83,7 +83,17 @@ static const char * const status_names[GTEXT_CSS_STATUS_COUNT] = {
   [GTEXT_CSS_E_LIMIT_CONDITIONS] = "a condition has more queries or nodes than its limit",
   [GTEXT_CSS_E_LIMIT_CONTAINER] = "more distinct container requests than max_container_requests",
   [GTEXT_CSS_E_LIMIT_DESCRIPTORS] = "an at-rule has more descriptors or entries than its limit",
-  [GTEXT_CSS_E_LIMIT_WORK] = "match work or memo entries beyond max_match_work or max_memo_entries",
+  [GTEXT_CSS_E_LIMIT_WORK] = "a call did more than its max_work (max_match_work or max_memo_entries of a match)",
+  [GTEXT_CSS_E_SYNTAX] = "syntax error (SyntaxError)",
+  [GTEXT_CSS_E_HIERARCHY] = "the rule cannot be placed there (HierarchyRequestError)",
+  [GTEXT_CSS_E_INDEX_SIZE] = "index past the end of the list (IndexSizeError)",
+  [GTEXT_CSS_E_INVALID_STATE] = "not allowed in the state of the object (InvalidStateError)",
+  [GTEXT_CSS_E_NOT_ALLOWED] = "not allowed (NotAllowedError)",
+  [GTEXT_CSS_E_NO_MODIFICATION] = "the object is read-only (NoModificationAllowedError)",
+  [GTEXT_CSS_E_NOT_FOUND] = "not found (NotFoundError)",
+  [GTEXT_CSS_E_SECURITY] = "the style sheet is not origin-clean (SecurityError)",
+  [GTEXT_CSS_E_REENTRANT] = "a mutation from inside a callback",
+  [GTEXT_CSS_E_LIMIT_CSSOM] = "a CSSOM limit (live objects or bytes, inline styles, observers, cached entries, generation) is exceeded",
 };
 
 const char * gtext_css_status_string(GTEXT_CSS_Status status) {
@@ -91,6 +101,20 @@ const char * gtext_css_status_string(GTEXT_CSS_Status status) {
     return "unknown status";
   }
   return status_names[status];
+}
+
+const char * gtext_cssom_exception_name(GTEXT_CSS_Status status) {
+  switch (status) {
+  case GTEXT_CSS_E_SYNTAX: return "SyntaxError";
+  case GTEXT_CSS_E_HIERARCHY: return "HierarchyRequestError";
+  case GTEXT_CSS_E_INDEX_SIZE: return "IndexSizeError";
+  case GTEXT_CSS_E_INVALID_STATE: return "InvalidStateError";
+  case GTEXT_CSS_E_NOT_ALLOWED: return "NotAllowedError";
+  case GTEXT_CSS_E_NO_MODIFICATION: return "NoModificationAllowedError";
+  case GTEXT_CSS_E_NOT_FOUND: return "NotFoundError";
+  case GTEXT_CSS_E_SECURITY: return "SecurityError";
+  default: return NULL;
+  }
 }
 
 static const char * const token_names[GTEXT_CSS_TOKEN_TYPE_COUNT] = {

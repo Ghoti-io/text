@@ -39,7 +39,7 @@
  * whole** only where the served text says so (`@font-face` without `font-family` or `src`; `@font-palette-values` without `font-family`; an invalid prelude; an `@namespace` after a
  * style rule): gtext_css_atrule_parse() then returns OK with no rule and `result->valid` false, and the diagnostics say why. A rule that is valid and defines nothing (a
  * `@counter-style` whose `symbols` are too few for its system) is kept, flagged. The tables are data: tools/css/atrule_required.tsv (the required descriptors) and
- * tools/css/atrule_parents.tsv (where each at-rule may be), read by tools/css/gen-atrule-tables.py.
+ * the `parents` column of tools/css/atrule_kinds.tsv (where each at-rule may be), read by tools/css/gen-atrule-tables.py.
  *
  * ## Limits
  *

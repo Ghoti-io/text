@@ -367,7 +367,7 @@ static void values_limits(void) {
 prints
 
 ```
-with 100 units of work: match work or memo entries beyond max_match_work or max_memo_entries
+with 100 units of work: a call did more than its max_work (max_match_work or max_memo_entries of a match)
 by default: success, matched yes, 1001 positions
 work for 1000 tokens: 46036 units
 ```
