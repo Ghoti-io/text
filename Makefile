@@ -2232,10 +2232,12 @@ check-css-color:
 
 check-css-color-cross: ## Compare the matrices, the Bradford adaptation and the transfer functions of the color computation with the color library's (skipped, and said so, where color is not installed)
 # D1: text does not depend on color (the CSS spaces are not in it, and its math is the host's libm, which a stylesheet's meaning must not depend on), and this program,
-# built only here, is the test that the two agree where they overlap. GHOTI_ORACLE_REQUIRED=1 makes an absent color a failure and not a skip.
+# built only here, is the test that the two agree where they overlap. Where color is not installed the gate prints SKIPPED and exits 0, which is not a pass; GHOTI_ORACLE_REQUIRED=1
+# or COLOR_CROSS_REQUIRED=1 (`make test COLOR_CROSS_REQUIRED=1`) makes an absent color a failure. The suite's install script builds color before text (color is text's optional
+# dependency), so the gate runs there; a check of a build of text alone has to ask for the failure.
 check-css-color-cross: $(APP_DIR)/$(STATIC_TARGET)
 	@if ! PKG_CONFIG_PATH="$(PREFIX)/share/pkgconfig" pkg-config --exists ghoti.io-color-0 2>/dev/null; then \
-		if [ -n "$$GHOTI_ORACLE_REQUIRED" ]; then echo "check-css-color-cross: the color library is not installed and the gate is required" >&2; exit 1; fi; \
+		if [ -n "$$GHOTI_ORACLE_REQUIRED" ] || [ -n "$(COLOR_CROSS_REQUIRED)" ]; then echo "check-css-color-cross: the color library is not installed and the gate is required" >&2; exit 1; fi; \
 		echo "check-css-color-cross: SKIPPED, the color library is not installed (this is not a pass)"; exit 0; \
 	fi; \
 	pc="$(DEP_PCS) ghoti.io-color-0"; \

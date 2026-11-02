@@ -230,6 +230,11 @@ is that least (CSS Easing 2, 2.3.1). `linear()` turns a control point with two i
 (2.1.1); a position that was not written is not filled in. `text-justify: distribute` is `inter-character`, `container-type` takes `anchored`, and the keywords
 `auto` and `match-element` of `view-transition-name` are written in lower case.
 
+A unit is written in lower case in a computed value as in a specified one (Values 4, 6.2: "Units are ASCII case-insensitive and serialize as lowercase, for example 1Q serializes
+as 1q"; `1Hz` is `1hz`), except `dB`, the unit of the `<decibel>` of `voice-volume`, which keeps the capital Speech 1 gives it; `st`, the unit of the `<semitones>` of `voice-pitch`,
+is lower case. A keyword the grammar names is written in lower case whatever case it was written in, and a name the author chose keeps its case. A `random()` is written with its key
+simplified (Values 5, 9.4.1: `element-scoped ua-width-1` for the key of the first `random()` of `width` that has none).
+
 | Class | What it does |
 |---|---|
 | identity | the computed value is the specified value |

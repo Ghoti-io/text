@@ -244,9 +244,14 @@ representation.
   declaration's value has; **`<whitespace-token>`** consumes nothing and succeeds
   where white space precedes the next component value; **`<an+b>`** is read by the
   syntax layer's An+B and its value is the canonical text.
-- A serialized **unit** is lower case except `Q`, `Hz` and `kHz`; the draft says only
-  that unit identifiers are ASCII case-insensitive, so the spelling is this
-  library's decision, written in `css_units.c`.
+- A serialized **unit** is lower case: Values 4, 6.2 says "Units are ASCII case-insensitive and
+  serialize as lowercase, for example 1Q serializes as 1q" (so `1Hz` is `1hz` and `1kHz` is
+  `1khz`), and both pinned browsers write them so. The one unit that keeps a capital is `dB`, the unit of
+  `<decibel>`, which Speech 1 spells that way and the general rule would write `db`: no pinned browser has
+  a property that takes it, so nothing says which is right, and the library writes the spelling of the
+  draft that defines the unit. `st`, the unit of `<semitones>`, is lower case already. Both are units that no
+  calculation takes (they are not in Values 4's list), each is its own canonical unit, and a number
+  with either is a dimension of the type `<decibel>` or `<semitones>`; the spelling is in `css_units.c`.
 
 ## Units
 
@@ -303,7 +308,9 @@ names are written in lower case (Values 4: "Units are ASCII case-insensitive and
 serialize as lowercase, for example 1Q serializes as 1q"; the keywords `linearRGB`
 and `crispEdges` are written `linearrgb` and `crispedges`, as Chromium and Firefox
 write them), while a name the author chose (`<ident>`, `<custom-ident>`) keeps its
-case; an `<integer>` is held in the range of a 32-bit integer (4294967296 is
+case. This is one rule for every property: a keyword the grammar names is written in lower case
+whatever case it was written in, and a name the author chose is not (`animation-name: Fade` stays
+`Fade`, `font-family: Fira Sans` stays as written); an `<integer>` is held in the range of a 32-bit integer (4294967296 is
 2147483647). **Writing, matching the text
 again and writing again gives the same text.**
 
