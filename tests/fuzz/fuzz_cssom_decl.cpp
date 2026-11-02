@@ -29,7 +29,7 @@
  *
  * The reference is an ordered list of (key, importance) built by the harness from gtext_css_parse_property_text() and the shorthand expansion for each call: CSSOM's "set a CSS
  * declaration" (a key in the list is replaced where it stands, else appended, each longhand of a shorthand in turn), `removeProperty` (every longhand a shorthand maps to), and
- * the list algorithm of `cssText` (a later declaration replaces an earlier one, and is ignored if the earlier is important and it is not). It is written here, not read from the
+ * the list algorithm of `cssText` (a later declaration removes an earlier one and is appended, and is ignored if the earlier is important and it is not). It is written here, not read from the
  * block. The properties, after every operation:
  *
  *   the list of the declaration is the model's: `length`, the names `item(i)` gives in order, and the priority of each;
@@ -140,7 +140,7 @@ int find(Model & m, const std::string & key) {
   return -1;
 }
 
-/// A declaration the library cannot judge, in a list of declarations: kept as written, in the place of the declaration of the same property.
+/// A declaration the library cannot judge, in a list of declarations: kept as written; a later one of the same property removes the earlier and is appended (the place both browsers give).
 void model_opaque(Model & m, const std::string & name, bool important, bool shorthand_kept) {
   GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(registry(), name.data(), name.size());
   if (!id) {
@@ -153,12 +153,9 @@ void model_opaque(Model & m, const std::string & name, bool important, bool shor
     if (m[at].important && !important) {
       return;
     }
-    m[at].important = important;
-    m[at].opaque_shorthand = shorthand_kept;
+    m.erase(m.begin() + at);
   }
-  else {
-    m.push_back({key, important, shorthand_kept});
-  }
+  m.push_back({key, important, shorthand_kept});
 }
 
 /// Whether an opaque shorthand after position `at` sets the longhand `key`.
@@ -236,7 +233,13 @@ void model_set(Model & m, const std::string & name, const std::string & value, b
       if (keep_important && m[at].important && !important) {
         continue;
       }
-      m[at].important = important;
+      if (keep_important) {
+        m.erase(m.begin() + at);   // a parsed list: the later declaration is appended and the earlier one is gone (setProperty replaces in place)
+        m.push_back({k, important});
+      }
+      else {
+        m[at].important = important;
+      }
     }
     else {
       m.push_back({k, important});
