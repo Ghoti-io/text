@@ -82,7 +82,7 @@ a-replaced-rule-keeps-its-version	cssom_setters.c	  css_own_swap(rule, own);\n  
 a-replaced-rule-sends-no-event	cssom_setters.c	  css_obj_retain_external(&rule->obj);\n  css_cssom_commit(core, &ev, outcome);\n  css_obj_release_external(&rule->obj);\n}	  css_obj_retain_external(&rule->obj);\n  css_obj_release_external(&rule->obj);\n}	setters
 a-refused-candidate-keeps-its-id	cssom_setters.c	    own->source->core->next_id = own->saved_id;	    own->source->core->next_id = own->source->core->next_id;	settersoom
 from-is-not-0-percent	cssom_setters.c	    const bool from = n == 4 &&	    const bool from = 0 && n == 4 &&	setters
-the-block-is-not-read-again-after-the-rule-changed	cssom_setters.c	  css_own_commit(rule, &own);\n  st = css_typed_refresh(rule);	  css_own_commit(rule, &own);\n  st = GTEXT_CSS_OK;	setters
+the-block-is-not-read-again-after-the-rule-changed	cssom_setters.c	  css_own_commit(rule, &own);\n  css_typed_pending_install(rule, &view);	  css_own_commit(rule, &own);\n  css_typed_pending_discard(core, &view);	setters,settersoom
 a-readonly-attribute-is-writable	cssom_setters.c	  A(MEDIA, "conditionText", SRC_PRELUDE, NULL, false),	  A(MEDIA, "conditionText", SRC_PRELUDE, NULL, true),	setters
 a-typed-edit-is-not-checked-against-the-rule	cssom_typed.c	  if (!same_view(core, work, decl->descs, decl->ndescs, v.block, v.descs, v.ndescs, &cmp) || cmp != GTEXT_CSS_OK) {	  if (0 && !same_view(core, work, decl->descs, decl->ndescs, v.block, v.descs, v.ndescs, &cmp)) {	setters
 a-descriptor-that-is-dropped-is-accepted	cssom_typed.c	  if (refused || !now) {	  if (refused || 0) {	setters
@@ -315,3 +315,4 @@ css-text-with-the-same-text-keeps-the-old-order	cssom_decl.c	    if (!same_item_
 a-set-shorthand-counts-the-opaque-one-it-replaces	css_block.c	it->property == ignore	it->property == 0 * ignore	decl,seeds
 a-counter-style-name-of-two-identifiers-is-taken	cssom_setters.c	const bool counter_name = rule->kind == GTEXT_CSSOM_RULE_COUNTER_STYLE;	const bool counter_name = 0 && rule->kind == GTEXT_CSSOM_RULE_COUNTER_STYLE;	setters
 event-freed-after-the-delivery-ends	cssom_events.c	  qevent_free(core, &q);\n  delivery_end(core);\n}	  delivery_end(core);\n  qevent_free(core, &q);\n}	events
+the-new-view-of-a-typed-rule-is-built-without-a-check	cssom_setters.c	  st = css_typed_pending_of_own(rule, &own, &view);\n  if (st != GTEXT_CSS_OK) {	  st = css_typed_pending_of_own(rule, &own, &view);\n  if (0) {	settersoom

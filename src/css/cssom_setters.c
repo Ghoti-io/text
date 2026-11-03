@@ -262,6 +262,13 @@ GTEXT_CSS_Status css_rule_replace_own(css_rule * rule, const char * header, size
       return st;
     }
   }
+  /* the view of a typed rule's block, read from the candidate for the same reason: the swap below cannot fail */
+  css_typed_pending view;
+  st = css_typed_pending_of_own(rule, &own, &view);
+  if (st != GTEXT_CSS_OK) {
+    css_own_discard(&own);
+    return st;
+  }
   /* the selector list as it is now is what the event says it was: read while the rule still holds it. Running out of memory here is the call's failure, with nothing changed; a prelude
      that no longer reads as a selector list (it did when the rule was made) is the event's (`summary_complete`) */
   GTEXT_CSS_Selector_List * before = NULL;
@@ -270,14 +277,15 @@ GTEXT_CSS_Status css_rule_replace_own(css_rule * rule, const char * header, size
     st = css_rule_selector_list(rule, &before);
     if (st == GTEXT_CSS_E_OOM || st == GTEXT_CSS_E_LIMIT_WORK) {
       css_own_discard(&own);   /* a resource failure here is before the change, so it is a failure of the call and nothing changed */
+      css_typed_pending_discard(core, &view);
       return st;
     }
     before_failed = st != GTEXT_CSS_OK;
   }
   css_own_commit(rule, &own);
-  st = css_typed_refresh(rule);
+  css_typed_pending_install(rule, &view);
   css_rule_replaced(rule, before, before_failed, outcome);
-  return st;
+  return GTEXT_CSS_OK;
 }
 
 /* ---- selectorText, keyText ---------------------------------------------------------------------------------------------------------------- */

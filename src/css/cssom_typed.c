@@ -112,11 +112,7 @@ static GTEXT_CSS_Status descs_push(css_core * core, css_desc ** list, size_t * n
 
 /* ---- the view ----------------------------------------------------------------------------------------------------------------------------- */
 
-typedef struct {
-  GTEXT_CSS_Declaration_Block * block;
-  css_desc * descs;
-  size_t ndescs, capdescs;
-} view;
+typedef css_typed_pending view;
 
 static void view_free(css_core * core, view * v) {
   gtext_css_block_free(v->block);
@@ -200,23 +196,38 @@ GTEXT_CSS_Status css_typed_view(css_rule * rule, GTEXT_CSS_Declaration_Block ** 
   return GTEXT_CSS_OK;
 }
 
-GTEXT_CSS_Status css_typed_refresh(css_rule * rule) {
+GTEXT_CSS_Status css_typed_pending_of_own(css_rule * rule, const css_own * own, css_typed_pending * pending) {
+  memset(pending, 0, sizeof *pending);
   GTEXT_CSSOM_Decl * d = rule->style;
   if (!d || !d->typed) {
     return GTEXT_CSS_OK;
   }
-  view v;
-  GTEXT_CSS_Status st = view_of_rule(rule, &v);
+  GTEXT_CSS_Atrule * a = NULL;
+  GTEXT_CSS_Status st = css_own_typed(rule, own, false, &a);
   if (st != GTEXT_CSS_OK) {
     return st;
   }
+  st = view_from_typed(rule->obj.core, a, pending);
+  gtext_css_atrule_free(a);
+  return st;
+}
+
+void css_typed_pending_install(css_rule * rule, css_typed_pending * pending) {
+  GTEXT_CSSOM_Decl * d = rule->style;
+  if (!pending->block) {
+    return;
+  }
   gtext_css_block_free(d->block);
   descs_free(rule->obj.core, d->descs, d->ndescs);
-  d->block = v.block;
-  d->descs = v.descs;
-  d->ndescs = v.ndescs;
-  d->capdescs = v.capdescs;
-  return GTEXT_CSS_OK;
+  d->block = pending->block;
+  d->descs = pending->descs;
+  d->ndescs = pending->ndescs;
+  d->capdescs = pending->capdescs;
+  memset(pending, 0, sizeof *pending);
+}
+
+void css_typed_pending_discard(css_core * core, css_typed_pending * pending) {
+  view_free(core, pending);
 }
 
 /* ---- names ---------------------------------------------------------------------------------------------------------------------------- */

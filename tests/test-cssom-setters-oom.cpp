@@ -226,4 +226,71 @@ TEST(CssomSettersOom, EveryMutatorIsAllOrNothing) {
   }
 }
 
+/* A rule whose block was fetched: the block is a view of the rule's syntax, and a setter that fails leaves both as they were. The sheet's dump says nothing of the view. */
+TEST(CssomSettersOom, TheBlockOfATypedRuleFetchedBeforeIsUnchangedByAFailedSetter) {
+  struct Case {
+    const char * name;
+    const char * css;
+    std::function<GTEXT_CSS_Status(Sheet &)> op;
+    const char * view_has = nullptr;   ///< What the block must say after the call, said independently of the library's own answer.
+  };
+  const Case cases[] = {
+      {"a counter style descriptor", "@counter-style c { system: cyclic; symbols: a b }", [](Sheet & s) { return attr_set(s, {0}, "symbols", "x y z"); }, "symbols: x y z"},
+      {"a counter style name", "@counter-style c { system: cyclic; symbols: a b }", [](Sheet & s) { return attr_set(s, {0}, "name", "d"); }},
+      {"selectorText of a page rule", "@page { size: a3; margin: 1px }", [](Sheet & s) { return sel(s, {0}, ":first"); }},
+      {"keyText", "@keyframes k { from { color: red; margin-top: 1px } }", [](Sheet & s) {
+         GTEXT_CSSOM_Outcome o;
+         return gtext_cssom_rule_set_key_text(path(s, {0, 0}).r, "10%, 90%", 8, &o);
+       }},
+  };
+  for (const Case & c : cases) {
+    const bool nested = std::string(c.css).find("@keyframes") != std::string::npos && std::string(c.name).find("keyText") != std::string::npos;
+    std::string want_view;
+    {
+      FaultAllocator fa;
+      Doc doc(nullptr, &fa.alloc);
+      Sheet s(doc, c.css);
+      ASSERT_EQ(s.status, GTEXT_CSS_OK) << c.name;
+      Rule r = nested ? path(s, {0, 0}) : path(s, {0});
+      Decl d = style_of(r.r);
+      ASSERT_TRUE(d.d) << c.name;
+      ASSERT_EQ(c.op(s), GTEXT_CSS_OK) << c.name;
+      want_view = text_of(d.d);
+      if (c.view_has) {
+        EXPECT_NE(want_view.find(c.view_has), std::string::npos) << c.name << ": " << want_view;
+      }
+    }
+    size_t failures = 0;
+    for (size_t n = 1; n < 100000; n++) {
+      FaultAllocator fa;
+      {
+        Doc doc(nullptr, &fa.alloc);
+        Sheet s(doc, c.css);
+        ASSERT_EQ(s.status, GTEXT_CSS_OK) << c.name;
+        Rule r = nested ? path(s, {0, 0}) : path(s, {0});
+        Decl d = style_of(r.r);
+        ASSERT_TRUE(d.d) << c.name;
+        const std::string view_before = text_of(d.d);
+        const std::string dump_before = dump(s.s);
+        fa.arm(n);
+        const GTEXT_CSS_Status st = c.op(s);
+        fa.disarm();
+        if (!fa.failed) {
+          ASSERT_EQ(st, GTEXT_CSS_OK) << c.name << " at " << n;
+          EXPECT_EQ(text_of(d.d), want_view) << c.name;
+          break;
+        }
+        failures++;
+        EXPECT_EQ(dump(s.s), dump_before) << c.name << ": allocation " << n << " (the call returned " << gtext_css_status_string(st) << ")";
+        EXPECT_EQ(text_of(d.d), view_before) << c.name << ": allocation " << n << ": the block is still the view of the unchanged rule";
+        EXPECT_EQ(st, GTEXT_CSS_E_OOM) << c.name << " " << n;
+        EXPECT_EQ(c.op(s), GTEXT_CSS_OK) << c.name << " " << n;
+        EXPECT_EQ(text_of(d.d), want_view) << c.name << ": the retry after allocation " << n;
+      }
+      EXPECT_TRUE(fa.live.empty()) << c.name << ": allocation " << n << " leaked";
+    }
+    EXPECT_GE(failures, 3u) << c.name;
+  }
+}
+
 }  // namespace

@@ -98,8 +98,18 @@ void css_media_owner_gone(struct GTEXT_CSSOM_Media_List ** list);
 bool css_typed_kind(GTEXT_CSSOM_Rule_Kind kind);
 /// The block of a typed rule, built from its typed model; `rule->style` is set.
 GTEXT_CSS_Status css_typed_build_style(css_rule * rule);
-/// The rule's syntax changed: read the block again (a no-op when it was never built).
-GTEXT_CSS_Status css_typed_refresh(css_rule * rule);
+/// The view of a typed rule that has not been installed: a block and the descriptors, owned by whoever holds it. `block` is NULL when there is nothing to install.
+typedef struct {
+  GTEXT_CSS_Declaration_Block * block;
+  css_desc * descs;
+  size_t ndescs, capdescs;
+} css_typed_pending;
+/// The view of the rule as the candidate `own` would make it, built while the call can still fail with nothing changed. Empty (`block` NULL) when the rule's block was never built.
+GTEXT_CSS_Status css_typed_pending_of_own(css_rule * rule, const css_own * own, css_typed_pending * pending);
+/// Install the view in the rule's block, after css_own_commit(): infallible. An empty view changes nothing.
+void css_typed_pending_install(css_rule * rule, css_typed_pending * pending);
+/// Let go of a view that was not installed.
+void css_typed_pending_discard(css_core * core, css_typed_pending * pending);
 void css_typed_free(GTEXT_CSSOM_Decl * decl);
 /// The view of a typed rule, to be installed in a declaration object: a block and the descriptors (both owned by the caller).
 GTEXT_CSS_Status css_typed_view(css_rule * rule, GTEXT_CSS_Declaration_Block ** block, css_desc ** descs, size_t * ndescs);
