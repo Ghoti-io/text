@@ -280,8 +280,12 @@ TEST(CssomSetters, ACounterStyleDescriptorIsReplacedAsAWhole) {
   EXPECT_EQ(css(c.r), "@counter-style c { system: cyclic; symbols: x y z; suffix: \". \"; }");
   EXPECT_EQ(set_attr(c.r, "pad", "3 '0'").o.kind, GTEXT_CSSOM_CHANGED);
   EXPECT_EQ(attr(c.r, "pad"), "3 \"0\"");
-  EXPECT_EQ(set_attr(c.r, "name", "foo bar").o.kind, GTEXT_CSSOM_CHANGED);
-  EXPECT_EQ(attr(c.r, "name"), "foo bar");
+  // found by the hunt of the differential (doc 5561): the name is parsed as a <counter-style-name>, so two identifiers are not one name; both browsers do nothing
+  EXPECT_EQ(set_attr(c.r, "name", "foo bar").o.kind, GTEXT_CSSOM_IGNORED_INVALID_VALUE);
+  EXPECT_EQ(attr(c.r, "name"), "c");
+  EXPECT_EQ(set_attr(c.r, "name", " foo-bar ").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(attr(c.r, "name"), "foo-bar");
+  EXPECT_EQ(set_attr(c.r, "name", "9a").o.kind, GTEXT_CSSOM_IGNORED_INVALID_VALUE);
   EXPECT_EQ(set_attr(c.r, "name", "none").o.kind, GTEXT_CSSOM_IGNORED_INVALID_VALUE) << "none is not a counter style name";
   EXPECT_EQ(set_attr(c.r, "href", "x").st, GTEXT_CSS_E_UNSUPPORTED);
 }

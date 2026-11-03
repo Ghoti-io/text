@@ -313,3 +313,4 @@ a-pseudo-page-keeps-its-case	css_atrule.c	    if (kind == GTEXT_CSS_ATRULE_PAGE)
 an-opaque-longhand-set-moves-to-the-end	css_block.c	    if ((block->items[slots[i] - 1].opaque && is_shorthand_id(reg, block->items[slots[i] - 1].property)) || opaque_covers_after(	    if (block->items[slots[i] - 1].opaque || opaque_covers_after(	decl,seeds
 css-text-with-the-same-text-keeps-the-old-order	cssom_decl.c	    if (!same_item_order(decl->block, neu)) {	    if (0) {	decl
 a-set-shorthand-counts-the-opaque-one-it-replaces	css_block.c	it->property == ignore	it->property == 0 * ignore	decl,seeds
+a-counter-style-name-of-two-identifiers-is-taken	cssom_setters.c	const bool counter_name = rule->kind == GTEXT_CSSOM_RULE_COUNTER_STYLE;	const bool counter_name = 0 && rule->kind == GTEXT_CSSOM_RULE_COUNTER_STYLE;	setters

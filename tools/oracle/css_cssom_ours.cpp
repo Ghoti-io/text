@@ -185,6 +185,19 @@ std::string take(GTEXT_CSSOM_Document * doc, char * buf, size_t n) {
 
 /// A style handle of the rule, or NULL when the rule has none (a TypeError in script).
 GTEXT_CSSOM_Decl * style_of(GTEXT_CSSOM_Rule * rule) {
+  // the library gives every typed rule a declaration view of its descriptors; the interfaces of the browsers have `style` on these kinds only
+  switch (gtext_cssom_rule_kind(rule)) {
+  case GTEXT_CSSOM_RULE_STYLE:
+  case GTEXT_CSSOM_RULE_PAGE:
+  case GTEXT_CSSOM_RULE_PAGE_MARGIN:
+  case GTEXT_CSSOM_RULE_FONT_FACE:
+  case GTEXT_CSSOM_RULE_KEYFRAME:
+  case GTEXT_CSSOM_RULE_NESTED_DECLARATIONS:
+  case GTEXT_CSSOM_RULE_POSITION_TRY:
+    break;
+  default:
+    return nullptr;
+  }
   GTEXT_CSSOM_Decl * d = nullptr;
   return gtext_cssom_rule_style(rule, &d) == GTEXT_CSS_OK ? d : nullptr;
 }

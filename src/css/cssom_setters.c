@@ -28,6 +28,7 @@
  */
 
 #include <string.h>
+#include <strings.h>
 
 #include "css_internal.h"
 #include "cssom_kind_tables.h"
@@ -802,6 +803,44 @@ static GTEXT_CSS_Status put_ident(tbuf * out, const char * value, size_t length)
   return css_serialize_identifier_text(value, length, false, &sink);
 }
 
+/// Whether `s` is one identifier token (CSS Syntax: letters, digits, `-`, `_`, non-ASCII, and escapes; not starting with a digit or a hyphen and a digit) with nothing else around it but white space.
+static bool is_single_ident(const char * s, size_t n, size_t * start, size_t * end) {
+  while (n && (s[0] == ' ' || s[0] == '\t' || s[0] == '\n' || s[0] == '\r' || s[0] == '\f')) {
+    s++;
+    n--;
+    (*start)++;
+  }
+  while (n && (s[n - 1] == ' ' || s[n - 1] == '\t' || s[n - 1] == '\n' || s[n - 1] == '\r' || s[n - 1] == '\f')) {
+    n--;
+  }
+  if (n == 0) {
+    return false;
+  }
+  *end = *start + n;
+  size_t i = 0;
+  if (s[0] == '-') {
+    i = 1;
+  }
+  if (i < n && s[i] >= '0' && s[i] <= '9') {
+    return false;
+  }
+  if (i == n) {
+    return false;   /* a lone hyphen is a delim */
+  }
+  for (; i < n; i++) {
+    const unsigned char c = (unsigned char)s[i];
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c >= 0x80) {
+      continue;
+    }
+    if (c == '\\' && i + 1 < n && s[i + 1] != '\n' && s[i + 1] != '\r' && s[i + 1] != '\f') {
+      i++;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
 static GTEXT_CSS_Status set_name_like(css_rule * rule, const attr_row * row, const char * value, size_t length, bool * ignored, GTEXT_CSSOM_Outcome * out) {
   css_core * core = rule->obj.core;
   tbuf header, body;
@@ -821,11 +860,25 @@ static GTEXT_CSS_Status set_name_like(css_rule * rule, const attr_row * row, con
       }
       if (st == GTEXT_CSS_OK) {
         /* the name is a string: written as an identifier, escaped; a keyframes name that an identifier cannot be (empty, a reserved word) is a quoted string */
+        size_t cs = 0, ce = 0;
+        const bool counter_name = rule->kind == GTEXT_CSSOM_RULE_COUNTER_STYLE;
+        if (counter_name) {
+          /* CSS Counter Styles 3: the name is parsed as a <counter-style-name>, one identifier that is not `none`; a text that is not one does nothing (both browsers) */
+          if (!is_single_ident(value, length, &cs, &ce) || (ce - cs == 4 && strncasecmp(value + cs, "none", 4) == 0)) {
+            *ignored = true;
+            tb_free(&header);
+            tb_free(&body);
+            return GTEXT_CSS_OK;
+          }
+        }
         const bool reserved = length == 0 || (length == 4 && (value[0] | 32) == 'n' && (value[1] | 32) == 'o' && (value[2] | 32) == 'n' && (value[3] | 32) == 'e');
         if (reserved && rule->kind == GTEXT_CSSOM_RULE_KEYFRAMES) {
           if (!tb_puts(&header, "\"") || !tb_put(&header, value, length) || !tb_puts(&header, "\"")) {
             st = GTEXT_CSS_E_OOM;
           }
+        }
+        else if (counter_name) {
+          st = tb_put(&header, value + cs, ce - cs) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;   /* the identifier as written */
         }
         else {
           st = put_ident(&header, value, length);
