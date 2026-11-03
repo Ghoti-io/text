@@ -480,7 +480,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
           gtext_cssom_buffer_free(gtext_cssom_document_allocator(w.doc), got);
           if (!v.empty()) {
             const std::string was = css_text(d, input);
-            gtext_cssom_decl_set_property(d, "width", 5, v.data(), v.size(), "", 0, &o);
+            // setProperty takes the priority too: with "" an important declaration becomes
+            // a normal one, so the value read is set back with the priority read with it.
+            const char * prio = "";
+            if (gtext_cssom_decl_get_property_priority(d, "width", 5, &prio) != GTEXT_CSS_OK || prio == nullptr) {
+              prio = "";
+            }
+            gtext_cssom_decl_set_property(d, "width", 5, v.data(), v.size(), prio, std::strlen(prio), &o);
             if (css_text(d, input) != was) {
               fail("setProperty(p, getPropertyValue(p)) changed the declaration", was + "\n" + css_text(d, input), input);
             }
