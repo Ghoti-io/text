@@ -365,3 +365,4 @@ sheet-text-rule-forgets-its-general-enclosed	cssom_rule.c	  st = css_rule_read_f
 inserted-rule-keeps-no-text	cssom_insert.c	  if (node && text && length && memchr(text, '(', length)) {	  if (0) {	media
 container-condition-read-is-not-written-back	cssom_media.c	rule->kind != GTEXT_CSSOM_RULE_IMPORT && rule->kind != GTEXT_CSSOM_RULE_CONTAINER)) {	rule->kind != GTEXT_CSSOM_RULE_IMPORT)) {	media
 typed-rule-gets-no-source-text	cssom_rule_serialize.c	  if (rule->source && rule->source->text) {\n    /* a rule read from a style sheet	  if (0) {\n    /* a rule read from a style sheet	media
+a-sheet-of-another-document-is-adoptable	cssom_scope.c	  return sheet && sheet->constructed && sheet->obj.core == scope_core(scope);	  return sheet && sheet->constructed;	multidoc

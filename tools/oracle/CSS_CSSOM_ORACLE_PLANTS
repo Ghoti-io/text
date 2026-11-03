@@ -7,3 +7,9 @@ a-media-rules-text-ignores-its-list-as-read
 an-imports-text-ignores-its-list-as-read
 a-sheets-media-forgets-its-list-as-read
 match-media-writes-the-closed-text
+a-sheet-of-another-document-is-adoptable
+sheet-text-rule-forgets-its-general-enclosed
+inserted-rule-keeps-no-text
+container-condition-read-is-not-written-back
+font-stretch-calculation-names-no-keyword
+logical-intermixed-longhands-do-not-stop-a-shorthand

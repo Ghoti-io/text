@@ -68,7 +68,7 @@ const PROBE = `(json) => {
 }`;
 
 // The function that answers a sequence of CSSOM operations (see css_cssom_ours.cpp for the list and css_cssom_gen.py for the population).
-const OPS = `(json) => {
+const OPS = `async (json) => {
   const doc = JSON.parse(json);
   const NULL = '\\u0001null';
   // Firefox shares the rules of <style> elements with the same text, across documents of this page too: a comment makes each text its own (a comment is not part of any rule)
@@ -82,13 +82,16 @@ const OPS = `(json) => {
   try {
     document.adoptedStyleSheets = [];
   } catch (x) { /* an engine without adopted style sheets */ }
+  // A document with a second one (the op D2: an iframe of the page, 640 by 400 where the page is 1280 by 800) runs an op in it when the op's first argument is "@2". The sheets
+  // are numbered together, in the order they were made; the current sheet is a document's own.
   const sheets = [];
-  let sheet = null;
+  const contexts = [{ win: window, doc: document, sheet: null }];
+  let cx = contexts[0];
   const find = (path) => {
     if (path === '') {
-      return sheet;
+      return cx.sheet;
     }
-    let list = sheet.cssRules;
+    let list = cx.sheet.cssRules;
     let rule = null;
     for (const i of path.split('.')) {
       rule = list[Number(i)];
@@ -101,45 +104,62 @@ const OPS = `(json) => {
   };
   const str = (v) => (v === null ? NULL : String(v));
   const results = [];
-  for (const op of doc.ops) {
+  for (const raw of doc.ops) {
     let r = 'ok';
     try {
+      const second = raw[1] === '@2';
+      const op = second ? [raw[0]].concat(raw.slice(2)) : raw;
+      if (second && !contexts[1]) {
+        throw new TypeError('no second document');
+      }
+      cx = contexts[second ? 1 : 0];
       const k = op[0];
-      if (k === 'S') {
-        const e = document.createElement('style');
+      if (k === 'D2') {
+        if (!contexts[1]) {
+          const f = document.createElement('iframe');
+          f.style.cssText = 'width:640px;height:400px;border:0;display:block';
+          await new Promise((resolve) => {
+            f.onload = resolve;
+            f.srcdoc = '<!doctype html><title>2</title>';
+            document.body.appendChild(f);
+          });
+          contexts.push({ win: f.contentWindow, doc: f.contentDocument, sheet: null });
+        }
+      } else if (k === 'S') {
+        const e = cx.doc.createElement('style');
         e.textContent = op[1] + uniq();
-        document.head.appendChild(e);
-        sheet = e.sheet;
-        sheets.push(sheet);
+        cx.doc.head.appendChild(e);
+        cx.sheet = e.sheet;
+        sheets.push(cx.sheet);
       } else if (k === 'C') {
-        sheet = new CSSStyleSheet();
-        sheets.push(sheet);
+        cx.sheet = new cx.win.CSSStyleSheet();
+        sheets.push(cx.sheet);
       } else if (k === 'U') {
         if (sheets[Number(op[1])]) {
-          sheet = sheets[Number(op[1])];
+          cx.sheet = sheets[Number(op[1])];
         }
       } else if (k === 'R') {
-        sheet.replaceSync(op[1]);
+        cx.sheet.replaceSync(op[1]);
       } else if (k === 'DIS') {
-        sheet.disabled = op[1] === '1';
+        cx.sheet.disabled = op[1] === '1';
       } else if (k === 'AD') {
         const list = op[1] === '' ? [] : op[1].split(',').map((i) => sheets[Number(i)]).filter((x) => x);
-        document.adoptedStyleSheets = list;
+        cx.doc.adoptedStyleSheets = list;
       } else if (k === 'H') {
-        const e = document.createElement('style');
+        const e = cx.doc.createElement('style');
         e.textContent = op[1] + uniq();
-        document.head.appendChild(e);
-        sheet = e.sheet;
-        sheets.push(sheet);
-        document.body.innerHTML = '<div style="display:none">' + op[2] + '</div>';
+        cx.doc.head.appendChild(e);
+        cx.sheet = e.sheet;
+        sheets.push(cx.sheet);
+        cx.doc.body.innerHTML = '<div style="display:none">' + op[2] + '</div>';
       } else if (k === 'GC') {
-        const el = document.querySelector(op[1]);
+        const el = cx.doc.querySelector(op[1]);
         if (!el) {
           throw new TypeError('no such element');
         }
-        r = getComputedStyle(el).getPropertyValue(op[2]);
+        r = cx.win.getComputedStyle(el).getPropertyValue(op[2]);
       } else if (k === 'MM') {
-        const m = window.matchMedia(op[1]);
+        const m = cx.win.matchMedia(op[1]);
         r = m.media + '|' + m.matches;
       } else {
         const t = find(op[1]);
@@ -388,7 +408,7 @@ class Session {
     const result = await this.send('script.callFunction', {
       functionDeclaration: declaration,
       arguments: args,
-      awaitPromise: false,
+      awaitPromise: true,
       target: { context: this.context },
       resultOwnership: 'none',
     });

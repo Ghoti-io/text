@@ -167,6 +167,81 @@ def media_general_documents():
     return docs
 
 
+# A `<general-enclosed>` of a prelude read from a style sheet's text (a parse, `insertRule`, `replaceSync`) is written as it was read, as the media list the setters write is: `( a )` stays
+# `( a )`. The `@supports` row is the one the browsers differ on (Chromium writes a declaration it knows normalized, Firefox as written).
+SHEET_GENERAL = ["@media screen and ( a ) {a{}}", "@media (a/**/b) {a{}}", "@media screen and (a: b ) , print {a{}}", "@media  not  ( a )  {a{}}", "@container ( a ) {a{}}",
+                 "@container  foo ( a:  b ) {a{}}", "@media screen and (  b  ), print and ( c ) {a{}}", "@media (--x) {a{}}", "@media screen and ( a ) {@media ( b ) {a{}} a{}}",
+                 "@media screen and (", "@media (a (b ( c) {a{}}", "@media screen and (min-width:  1px) and ( a ) {a{}}", "@container  foo  ( min-width:  1px ) {a{}}",
+                 "@container foo ( a ) and ( b ) {a{}}", "@import url(a.css) screen and ( a );", "@import url(a.css) layer(x) supports(display: grid) screen and ( a ) , print;",
+                 "@import \"a.css\" ( a );", "@supports (  display :  grid ) {a{}}"]
+
+
+def sheet_general_documents():
+    docs = []
+    for css in SHEET_GENERAL:
+        imp = css.startswith("@import")
+        docs.append({"g": "media-general-sheet", "ops": [["S", css if imp else css + " b{}"], ["V", "0", "cssText"], ["V", "0", "conditionText"], ["Z", "0", css], ["V", "0", "cssText"]]})
+        docs.append({"g": "media-general-sheet-insert", "ops": [["S", "a{}"], ["I", "", 0, css], ["V", "0", "cssText"], ["V", "0", "conditionText"]]})
+        docs.append({"g": "media-general-sheet-replace", "ops": [["C"], ["R", css], ["V", "0", "cssText"], ["V", "0", "conditionText"]]})
+    return docs
+
+
+# CSSOM, "serialize a CSS declaration block": a shorthand is not written when a property of its logical group with another mapping logic stands between its longhands; `font` takes
+# a `font-stretch` that is a calculation of a percentage a keyword names; `display: layout()` (CSS Layout API) is something neither browser takes.
+DECL_INTERMIX = ["margin: 10px; margin-inline: 10px; margin-block: 10px; margin-inline-end: 10px; margin-bottom: 10px;", "margin: 10px; margin-inline: 10px; margin-block: 10px; margin-bottom: 10px;",
+                 "margin: 10px; margin-inline-end: 10px;", "margin: 10px; margin-inline: 10px; margin-inline-end: 10px;", "margin: 10px; margin-bottom: 10px;",
+                 "margin-top: 10px; margin-left: 10px; margin-right: 10px; margin-bottom: 10px; margin-inline-start: 10px; margin-inline-end: 10px; margin-block-start: 10px; margin-block-end: 10px;",
+                 "margin-left: 1px; margin: 10px; margin-inline-end: 10px; margin-top: 3px;",
+                 "margin-top: 10px; margin-left: 10px; margin-right: 10px; margin-bottom: 10px; margin-inline: 10px; margin-block-start: 10px; margin-inline-end: 10px;",
+                 "padding-top: 1px; padding-inline-start: 2px; padding-left: 1px; padding-right: 1px; padding-bottom: 1px;",
+                 "border-top-left-radius: 1px; border-start-start-radius: 2px; border-top-right-radius: 1px; border-bottom-left-radius: 1px; border-end-start-radius: 3px; border-bottom-right-radius: 1px;",
+                 "inset: 1px; inset-inline-start: 2px;", "top: 1px; inset-block-start: 2px; right: 1px; bottom: 1px; left: 1px;"]
+FONT_STRETCH_CALC = ["calc(50%)", "calc(100%)", "calc(50% + 0%)", "calc(25% * 2)", "calc(50% + 25% * sign(100em - 1px))", "calc(62.5%)", "calc(10% * 5)", "calc(60%)", "calc(200%)", "calc(50% * 4)"]
+
+
+def declaration_documents():
+    docs = []
+    for t in DECL_INTERMIX:
+        docs.append({"g": "decl-intermix", "ops": [["S", "a{}"], ["Y", "0", t], ["V", "0", "cssText"], ["VS", "0", "margin"], ["VS", "0", "margin-inline"], ["VS", "0", "inset"]]})
+    for v in FONT_STRETCH_CALC:
+        docs.append({"g": "decl-font-calc", "ops": [["S", "a{font: medium serif}"], ["P", "0", "font-stretch", v, ""], ["VS", "0", "font"], ["VS", "0", "font-stretch"], ["Y", "0", ""]]})
+    for v in ["layout(test1)", "layout()", "layout(test3, invalid)", "inline-layout(a)", "block layout(a)", "layout(a) flow"]:
+        docs.append({"g": "decl-display-layout", "ops": [["S", "a{}"], ["P", "0", "display", v, ""], ["VS", "0", "display"], ["V", "0", "cssText"]]})
+    return docs
+
+
+# Two documents on one registry: the second is an iframe of the page, 640 by 400 where the page is 1280 by 800 (the op D2), and an op whose first argument is "@2" runs in it. The
+# sheets of both are numbered together; the current sheet is a document's own. What is asked: whether the media environment is a document's own (matchMedia), whether a sheet or a
+# rule of one shows in the other, and what adopting a sheet into the document that did not construct it does ("NotAllowedError", CSSOM: "The sheet's constructor document is not
+# the same as the document").
+TWO_DOC_MEDIA = ["(min-width: 641px)", "(min-width: 640px)", "(max-width: 640px)", "(width: 640px)", "(width: 1280px)", "(min-width: 1280px)", "(min-width: 100px)", "(orientation: landscape)",
+                 "(min-aspect-ratio: 16/10)", "(max-aspect-ratio: 16/10)", "print", "screen", "(min-height: 401px)", "(height: 400px)", "(height: 800px)", "(min-width: 700px) and (max-width: 1300px)",
+                 "not all", "bogus"]
+
+
+def two_document_documents():
+    docs = []
+    for m in TWO_DOC_MEDIA:
+        docs.append({"g": "two-docs", "ops": [["D2"], ["MM", m], ["MM", "@2", m]]})
+    # adoption: a sheet a document constructed, and one it did not
+    for adopt in (["AD", "0"], ["AD", "@2", "1"]):
+        docs.append({"g": "two-docs", "ops": [["D2"], ["C"], ["C", "@2"], adopt, ["AD", "@2", "0"], ["AD", "1"], ["AD", "0,1"], ["AD", "@2", "0,1"], ["AD", ""], ["AD", "@2", ""]]})
+    docs.append({"g": "two-docs", "ops": [["D2"], ["S", "a{}"], ["S", "@2", "a{}"], ["AD", "0"], ["AD", "@2", "1"], ["AD", "@2", "0"]]})
+    docs.append({"g": "two-docs", "ops": [["D2"], ["C"], ["R", "a{color:red}"], ["C", "@2"], ["R", "@2", "b{}"], ["AD", "0"], ["AD", "@2", "1"], ["AD", "@2", "0"], ["AD", "1"], ["AD", "0"], ["AD", "@2", ""]]})
+    docs.append({"g": "two-docs", "ops": [["D2"], ["C"], ["R", "a{color:red}"], ["AD", "0"], ["R", "a{color:blue} c{}"], ["C", "@2"], ["AD", "@2", "1"], ["AD", "@2", "0,1"]]})
+    # isolation: the sheets of the two documents are two sheets
+    docs.append({"g": "two-docs", "ops": [["D2"], ["S", "a{color:red}"], ["S", "@2", "a{color:red}"], ["I", "", 0, "b{}"], ["V", "", "cssText"], ["I", "@2", "", 0, "c{}"], ["D", "", 0],
+                                          ["U", "0"], ["D", "", 0]]})
+    docs.append({"g": "two-docs", "ops": [["D2"], ["S", "@media (min-width: 700px){a{}} b{}"], ["S", "@2", "@media (min-width: 700px){a{}} b{}"], ["MM", "(min-width: 700px)"], ["MM", "@2", "(min-width: 700px)"],
+                                          ["M", "0", "(max-width: 100px)"], ["V", "@2", "0", "cssText"], ["V", "0", "cssText"]]})
+    # a sheet reached from the other document's side is the same sheet
+    docs.append({"g": "two-docs", "ops": [["D2"], ["C"], ["U", "@2", "0"], ["R", "@2", "a{color:red}"], ["I", "@2", "", 0, "b{}"], ["V", "0", "cssText"], ["DIS", "1"], ["AD", "@2", "0"], ["AD", "0"]]})
+    docs.append({"g": "two-docs", "ops": [["D2"], ["S", "@2", "a{}"], ["S", "@2", "b{}"], ["U", "0"], ["V", "", "cssText"], ["U", "@2", "1"], ["DIS", "@2", "1"], ["DIS", "1"]]})
+    # an op in a second document that was never made, and a second one made twice
+    docs.append({"g": "two-docs", "ops": [["S", "a{}"], ["S", "@2", "a{}"], ["MM", "@2", "print"], ["D2"], ["S", "@2", "b{}"], ["D2"], ["S", "@2", "c{}"], ["I", "@2", "", 0, "d{}"], ["MM", "@2", "(width: 640px)"]]})
+    return docs
+
+
 # A pseudo-element named -webkit-<ident> that no browser knows is valid (Selectors 4, "Compatibility"): the selectors both pinned browsers accept and refuse, and the ones on which
 # they differ (a vendor pseudo-class, a pseudo-class after the pseudo-element that only one takes).
 WEBKIT_SELECTORS = ["span::-webkit-something-invalid",

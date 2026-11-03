@@ -35,6 +35,8 @@
  *   M target text                media.mediaText = text              MA target text  appendMedium         MD target text  deleteMedium   (target: a rule's path, "" the sheet)
  *   W path map name values       rule[map].set(name, values), values a comma list of integers
  *   V path attr                  String(rule[attr])                  VS path prop  style.getPropertyValue   VL path  style.length   VP path prop  style.getPropertyPriority
+ *   D2                           a second document on the same registry (an iframe of the page, 640 by 400; the first is 1280 by 800); an op whose first argument is @2 runs in it
+ *                                (S @2 css, MM @2 text, AD @2 list, ...). The sheets of both are numbered together, in the order they were made; the current sheet is a document's own.
  *   DIS 0|1                      sheet.disabled = ...                AD list   document.adoptedStyleSheets = [the sheets at these creation indexes]
  *   MM text                      matchMedia(text): "media|matches"
  *   H css body                   a document: <style>css</style> and the body markup inside an element with display: none (so that a resolved value is the computed one); its sheet is the
@@ -212,6 +214,10 @@ struct World {
   GTEXT_CSSOM_Document * doc = nullptr;
   GTEXT_CSS_Conditions * conditions = nullptr;
   std::vector<GTEXT_CSSOM_Sheet *> sheets;
+  World * shared = nullptr;   ///< The second document of a document that has one: its sheets are numbered in the first one's list, in the order they were made.
+  std::vector<GTEXT_CSSOM_Sheet *> & list() {
+    return shared ? shared->sheets : sheets;
+  }
   GTEXT_CSSOM_Sheet * current = nullptr;
   /* a Markup document, for the ops H and GC */
   GTEXT_Markup_Document * markup = nullptr;
@@ -220,10 +226,10 @@ struct World {
   GTEXT_CSSOM_Markup_Binding * binding = nullptr;
 };
 
-bool open_world(World & w, GTEXT_CSS_Registry * registry, const std::string * html = nullptr) {
+bool open_world(World & w, GTEXT_CSS_Registry * registry, const std::string * html = nullptr, double width = 1280, double height = 800) {
   GTEXT_CSS_Media_Environment env = gtext_css_media_environment_default(nullptr);
-  env.viewport.width = 1280;
-  env.viewport.height = 800;
+  env.viewport.width = width;
+  env.viewport.height = height;
   env.device.width = 1280;
   env.device.height = 800;
   GTEXT_CSS_Conditions_Options o = gtext_css_conditions_options_default();
@@ -264,9 +270,11 @@ bool open_world(World & w, GTEXT_CSS_Registry * registry, const std::string * ht
 }
 
 void close_world(World & w) {
+  const bool second = w.shared != nullptr;
   for (GTEXT_CSSOM_Sheet * s : w.sheets) {
     gtext_cssom_sheet_release(s);
   }
+  (void)second;
   gtext_cssom_markup_binding_free(w.binding);
   gtext_cssom_document_release(w.doc);
   gtext_css_conditions_free(w.conditions);
@@ -315,14 +323,14 @@ std::string run_op(World & w, const std::vector<std::string> & f, GTEXT_CSS_Regi
     else {
       gtext_cssom_sheet_new_constructed(w.doc, nullptr, &s);
     }
-    w.sheets.push_back(s);
+    w.list().push_back(s);
     w.current = s;
     return "ok";
   }
   if (op == "U") {
     const size_t n = std::strtoul(f[1].c_str(), nullptr, 10);
-    if (n < w.sheets.size()) {
-      w.current = w.sheets[n];
+    if (n < w.list().size()) {
+      w.current = w.list()[n];
     }
     return "ok";
   }
@@ -338,8 +346,8 @@ std::string run_op(World & w, const std::vector<std::string> & f, GTEXT_CSS_Regi
     while (at < f[1].size()) {
       const size_t comma = f[1].find(',', at);
       const size_t i = std::strtoul(f[1].substr(at, comma == std::string::npos ? std::string::npos : comma - at).c_str(), nullptr, 10);
-      if (i < w.sheets.size()) {
-        list.push_back(w.sheets[i]);
+      if (i < w.list().size()) {
+        list.push_back(w.list()[i]);
       }
       if (comma == std::string::npos) {
         break;
@@ -577,6 +585,8 @@ int main() {
   std::string line;
   bool in_doc = false;
   World w;
+  World second;   // the second document of a document that has one (the op D2): the same registry, its own conditions
+  bool has_second = false;
   std::vector<std::string> answers;
   auto finish = [&]() {
     if (!in_doc) {
@@ -589,6 +599,10 @@ int main() {
     out += "],\"t\":" + state(w) + "}";
     puts(out.c_str());
     close_world(w);
+    if (has_second) {
+      close_world(second);
+      has_second = false;
+    }
     answers.clear();
   };
   while (std::getline(std::cin, line)) {
@@ -606,6 +620,28 @@ int main() {
     std::vector<std::string> f = split(line);
     while (f.size() < 6) {
       f.push_back("");
+    }
+    if (f[0] == "D2") {
+      if (!has_second) {
+        /* an iframe of the page: 640 by 400 where the page is 1280 by 800, and the same screen */
+        second.shared = &w;
+        if (!open_world(second, registry, nullptr, 640, 400)) {
+          return 2;
+        }
+        has_second = true;
+      }
+      answers.push_back("ok");
+      continue;
+    }
+    if (f[1] == "@2") {
+      f.erase(f.begin() + 1);
+      f.push_back("");
+      if (!has_second) {
+        answers.push_back("TypeError");
+        continue;
+      }
+      answers.push_back(run_op(second, f, registry));
+      continue;
     }
     answers.push_back(run_op(w, f, registry));
   }
