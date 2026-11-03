@@ -356,3 +356,5 @@ all-is-not-a-shorthand-for-getpropertyvalue	cssom_decl.c	  p->shorthand = (info.
 css-text-never-writes-all	css_shorthand_serialize.c	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.flags & GTEXT_CSS_PROP_ALIAS) &&\n        gtext_css_shorthand_kind	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.flags & GTEXT_CSS_PROP_ALIAS) && !(info.name_length == 3 && memcmp(info.name, "all", 3) == 0) &&\n        gtext_css_shorthand_kind	all
 a-change-of-all-is-not-called-all	cssom_decl.c	      ev.all_changed = bsearch(&want, ids, id_count, sizeof *ids, id_cmp) != NULL;	      ev.all_changed = false;	all
 remove-of-all-reads-too-few-leaves	css_block.c	      if (!css_shorthand_leaves(block->registry, id, leaves, CSS_LEAF_CAP, &nleaf)) {	      if (!css_shorthand_leaves(block->registry, id, leaves, 16, &nleaf)) {	all
+font-stretch-calculation-names-no-keyword	css_shorthand_serialize.c	  if (kw || !t || !it || !it->set || strncmp(t, "calc(", 5) != 0) {	  if (1) {	decl
+logical-intermixed-longhands-do-not-stop-a-shorthand	css_shorthand_serialize.c	    if (taken || logical_intermixed(&c, lv, nl)) {	    if (taken) {	decl

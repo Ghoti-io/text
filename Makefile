@@ -2619,7 +2619,7 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=0
 # scored is listed (UNSCORED_COMPUTED), and the gate is made to fail (--controls). tools/conformance/run-css-computed.sh --regenerate writes the lists.
 CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4532 CSS_COMPUTED_MAX_DEFECTS=0
 CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=240
-CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=403 CSS_CSSOM_MIN_PAGES=95 CSS_CSSOM_MAX_DEFECTS=3 CSS_CSSOM_MIN_FRACTION=198
+CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=403 CSS_CSSOM_MIN_PAGES=95 CSS_CSSOM_MAX_DEFECTS=1 CSS_CSSOM_MIN_FRACTION=198
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
 conformance-css-computed: $(CONFORMANCE_LIB)

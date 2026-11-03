@@ -35,6 +35,8 @@
 #include <string.h>
 
 #include "css_grid_text.h"
+#include <ghoti.io/text/css/css_logical.h>
+#include <ghoti.io/text/css/css_math.h>
 #include "css_shorthand_internal.h"
 
 #define MAX_DIRECT 64u
@@ -439,6 +441,30 @@ static const char * font_width_keyword(const char * t) {
     }
   }
   return NULL;
+}
+
+/// `font_width_keyword()` for the longhand as the block holds it: a calculation that simplifies to a percentage a keyword names (`calc(50%)`, `calc(25% * 2)`) is that keyword
+/// too. Both pinned browsers write `ultra-condensed medium serif` for `calc(50%)` (web-platform-tests' font-shorthand-serialization-font-stretch.html says the case is not
+/// well specified and consistent across browsers); a calculation that does not reduce to a percentage (`calc(50% + 25% * sign(100em - 1px))`) names none.
+static const char * font_width_keyword_item(const char * t, const blk_item * it) {
+  const char * kw = font_width_keyword(t);
+  if (kw || !t || !it || !it->set || strncmp(t, "calc(", 5) != 0) {
+    return kw;
+  }
+  const GTEXT_CSS_Value * root = gtext_css_value_set_root(it->set);
+  double n = 0;
+  bool percent = false;
+  if (!root || !root->math || !gtext_css_math_numeric(root->math, &n, NULL, &percent) || !percent) {
+    return NULL;
+  }
+  char pct[80];
+  const size_t len = css_exact_number(n, pct);
+  if (len + 2 > sizeof pct) {
+    return NULL;
+  }
+  pct[len] = '%';
+  pct[len + 1] = '\0';
+  return font_width_keyword(pct);
 }
 
 /// A longhand of a shorthand, as the text of its value: a leaf's, or a nested shorthand's.
@@ -1651,6 +1677,7 @@ static bool font_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, ste
   const char * style = NULL;
   const char * weight = NULL;
   const char * width = NULL;
+  const blk_item * width_item = NULL;
   const char * size = NULL;
   const char * lh = NULL;
   const char * family = NULL;
@@ -1685,11 +1712,13 @@ static bool font_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, ste
       }
       continue;
     }
-    char * t = leaf_text(c, id, NULL);
+    const blk_item * leaf = NULL;
+    char * t = leaf_text(c, id, &leaf);
     if (!t) {
       ok = false;
       break;
     }
+    if (nm(c, id, "font-width")) width_item = leaf;
     if (nm(c, id, "font-style")) style = texts[nt++] = t;
     else if (nm(c, id, "font-weight")) weight = texts[nt++] = t;
     else if (nm(c, id, "font-width")) width = texts[nt++] = t;
@@ -1705,7 +1734,7 @@ static bool font_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, ste
       ok = false;
     }
   }
-  if (ok && (!size || !family || (width && !font_width_keyword(width)))) {
+  if (ok && (!size || !family || (width && !font_width_keyword_item(width, width_item)))) {
     ok = false;
   }
   tbuf buf;
@@ -1725,9 +1754,9 @@ static bool font_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, ste
       tb_puts(&buf, weight);
       any = true;
     }
-    if (width && !texteq(font_width_keyword(width), "normal")) {
+    if (width && !texteq(font_width_keyword_item(width, width_item), "normal")) {
       tb_puts(&buf, any ? " " : "");
-      tb_puts(&buf, font_width_keyword(width));
+      tb_puts(&buf, font_width_keyword_item(width, width_item));
       any = true;
     }
     tb_puts(&buf, any ? " " : "");
@@ -1856,8 +1885,8 @@ static bool text_says_the_longhands(sctx * c, GTEXT_CSS_Property_Id sh, const ch
       }
       /* `font-width` has a keyword for some percentages, and the `font` shorthand can say only the keyword */
       if (!same && nm(c, leaves[i], "font-width")) {
-        const char * kw = font_width_keyword(want);
-        same = kw && texteq(kw, font_width_keyword(got));
+        const char * kw = font_width_keyword_item(want, mine);
+        same = kw && texteq(kw, font_width_keyword_item(got, theirs));
       }
       /* `normal` is the whole range, which the end `100%` and the start `0%` say as well: the shorthand's one value for a start with no range name
          is both (web-platform-tests: `animation-range: 0% 100%` is `0%`) */
@@ -2092,6 +2121,75 @@ typedef struct {
   size_t first;
 } plan;
 
+/// What a member of a logical property group maps by (CSS Logical 1, 2.1's "mapping logic"): the physical members one, the block-axis ones another, the inline-axis ones a
+/// third, the flow-relative corners a fourth. 0 for a property in no group; `*group` receives the group's name.
+static int mapping_logic(sctx * c, GTEXT_CSS_Property_Id id, const char ** group) {
+  GTEXT_CSS_Logical_Member m;
+  *group = NULL;
+  if (gtext_css_logical_member(c->reg, id, &m) != GTEXT_CSS_OK || m.kind == GTEXT_CSS_LOGICAL_NONE || !m.group) {
+    return 0;
+  }
+  *group = m.group;
+  if (!m.logical) {
+    return 1;
+  }
+  GTEXT_CSS_Property_Info info;
+  if (!gtext_css_registry_property_info(c->reg, id, &info)) {
+    return 4;
+  }
+  const char * name = info.name;
+  const size_t len = info.name_length;
+  for (size_t i = 0; i + 5 <= len; i++) {
+    if ((i == 0 || name[i - 1] == '-') && memcmp(name + i, "block", 5) == 0 && (i + 5 == len || name[i + 5] == '-')) {
+      return 2;
+    }
+  }
+  for (size_t i = 0; i + 6 <= len; i++) {
+    if ((i == 0 || name[i - 1] == '-') && memcmp(name + i, "inline", 6) == 0 && (i + 6 == len || name[i + 6] == '-')) {
+      return 3;
+    }
+  }
+  return 4;
+}
+
+/// CSSOM, "serialize into a shorthand form": "If any of the intermixed properties in decls between used longhands belong to the same logical property group as a longhand in
+/// used longhands but have a different mapping logic, and are not in used longhands, continue." True when the live declarations from the first of the shorthand's longhands to
+/// the last hold such a property, so the shorthand is not written.
+static bool logical_intermixed(sctx * c, const GTEXT_CSS_Property_Id * leaves, size_t nleaf) {
+  size_t lo = (size_t)-1, hi = 0;
+  for (size_t m = 0; m < nleaf; m++) {
+    const size_t at = c->last[leaves[m]] - 1;
+    lo = at < lo ? at : lo;
+    hi = at > hi ? at : hi;
+  }
+  for (size_t i = lo; i < hi; i++) {
+    const blk_item * it = &c->b->items[i];
+    if (it->dead || it->opaque || it->custom_name || !it->property || it->property > c->nprops || c->last[it->property] != (uint32_t)(i + 1)) {
+      continue;
+    }
+    bool used = false;
+    for (size_t m = 0; m < nleaf && !used; m++) {
+      used = leaves[m] == it->property;
+    }
+    if (used) {
+      continue;
+    }
+    const char * group = NULL;
+    const int logic = mapping_logic(c, it->property, &group);
+    if (!group) {
+      continue;
+    }
+    for (size_t m = 0; m < nleaf; m++) {
+      const char * g = NULL;
+      const int l = mapping_logic(c, leaves[m], &g);
+      if (g && strcmp(g, group) == 0 && l != logic) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf * out) {
   sctx c;
   if (!sctx_init(&c, block)) {
@@ -2142,7 +2240,7 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
     for (size_t m = 0; m < nl && !taken; m++) {
       taken = claim[c.last[lv[m]] - 1] != 0;
     }
-    if (taken) {
+    if (taken || logical_intermixed(&c, lv, nl)) {
       continue;
     }
     bool all_wide = false;

@@ -815,3 +815,56 @@ TEST(CssomDecl, SettingAShorthandKeptAsWrittenLeavesTheLonghandsAlreadyThereInPl
   EXPECT_EQ(std::string(name, len), "--a") << "the other longhands of font are new declarations: they go behind --a";
   gtext_cssom_buffer_free(gtext_cssom_document_allocator(doc.d), name);
 }
+
+/* ---- cssText: the shorthand form, and what stands between the longhands ----------------------------------------------------------------- */
+
+// CSSOM, "serialize into a shorthand form": "If any of the intermixed properties in decls between used longhands belong to the same logical property group as a longhand in used
+// longhands but have a different mapping logic, and are not in used longhands, continue." The case is web-platform-tests' cssom/cssstyledeclaration-csstext.html; Firefox 158 writes it
+// so, and Chromium 156 writes the shorthands anyway (a divergence of the CSSOM differential, listed).
+TEST(CssomDecl, AShorthandIsNotWrittenWhenAPropertyOfItsGroupWithAnotherMappingStandsBetweenItsLonghands) {
+  Doc doc;
+  Decl d(doc);
+  ASSERT_EQ(set_text(d.d, "margin: 10px; margin-inline: 10px; margin-block: 10px; margin-inline-end: 10px; margin-bottom: 10px;").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin-top: 10px; margin-right: 10px; margin-left: 10px; margin-inline-start: 10px; margin-block: 10px; margin-inline-end: 10px; margin-bottom: 10px;");
+  EXPECT_EQ(get(d.d, "margin"), "10px") << "getPropertyValue is not cssText: the four longhands are all there";
+  ASSERT_EQ(set_text(d.d, "margin: 10px; margin-inline: 10px; margin-block: 10px; margin-bottom: 10px;").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin-top: 10px; margin-right: 10px; margin-left: 10px; margin-inline: 10px; margin-block: 10px; margin-bottom: 10px;");
+  // with no property of another mapping between them the shorthands are written
+  ASSERT_EQ(set_text(d.d, "margin-top: 10px; margin-left: 10px; margin-right: 10px; margin-bottom: 10px; margin-inline-start: 10px; margin-inline-end: 10px; "
+                          "margin-block-start: 10px; margin-block-end: 10px;").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin: 10px; margin-inline: 10px; margin-block: 10px;");
+  ASSERT_EQ(set_text(d.d, "margin: 10px; margin-inline-end: 10px;").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin: 10px; margin-inline-end: 10px;") << "a property after the shorthand is not between its longhands";
+  ASSERT_EQ(set_text(d.d, "padding-top: 1px; padding-inline-start: 2px; padding-left: 1px; padding-right: 1px; padding-bottom: 1px;").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "padding-top: 1px; padding-inline-start: 2px; padding-left: 1px; padding-right: 1px; padding-bottom: 1px;");
+  ASSERT_EQ(set_text(d.d, "top: 1px; inset-block-start: 2px; right: 1px; bottom: 1px; left: 1px;").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "top: 1px; inset-block-start: 2px; right: 1px; bottom: 1px; left: 1px;");
+  ASSERT_EQ(set_text(d.d, "color: red; margin-top: 1px; width: 2px; margin-left: 1px; margin-right: 1px; margin-bottom: 1px;").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "color: red; margin: 1px; width: 2px;") << "a property of no group does not stand in the way: the shorthand is written where its first longhand was";
+}
+
+// Fonts 4: the `font` shorthand takes the keywords of `font-width`, and a percentage a keyword names is that keyword. A calculation that simplifies to such a percentage is it as well:
+// both Chromium 156 and Firefox 158 write `ultra-condensed medium serif` for `calc(50%)`, and web-platform-tests' font-shorthand-serialization-font-stretch.html says the case is not
+// well specified and consistent across browsers. One that does not reduce to a percentage names none, so the shorthand is not written.
+TEST(CssomDecl, FontTakesAFontStretchCalculationThatIsAPercentageAKeywordNames) {
+  Doc doc;
+  Decl d(doc);
+  ASSERT_EQ(set_text(d.d, "font: medium serif").st, GTEXT_CSS_OK);
+  ASSERT_EQ(set(d.d, "font-stretch", "calc(50%)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(get(d.d, "font-stretch"), "calc(50%)");
+  EXPECT_EQ(get(d.d, "font"), "ultra-condensed medium serif");
+  ASSERT_EQ(set(d.d, "font-stretch", "calc(25% * 2 + 0%)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(get(d.d, "font"), "ultra-condensed medium serif");
+  ASSERT_EQ(set(d.d, "font-stretch", "calc(100%)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(get(d.d, "font"), "medium serif") << "calc(100%) is normal, which the shorthand leaves out";
+  ASSERT_EQ(set(d.d, "font-stretch", "calc(112.5%)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(get(d.d, "font"), "semi-expanded medium serif");
+  ASSERT_EQ(set(d.d, "font-stretch", "calc(60%)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(get(d.d, "font"), "") << "no keyword names 60%";
+  ASSERT_EQ(set(d.d, "font-stretch", "calc(50% + 25% * sign(100em - 1px))").st, GTEXT_CSS_OK);
+  EXPECT_EQ(get(d.d, "font"), "") << "a calculation that is not a percentage names none";
+  EXPECT_EQ(get(d.d, "font-stretch"), "calc(50% + (25% * sign(100em - 1px)))");
+  ASSERT_EQ(set(d.d, "font-stretch", "calc(50%)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d).find("font: ultra-condensed medium serif"), 0u) << text_of(d.d) << " (cssText writes the shorthand too)";
+}
+
