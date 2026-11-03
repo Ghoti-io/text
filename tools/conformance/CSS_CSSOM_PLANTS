@@ -63,7 +63,7 @@ keyframes-find-takes-the-first	cssom_insert.c	      *found = k;\n    }\n    gtex
 keyframes-key-compared-as-written	cssom_insert.c	    if (st == GTEXT_CSS_OK && have && strcmp(have, want) == 0) {	    if (st == GTEXT_CSS_OK && have && strlen(have) == select_length && memcmp(have, select, select_length) == 0) {	insert
 rule-limit-ignores-the-sheet	cssom_parse.c	  if (b->total_base + *b->total >= b->core->config.max_rules) {	  if (*b->total >= b->core->config.max_rules) {	insert
 nesting-limit-ignores-the-place	cssom_parse.c	  if (b->depth_base + depth > b->core->config.max_rule_nesting) {	  if (depth > b->core->config.max_rule_nesting) {	insert
-leaf-cache-kept-for-a-rule-with-rules	cssom_rule_serialize.c	  const bool leaf = !has_children(rule);	  const bool leaf = true;	serialize
+leaf-cache-kept-for-a-rule-with-rules	cssom_rule_serialize.c	  const bool leaf = rule->rules.count == 0;	  const bool leaf = true;	serialize
 cache-not-dropped-when-the-version-moves	cssom_rule_serialize.c	void css_rule_touch(css_rule * rule) {\n  rule->version++;\n  css_rule_drop_cache(rule);	void css_rule_touch(css_rule * rule) {\n  rule->version++;	serialize
 cache-drops-the-latest-entry	cssom_rule_serialize.c	    css_rule_drop_cache(core->cache_head->rule);	    css_rule_drop_cache(core->cache_tail->rule);	serialize
 cache-unbounded	cssom_rule_serialize.c	  if (bytes > core->config.max_cached_text_bytes) {\n    return;\n  }\n  while (core->cache_head && core->cache_bytes + bytes > core->config.max_cached_text_bytes) {	  while (0) {	serialize
@@ -75,7 +75,7 @@ import-url-written-unquoted	css_atrule.c	  pbuf_puts(b, "url(");\n  (void)gtext_
 layer-statement-written-as-a-block	css_atrule.c	  if (a->statement || a->kind == GTEXT_CSS_ATRULE_NAMESPACE	  if (a->kind == GTEXT_CSS_ATRULE_NAMESPACE	serialize
 order-counts-not-maintained-on-remove	cssom_rule_list.c	      a->size--;\n      a->agg[cls]--;	      a->size--;	insert,insertcost
 sheet-serialization-fills-the-cache	cssom_rule_serialize.c	    st = write_rule(&w, r);\n    if (st == GTEXT_CSS_OK) {	    st = write_rule(&w, r);\n    if (!has_children(r)) {\n      cache_fill(r, "x", 1);\n    }\n    if (st == GTEXT_CSS_OK) {	serialize
-only-the-first-rule-inside-a-rule-is-written	cssom_rule_serialize.c	    f->next = css_rule_list_next(pending);	    f->next = NULL;	serialize
+only-the-first-rule-inside-a-rule-is-written	cssom_rule_serialize.c	    f->next = next_written(css_rule_list_next(pending));	    f->next = NULL;	serialize
 key-text-that-does-not-parse-is-ignored	cssom_setters.c	    out->detail = "CSS Animations 1: a key list that does not parse is a SyntaxError";\n    return GTEXT_CSS_E_SYNTAX;	    out->detail = "CSS Animations 1: a key list that does not parse is a SyntaxError";\n    return GTEXT_CSS_OK;	setters
 a-replaced-rule-stays-parsed	cssom_setters.c	  rule->source_kind = GTEXT_CSSOM_SOURCE_MODIFIED;	  rule->source_kind = GTEXT_CSSOM_SOURCE_PARSED;	setters
 a-replaced-rule-keeps-its-version	cssom_setters.c	  css_own_swap(rule, own);\n  css_rule_touch(rule);	  css_own_swap(rule, own);	setters
