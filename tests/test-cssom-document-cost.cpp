@@ -22,7 +22,7 @@
  * @file
  *
  * The cost of the document layer, asserted on the document's counters and not on a clock (css_cssom_document.h). Two shapes of the index: *n mutations and then one ask* is one build, whatever n
- * is; *n times one mutation and one ask* is n builds of S records each, n x S, which is the known quadratic cost of C5 (C6's incremental update removes it), and the compile it makes is of
+ * is; *n times one mutation and one ask* is n builds of S records each, n x S, which is the known quadratic cost of this layer (an incremental update of the index would remove it), and the compile it makes is of
  * the one sheet that was edited, not of the document. A hit looks at the listed sheets and builds nothing. An environment change evaluates a query once however many lists ask it.
  */
 
@@ -87,7 +87,7 @@ TEST(CssomDocumentCost, AlternatingAnEditAndAnAskIsNTimesTheDocumentAndCompilesO
     for (size_t i = 1; i <= n; i++) {
       want += S * R + i;
     }
-    EXPECT_EQ(c1.index_records_rebuilt - c0.index_records_rebuilt, want) << "n x S: the known quadratic shape of C5, which C6's incremental update removes";
+    EXPECT_EQ(c1.index_records_rebuilt - c0.index_records_rebuilt, want) << "n x S: the known quadratic shape of this layer, which an incremental update of the index would remove";
   }
 }
 

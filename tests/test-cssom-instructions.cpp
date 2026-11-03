@@ -24,7 +24,7 @@
  * The shapes of the CSSOM cost claims, one test each, with their sizes multiplied by GTEXT_COST_SCALE (default 1). The counters say what the library did; this program exists so that
  * tools/css/cssom-instructions.py can run each shape under callgrind at two scales and compare what the machine did (the instructions), which no counter can be wrong about: n distinct
  * sets of a declaration, n inserts into a sheet, n mutations and one ask of the index, a getComputedStyle chain of depth d and n reads, n media query lists and one environment change,
- * and the one shape that is quadratic by design until C6, an edit and an ask alternating (CSS_CSSOM_KNOWN_COST holds its ceiling).
+ * and the one shape that is quadratic by design until the index is updated incrementally, an edit and an ask alternating (CSS_CSSOM_KNOWN_COST holds its ceiling).
  */
 
 #include <cstdlib>
@@ -111,7 +111,7 @@ TEST(CssomInstructions, ManyMutationsThenOneAskOfTheIndex) {
   EXPECT_EQ(big.w.counters().index_builds - c0.index_builds, 1u);
 }
 
-// The shape that is quadratic by design until C6 (the incremental update of the index): n edits, each followed by an ask. Each ask rebuilds the whole index.
+// The shape that is quadratic by design until the index is updated incrementally: n edits, each followed by an ask. Each ask rebuilds the whole index.
 TEST(CssomInstructions, AlternatingAnEditAndAnAskIsTheKnownQuadraticShape) {
   const size_t n = 60 * scale();
   Big big(4, 5);   // a small document, so that the n x n of the rebuilds and not the setup is what the instructions count

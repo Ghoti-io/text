@@ -91,7 +91,7 @@ extern "C" {
 #endif
 
 /** @name Dependency kinds
- *  What a change of the tree can affect for a selector (the invalidation summary of gtext_css_selector_dependencies(); the consumer is C6).
+ *  What a change of the tree can affect for a selector (the invalidation summary of gtext_css_selector_dependencies(); the consumer is an incremental invalidation layer, which is not built yet).
  *  @{ */
 #define GTEXT_CSS_DEP_NAME 0x1u        ///< The local name or namespace of an element.
 #define GTEXT_CSS_DEP_ID 0x2u          ///< An id.

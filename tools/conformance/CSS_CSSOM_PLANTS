@@ -1,4 +1,4 @@
-# tools/css/plant-cssom.py: planted defects of the CSSOM layer (C5a), each seen to fail. Columns (tab separated): name, file under src/css/, the text (exactly once, \n is a line feed), what replaces it, the test programs that must fail (comma separated keys of PROGRAMS).
+# tools/css/plant-cssom.py: planted defects of the CSSOM layer, each seen to fail. Columns (tab separated): name, file under src/css/, the text (exactly once, \n is a line feed), what replaces it, the test programs that must fail (comma separated keys of PROGRAMS).
 set-appends-instead-of-replacing	css_block.c	    if (slots[i]) {\n      blk_item * held	    if (0) {\n      blk_item * held	block,decl
 unchanged-set-counts-as-a-change	css_block.c	    if (slots[i] && same[i]) {\n      continue;	    if (0) {\n      continue;	block,decl
 priority-matched-case-sensitively	cssom_decl.c	    if (c >= 'A' && c <= 'Z') {\n      c = (char)(c - 'A' + 'a');	    if (0) {\n      c = (char)(c - 'A' + 'a');	decl
@@ -162,7 +162,7 @@ canonical-check-ignores-the-values	cssom_snapshot.c	same_text(&dx->name, &dy->na
 canonical-check-ignores-the-names	cssom_snapshot.c	same_text(&dx->name, &dy->name) && dx->important == dy->important && lx == ly	dx->important == dy->important && lx == ly	snapshot
 canonical-check-reads-no-declarations	cssom_snapshot.c	    st = same_run(&sh, x->declarations, x->declaration_count, y->declarations, y->declaration_count, &ok);\n		snapshot
 canonical-check-reads-no-declarations-among-the-contents	cssom_snapshot.c	      else {\n        st = same_run(&sh, ix->declarations, ix->declaration_count, iy->declarations, iy->declaration_count, &ok);\n      }	      else {\n      }	snapshot
-# C5c2: the document layer (cssom_scope.c, cssom_index.c, cssom_mql.c, the import callback in cssom_snapshot.c, cssom_insert.c and cssom_sheet.c)
+# the document layer (cssom_scope.c, cssom_index.c, cssom_mql.c, the import callback in cssom_snapshot.c, cssom_insert.c and cssom_sheet.c)
 scope-sheet-list-does-not-hold-its-sheet	cssom_scope.c	  scope->nsheets++;\n  css_obj_retain_internal(&sheet->obj);\n  sheet->scope = scope;	  scope->nsheets++;\n  sheet->scope = scope;	document
 scope-sheet-list-puts-the-sheet-last	cssom_scope.c	  scope->sheets[index] = sheet;	  scope->sheets[scope->nsheets] = sheet;	document
 scope-sheet-list-accepts-a-sheet-already-listed	cssom_scope.c	sheet->constructed || sheet->owner_rule || sheet->scope) {	sheet->constructed || sheet->owner_rule) {	document
@@ -269,7 +269,7 @@ failed-sync-records-its-generation	cssom_markup.c	  if (st == GTEXT_CSS_OK) {\n 
 fuzz-style-text-change-keeps-the-old-sheet	cssom_markup.c	  if (length != e->text_length || (length && memcmp(text, e->text, length) != 0)) {	  if (0) {	documentseeds
 fuzz-type-with-parameters-accepted	cssom_markup.c	  return n == 0 || ci_equal(v, n, "text/css");	  return true;	documentseeds
 fuzz-removed-sheet-stays-in-the-list	cssom_markup.c	  const GTEXT_CSS_Status st = gtext_cssom_scope_remove_sheet(b->scope, e->sheet, &o);	  const GTEXT_CSS_Status st = GTEXT_CSS_OK;	documentseeds
-# C5d: getComputedStyle() and the resolved values
+# getComputedStyle() and the resolved values
 computed-read-ignores-the-tree-version	cssom_computed.c	c->gen == core->generation && c->tree == tree && c->epoch == core->tree_epoch && c->cepoch == cs->cepoch)	c->gen == core->generation)	computed,documentseeds
 computed-read-ignores-the-generation	cssom_computed.c	cacheable && c->gen == core->generation && c->tree == tree	cacheable && c->tree == tree	computed,documentseeds
 style-cache-survives-a-mutation	cssom_computed.c	const bool same = cs->pair_valid && cacheable && cs->pgen == core->generation && cs->ptree == tree	const bool same = cs->pair_valid && cacheable && cs->ptree == tree	computed,documentseeds

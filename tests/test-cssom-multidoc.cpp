@@ -21,7 +21,7 @@
 /**
  * @file
  *
- * Several documents on one registry (css_cssom_document.h, and the spec's 'Several documents, frames, shadow trees, one registry'): a document is one tree world with its own sheets, scopes,
+ * Several documents on one registry (css_cssom_document.h): a document is one tree world with its own sheets, scopes,
  * conditions, caches and generation, and documents share only the registry and conditions objects, which are read-only. Interleaved mutations of two documents end where the same mutations of
  * each alone end; the same text under different conditions has equal sheets and different indexes; what one document hands another is refused where it must be and never accepted silently;
  * releasing one document leaves the other whole; and two documents on two threads are independent.

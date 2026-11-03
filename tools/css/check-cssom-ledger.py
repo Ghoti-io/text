@@ -16,7 +16,7 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-"""The CSSOM interface ledger gate (C5e).
+"""The CSSOM interface ledger gate.
 
     check-cssom-ledger.py [--controls] [--ledger FILE] [--idl DIR]
 

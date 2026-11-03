@@ -22,9 +22,9 @@
  * @file
  *
  * The `getComputedStyle()` pages of the pinned web-platform-tests `css/cssom/` that need no layout and no script beyond straight-line calls, ported by hand: the page, the test, and the
- * assertion it makes, with the document built from the page's own markup. They are the hand-ported set of the stage (the op interpreter of the CSSOM gate does not build a Markup
+ * assertion it makes, with the document built from the page's own markup. They are the hand-ported set (the op interpreter of the CSSOM gate does not build a Markup
  * document, so the pages cannot be scored by the runner yet); each test names its page and its title. The pages that ask a laid out box (insets, margins, widths in an iframe),
- * a shadow tree, an iframe, an animation, `::view-transition-*` or the Window object are not here and are listed by the plan note of the stage with the reason.
+ * a shadow tree, an iframe, an animation, `::view-transition-*` or the Window object are not here: each needs a laid out box, a script, or a part of the platform that the library does not model.
  */
 
 #include <algorithm>

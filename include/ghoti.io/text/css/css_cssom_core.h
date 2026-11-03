@@ -201,8 +201,8 @@ typedef struct {
    *  Optional: without it the element counts as rendered. A failing status fails the read. */
   GTEXT_CSS_Status (*is_rendered)(void * user, const void * element, const GTEXT_CSS_Selector_List * pseudo, bool * rendered);
   /** The used value of a property for the element: set `*applies` false for "does not apply, use computed" (the property does not apply to the box, the element is not positioned,
-   *  an inset is over-constrained, the box is not a grid container ...: the resolved value is then the computed value), else give the value in `*out`, a set the library takes (a C1
-   *  typed value, serialized like any specified value; release with gtext_css_value_set_free() if the library does not take it, which it always does on GTEXT_CSS_OK). Any status
+   *  an inset is over-constrained, the box is not a grid container ...: the resolved value is then the computed value), else give the value in `*out`, a set the library takes (a typed
+   *  value, serialized like any specified value; release with gtext_css_value_set_free() if the library does not take it, which it always does on GTEXT_CSS_OK). Any status
    *  but GTEXT_CSS_OK fails the read; GTEXT_CSS_E_UNSUPPORTED names the callback and the property (gtext_cssom_computed_failure()), never a guess. Optional. */
   GTEXT_CSS_Status (*used_value)(void * user, const void * element, const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Property_Id property, bool * applies,
       GTEXT_CSS_Value_Set ** out);
@@ -240,7 +240,7 @@ typedef struct {
   size_t max_cached_text_bytes;         ///< Most bytes of rule `cssText` kept for leaf rules (a rule with no rules inside it). Default 64 MiB. Past it the entries added first are dropped; it is never an error.
   /* the document (css_cssom_document.h) */
   const GTEXT_CSS_Conditions * conditions;   ///< The evaluator of media and supports conditions (retained). NULL: the document makes one of the registry's defaults.
-  const GTEXT_CSS_Element_Interface * element_interface;   ///< The caller's tree, for what C5d computes (not owned; it outlives the document). NULL: none.
+  const GTEXT_CSS_Element_Interface * element_interface;   ///< The caller's tree, for what `getComputedStyle()` computes (not owned; it outlives the document). NULL: none.
   const GTEXT_CSS_Selector_Match_Options * match_options;  ///< How selectors are matched (copied). Its `html_document` and `quirks` are the ones the rule index is built with. NULL: neither (`quirks` above is then the index's).
   GTEXT_CSSOM_Import_Fn import;         ///< Asked for the sheet of each `@import` (see GTEXT_CSSOM_Import_Fn). NULL: the caller gives the sheets with gtext_cssom_import_rule_complete().
   void * import_user;                   ///< Passed to `import`.

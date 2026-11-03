@@ -426,7 +426,7 @@ TEST(CssomDocument, EachScopeRegistersItsSheetsWithItsContextAndTheIndexChecksTh
   EXPECT_NE(gtext_css_rule_index_layers(x, 1), nullptr);
   EXPECT_NE(gtext_css_rule_index_layers(x, 2), nullptr);
   EXPECT_EQ(gtext_css_rule_index_layers(x, 3), nullptr);
-  // C3c's check: a shadow tree's context must be greater than its host scope's. Explicit contexts that break it are the index's refusal.
+  // A shadow tree's context must be greater than its host scope's. Explicit contexts that break it are the index's refusal.
   Scope bad(w.d(), &shadow_b, true, outer.s, 1);
   ASSERT_EQ(bad.status, GTEXT_CSS_OK);
   Sheet bad_sheet(*w.doc, "p{}");

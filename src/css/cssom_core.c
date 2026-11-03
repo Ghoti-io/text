@@ -115,7 +115,7 @@ static void config_fill(GTEXT_CSSOM_Config * out, const GTEXT_CSSOM_Config * in)
   if (n < offsetof(GTEXT_CSSOM_Config, max_cached_text_bytes) + sizeof in->max_cached_text_bytes || !out->max_cached_text_bytes) {
     out->max_cached_text_bytes = d.max_cached_text_bytes;
   }
-  /* the document's fields: a caller built against the header of C5c1 has none of them */
+  /* the document's fields: a caller built against an older header, which ends before these fields, has none of them */
   if (n < offsetof(GTEXT_CSSOM_Config, max_media_query_lists) + sizeof in->max_media_query_lists) {
     out->conditions = NULL;
     out->element_interface = NULL;
@@ -129,14 +129,14 @@ static void config_fill(GTEXT_CSSOM_Config * out, const GTEXT_CSSOM_Config * in)
   if (!out->max_scopes) out->max_scopes = d.max_scopes;
   if (!out->max_adopted) out->max_adopted = d.max_adopted;
   if (!out->max_media_query_lists) out->max_media_query_lists = d.max_media_query_lists;
-  /* the observers' fields: a caller built against the header of C5c2 has none of them */
+  /* the observers' fields: a caller built against an older header, which ends before these fields, has none of them */
   if (n < offsetof(GTEXT_CSSOM_Config, max_queued_events) + sizeof in->max_queued_events) {
     out->max_observers = 0;
     out->max_queued_events = 0;
   }
   if (!out->max_observers) out->max_observers = d.max_observers;
   if (!out->max_queued_events) out->max_queued_events = d.max_queued_events;
-  /* the fields of getComputedStyle(): a caller built against the header of C5c3 has none of them */
+  /* the fields of getComputedStyle(): a caller built against an older header, which ends before these fields, has none of them */
   if (n < offsetof(GTEXT_CSSOM_Config, computed_trust_tree_changed) + sizeof in->computed_trust_tree_changed) {
     out->element_state = NULL;
     out->element_state_user = NULL;

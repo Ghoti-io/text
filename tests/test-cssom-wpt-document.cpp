@@ -23,7 +23,7 @@
  *
  * The web-platform-tests pages of `matchMedia`, `MediaQueryList`, `CSS.supports()` and `adoptedStyleSheets`, ported by hand: each test below is one test of a pinned page, named for it, with
  * the assertions in the page's order and the page's own words in the comments. The op interpreter of the conformance runner reads declarative calls; these pages are script (iframes that are
- * resized, promises, an observable array), so they are carried here as straight-line C++ over the document layer, and the scored count of the CSSOM gate is C5e's. What a binding owns (a
+ * resized, promises, an observable array), so they are carried here as straight-line C++ over the document layer, and the scored count of the CSSOM gate leaves them out. What a binding owns (a
  * `TypeError` for a missing argument, `null` listeners, `instanceof`) is not ported; the shadow-tree variants of the cascade-order page are not either, because the Markup tree has no shadow
  * roots (the order inside a scope is the same code for the document's scope, which is what the document variants assert).
  *
@@ -115,7 +115,7 @@ TEST(CssomWptDocument, CssSupportsConditionTextWithoutParentheses) {
 }
 
 TEST(CssomWptDocument, CssSupportsAndImplementationKeywordAndMinFunction) {
-  // The page also reads `getComputedStyle(div).fontSize` ("16px"), which is C5d's. The `style` half, with the document's own element-owned declaration:
+  // The page also reads `getComputedStyle(div).fontSize` ("16px"), which the computed-style tests answer. The `style` half, with the document's own element-owned declaration:
   World w;
   EXPECT_TRUE(supports(w, "font", "revert")) << "CSS.supports";
   EXPECT_TRUE(supports(w, "width", "min(100px, 50%)")) << "value";

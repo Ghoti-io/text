@@ -14,7 +14,7 @@
 # FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
 # for more details.
 #
-"""The pinned list of the pages of web-platform-tests that touch the CSSOM and are ported by hand (C5e).
+"""The pinned list of the pages of web-platform-tests that touch the CSSOM and are ported by hand.
 
     css_cssom_handports.py WPT_DIR [--vectors DIR] [--controls]
 

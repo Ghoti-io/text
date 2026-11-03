@@ -1,4 +1,4 @@
-# tools/css/gen-cssom-tables.py: what CSSOM does with each kind of rule (css_cssom_rule.h). One row for each of the kinds of css_atrule.h (the C4 enumeration,
+# tools/css/gen-cssom-tables.py: what CSSOM does with each kind of rule (css_cssom_rule.h). One row for each of the kinds of css_atrule.h (the at-rule enumeration,
 # UNKNOWN included) and for the two that are not at-rules, the style rule and the nested-declarations rule: 29 rows. The at-rules' rows are checked against
 # tools/css/atrule_kinds.tsv (every kind of its ledger has a row, every row that is not in the ledger is one of the kinds the parse itself makes), and the places a
 # rule may be (its `parents` column) are taken from there, not written twice. Tab separated:

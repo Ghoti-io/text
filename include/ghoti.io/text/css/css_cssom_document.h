@@ -284,7 +284,7 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_document_index_retained(GTEXT_CSSOM_Docum
  * **The affected set** is data computed from what the mutation already touched; nothing in it walks the sheet.
  * - A rule event (`RULE_INSERTED`, `RULE_REMOVED`, `RULE_REPLACED`) and a declaration event of a rule's block (`DECLARATIONS_CHANGED`) carry, for a style rule, its selector list
  *   (`selectors`, parsed as the rule reads it, and `selectors_before` for a replace) with the dependency summary of each (`GTEXT_CSS_DEP_*` in `kinds`, the state bits and the attribute
- *   names), and, for `@media`, `@import` and `@supports`, the condition dependency summary of C4 (`has_condition`). A rule that holds rules lists no selector (its `descendants` count says how
+ *   names), and, for `@media`, `@import` and `@supports`, the condition dependency summary (`has_condition`, as `gtext_css_media_list_dependencies()` gives it). A rule that holds rules lists no selector (its `descendants` count says how
  *   many it holds), and its `selector_dependencies.kinds` is GTEXT_CSSOM_DEP_ALL; so is the summary of a whole-sheet event.
  * - A declaration event lists the changed properties ascending without repeats (a shorthand contributes its longhands), the names of the changed custom properties ascending by bytes, and
  *   whether `all` is among them. An inline-style event also carries the element.

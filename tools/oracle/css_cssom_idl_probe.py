@@ -14,7 +14,7 @@
 # FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
 # for more details.
 #
-"""Which members of the CSSOM interface ledger Chromium and Firefox have (C5e).
+"""Which members of the CSSOM interface ledger Chromium and Firefox have.
 
     css_cssom_idl_probe.py [--out FILE]      ask both browsers and write the answers (default: tools/oracle/css_cssom_idl_probe.json)
     css_cssom_idl_probe.py --check           require the recorded answers to cover exactly the members of tools/css/cssom_ledger.tsv

@@ -39,7 +39,7 @@
  *   a sync with the Markup generation unchanged walks nothing;
  *   the binding and the scope agree after every operation, a failed one included (each listed sheet is its element's; no element's sheet is unlisted);
  *   the declaration of an element reads what its `style` attribute says, whoever wrote it;
- *   the computed values (C5d) of probe properties of probe elements: a computed declaration made before the edits and held through them, one made after, and the one a document built
+ *   the computed values of probe properties of probe elements: a computed declaration made before the edits and held through them, one made after, and the one a document built
  *     again from the serialized state gives (with a style cache of two entries, so that the bound is exercised) are equal, and `cssText` of a computed declaration is empty;
  *   the events: generations strictly increase, the last is the document's, the set of sheets they say are listed is the scope's, and the path of an inserted rule found at its event
  *     leads to the rule when no mutation came after it;

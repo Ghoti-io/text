@@ -928,7 +928,7 @@ GTEXT_CSS_Status gtext_cssom_rule_set_attribute(GTEXT_CSSOM_Rule * rule, const c
   bool ignored = false;
   if (row->src == SRC_DESC && value_length == 0) {
     /* CSS Counter Styles 3, 9.2: "parse the given value as the descriptor associated with the attribute. If the result is invalid according to the given descriptor's grammar ... do
-       nothing": the empty text is not a value of any of the descriptors, and both browsers leave the rule as it was (the C5b3 reading, that it removes the descriptor, was nobody's) */
+       nothing": the empty text is not a value of any of the descriptors, and both browsers leave the rule as it was (the reading that it removes the descriptor was nobody's) */
     out->kind = GTEXT_CSSOM_IGNORED_INVALID_VALUE;
     out->detail = "the empty text is not a value of the descriptor: nothing changes";
     return GTEXT_CSS_OK;

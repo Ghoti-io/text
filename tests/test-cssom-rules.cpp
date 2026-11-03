@@ -41,7 +41,7 @@ namespace {
 
 /* ---- the kinds ---------------------------------------------------------------------------------------------------------------------------------- */
 
-// The kinds table has a row for each of the 27 kinds of the C4 enumeration and for the style rule and the nested-declarations rule, in the order of the enumeration, and a
+// The kinds table has a row for each of the 27 kinds of the at-rule enumeration (css_atrule.h) and for the style rule and the nested-declarations rule, in the order of the enumeration, and a
 // kind has the name of its at-rule kind.
 TEST(CssomRuleKinds, TheTableHasTwentyNineRowsInTheOrderOfTheEnumeration) {
   ASSERT_EQ(static_cast<int>(GTEXT_CSSOM_RULE_KIND_COUNT), 29);

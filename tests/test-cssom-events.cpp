@@ -21,7 +21,7 @@
 /**
  * @file
  *
- * The observers of a document and the events they receive (css_cssom_document.h, "observers and events"; the spec's C5 'Change notifications').
+ * The observers of a document and the events they receive (css_cssom_document.h, "observers and events").
  *
  * A table over every public mutator (the functions of the css_cssom_*.h headers that take an outcome): each row is a scenario, the kinds of events it must send, in order. A second test
  * reads the headers and fails for a mutator the table does not list, with a control that shows the reading refuses what it should. Then the contents: the path of a rule as of its event, the

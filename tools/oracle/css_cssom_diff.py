@@ -21,15 +21,14 @@
 A document is a sequence of operations on style sheets, their rules, declarations and media lists, on constructed and adopted sheets and on `matchMedia()` (the ops are listed in
 css_cssom_ours.cpp). The three readers run it and answer, for each operation, "ok", the name of the exception it threw or the string it read, and then, for every sheet the document
 made, the text of its rules, its media text and its `disabled`. The driver is containers/cssprop/cssom_driver.mjs (WebDriver BiDi, the pinned image, no network). The first documents of
-the population are fixed: the pairs of adjacent conditions of the lists of 'The order of checks', the page properties of Paged Media 3 Appendix A, the nested-rule runs and preserved kinds
-C5b2 left open, and the `cssText` setters, so each is asked of both browsers in every run.
+the population are fixed: the pairs of adjacent conditions of the lists of 'The order of checks', the page properties of Paged Media 3 Appendix A, the nested-rule runs and preserved kinds, and the `cssText` setters, so each is asked of both browsers in every run.
 
 **What is a divergence.** An operation the three do not answer alike, or, when every operation is answered alike, a sheet the three do not write alike. By who differs it is `ours` (the
 browsers agree and this library does not), `browsers` (they disagree with each other; the library is with one of them) or `both` (it is with neither of two that disagree). Each is
 abstracted to a **feature** (the kind of operation, what it read, and the pattern of the three answers: the exception names, or which of them are alike when the answers are texts), and
 the list (css_cssom_divergences.txt) gives each feature its class, its count in the default population (seed 1, 600 documents) and its reason, a sentence of the served text or the
 browsers' known deviation, in the classes of the other differentials. **None may stay unexplained.** The gate fails (exit 3) on a divergence whose feature is not listed, a listed feature
-that does not occur, a count that moved, and a reason that is short or blanket. The classes are those of C2e (`served-text`, `browsers-differ`) and the names C4 gave (`standard-newer`,
+that does not occur, a count that moved, and a reason that is short or blanket. The classes are `served-text` and `browsers-differ`, and the names the other differentials of the library use (`standard-newer`,
 `reference-old`, `reference-wrong`, `reference-narrow`, `legacy-compat`), which TABLE below maps onto the first two for the report; the number of independent lineages is two (Blink and
 Gecko), and a divergence between them is `browsers-differ` unless the served text decides it.
 
@@ -58,7 +57,7 @@ CLASSES = ("served-text", "standard-newer", "reference-old", "reference-wrong", 
 OURS_OK = ("served-text", "standard-newer", "reference-old", "env-fixed")
 MAX_OURS = int(os.environ.get("CSS_CSSOM_ORACLE_MAX_OURS", "2"))
 LIST = os.path.join(HERE, "css_cssom_divergences.txt")
-# the C4 names of a class, and what each is for the report (one vocabulary: the first two are the classes of C2e)
+# the other differentials' names of a class, and what each is for the report (one vocabulary: the first two are the classes `served-text` and `browsers-differ`)
 TABLE = {"standard-newer": "served-text", "reference-old": "browsers-differ", "reference-wrong": "browsers-differ", "reference-narrow": "browsers-differ", "legacy-compat": "browsers-differ", "env-fixed": "browsers-differ"}
 
 

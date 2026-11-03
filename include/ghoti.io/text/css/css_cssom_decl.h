@@ -193,7 +193,7 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_decl_serialize(GTEXT_CSSOM_Decl * decl, c
 GTEXT_API GTEXT_CSS_Status gtext_cssom_decl_set_css_text(GTEXT_CSSOM_Decl * decl, const char * text, size_t length, GTEXT_CSSOM_Outcome * outcome);
 
 /**
- * @brief The typed value of a declaration (the C1 value of css_value.h): the typed access this layer gives in place of Typed OM.
+ * @brief The typed value of a declaration (the typed value of css_value.h): the typed access this layer gives in place of Typed OM.
  * @param name A longhand or a custom property.
  * @param out Receives the value set **retained** (release with gtext_css_value_set_free()): atomic, valid across any later mutation and on any thread. NULL for a CSS-wide
  *   keyword; written only when the declaration exists.

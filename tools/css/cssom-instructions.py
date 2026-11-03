@@ -16,14 +16,14 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-"""The instruction cross-check of the CSSOM cost shapes (C5e).
+"""The instruction cross-check of the CSSOM cost shapes.
 
     cssom-instructions.py [--bin DIR] [--scale K] [--measure] [--replay FILE] [--save FILE] [--controls]
 
 The counters of the cost tests say what the library did. This runs each test of `testCssomInstructions` (tests/test-cssom-instructions.cpp: one shape each, its sizes multiplied
 by GTEXT_COST_SCALE) under `valgrind --tool=callgrind` at scale 1 and at scale K (default 4) and compares the instructions the machine executed with
 tools/conformance/CSS_CSSOM_KNOWN_COST: one row for each shape, its class (`linear`: work proportional to the size, so the instructions grow by at most 2K; `nlogn`: the same limit; `known-quadratic`:
-the one shape that costs the size times the document until C6's incremental update, with its own ceiling), the largest ratio the shape may show from scale 1 to scale K, and the
+the one shape that costs the size times the document until the index is updated incrementally, with its own ceiling), the largest ratio the shape may show from scale 1 to scale K, and the
 largest number of instructions it may take at scale 1. **A ceiling only falls**: a measurement above a row fails, a row that no test has fails, a test with no row fails, and a
 `known-quadratic` shape whose ratio fell to a linear one's fails too (the shape has changed, and the row says what it was). With --controls the same checks are made on the measured
 numbers changed in each of those ways, and each must fail.

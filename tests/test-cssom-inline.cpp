@@ -431,7 +431,7 @@ struct MarkupAttrs {
   }
 };
 
-// "gtext_cssom_markup_inline_binding() is the Markup one" (C5c3); this is the same mechanism over an element of the Markup tree through the two calls it needs.
+// "gtext_cssom_markup_inline_binding() is the Markup one"; this is the same mechanism over an element of the Markup tree through the two calls it needs.
 TEST(CssomInline, AnElementOfAMarkupTree) {
   GTEXT_Markup_Document * doc = nullptr;
   GTEXT_XML_Error err{};

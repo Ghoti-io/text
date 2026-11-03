@@ -21,11 +21,11 @@
 /**
  * @file
  *
- * What a snapshot costs, asserted on the counters and not on a clock. Two shapes of the known cost of the CSSOM, which C6 removes and C5 does not hide:
+ * What a snapshot costs, asserted on the counters and not on a clock. Two shapes of the known cost of the CSSOM, which an incremental update would remove and the library does not hide:
  *
  * - **n mutations, then one ask** is O(n + S): one compile, however many mutations came before, and it reads the one changed rule from its text and the other S - 1 as they were.
  * - **alternate** (one mutation, one ask, n times) over S rules is n x S: n compiles, each over all S top-level rules, and only the one changed rule is parsed again (n parses, not n x S).
- *   The product is asserted exactly, as the ceiling `CSS_CSSOM_KNOWN_COST` of the C5e gate will only fall from.
+ *   The product is asserted exactly, as the ceiling `CSS_CSSOM_KNOWN_COST` of the cost gate will only fall from.
  *
  * And the two things that keep the second from being worse: an unchanged big group is not read again when another rule changes, and a change in one sheet does not recompile another.
  */

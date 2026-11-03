@@ -259,7 +259,7 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_key_text(GTEXT_CSSOM_Rule * rule, ch
 
 /**
  * @brief The `keyText` setter. A key list that does not parse is **GTEXT_CSS_E_SYNTAX** (CSS Animations 1: "throw a SyntaxError"; the pinned web-platform-tests page and both browsers
- *   agree), with nothing changed; this overrides the C5 plan's "ignored", which the standard does not say. Otherwise as gtext_cssom_rule_set_selector_text().
+ *   agree), with nothing changed; a text that is not ignored, because the standard does not say to ignore it. Otherwise as gtext_cssom_rule_set_selector_text().
  */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_set_key_text(GTEXT_CSSOM_Rule * rule, const char * text, size_t length, GTEXT_CSSOM_Outcome * outcome);
 

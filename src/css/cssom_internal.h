@@ -88,7 +88,7 @@ typedef struct {
   struct GTEXT_CSSOM_Decl * decl;
 } css_inline_entry;
 
-/// The test tap and, from C5c3, the observers: the one function every event goes through.
+/// The test tap and the observers: the one function every event goes through.
 typedef GTEXT_CSS_Status (*css_cssom_tap_fn)(void * user, const css_cssom_event * event);
 
 /// A registered observer (cssom_events.c).
@@ -256,7 +256,7 @@ uint64_t css_core_tree_version(const css_core * core, bool * has_hook);
 
 struct GTEXT_CSSOM_Decl;
 
-/// What a rule (or any owner) does around a mutation of its declarations. C5b1 fills it for rules; a test fills it with a double.
+/// What a rule (or any owner) does around a mutation of its declarations. The rule layer fills it for rules; a test fills it with a double.
 typedef struct {
   /// Before the mutation: may refuse it (the sheet may not be modified); nothing has changed yet.
   GTEXT_CSS_Status (*prepare)(css_obj * owner, struct GTEXT_CSSOM_Decl * decl);

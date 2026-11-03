@@ -21,7 +21,7 @@ sheets and `matchMedia()`.
     Gen(seed, index).document() -> {"ops": [[op, field...], ...]}      the ops are listed in tools/oracle/css_cssom_ours.cpp
 
 The first documents are fixed: the pairs of adjacent conditions of every list of 'The order of checks' (the rule-operations population of css_ruleops_gen.py), the page properties of
-Paged Media 3, Appendix A and the properties each category of its prefix list admits that the appendix does not name, the nested-rule runs and the preserved kinds C5b2 left open,
+Paged Media 3, Appendix A and the properties each category of its prefix list admits that the appendix does not name, the nested-rule runs and the preserved kinds,
 the `cssText` setters of a declaration and of a rule, the `CSSFontFeatureValuesMap`, media lists, `adoptedStyleSheets` and `matchMedia`. The rest are drawn from pools by the seed and the
 document's index alone, so a population is a function of those two numbers.
 """
@@ -107,12 +107,12 @@ def page_documents():
 
 def open_items_documents():
     docs = []
-    # C5b1: a run of declarations ended by an invalid nested rule, and nested rules between declarations
+    # a run of declarations ended by an invalid nested rule, and nested rules between declarations
     for css in ["a{color:red; bogus!selector{} margin:1px}", "a{color:red; 1b{} margin:1px; c{} width:2px}", "a{ @media print{ color:red } margin:1px }", "a{ b{} color:red; c{} d:e }",
                 "a{color:red; @bogus x; margin:1px}", "a{ & b{} color:red; & c{} }", "a{color:red;; }b{margin:1px}", "a{ @media print{ b{} } width:1px; @media screen{ c{} } height:2px }",
                 "a{color:red; ::bogus{} margin:1px; &:hover{} padding:1px}", "a{ b{color:red} c:d{} e{} f:g }"]:
         docs.append({"g": "nested-run", "ops": [["S", css], ["V", "0", "cssText"]]})
-    # C5b2: a preserved kind (@mixin and kin) and the unknown at-rules nested in it
+    # a preserved kind (@mixin and kin) and the unknown at-rules nested in it
     for css in ["@mixin foo { @media print { a{} } b{} }", "@mixin foo { @bogus { a{} } b{} } a{}", "@function --f() { result: 1; } a{}", "@custom-media --m (min-width: 1px); a{}",
                 "@when media(print) { a{} } @else { b{} }", "a{ @mixin x; color:red }", "@media print { @mixin foo { a{} } b{} }", "@starting-style { a{} }"]:
         docs.append({"g": "preserved-kind", "ops": [["S", css], ["V", "0", "cssText"]]})

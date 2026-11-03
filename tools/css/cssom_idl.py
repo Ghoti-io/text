@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A small reader of the WebIDL of the CSSOM family (C5e), enough to list the members of the interfaces the ledger covers.
+"""A small reader of the WebIDL of the CSSOM family, enough to list the members of the interfaces the ledger covers.
 
 Not a WebIDL parser: it strips comments, finds the top-level definitions (``interface``, ``partial interface``, ``interface mixin``, ``namespace``, ``dictionary``,
 ``callback interface``), splits each body into members at the semicolons that are outside brackets and parentheses, and names each member by its kind and identifier.

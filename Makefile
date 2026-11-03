@@ -3329,7 +3329,7 @@ check-css-cssom-oracle: ## Compare mutation sequences of sheets, rules, declarat
 # tools/oracle/run-css-cssom-oracle.sh (tools/oracle/css_cssom_diff.py says what is compared and what a divergence is; tools/oracle/css_cssom_divergences.txt lists the ones that are not this
 # library's). Generated sequences of the CSSOM's operations (insertRule and deleteRule, the selectorText, keyText, name and attribute setters, a declaration's setProperty, removeProperty and
 # cssText, a rule's cssText, mediaText and appendMedium, the font feature value maps, replaceSync, adoptedStyleSheets, matchMedia), the pairs of adjacent conditions of every list of the order of
-# checks, the page properties of Paged Media Appendix A and the nested-rule runs and preserved kinds C5b2 left open are run by this library, Chromium and Firefox (one pinned image, no network):
+# checks, the page properties of Paged Media Appendix A and the nested-rule runs and preserved kinds are run by this library, Chromium and Firefox (one pinned image, no network):
 # the result of each call, and the text of the rules, the media and the disabled flag of each sheet that is left. --controls makes the gate fail on purpose, planted library defects
 # (tools/oracle/CSS_CSSOM_ORACLE_PLANTS) included. It is not one of the gates of `make test`: it needs a container engine.
 check-css-cssom-oracle: $(CONFORMANCE_LIB)
