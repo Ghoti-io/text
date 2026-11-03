@@ -203,6 +203,7 @@ def _probe(name, default=None):
 
 
 _pins = None
+_ids = {}
 _cache = {}
 
 
@@ -212,6 +213,7 @@ def pins():
     if _pins is not None:
         return _pins
     _pins = {}
+    _ids.clear()
     if not os.path.exists(IMAGES):
         return _pins
     with open(IMAGES, "r", encoding="utf-8") as handle:
@@ -226,7 +228,40 @@ def pins():
                     % line)
             _pins[parts[0]] = (parts[1], parts[2],
                                parts[3] if len(parts) > 3 else "")
+            # An optional fifth field, `id=sha256:<hex>`: the image ID (the digest of its config), which an image keeps when it is copied from one
+            # engine to another with save and load, where the digest of its manifest (the one in the reference) does not survive.
+            if len(parts) > 4 and parts[4].startswith("id=sha256:"):
+                _ids[parts[0]] = parts[4][len("id="):]
     return _pins
+
+
+def _image_id(ref):
+    """The image ID of an image the engine holds, as `sha256:<hex>`, or None."""
+    finished = subprocess.run([ENGINE, "image", "inspect", "--format", "{{.Id}}", ref],
+                              capture_output=True, text=True)
+    if finished.returncode != 0:
+        return None
+    got = finished.stdout.strip().splitlines()
+    if not got:
+        return None
+    return got[0] if got[0].startswith("sha256:") else "sha256:" + got[0]
+
+
+def runnable(name):
+    """The reference to run for a pin: its own, or its tag when the engine holds the pinned image under another manifest.
+
+    The reference names the manifest digest. `save` and `load` between engines (podman to docker, which is how an image gets to a build host) keep the bytes
+    and the image ID and make another manifest, so the reference then names nothing there. An image that carries the pinned ID under the tag of the reference is
+    the pinned image. A tag alone is never enough: the ID has to be the one the table pins."""
+    table = pins()
+    ref = table[name][0]
+    want = _ids.get(name)
+    if not want or "@" not in ref or _have_image(ref):
+        return ref
+    tag = ref.split("@", 1)[0]
+    if _have_image(tag) and _image_id(tag) == want:
+        return tag
+    return ref
 
 
 def _engine_ok():
@@ -284,7 +319,7 @@ def ensure(name):
     if name not in table:
         raise OracleUnavailable(
             "no pin for %r in tools/oracle/containers/IMAGES" % name)
-    image = table[name][0]
+    image = runnable(name)
     if _have_image(image):
         return
     # A built-here image cannot be pulled, and saying "pull failed" for one
@@ -347,7 +382,7 @@ def command(name, argv=None, scratch=None, readonly=None, env=None):
     inner = argv if argv is not None else [_probe(name, ([name],))[0][0]]
     if MODE in ("host", "inside"):
         return list(inner)
-    image = pins()[name][0]
+    image = runnable(name)
     out = [ENGINE, "run", "--rm", "-i",
            "--network", "none",
            "--volume", "%s:%s:ro" % (ROOT, ROOT)]

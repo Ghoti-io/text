@@ -5,6 +5,10 @@
 # check-oracle-env - which needs no engine and no reference, so it runs in
 # `make test` while the gates that consult an oracle do not.
 #
+# A line may end with a fifth field, `id=sha256:<hex>`: the ID of the image (the digest of its config). The reference names the digest of the manifest, which
+# an image copied between engines with save and load does not keep (podman to docker, which is how an image reaches a build host); the ID it does keep.
+# Where the reference is not in the engine and the tag of it carries the pinned ID, oracle_env.py runs the tag. A pin with no ID is run by its reference only.
+#
 # A stock ref carries a tag *and* a digest. The tag is for a human reading this
 # file; the digest is what runs. A tag can be moved under you and a digest
 # cannot, so a green run names a set of bytes rather than a set of names.
@@ -386,4 +390,4 @@ css	localhost/ghoti-text-oracle-css:1.0-1.5.1-0.38.0-3.2.1	tinycss2 1.5.1, csspa
 #
 # The same Chrome build is in the `chromium` line above (the sanitizer oracle), so that one build of Blink is the reference of both;
 # check-oracle-env holds the two Dockerfiles to the same version and hash.
-cssprop	localhost/ghoti-text-oracle-cssprop:156.0.8078.47-158.0.1@sha256:7c021b25434b7758e0ebe9e621fcd7c06fda717aaca47b5137604e467c6c8fa0	chrome 156.0.8078.47, chromedriver 156.0.8078.47, firefox 158.0.1, geckodriver 0.37.1, ws 8.22.0, sha256 chrome=e6c94490f0b6b337225aeb2d2a5034858516b7017356980ba94f5176d8774a50 chromedriver=2a5024610c53f340a1aaa5d9a3e2a4fa448be7d71cca5238bd8c3c7f16181df4 firefox=dce45470139242cf294eb6ada3d192a9bb334696842b02b71ade448a139eb41a geckodriver=e815130ea95983e162ae91843b48d3a3ce991735635fce83a647afde21e09f7e	CSS properties: whether a value is accepted and how it is written, from Chromium (Blink) and Firefox (Gecko with Stylo), which share no code
+cssprop	localhost/ghoti-text-oracle-cssprop:156.0.8078.47-158.0.1@sha256:7c021b25434b7758e0ebe9e621fcd7c06fda717aaca47b5137604e467c6c8fa0	chrome 156.0.8078.47, chromedriver 156.0.8078.47, firefox 158.0.1, geckodriver 0.37.1, ws 8.22.0, sha256 chrome=e6c94490f0b6b337225aeb2d2a5034858516b7017356980ba94f5176d8774a50 chromedriver=2a5024610c53f340a1aaa5d9a3e2a4fa448be7d71cca5238bd8c3c7f16181df4 firefox=dce45470139242cf294eb6ada3d192a9bb334696842b02b71ade448a139eb41a geckodriver=e815130ea95983e162ae91843b48d3a3ce991735635fce83a647afde21e09f7e	CSS properties: whether a value is accepted and how it is written, from Chromium (Blink) and Firefox (Gecko with Stylo), which share no code	id=sha256:02bf2650d9d38888d240fe90b245acced919811d2c57db2f910136e125431ed9

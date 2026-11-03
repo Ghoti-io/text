@@ -24,6 +24,7 @@ Copyright 2026 by Corey Pennycuff
 
 import os
 import re
+import shutil
 import sys
 import tempfile
 
@@ -525,6 +526,56 @@ def check_encoding_pin_fires():
         fail("control: a missing encoding pin was not caught")
 
 
+def check_runnable_follows_the_image_id():
+    """A pin whose manifest digest is not in the engine runs under its tag when the tag carries the pinned image ID, and under nothing else.
+
+    A fake engine stands in: `image exists REF` succeeds for the references in its store, and `image inspect --format {{.Id}} REF` prints the ID the store gives.
+    """
+    store = tempfile.mkdtemp()
+    engine = os.path.join(store, "engine")
+    with open(engine, "w", encoding="utf-8") as handle:
+        handle.write("""#!/bin/sh
+dir=$(dirname "$0")
+case "$1 $2" in
+"image exists") grep -qxF "$3" "$dir/present" ;;
+"image inspect") ref=$5; id=$(awk -F'\t' -v r="$ref" '$1 == r { print $2 }' "$dir/ids"); [ -n "$id" ] && echo "$id" ;;
+*) exit 2 ;;
+esac
+""")
+    os.chmod(engine, 0o755)
+    ref = "localhost/ghoti-text-oracle-fake:1@sha256:" + "a" * 64
+    tag = ref.split("@", 1)[0]
+    pinned = "sha256:" + "b" * 64
+    saved_engine, saved_images = oracle_env.ENGINE, oracle_env.IMAGES
+    planted = images_saying("fake\t%s\t1\tthe fake\tid=%s\nnoid\t%s\t1\tno id\n" % (ref, pinned, ref))
+    oracle_env.ENGINE = engine
+    try:
+        def holds(present, ids):
+            with open(os.path.join(store, "present"), "w") as f:
+                f.write("".join(p + "\n" for p in present))
+            with open(os.path.join(store, "ids"), "w") as f:
+                f.write("".join("%s\t%s\n" % kv for kv in ids))
+        holds([ref, tag], [(tag, pinned)])
+        if oracle_env.runnable("fake") != ref:
+            fail("runnable: the reference is present and it was not the one to run")
+        holds([tag], [(tag, pinned)])
+        if oracle_env.runnable("fake") != tag:
+            fail("runnable: the tag carries the pinned image ID and it was not the one to run")
+        holds([tag], [(tag, "sha256:" + "c" * 64)])
+        if oracle_env.runnable("fake") != ref:
+            fail("runnable: the tag carries another image ID and it was run")
+        holds([], [])
+        if oracle_env.runnable("fake") != ref:
+            fail("runnable: nothing is present and the reference was not returned for the error to name")
+        holds([tag], [(tag, pinned)])
+        if oracle_env.runnable("noid") != ref:
+            fail("runnable: a pin with no image ID ran under its tag")
+    finally:
+        oracle_env.ENGINE = saved_engine
+        restore_images(saved_images, planted)
+        shutil.rmtree(store, ignore_errors=True)
+
+
 def main():
     table = check_images_parses()
     check_images_rules_fire()
@@ -532,6 +583,7 @@ def main():
     check_probe_fallback()
     check_reference_stderr()
     check_mode_is_closed()
+    check_runnable_follows_the_image_id()
     check_matched_pins(table)
     check_matched_pins_fire()
     check_xml_pin(table)
