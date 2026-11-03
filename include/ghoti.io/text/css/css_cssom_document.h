@@ -351,7 +351,7 @@ GTEXT_API size_t gtext_cssom_document_observer_count(const GTEXT_CSSOM_Document 
 
 /**
  * @brief Begin a batch (an editor transaction): delivery of the events is deferred to the end of the outermost batch, in the order the mutations were made, while versions and the generation
- *   still move with each mutation. Batches nest. A mutation that finds the batch full (`max_queued_events`), or cannot make room, is refused with nothing changed.
+ *   still move with each mutation. Batches nest. A mutation that finds the batch full (`max_queued_events`), or cannot make room, is refused with nothing changed; the queue's memory counts against `max_live_bytes`, so a batch that has filled that budget refuses the next mutation the same way.
  * @return GTEXT_CSS_OK; GTEXT_CSS_E_REENTRANT (from an observer); GTEXT_CSS_E_LIMIT_CSSOM (the depth would pass 2^32 - 1).
  */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_document_begin_batch(GTEXT_CSSOM_Document * document);

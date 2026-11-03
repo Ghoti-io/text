@@ -969,6 +969,65 @@ TEST(CssomEventBatch, ABatchWithNoObserverQueuesNothing) {
   ASSERT_EQ(gtext_cssom_document_end_batch(c.d(), nullptr), GTEXT_CSS_OK);
 }
 
+/// A batch of colour changes of a declaration under a byte budget of `room`: how many were accepted before the budget refused one (the status of the refusal is checked).
+/// `with_rule`: the declaration is a style rule's, whose events carry its selector list; the copy of that list is the event's own memory.
+static size_t mutations_until_the_budget_is_full(bool with_rule, size_t room) {
+  const std::string css = "html body div.card > p.lead, html body div.card > p#a, html body div.card > span#s, html body div.card + p, .one .two .three .four .five { color: red }";
+  size_t base = 0;
+  {
+    Doc probe;
+    Sheet s(probe, css);
+    EXPECT_EQ(s.status, GTEXT_CSS_OK);
+    GTEXT_CSSOM_Counters c;
+    EXPECT_EQ(gtext_cssom_document_counters(probe.d, &c), GTEXT_CSS_OK);
+    base = c.live_bytes;
+  }
+  Doc doc([&](GTEXT_CSSOM_Config & cfg) { cfg.max_live_bytes = base + room; });
+  Sheet s(doc, css);
+  EXPECT_EQ(s.status, GTEXT_CSS_OK);
+  Rule r = path(s, {0});
+  Decl rule_decl = style_of(r.r);
+  Decl free_decl(doc);
+  GTEXT_CSSOM_Decl * d = with_rule ? rule_decl.d : free_decl.d;
+  EXPECT_NE(d, nullptr);
+  GTEXT_CSSOM_Counters c0;
+  EXPECT_EQ(gtext_cssom_document_counters(doc.d, &c0), GTEXT_CSS_OK);
+  Rec rec(doc.d);
+  EXPECT_EQ(gtext_cssom_document_begin_batch(doc.d), GTEXT_CSS_OK);
+  size_t made = 0;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  while (made < 100000) {
+    st = set_color(d, made % 2 ? "red" : "blue");
+    if (st != GTEXT_CSS_OK) {
+      break;
+    }
+    made++;
+  }
+  EXPECT_EQ(st, GTEXT_CSS_E_LIMIT_CSSOM) << "the budget ended the batch long before the event limit (" << made << " mutations)";
+  css_core * core = doc.core();
+  GTEXT_CSSOM_Counters c;
+  EXPECT_EQ(gtext_cssom_document_counters(doc.d, &c), GTEXT_CSS_OK);
+  EXPECT_GT(core->queue_bytes, 0u);
+  EXPECT_LE(c.live_bytes + core->queue_bytes, base + room + 40000) << "within the budget, by at most the copies of the one event that was made after the last check";
+  EXPECT_EQ(get(d, "color"), made % 2 ? "blue" : "red") << "the refused mutation changed nothing";
+  GTEXT_CSSOM_Outcome o{};
+  EXPECT_EQ(gtext_cssom_document_end_batch(doc.d, &o), GTEXT_CSS_OK);
+  EXPECT_EQ(o.observer_status, GTEXT_CSS_OK);
+  EXPECT_EQ(rec.seen.size(), made) << "every mutation that was accepted was delivered";
+  EXPECT_EQ(core->queue_bytes, 0u) << "and the batch's memory went back with it";
+  EXPECT_EQ(set_color(d, "green"), GTEXT_CSS_OK);
+  return made;
+}
+
+TEST(CssomEventBatch, TheQueueOfABatchCountsAgainstTheByteBudgetAndAFullBudgetRefusesTheNextMutation) {
+  const size_t plain = mutations_until_the_budget_is_full(false, 1024 * 1024);
+  EXPECT_GT(plain, 100u) << "the array of small events is what the budget sees";
+  /* a few events, each with a selector list of its own, fill a smaller budget while the array is still at its first size: only the copies can be what refuses the mutation */
+  const size_t with_selectors = mutations_until_the_budget_is_full(true, 96 * 1024);
+  EXPECT_GT(with_selectors, 1u);
+  EXPECT_LT(with_selectors, 12u) << "an event that carries a selector list is more memory than one that does not, and the budget sees it";
+}
+
 TEST(CssomEventBatch, AFullBatchRefusesTheMutationAndChangesNothing) {
   Doc doc([](GTEXT_CSSOM_Config & cfg) { cfg.max_queued_events = 3; });
   GTEXT_CSSOM_Decl * d = nullptr;

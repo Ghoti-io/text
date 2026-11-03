@@ -41,6 +41,7 @@
 #include <string.h>
 
 #include "css_internal.h"
+#include "css_selector_internal.h"
 #include "cssom_doc_internal.h"
 #include "cssom_internal.h"
 #include "cssom_rule_internal.h"
@@ -54,6 +55,7 @@ typedef struct css_qevent {
   GTEXT_CSS_Selector_List * sel, * sel_before;
   GTEXT_CSS_Property_Id * props;        ///< A copy (batch), or NULL.
   GTEXT_CSS_String * customs;           ///< A copy in one block with the bytes (batch), or NULL.
+  size_t charged;                       ///< What this event added to `queue_bytes` (a queued event), and gives back when it is freed.
 } css_qevent;
 
 #define DEFAULT_MAX_OBSERVERS ((size_t)1024)
@@ -219,6 +221,7 @@ static css_obj * hold(css_obj * o) {
 
 static void qevent_free(css_core * core, css_qevent * q) {
   GTEXT_Allocator a = core->alloc;
+  core->queue_bytes -= q->charged <= core->queue_bytes ? q->charged : core->queue_bytes;
   gtext_allocator_free(&a, q->path);
   gtext_allocator_free(&a, q->props);
   gtext_allocator_free(&a, q->customs);
@@ -230,6 +233,25 @@ static void qevent_free(css_core * core, css_qevent * q) {
     }
   }
   memset(q, 0, sizeof *q);
+}
+
+/// What the event's own copies hold: the path, the property ids, the custom names and the selector lists (their arenas). The event itself is counted with the queue's array.
+static size_t qevent_payload(const css_qevent * q) {
+  size_t bytes = q->pub.has_path ? q->pub.path_length * sizeof *q->path : 0;
+  bytes += q->props ? q->pub.property_count * sizeof *q->props : 0;
+  if (q->customs) {
+    bytes += q->pub.custom_count * sizeof *q->customs;
+    for (size_t i = 0; i < q->pub.custom_count; i++) {
+      bytes += q->customs[i].length;
+    }
+  }
+  if (q->sel && q->sel->internal) {
+    bytes += q->sel->internal->arena.total;
+  }
+  if (q->sel_before && q->sel_before->internal) {
+    bytes += q->sel_before->internal->arena.total;
+  }
+  return bytes;
 }
 
 /// Make the public event of `e`. `copy`: the arrays are copied, because the delivery comes after the mutator returns. Takes `e->selectors_before`.
@@ -375,12 +397,14 @@ static void free_queue(css_core * core) {
   GTEXT_Allocator a = core->alloc;
   const size_t n = core->qcount;
   css_qevent * queue = core->queue;
+  const size_t array_bytes = core->qcap * sizeof *queue;
   core->queue = NULL;
   core->qcount = core->qcap = 0;
   for (size_t i = 0; i < n; i++) {
     qevent_free(core, &queue[i]);
   }
   gtext_allocator_free(&a, queue);
+  core->queue_bytes -= array_bytes <= core->queue_bytes ? array_bytes : core->queue_bytes;
 }
 
 static void delivery_begin(css_core * core) {
@@ -433,6 +457,9 @@ void css_events_emit(css_core * core, const css_cssom_event * e, GTEXT_CSSOM_Out
   qevent_build(core, e, queued, &q);
   if (queued) {
     if (core->qcount < core->qcap) {
+      /* charged without a check: the event is made after the mutation, which cannot be undone. The next mutation's reservation sees the total and refuses when it is over */
+      q.charged = qevent_payload(&q);
+      core->queue_bytes += q.charged;
       core->queue[core->qcount++] = q;
     }
     else {
@@ -469,6 +496,10 @@ GTEXT_CSS_Status css_cssom_reserve_events(css_core * core, size_t n) {
   if (n > limit || core->qcount > limit - n) {
     return GTEXT_CSS_E_LIMIT_CSSOM;
   }
+  /* the queue is memory like the objects are: what it holds is part of `max_live_bytes`, and a batch that has filled the budget refuses the next mutation before it changes anything */
+  if (core->queue_bytes && css_core_room_bytes(core, core->queue_bytes) != GTEXT_CSS_OK) {
+    return GTEXT_CSS_E_LIMIT_CSSOM;
+  }
   const size_t need = core->qcount + n;
   if (need <= core->qcap) {
     return GTEXT_CSS_OK;
@@ -484,12 +515,20 @@ GTEXT_CSS_Status css_cssom_reserve_events(css_core * core, size_t n) {
   if (cap < need) {
     cap = need;
   }
+  if (cap > SIZE_MAX / sizeof(css_qevent)) {
+    return GTEXT_CSS_E_LIMIT_CSSOM;
+  }
+  const size_t added = (cap - core->qcap) * sizeof(css_qevent);
+  if (css_core_room_bytes(core, core->queue_bytes + added) != GTEXT_CSS_OK) {
+    return GTEXT_CSS_E_LIMIT_CSSOM;
+  }
   css_qevent * grown = gtext_allocator_realloc(&core->alloc, core->queue, cap * sizeof *grown);
   if (!grown) {
     return GTEXT_CSS_E_OOM;
   }
   core->queue = grown;
   core->qcap = cap;
+  core->queue_bytes += added;
   return GTEXT_CSS_OK;
 }
 
@@ -599,6 +638,7 @@ GTEXT_CSS_Status gtext_cssom_document_end_batch(GTEXT_CSSOM_Document * document,
     return GTEXT_CSS_OK;
   }
   if (core->qcount == 0) {
+    free_queue(core);   /* the room kept for a registration inside a mutator */
     return GTEXT_CSS_OK;
   }
   delivery_begin(core);
@@ -610,7 +650,9 @@ GTEXT_CSS_Status gtext_cssom_document_end_batch(GTEXT_CSSOM_Document * document,
     }
     qevent_free(core, q);
   }
+  /* the array goes with the batch: a document that once queued a great deal does not keep that against its budget */
   core->qcount = 0;
+  free_queue(core);
   delivery_end(core);
   return GTEXT_CSS_OK;
 }

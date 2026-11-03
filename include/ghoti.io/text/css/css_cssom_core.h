@@ -228,7 +228,7 @@ typedef struct {
   bool quirks;                          ///< The document is in quirks mode: an element-owned declaration reads a unitless number as a length where the properties allow it (Quirks Mode 3.4); and, when `match_options` is NULL, the rule index's `quirks`. Nothing else is affected.
   bool inline_trust_notifications;      ///< The caller calls gtext_cssom_inline_style_attribute_changed() when a `style` attribute changes, and the library does not compare the attribute with what it parsed.
   size_t max_live_objects;              ///< Most live objects (declarations, sheets, rules...). Default 16,777,216. One more is GTEXT_CSS_E_LIMIT_CSSOM.
-  size_t max_live_bytes;                ///< Most bytes the objects hold (their structs and the strings they keep). Default 1 GiB. One more is GTEXT_CSS_E_LIMIT_CSSOM.
+  size_t max_live_bytes;                ///< Most bytes the objects hold (their structs and the strings they keep), and the open batch's queue with them (its array and the copies in its events). Default 1 GiB. One more is GTEXT_CSS_E_LIMIT_CSSOM; a batch that has filled the budget refuses the next mutation with nothing changed.
   size_t max_inline_styles;             ///< Most element-owned declarations alive at once. Default 1,048,576. One more is GTEXT_CSS_E_LIMIT_CSSOM.
   size_t max_declarations;              ///< Most declarations in one block. Default 1,048,576, at most 2^28. One more is GTEXT_CSS_E_LIMIT_DECLARATIONS.
   size_t max_input_bytes;               ///< Longest text a `cssText` set, a value or an attribute may be. Default 64 MiB. One more is GTEXT_CSS_E_LIMIT_INPUT.

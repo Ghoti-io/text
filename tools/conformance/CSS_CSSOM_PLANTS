@@ -319,3 +319,5 @@ the-new-view-of-a-typed-rule-is-built-without-a-check	cssom_setters.c	  st = css
 event-room-reserved-only-while-an-observer-is-registered	cssom_events.c	  if (core->batch_depth == 0 || n == 0) {\n    return GTEXT_CSS_OK;	  if (core->batch_depth == 0 || core->live_observers == 0 || n == 0) {\n    return GTEXT_CSS_OK;	events
 listeners-called-after-the-document-was-released	cssom_mql.c	  for (size_t j = 0; core->document && j < count	  for (size_t j = 0; j < count	mediaquery
 retained-conditions-take-no-reference	cssom_mql.c	  return document ? gtext_css_conditions_retain(css_document_core((GTEXT_CSSOM_Document *)(uintptr_t)document)->conditions) : NULL;	  return document ? (GTEXT_CSS_Conditions *)(uintptr_t)css_document_core((GTEXT_CSSOM_Document *)(uintptr_t)document)->conditions : NULL;	mediaquery
+batch-queue-not-counted-against-the-budget	cssom_events.c	  if (core->queue_bytes && css_core_room_bytes(core, core->queue_bytes) != GTEXT_CSS_OK) {	  if (0) {	events
+batch-events-copies-not-counted	cssom_events.c	      q.charged = qevent_payload(&q);	      q.charged = 0;	events

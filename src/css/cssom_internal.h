@@ -131,6 +131,7 @@ struct css_core {
   unsigned batch_depth;
   struct css_qevent * queue;           ///< The events of the open batch, in the order they were made.
   size_t qcount, qcap, qdone;
+  size_t queue_bytes;                  ///< What the open batch's queue holds (the array and the copies in its events); it counts against `max_live_bytes` with the live objects.
   /* the document (cssom_document.c, cssom_scope.c, cssom_index.c, cssom_mql.c) */
   GTEXT_CSS_Conditions * conditions;   ///< Retained; never NULL while the core lives.
   uint64_t conditions_epoch;           ///< Advances when the conditions object is replaced by another.
