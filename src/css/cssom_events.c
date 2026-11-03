@@ -459,7 +459,10 @@ bool css_events_wanted(const css_core * core) {
 /* ---- the queue ---------------------------------------------------------------------------------------------------------------------------------------- */
 
 GTEXT_CSS_Status css_cssom_reserve_events(css_core * core, size_t n) {
-  if (core->batch_depth == 0 || core->live_observers == 0 || n == 0) {
+  /* In an open batch the room is reserved whether or not an observer is registered now: the caller's code that runs inside a mutator (an import callback, a Markup link
+     callback, a layout callback) may register one before the mutator commits, and its event must have a place. With none registered nothing is queued, so this costs
+     the queue's first allocation per document. */
+  if (core->batch_depth == 0 || n == 0) {
     return GTEXT_CSS_OK;
   }
   const size_t limit = core->config.max_queued_events;

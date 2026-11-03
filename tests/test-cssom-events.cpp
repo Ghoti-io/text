@@ -920,6 +920,30 @@ TEST(CssomEventBatch, ABatchDefersDeliveryToTheEndOfTheOutermostOneInTheOrderOfT
   EXPECT_EQ(rec.seen.size(), 4u) << "and delivery is immediate again";
 }
 
+TEST(CssomEventBatch, AnObserverRegisteredInsideTheCallbackOfAMutatorInABatchStillGetsTheMutationsEvent) {
+  /* The mutator reserved its event's place when it began, with no observer to ask for one; the observer that appears while it runs (the import callback is the call that can run the
+     caller's code inside a mutator) must not make the event a loss. */
+  Ctx c;
+  GTEXT_CSSOM_Sheet * s = c.owned("a{}");
+  std::unique_ptr<Rec> rec;
+  c.imp.table["a.css"] = "pending";
+  c.imp.inside = [&](const GTEXT_CSSOM_Import_Request &) {
+    if (!rec) {
+      rec = std::make_unique<Rec>(c.d());
+    }
+  };
+  ASSERT_EQ(gtext_cssom_document_begin_batch(c.d()), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_cssom_sheet_insert_rule(s, "@import url(a.css);", 19, 0, nullptr, nullptr), GTEXT_CSS_OK);
+  ASSERT_TRUE(rec) << "the callback ran";
+  ASSERT_EQ(rec->status, GTEXT_CSS_OK);
+  GTEXT_CSSOM_Outcome o{};
+  ASSERT_EQ(gtext_cssom_document_end_batch(c.d(), &o), GTEXT_CSS_OK);
+  EXPECT_EQ(o.observer_status, GTEXT_CSS_OK) << "nothing was lost";
+  EXPECT_EQ(c.w->counters().events_lost, 0u);
+  EXPECT_EQ(rec->kinds_text(), "RULE_INSERTED");
+  c.imp.inside = nullptr;
+}
+
 TEST(CssomEventBatch, AnEmptyBatchDeliversNothingAndAFailingObserverIsReportedAtTheEnd) {
   Ctx c;
   GTEXT_CSSOM_Decl * d = c.decl();
@@ -1009,7 +1033,7 @@ TEST(CssomEventBatch, ABatchWithNoObserverQueuesNothing) {
     ASSERT_EQ(set_color(d, i % 2 ? "red" : "blue"), GTEXT_CSS_OK);
   }
   EXPECT_EQ(c.w->doc->core()->qcount, 0u);
-  EXPECT_EQ(c.w->doc->core()->qcap, 0u);
+  EXPECT_LE(c.w->doc->core()->qcap, 16u) << "room is kept for one registration inside a mutator, and it does not grow with the mutations";
   ASSERT_EQ(gtext_cssom_document_end_batch(c.d(), nullptr), GTEXT_CSS_OK);
 }
 

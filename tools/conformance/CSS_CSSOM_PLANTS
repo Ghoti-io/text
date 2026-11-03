@@ -316,3 +316,4 @@ a-set-shorthand-counts-the-opaque-one-it-replaces	css_block.c	it->property == ig
 a-counter-style-name-of-two-identifiers-is-taken	cssom_setters.c	const bool counter_name = rule->kind == GTEXT_CSSOM_RULE_COUNTER_STYLE;	const bool counter_name = 0 && rule->kind == GTEXT_CSSOM_RULE_COUNTER_STYLE;	setters
 event-freed-after-the-delivery-ends	cssom_events.c	  qevent_free(core, &q);\n  delivery_end(core);\n}	  delivery_end(core);\n  qevent_free(core, &q);\n}	events
 the-new-view-of-a-typed-rule-is-built-without-a-check	cssom_setters.c	  st = css_typed_pending_of_own(rule, &own, &view);\n  if (st != GTEXT_CSS_OK) {	  st = css_typed_pending_of_own(rule, &own, &view);\n  if (0) {	settersoom
+event-room-reserved-only-while-an-observer-is-registered	cssom_events.c	  if (core->batch_depth == 0 || n == 0) {\n    return GTEXT_CSS_OK;	  if (core->batch_depth == 0 || core->live_observers == 0 || n == 0) {\n    return GTEXT_CSS_OK;	events
