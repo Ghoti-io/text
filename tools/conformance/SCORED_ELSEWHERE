@@ -1,0 +1,10 @@
+# tools/conformance/run-css-atrules.sh: pages of the at-rule directories of css/ that another gate scores, so the at-rules gate does not list them as unread. Tab separated: page, gate, why. The gate named must have a program for the page (the script checks it).
+css-anchor-position/position-try-rule-caching-002.html	css-cssom	the page reads rules through the object model, which the CSSOM gate runs (conformance-css-cssom)
+css-animations/keyframes-rule-caching.html	css-cssom	the page reads rules through the object model, which the CSSOM gate runs (conformance-css-cssom)
+css-animations/parsing/keyframes-allowed-properties.html	css-cssom	the page reads rules through the object model, which the CSSOM gate runs (conformance-css-cssom)
+css-fonts/parsing/font-palette-values-invalid.html	css-cssom	the page reads rules through the object model, which the CSSOM gate runs (conformance-css-cssom)
+css-fonts/parsing/font-palette-values-valid.html	css-cssom	the page reads rules through the object model, which the CSSOM gate runs (conformance-css-cssom)
+css-page/cssom/margin-001.html	css-cssom	the page reads rules through the object model, which the CSSOM gate runs (conformance-css-cssom)
+css-page/cssom/margin-002.html	css-cssom	the page reads rules through the object model, which the CSSOM gate runs (conformance-css-cssom)
+css-page/cssom/page-002.html	css-cssom	the page reads rules through the object model, which the CSSOM gate runs (conformance-css-cssom)
+css-page/parsing/margin-rules-002.html	css-cssom	the page reads rules through the object model, which the CSSOM gate runs (conformance-css-cssom)

@@ -17,7 +17,7 @@ Writes a tab separated file: kind, page, input, expectation (`valid` or `invalid
 
 Every other page of the directories the at-rules live in (css-fonts palette, font-face and feature-value pages, css-counter-styles, css-page, css-view-transitions, css-anchor-position
 @position-try pages, css-namespaces, css-color @color-profile pages) is written as a line ``# unscored TAB page TAB count TAB reason``: the number of its test calls (1 for a reftest) and why
-it is not read as data. tools/conformance/UNSCORED_ATRULES must say the same, or the gate fails.
+it is not read as data. tools/conformance/UNSCORED_ATRULES must say the same, or the gate fails. A page that tools/conformance/SCORED_ELSEWHERE names (another gate scores it) is not listed.
 
 Calls this reader does not match are counted on stderr (the pages it reads are listed in the output's header lines starting with ``#``); nothing is dropped without a count.
 
@@ -52,8 +52,15 @@ AT_RULE_PAGES = [
 PAGE_EXT = (".html", ".htm", ".xht", ".xhtml", ".xml")
 
 
-def list_unscored(wpt, read_pages):
-    """(page, calls, reason) for each test page of the at-rule directories that this reader did not take data from: a reftest counts as one."""
+def scored_elsewhere(path):
+    """The pages another gate scores (tools/conformance/SCORED_ELSEWHERE: page, gate, why): they are not this gate's to list as unread."""
+    if not path or not os.path.exists(path):
+        return set()
+    return set(l.split("\t")[0] for l in open(path, encoding="utf-8") if l.strip() and not l.startswith("#"))
+
+
+def list_unscored(wpt, read_pages, elsewhere=frozenset()):
+    """(page, calls, reason) for each test page of the at-rule directories that this reader did not take data from: a reftest counts as one. A page that is in `elsewhere` is left out."""
     out = []
     base = os.path.join(wpt, "css")
     for dirpath, dirs, files in os.walk(base):
@@ -66,7 +73,7 @@ def list_unscored(wpt, read_pages):
                 continue
             if not any(re.match(pat, rel) for pat in AT_RULE_PAGES):
                 continue
-            if rel in read_pages:
+            if rel in read_pages or rel in elsewhere:
                 continue
             text = open(os.path.join(base, rel), encoding="utf-8", errors="replace").read()
             calls = len(re.findall(r"\b(?:test|promise_test|async_test)\(", text))
@@ -83,6 +90,7 @@ def list_unscored(wpt, read_pages):
 
 def main():
     wpt, out = sys.argv[1], sys.argv[2]
+    elsewhere = scored_elsewhere(sys.argv[3] if len(sys.argv) > 3 else None)
     rows = []
     pages = []
     unread = 0
@@ -169,7 +177,7 @@ def main():
                     v = unescape(m.group(1) if m.group(1) is not None else m.group(2))
                     for d in ("font-width", "font-stretch"):
                         rows.append(("face-descriptor", "css-fonts/parsing/font-face-width.html", "\x1f".join((d, v, "")), verdict))
-    unscored = list_unscored(wpt, set(pages))
+    unscored = list_unscored(wpt, set(pages), elsewhere)
     with open(out, "w", encoding="utf-8") as f:
         for u in unscored:
             f.write("# unscored\t%s\t%d\t%s\n" % u)

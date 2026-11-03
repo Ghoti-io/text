@@ -54,7 +54,6 @@ css-anchor-position/position-try-order-position-area.html	1	a script test that r
 css-anchor-position/position-try-position-anchor.html	1	no test call: a manual or rendering page
 css-anchor-position/position-try-pseudo-element.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-anchor-position/position-try-rule-caching-001.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
-css-anchor-position/position-try-rule-caching-002.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-anchor-position/position-try-switch-from-fixed-anchor.html	1	a reftest: the answer is the rendering
 css-anchor-position/position-try-switch-to-fixed-anchor.html	1	a reftest: the answer is the rendering
 css-anchor-position/position-try-transition-basic.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
@@ -71,7 +70,6 @@ css-animations/animation-keyframes-003-manual.html	1	no test call: a manual or r
 css-animations/animation-multiple-from-to-keyframes-with-only-timing-function.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-animations/animation-style-element-replaced-with-keyframes-rule-of-same-name.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-animations/keyframes-remove-documentElement-crash.html	1	no test call: a manual or rendering page
-css-animations/keyframes-rule-caching.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-animations/keyframes-tree-scoped-property-with-var.html	1	a reftest: the answer is the rendering
 css-animations/keyframes-unrelated-custom-property.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-animations/keyframes-zero-angle-crash.html	1	no test call: a manual or rendering page
@@ -85,7 +83,6 @@ css-animations/revert-rule-keyframes-dynamic.html	2	a script test that reads a s
 css-animations/revert-rule-keyframes.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-animations/sample-on-last-keyframe.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-animations/svg-use-transform-keyframes-custom-property-override.html	1	a reftest: the answer is the rendering
-css-animations/parsing/keyframes-allowed-properties.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-color/at-color-profile-001.html	1	a reftest: the answer is the rendering
 css-counter-styles/counter-name-case-sensitive.html	1	a reftest: the answer is the rendering
 css-counter-styles/counter-suffix.html	1	a reftest: the answer is the rendering
@@ -373,8 +370,6 @@ css-fonts/font-display/font-display-failure-fallback.html	1	a script test that r
 css-fonts/font-display/font-display-feature-policy-02.tentative.html	1	a reftest: the answer is the rendering
 css-fonts/font-display/font-display-preload.html	1	a reftest: the answer is the rendering
 css-fonts/font-display/font-display.html	1	a reftest: the answer is the rendering
-css-fonts/parsing/font-palette-values-invalid.html	27	a script test that reads a style sheet, an animation or a layout, not a table of calls
-css-fonts/parsing/font-palette-values-valid.html	36	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-namespaces/prefix-001.xml	1	a reftest: the answer is the rendering
 css-namespaces/prefix-002.xml	1	a reftest: the answer is the rendering
 css-namespaces/prefix-003.xml	1	a reftest: the answer is the rendering
@@ -627,11 +622,8 @@ css-page/crashtests/percentage-padding-print.html	1	a crash or rendering test
 css-page/crashtests/root-element-remove-print.html	1	a crash or rendering test
 css-page/crashtests/tall-inline-block-in-float-in-table-cell-print.html	1	a crash or rendering test
 css-page/cssom/dynamic-001-print.html	1	a reftest: the answer is the rendering
-css-page/cssom/margin-001.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
-css-page/cssom/margin-002.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-page/cssom/margin-003.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-page/cssom/page-001.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
-css-page/cssom/page-002.html	2	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-page/margin-boxes/alignment-001-print.html	1	a reftest: the answer is the rendering
 css-page/margin-boxes/auto-margins-001-print.html	1	a reftest: the answer is the rendering
 css-page/margin-boxes/auto-margins-002-print.html	1	a reftest: the answer is the rendering
@@ -671,7 +663,6 @@ css-page/margin-boxes/paint-order-001-print.html	1	a reftest: the answer is the 
 css-page/margin-boxes/paint-order-002-print.html	1	a reftest: the answer is the rendering
 css-page/margin-boxes/paint-order-003-print.html	1	a reftest: the answer is the rendering
 css-page/parsing/margin-rules-001.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
-css-page/parsing/margin-rules-002.html	4	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-page/parsing/nested-rules-001.html	1	a script test that reads a style sheet, an animation or a layout, not a table of calls
 css-page/parsing/page-computed.html	1	no test call: a manual or rendering page
 css-page/parsing/page-invalid.html	1	no test call: a manual or rendering page

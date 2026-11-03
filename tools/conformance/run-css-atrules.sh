@@ -37,7 +37,25 @@ cc -O1 -g -D_GNU_SOURCE -o "$runner" "$root/tools/conformance/css_atrules_suite.
 	-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm \
 	-Wl,-rpath,"$PREFIX/lib/ghoti.io"
 vectors=$root/build/css-atrules-vectors.tsv
-python3 -I "$root/tools/css/extract-wpt-atrules.py" "$wpt" "$vectors"
+elsewhere=$root/tools/conformance/SCORED_ELSEWHERE
+python3 -I "$root/tools/css/extract-wpt-atrules.py" "$wpt" "$vectors" "$elsewhere"
+# a page is left out of the unscored list only if the gate named for it really reads it: the CSSOM extractor must have a program for the page
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+python3 -I "$root/tools/css/extract-wpt-props.py" "$wpt" "$scratch" --unextracted "$scratch/UNEXTRACTED" >/dev/null
+python3 -I "$root/tools/css/extract-wpt-cssom.py" "$wpt" "$scratch" "$scratch/rule.json" >/dev/null
+check_registry() {
+	grep -v '^#' "$1" | while IFS="$(printf '\t')" read -r page gate why; do
+		[ "$gate" = css-cssom ] || { echo "SCORED ELSEWHERE: $page names the gate '$gate', which this check does not know" >&2; exit 1; }
+		grep -q "^P	css/$page	" "$scratch/declaration.tsv" || { echo "SCORED ELSEWHERE: $page is not read by the CSSOM gate (no program for it)" >&2; exit 1; }
+	done
+}
+check_registry "$elsewhere" || exit 1
+# the check is seen to fail: a page the CSSOM gate has no program for, and a gate it does not know
+printf 'css-page/parsing/page-valid.html\tcss-cssom\tplanted\n' > "$scratch/control-page"
+if check_registry "$scratch/control-page" 2>/dev/null; then echo "control scored-elsewhere-unread-page: NOT CAUGHT" >&2; exit 1; fi
+printf 'css-page/cssom/margin-001.html\tcss-nowhere\tplanted\n' > "$scratch/control-gate"
+if check_registry "$scratch/control-gate" 2>/dev/null; then echo "control scored-elsewhere-unknown-gate: NOT CAUGHT" >&2; exit 1; fi
 n=$(grep -vc '^#' "$vectors" || true)
 floor=${CSS_ATRULES_FLOOR:-320}
 [ "$n" -ge "$floor" ] || { echo "only $n vectors were read; the floor is $floor" >&2; exit 1; }
