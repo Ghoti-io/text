@@ -224,8 +224,20 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_document_register_sheet(GTEXT_CSSOM_Docum
 /** @brief Take a registered sheet out. @return GTEXT_CSS_OK; GTEXT_CSS_E_NOT_FOUND; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_REENTRANT; GTEXT_CSS_E_LIMIT_CSSOM. */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_document_unregister_sheet(GTEXT_CSSOM_Document * document, GTEXT_CSS_Sheet * sheet, GTEXT_CSSOM_Outcome * outcome);
 
-/** @brief The conditions object the document evaluates media and supports conditions with, borrowed. NULL for NULL. */
+/**
+ * @brief The conditions object the document evaluates media and supports conditions with, **borrowed**. NULL for NULL.
+ *
+ * The pointer is valid until gtext_cssom_document_set_conditions() replaces the conditions, or until the document is released: the document lets go of the object it replaces, and
+ * the object is freed with the last reference to it. A caller that keeps the pointer across a call that can replace the conditions (a binding that caches it in a wrapper, a
+ * callback that runs while the environment changes) takes its own reference with gtext_cssom_document_conditions_retained() instead.
+ */
 GTEXT_API const GTEXT_CSS_Conditions * gtext_cssom_document_conditions(const GTEXT_CSSOM_Document * document);
+
+/**
+ * @brief The conditions object of the document with a reference of the caller's own (gtext_css_conditions_free() gives it back); it stays valid whatever the document does next. The
+ *   count is atomic. NULL for NULL.
+ */
+GTEXT_API GTEXT_CSS_Conditions * gtext_cssom_document_conditions_retained(const GTEXT_CSSOM_Document * document);
 
 /**
  * @brief The environment change (a resize, a scheme switch): the document retains the new conditions object, the generation increases (one `CONDITIONS_CHANGED`), the next ask for the index

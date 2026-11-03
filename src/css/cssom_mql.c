@@ -426,6 +426,10 @@ const GTEXT_CSS_Conditions * gtext_cssom_document_conditions(const GTEXT_CSSOM_D
   return document ? css_document_core((GTEXT_CSSOM_Document *)(uintptr_t)document)->conditions : NULL;
 }
 
+GTEXT_CSS_Conditions * gtext_cssom_document_conditions_retained(const GTEXT_CSSOM_Document * document) {
+  return document ? gtext_css_conditions_retain(css_document_core((GTEXT_CSSOM_Document *)(uintptr_t)document)->conditions) : NULL;
+}
+
 GTEXT_CSS_Status gtext_cssom_supports(const GTEXT_CSSOM_Document * document, const char * property, const char * value, bool * result) {
   if (!document || !property || !value || !result) {
     return GTEXT_CSS_E_INVALID;

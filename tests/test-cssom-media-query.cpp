@@ -357,6 +357,24 @@ TEST(CssomMediaQuery, TheNumberOfListsIsBoundedAndTheListsOutliveTheDocument) {
   EXPECT_EQ(finalized, 1);
 }
 
+TEST(CssomMediaQuery, AReferenceTakenToTheConditionsSurvivesTheChangeThatReplacesThem) {
+  /* the borrowed pointer is invalid after the change (the header says so); the retained one is the caller's own, and the document's default conditions are the document's alone */
+  Cond c800(800);
+  UnmapAllocator ua;   // what the document frees is gone from the address space, so a reference that was not taken is seen to be read
+  World w(nullptr, &ua.alloc);
+  const GTEXT_CSS_Conditions * borrowed = gtext_cssom_document_conditions(w.d());
+  GTEXT_CSS_Conditions * kept = gtext_cssom_document_conditions_retained(w.d());
+  ASSERT_NE(kept, nullptr);
+  EXPECT_EQ(kept, borrowed) << "the same object";
+  EXPECT_EQ(gtext_cssom_document_conditions_retained(nullptr), nullptr);
+  ASSERT_EQ(gtext_cssom_document_set_conditions(w.d(), c800.c, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_cssom_document_conditions(w.d()), c800.c);
+  bool supported = false;
+  EXPECT_EQ(gtext_css_conditions_supports(kept, "color", "red", &supported), GTEXT_CSS_OK) << "the old object is whole: the document's let-go was not the last";
+  EXPECT_TRUE(supported);
+  gtext_css_conditions_free(kept);
+}
+
 TEST(CssomMediaQuery, SupportsIsAskedOfTheDocumentsConditions) {
   World w;
   bool r = false;
