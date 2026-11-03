@@ -203,4 +203,62 @@ TEST(CssomComputedOom, ReadingAgainAfterTheTreeMoved) {
   sweep({"after a move", "#a", nullptr, false, true});
 }
 
+/* gtext_cssom_document_element_released() from a callback of a read writes the element down for the end of the read; when that cannot be done the computed state of the
+   document is frozen at the end of the read instead. The read in flight finishes either way, nothing leaks and a declaration made afterwards is healthy. */
+TEST(CssomComputedOom, AReleaseFromTheCallbackOfAReadThatCannotBeWrittenDown) {
+  struct Probe {
+    std::function<void()> act;
+    int calls = 0;
+    static GTEXT_CSS_Status used(void * user, const void *, const GTEXT_CSS_Selector_List *, GTEXT_CSS_Property_Id, bool * applies, GTEXT_CSS_Value_Set **) {
+      Probe * self = static_cast<Probe *>(user);
+      if (self->calls++ == 0 && self->act) {
+        self->act();
+      }
+      *applies = false;
+      return GTEXT_CSS_OK;
+    }
+  };
+  for (size_t n = 1; n <= 3; n++) {
+    SCOPED_TRACE(n);
+    Probe probe;
+    GTEXT_CSSOM_Layout_Interface iface{};
+    iface.size = sizeof iface;
+    iface.user = &probe;
+    iface.used_value = &Probe::used;
+    FaultAllocator fa;
+    bool fired = false;
+    {
+      Cs m(kHtml, [&](GTEXT_CSSOM_Config & c) { c.layout = &iface; }, &fa.alloc);
+      Decl a = m.computed("#a");
+      Decl b = m.computed("#b");
+      EXPECT_EQ(get(b.d, "color"), "rgb(255, 0, 0)");
+      probe.calls = 0;
+      probe.act = [&] {
+        fa.arm(n);
+        gtext_cssom_document_element_released(m.d(), m.handle("#a"));
+        fired = fa.failed;
+        fa.disarm();
+      };
+      GTEXT_CSS_Status st = GTEXT_CSS_OK;
+      EXPECT_FALSE(everything(a.d, &st).empty());
+      EXPECT_EQ(st, GTEXT_CSS_OK) << "the read finished";
+      EXPECT_GE(probe.calls, 1) << "the callback ran during the read";
+      set_attr(m.el("#b"), "class", "x");
+      if (fired) {
+        EXPECT_EQ(get(b.d, "color"), "rgb(255, 0, 0)") << "the release could not be written down: every declaration is frozen, as at the release of the document";
+      }
+      else {
+        EXPECT_NE(get(b.d, "color"), "rgb(255, 0, 0)") << "a declaration of another element goes on reading";
+      }
+      Decl again = m.computed("#a");
+      EXPECT_FALSE(get(again.d, "margin-top").empty()) << "a declaration made afterwards is healthy";
+    }
+    EXPECT_TRUE(fa.live.empty()) << "a leak";
+    EXPECT_EQ(fa.bad_frees, 0u);
+    if (n == 1) {
+      EXPECT_TRUE(fired) << "the first allocation of the release was failed";
+    }
+  }
+}
+
 }  // namespace

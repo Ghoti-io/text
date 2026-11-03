@@ -119,6 +119,9 @@ typedef struct css_cmps {
   css_rec * fifo_head, * fifo_tail;
   size_t nstyles;
   struct GTEXT_CSSOM_Decl * all_head;
+  const void ** released;             ///< Elements released from a callback of a read, whose records go when the outermost read ends.
+  size_t nreleased, released_cap;
+  bool released_lost;                 ///< One of them could not be written down: the whole computed state goes when the read ends.
   GTEXT_CSSOM_Computed_Failure failure;
 } css_cmps;
 
@@ -131,7 +134,7 @@ GTEXT_CSS_Status css_computed_refresh(struct GTEXT_CSSOM_Decl * decl);
 /// A computed declaration is being freed.
 void css_computed_forget(struct GTEXT_CSSOM_Decl * decl);
 
-/// The element handle is about to be freed or reused.
+/// The element handle is about to be freed or reused. From a callback of a read the records go when the outermost read ends (the read walks them).
 void css_computed_element_released(css_core * core, const void * element);
 
 /// The document handle was released: every style goes, every declaration is frozen, the session is torn down.

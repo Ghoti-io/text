@@ -683,6 +683,72 @@ TEST(CssomComputed, TheDocumentReleasedFromTheLayoutCallbackDoesNotEndTheReadInF
   EXPECT_EQ(r.calls >= 1, true);
 }
 
+/* gtext_cssom_document_element_released() is the embedder's call, and an embedder frees an element from wherever it likes, a callback of a read included. The read in
+   flight finishes on what it holds, and the release takes effect when the outermost read ends: the record table the read walks is not edited under it. */
+namespace {
+
+const char * const kAll[] = {"#a", "#b", "#d", "#s1", "html", "body"};
+
+}  // namespace
+
+TEST(CssomComputed, ReleasingEveryElementFromTheLayoutCallbackOfARead) {
+  Reenter r;
+  GTEXT_CSSOM_Layout_Interface iface{};
+  iface.size = sizeof iface;
+  iface.user = &r;
+  iface.used_value = &Reenter::used;
+  UnmapAllocator ua;
+  Cs m(kPage, [&](GTEXT_CSSOM_Config & c) { c.layout = &iface; }, &ua.alloc);
+  Decl a = m.computed("#a");
+  Decl b = m.computed("#b");
+  EXPECT_EQ(get(b.d, "color"), "rgb(10, 20, 30)");   // the style of #d and its ancestors are cached
+  r.calls = 0;
+  r.act = [&] {
+    for (const char * s : kAll) {
+      gtext_cssom_document_element_released(m.d(), m.handle(s));
+    }
+  };
+  EXPECT_GT(length(a.d), 400u) << "the read finished";
+  EXPECT_GE(r.calls, 1) << "the callback ran during the read";
+  EXPECT_EQ(get(a.d, "color"), "rgb(10, 20, 30)") << "frozen as the read left it";
+  const uint64_t before = m.dc().computed_computes;
+  Decl again = m.computed("#a");
+  EXPECT_EQ(get(again.d, "color"), "rgb(10, 20, 30)");
+  EXPECT_GT(m.dc().computed_computes, before) << "the entries of the released handles went when the read ended";
+}
+
+TEST(CssomComputed, ReleasingTheElementReadFromTheElementStateCallback) {
+  struct S {
+    std::function<void()> act;
+    int calls = 0;
+    static uint32_t state(void * user, const void *) {
+      S * self = static_cast<S *>(user);
+      if (self->calls++ == 0 && self->act) {
+        self->act();
+      }
+      return GTEXT_CSSOM_ELEMENT_STATE_ALL;
+    }
+  } s;
+  UnmapAllocator ua;
+  Cs m(kPage, [&](GTEXT_CSSOM_Config & c) {
+    c.element_state = &S::state;
+    c.element_state_user = &s;
+  }, &ua.alloc);
+  Decl a = m.computed("#a");
+  s.calls = 0;
+  s.act = [&] {
+    for (const char * sel : kAll) {
+      gtext_cssom_document_element_released(m.d(), m.handle(sel));
+    }
+  };
+  EXPECT_GT(length(a.d), 400u);
+  EXPECT_GE(s.calls, 1) << "the callback ran during the read";
+  const uint64_t before = m.dc().computed_computes;
+  Decl again = m.computed("#a");
+  EXPECT_EQ(get(again.d, "color"), "rgb(10, 20, 30)");
+  EXPECT_GT(m.dc().computed_computes, before) << "a style the read made after the release was not kept for the released handle";
+}
+
 TEST(CssomComputed, ReplacingTheComputeContextFromTheLayoutCallbackIsRefusedWhileTheReadRuns) {
   Reenter r;
   GTEXT_CSSOM_Layout_Interface iface{};

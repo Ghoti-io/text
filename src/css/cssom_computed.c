@@ -289,11 +289,7 @@ void css_computed_forget(GTEXT_CSSOM_Decl * d) {
   d->comp = NULL;
 }
 
-void css_computed_element_released(css_core * core, const void * element) {
-  css_cmps * cs = core->cs;
-  if (!cs) {
-    return;
-  }
+static void release_now(css_core * core, css_cmps * cs, const void * element) {
   css_rec * r = rec_find(cs, element);
   if (!r) {
     return;
@@ -314,6 +310,45 @@ void css_computed_element_released(css_core * core, const void * element) {
   rec_maybe_free(core, cs, r);
 }
 
+void css_computed_element_released(css_core * core, const void * element) {
+  css_cmps * cs = core->cs;
+  if (!cs) {
+    return;
+  }
+  if (core->computing == 0) {
+    release_now(core, cs, element);
+    return;
+  }
+  /* a callback of a read: the read holds its place in the records and the cache, and a style it makes after this call would be cached for the old element. It goes when the
+     outermost read ends */
+  if (cs->nreleased == cs->released_cap) {
+    const size_t grown = cs->released_cap ? cs->released_cap * 2 : 8;
+    const void ** bigger = gtext_allocator_realloc(&core->alloc, (void *)cs->released, grown * sizeof *bigger);
+    if (!bigger) {
+      cs->released_lost = true;
+      return;
+    }
+    cs->released = bigger;
+    cs->released_cap = grown;
+  }
+  cs->released[cs->nreleased++] = element;
+}
+
+/// The outermost read ended: the releases made during it take effect.
+static void flush_released(css_core * core, css_cmps * cs) {
+  if (cs->released_lost) {
+    /* an element could not be written down: which records to drop is not known, so all of them go (every declaration is frozen, as at the release of the document) */
+    cs->released_lost = false;
+    cs->nreleased = 0;
+    css_computed_teardown(core);
+    return;
+  }
+  for (size_t i = 0; i < cs->nreleased; i++) {
+    release_now(core, cs, cs->released[i]);
+  }
+  cs->nreleased = 0;
+}
+
 static void session_free_contexts(css_cmps * cs) {
   gtext_css_selector_match_context_free(cs->match);
   cs->match = NULL;
@@ -329,6 +364,8 @@ void css_computed_teardown(css_core * core) {
   if (!cs) {
     return;
   }
+  cs->nreleased = 0;
+  cs->released_lost = false;
   cache_clear(core, cs);
   while (cs->all_head) {
     GTEXT_CSSOM_Decl * d = cs->all_head;
@@ -356,6 +393,7 @@ void css_computed_free(css_core * core) {
     return;
   }
   css_computed_teardown(core);
+  gtext_allocator_free(&core->alloc, (void *)cs->released);
   gtext_allocator_free(&core->alloc, cs->buckets);
   gtext_allocator_free(&core->alloc, cs);
   core->cs = NULL;
@@ -762,9 +800,14 @@ GTEXT_CSS_Status css_computed_refresh(GTEXT_CSSOM_Decl * d) {
   css_core * core = d->obj.core;   /* the declaration holds the core, so the core outlives the read whatever the callbacks do to the handle */
   core->computing++;
   const GTEXT_CSS_Status st = refresh_read(d);
-  if (--core->computing == 0 && core->computed_teardown_pending) {
-    core->computed_teardown_pending = false;
-    css_computed_teardown(core);
+  if (--core->computing == 0) {
+    if (core->computed_teardown_pending) {
+      core->computed_teardown_pending = false;
+      css_computed_teardown(core);
+    }
+    if (core->cs && (core->cs->nreleased || core->cs->released_lost)) {
+      flush_released(core, core->cs);
+    }
   }
   return st;
 }

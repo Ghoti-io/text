@@ -349,6 +349,10 @@ GTEXT_API void gtext_cssom_document_tree_changed(GTEXT_CSSOM_Document * document
  *
  * Drops that element's inline-style entry: an element-owned declaration that is still held becomes **detached** from the element (it keeps what it last held and
  * calls the binding no more), and a new handle at the same address gets a declaration of its own.
+ *
+ * It may be called from a callback of a computed-style read (the tree, element-state and layout callbacks run inside one). The read finishes on what it holds, and the
+ * element's cached styles and computed declarations are dropped when the outermost read ends. If that needs memory the call could not get, every computed declaration of the
+ * document is frozen at that point, as if the handle had been released.
  */
 GTEXT_API void gtext_cssom_document_element_released(GTEXT_CSSOM_Document * document, const void * element);
 
