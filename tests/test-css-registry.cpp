@@ -442,6 +442,9 @@ TEST(CssRegistryTypes, GlobalAndScopedAndNative) {
   EXPECT_NE(t.flags & GTEXT_CSS_TYPE_SCOPED, 0u);
   EXPECT_EQ(str(t.grammar), "rect( <top>, <right>, <bottom>, <left> ) | rect( <top> <right> <bottom> <left> )") << "Masking 1, Appendix A: separation without commas is allowed (consolidate.tsv)";
   EXPECT_FALSE(gtext_css_registry_find_type("rect()", 6, find(r, "width"), &t) && t.scope != 0) << "no definition of the name is scoped to width";
+  // CSS Layout API 1 adds layout(<ident>) to <display-inside> (consolidate.tsv, append-grammar); the pin lacks the specification
+  ASSERT_TRUE(gtext_css_registry_find_type("display-inside", 14, 0, &t));
+  EXPECT_NE(str(t.grammar).find("layout( <ident> )"), std::string::npos) << str(t.grammar);
   // the order the lookup relies on
   std::string prev;
   GTEXT_CSS_Property_Id prev_scope = 0;

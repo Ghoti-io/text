@@ -868,3 +868,18 @@ TEST(CssomDecl, FontTakesAFontStretchCalculationThatIsAPercentageAKeywordNames) 
   EXPECT_EQ(text_of(d.d).find("font: ultra-condensed medium serif"), 0u) << text_of(d.d) << " (cssText writes the shorthand too)";
 }
 
+// CSS Layout API 1 (the Editor's Draft): "A new alternative value is added to the <display-inside> production: layout(<ident>)." Neither pinned browser takes it (the library follows
+// the sentence; the CSSOM differential lists it), and the empty `layout()` and a second argument stay invalid.
+TEST(CssomDecl, DisplayTakesLayoutWithOneName) {
+  Doc doc;
+  Decl d(doc);
+  ASSERT_EQ(set(d.d, "display", "layout(test1)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(get(d.d, "display"), "layout(test1)");
+  ASSERT_EQ(set(d.d, "display", "block").st, GTEXT_CSS_OK);
+  ASSERT_EQ(set(d.d, "display", "layout()").st, GTEXT_CSS_OK);
+  EXPECT_EQ(get(d.d, "display"), "block") << "layout() is not a value";
+  ASSERT_EQ(set(d.d, "display", "layout(test3, invalid)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(get(d.d, "display"), "block");
+  ASSERT_EQ(set(d.d, "display", "inline layout(test1)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(get(d.d, "display"), "inline layout(test1)");
+}
