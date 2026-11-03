@@ -265,6 +265,44 @@ TEST(CssomMediaQuery, AListIsReleasedFromInsideAListenerWithoutHarm) {
   gtext_cssom_media_query_list_release(x);
 }
 
+/* The rule the observers have, for the listeners: whoever releases the document inside a call, nothing is called after it. The lists are held by their owners, so going on is
+   memory-safe, and wrong. */
+TEST(CssomMediaQuery, NoListenerIsCalledAfterTheListenerThatReleasedTheDocument) {
+  Cond c1000(1000), c800(800);
+  World w([&](GTEXT_CSSOM_Config & cfg) { cfg.conditions = c1000.c; });
+  Log log;
+  Mql a(w.d(), "(min-width: 900px)"), b(w.d(), "(min-width: 950px)");
+  Tag first{&log, "A1", [&](GTEXT_CSSOM_Media_Query_List *, bool) {
+              w.doc->release();
+              return GTEXT_CSS_OK;
+            }};
+  Tag second{&log, "A2"}, other{&log, "B"};
+  ASSERT_EQ(gtext_cssom_media_query_list_add_listener(a.l, listener, &first), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_cssom_media_query_list_add_listener(a.l, listener, &second), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_cssom_media_query_list_add_listener(b.l, listener, &other), GTEXT_CSS_OK);
+  GTEXT_CSSOM_Outcome o{};
+  ASSERT_EQ(gtext_cssom_document_set_conditions(w.d(), c800.c, &o), GTEXT_CSS_OK);
+  EXPECT_EQ(log.calls, (std::vector<std::string>{"A1:0"})) << "neither the next listener of the list nor the next list is called";
+}
+
+TEST(CssomMediaQuery, NoListenerIsCalledWhenAnObserverOfTheChangeReleasedTheDocument) {
+  Cond c1000(1000), c800(800);
+  World w([&](GTEXT_CSSOM_Config & cfg) { cfg.conditions = c1000.c; });
+  Log log;
+  Mql a(w.d(), "(min-width: 900px)");
+  Tag listening{&log, "A"};
+  ASSERT_EQ(gtext_cssom_media_query_list_add_listener(a.l, listener, &listening), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_cssom_document_observe(w.d(), [](void * user, const GTEXT_CSSOM_Event * e) {
+              if (e->kind == GTEXT_CSSOM_EVENT_CONDITIONS_CHANGED) {
+                static_cast<World *>(user)->doc->release();
+              }
+              return GTEXT_CSS_OK;
+            }, &w, nullptr), GTEXT_CSS_OK);
+  GTEXT_CSSOM_Outcome o{};
+  ASSERT_EQ(gtext_cssom_document_set_conditions(w.d(), c800.c, &o), GTEXT_CSS_OK);
+  EXPECT_TRUE(log.calls.empty()) << "the observer ran first and released the document";
+}
+
 TEST(CssomMediaQuery, AChangeThatCannotBeEvaluatedLeavesTheDocumentAsItWas) {
   GTEXT_CSS_Conditions * with = conditions_with_metrics(true);
   GTEXT_CSS_Conditions * without = conditions_with_metrics(false);

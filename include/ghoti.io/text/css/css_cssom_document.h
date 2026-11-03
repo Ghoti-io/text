@@ -315,7 +315,7 @@ typedef struct {
 /**
  * @brief An observer: called for each event after the mutation is complete. Callbacks are synchronous, run in registration order, may read any object, and may **not** mutate: a mutation
  *   from inside is GTEXT_CSS_E_REENTRANT (so is begin/end of a batch). Registering and removing observers is allowed. A status other than GTEXT_CSS_OK is reported as the call's
- *   `observer_status` (the first one), the mutation stays, and the others are called.
+ *   `observer_status` (the first one), the mutation stays, and the others are called. A callback may release the document handle: the delivery then ends, and no observer is called after the one that released it.
  */
 typedef GTEXT_CSS_Status (*GTEXT_CSSOM_Observer_Fn)(void * user, const GTEXT_CSSOM_Event * event);
 
@@ -398,7 +398,7 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_media_query_list_matches(GTEXT_CSSOM_Medi
 
 /**
  * @brief `addListener` / `addEventListener('change')`: add a listener. The same function and user pair is added once (UNCHANGED). Allowed from inside a listener: the new one is not called for the
- *   event being delivered. @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_UNSUPPORTED and the other statuses of an evaluation; GTEXT_CSS_E_OOM.
+ *   event being delivered. A listener (or an observer of the same change) may release the document handle: no listener is called after it. @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_UNSUPPORTED and the other statuses of an evaluation; GTEXT_CSS_E_OOM.
  */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_media_query_list_add_listener(GTEXT_CSSOM_Media_Query_List * list, GTEXT_CSSOM_Media_Listener fn, void * user);
 

@@ -387,7 +387,8 @@ GTEXT_CSS_Status gtext_cssom_document_set_conditions(GTEXT_CSSOM_Document * docu
     if (changed[i]) {
       const size_t count = m->nlisteners;
       m->delivering++;
-      for (size_t j = 0; j < count && j < m->nlisteners; j++) {
+      /* as for the observers, nothing is called after the document was released (by an observer of this change or by a listener); the lists are held, so nothing is freed */
+      for (size_t j = 0; core->document && j < count && j < m->nlisteners; j++) {
         if (m->listeners[j].removed) {
           continue;
         }
