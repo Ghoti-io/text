@@ -68,7 +68,7 @@ TEST(CssomRuleKinds, TheLegacyTypeIsTheConstantCssomListsAndZeroForTheNewerRules
   struct Want {
     const char * kind;
     unsigned type;
-    const char * interface;
+    const char * interface_name;   /* not `interface`: windows.h defines it as struct */
   };
   const Want want[] = {{"import", 3, "CSSImportRule"}, {"namespace", 10, "CSSNamespaceRule"}, {"style", 1, "CSSStyleRule"}, {"media", 4, "CSSMediaRule"},
       {"font-face", 5, "CSSFontFaceRule"}, {"page", 6, "CSSPageRule"}, {"keyframes", 7, "CSSKeyframesRule"}, {"counter-style", 11, "CSSCounterStyleRule"},
@@ -79,7 +79,7 @@ TEST(CssomRuleKinds, TheLegacyTypeIsTheConstantCssomListsAndZeroForTheNewerRules
     Rule r = at(s.rules(), i);
     EXPECT_STREQ(gtext_cssom_rule_kind_name(gtext_cssom_rule_kind(r.r)), want[i].kind) << i;
     EXPECT_EQ(gtext_cssom_rule_type(r.r), want[i].type) << want[i].kind;
-    EXPECT_STREQ(gtext_cssom_rule_interface_name(r.r), want[i].interface) << want[i].kind;
+    EXPECT_STREQ(gtext_cssom_rule_interface_name(r.r), want[i].interface_name) << want[i].kind;
   }
 }
 
