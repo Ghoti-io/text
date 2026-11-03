@@ -20,3 +20,5 @@ param-type-name-is-not-checked	css_grammar_match.c	  return known && (n == 3 || 
 param-single-type-keeps-type-function	css_grammar_match.c	  const bool wrap = ps.is_fn && !ps.single;	  const bool wrap = ps.is_fn;
 nan-steps-count-is-a-count	css_property.c	 || steps_count_is_nan(values, count) ||	 || false ||
 
+the-prefixed-perspective-takes-no-number	css_property.c	        compat_mode = 1;	        compat_mode = 0;
+the-prefixed-transform-takes-no-number	css_property.c	        compat_mode = 2;	        compat_mode = 0;

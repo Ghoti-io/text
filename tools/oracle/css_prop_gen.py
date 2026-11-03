@@ -55,6 +55,9 @@ CONTROLS = [
     ("color", "rgb(0 0 0 / 0.25)", "agree-accept"),
     ("color", "color(srgb 1 0 0 / 0.5)", "agree-accept"),
     ("line-height", "1.5", "agree-accept"),
+    # the Compatibility Standard's numbers (a number is pixels in these two prefixed names)
+    ("-webkit-perspective", "1000", "agree-accept"),
+    ("-webkit-transform", "perspective(1000)", "agree-accept"),
     # refused by all three
     ("color", "notacolor", "agree-refuse"),
     ("width", "-1px", "agree-refuse"),
@@ -64,6 +67,8 @@ CONTROLS = [
     ("z-index", "1.5", "agree-refuse"),
     ("line-height", "-1", "agree-refuse"),
     ("flex-grow", "-1", "agree-refuse"),
+    ("-webkit-perspective", "-1", "agree-refuse"),
+    ("-webkit-transform", "translate(10)", "agree-refuse"),
 ]
 
 CAMEL = re.compile(r"([A-Z])")

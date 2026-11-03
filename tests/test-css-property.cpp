@@ -76,6 +76,47 @@ TEST(CssProperty, ALonghandIsATypedLengthAndAShorthandIsOneValueInItsGrammarsSlo
   gtext_css_property_value_free(&pv);
 }
 
+// Compatibility Standard: `-webkit-perspective` is `none | <length [0,∞]> | <number [0,∞]>` and the `perspective()` of `-webkit-transform` takes a number beside its length, a number being
+// pixels. Chromium 156 and Firefox 158 write `1000px` and `perspective(1000px)` (both accept 1.5, 1e3 and +5 and refuse a negative number; only Chromium accepts calc(1)).
+TEST(CssProperty, AWebkitPerspectiveAndAWebkitTransformPerspectiveTakeANumber) {
+  const GTEXT_CSS_Registry * r = R();
+  EXPECT_EQ(parse(r, "-webkit-perspective", "1000"), "valid:1000px");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "25"), "valid:25px");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "1.5"), "valid:1.5px");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "1e3"), "valid:1000px");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "+5"), "valid:5px");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "  7  "), "valid:7px");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "0"), "valid:0px");
+  EXPECT_EQ(parse(r, "-WEBKIT-PERSPECTIVE", "3"), "valid:3px");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "none"), "valid:none");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "10px"), "valid:10px");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "10em"), "valid:10em");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "initial"), "wide:initial");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "-1"), "invalid") << "<number [0,∞]>";
+  EXPECT_EQ(parse(r, "-webkit-perspective", "5%"), "invalid");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "1 2"), "invalid");
+  EXPECT_EQ(parse(r, "-webkit-perspective", "calc(1)"), "invalid") << "Firefox refuses it and Chromium accepts it: the number alone is the compatibility grammar";
+  EXPECT_EQ(parse(r, "perspective", "1000"), "invalid") << "the unprefixed property has no number";
+  EXPECT_EQ(parse(r, "perspective", "calc(1)"), "invalid");
+
+  EXPECT_EQ(parse(r, "-webkit-transform", "perspective(1000)"), "valid:perspective(1000px)");
+  EXPECT_EQ(parse(r, "-webkit-transform", "perspective(25)"), "valid:perspective(25px)");
+  EXPECT_EQ(parse(r, "-webkit-transform", "perspective(1.5)"), "valid:perspective(1.5px)");
+  EXPECT_EQ(parse(r, "-webkit-transform", "PERSPECTIVE( 7 )"), "valid:perspective(7px)");
+  EXPECT_EQ(parse(r, "-webkit-transform", "translate(10px) perspective(5) rotate(1deg) perspective(6)"), "valid:translate(10px) perspective(5px) rotate(1deg) perspective(6px)");
+  EXPECT_EQ(parse(r, "-webkit-transform", "perspective(0)"), "valid:perspective(0px)");
+  EXPECT_EQ(parse(r, "-webkit-transform", "perspective(none)"), "valid:perspective(none)");
+  EXPECT_EQ(parse(r, "-webkit-transform", "perspective(10px)"), "valid:perspective(10px)");
+  EXPECT_EQ(parse(r, "-webkit-transform", "perspective(-1)"), "invalid");
+  EXPECT_EQ(parse(r, "-webkit-transform", "perspective(5 6)"), "invalid");
+  EXPECT_EQ(parse(r, "-webkit-transform", "perspective(calc(1))"), "invalid");
+  EXPECT_EQ(parse(r, "-webkit-transform", "translate(10)"), "invalid") << "only perspective() takes the number";
+  EXPECT_EQ(parse(r, "-webkit-transform", "translateZ(5)"), "invalid");
+  EXPECT_EQ(parse(r, "-webkit-transform", "translate(perspective(5))"), "invalid") << "a number is not made a length anywhere else";
+  EXPECT_EQ(parse(r, "transform", "perspective(1000)"), "invalid") << "the unprefixed property has no number";
+  EXPECT_EQ(parse(r, "transform", "perspective(none)"), "valid:perspective(none)");
+}
+
 TEST(CssProperty, NamesAreFoldedAndValuesAreValues) {
   const GTEXT_CSS_Registry * r = R();
   EXPECT_EQ(parse(r, "WIDTH", "10PX"), "valid:10px");

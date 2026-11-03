@@ -167,14 +167,14 @@ property	-webkit-mask-position	1	1	1	0	alias of mask-position
 property	-webkit-mask-repeat	1	1	1	0	alias of mask-repeat
 property	-webkit-mask-size	1	1	1	0	alias of mask-size
 property	-webkit-order	1	1	1	0	alias of order
-property	-webkit-perspective	1	1	1	0	alias of perspective
+property	-webkit-perspective	1	1	1	1	alias of perspective
 property	-webkit-perspective-origin	1	1	1	0	alias of perspective-origin
 property	-webkit-text-fill-color	1	1	1	0	
 property	-webkit-text-size-adjust	1	1	1	0	alias of text-size-adjust
 property	-webkit-text-stroke	1	1	1	0	
 property	-webkit-text-stroke-color	1	1	1	0	
 property	-webkit-text-stroke-width	1	1	1	0	
-property	-webkit-transform	1	1	1	0	alias of transform
+property	-webkit-transform	1	1	1	1	alias of transform
 property	-webkit-transform-origin	1	1	1	0	alias of transform-origin
 property	-webkit-transform-style	1	1	1	0	alias of transform-style
 property	-webkit-transition	1	1	1	0	alias of transition

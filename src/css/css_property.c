@@ -188,6 +188,110 @@ static bool name_is(const GTEXT_CSS_Component_Value * v, const char * lower) {
   return true;
 }
 
+/* ---- -webkit-perspective and -webkit-transform: a number is a length --------------------------------------------------------------- */
+
+/// Whether `v` is a white space token.
+static bool compat_ws(const GTEXT_CSS_Component_Value * v) {
+  return v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_WHITESPACE;
+}
+
+/// Whether `v` is a number token that is a length of that many pixels in the two prefixed properties: not negative (`<number [0,∞]>`).
+static bool compat_number(const GTEXT_CSS_Component_Value * v) {
+  return v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_NUMBER && v->number >= 0;
+}
+
+/// The one value inside `values` that is not white space, or NULL when there is not exactly one.
+static const GTEXT_CSS_Component_Value * compat_sole(const GTEXT_CSS_Component_Value * values, size_t count) {
+  const GTEXT_CSS_Component_Value * only = NULL;
+  for (size_t i = 0; i < count; i++) {
+    if (compat_ws(&values[i])) {
+      continue;
+    }
+    if (only) {
+      return NULL;
+    }
+    only = &values[i];
+  }
+  return only;
+}
+
+/// A number token as the same number of pixels: `1000` as `1000px`.
+static void compat_to_px(GTEXT_CSS_Component_Value * v) {
+  v->type = GTEXT_CSS_TOKEN_DIMENSION;
+  v->unit.data = "px";
+  v->unit.length = 2;
+}
+
+/**
+ * The Compatibility Standard gives `-webkit-perspective` the grammar `none | <length [0,∞]> | <number [0,∞]>` and the `perspective()` of `-webkit-transform` a `<number [0,∞]>` beside
+ * its length, "a number is pixels"; Chromium 156 and Firefox 158 accept `-webkit-perspective: 1000` and `-webkit-transform: perspective(1000)` and write `1000px` and
+ * `perspective(1000px)`. The property is the alias of `perspective` (`transform`), whose grammar has no number, so the number is made the length it stands for before the match.
+ * `mode` 1 is `-webkit-perspective` (a value that is a number alone), 2 is `-webkit-transform` (the argument of a `perspective()` that is a number alone). Anything else, a
+ * calculation of numbers included (Chromium accepts `calc(1)` there and Firefox does not), is left to the grammar. On success `*owned` is the copy to match and to free
+ * (NULL when nothing changed).
+ */
+static GTEXT_CSS_Status compat_numbers(const GTEXT_Allocator * al, unsigned mode, const GTEXT_CSS_Component_Value * values, size_t count, GTEXT_CSS_Component_Value ** owned) {
+  *owned = NULL;
+  size_t extra = 0;
+  bool any = false;
+  if (mode == 1) {
+    const GTEXT_CSS_Component_Value * only = compat_sole(values, count);
+    any = only && compat_number(only);
+  }
+  else {
+    for (size_t i = 0; i < count; i++) {
+      const GTEXT_CSS_Component_Value * v = &values[i];
+      if (v->kind == GTEXT_CSS_VALUE_FUNCTION && name_is(v, "perspective")) {
+        const GTEXT_CSS_Component_Value * a = compat_sole(v->children, v->child_count);
+        if (a && compat_number(a)) {
+          any = true;
+          extra += v->child_count;
+        }
+      }
+    }
+  }
+  if (!any) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Component_Value * copy = gtext_allocator_malloc(al, (count + extra) * sizeof *copy);
+  if (!copy) {
+    return GTEXT_CSS_E_OOM;
+  }
+  memcpy(copy, values, count * sizeof *copy);
+  size_t tail = count;
+  if (mode == 1) {
+    for (size_t i = 0; i < count; i++) {
+      if (compat_number(&copy[i])) {
+        compat_to_px(&copy[i]);
+      }
+    }
+  }
+  else {
+    for (size_t i = 0; i < count; i++) {
+      GTEXT_CSS_Component_Value * v = &copy[i];
+      if (v->kind != GTEXT_CSS_VALUE_FUNCTION || !name_is(v, "perspective")) {
+        continue;
+      }
+      const GTEXT_CSS_Component_Value * a = compat_sole(v->children, v->child_count);
+      if (!a || !compat_number(a)) {
+        continue;
+      }
+      GTEXT_CSS_Component_Value * kids = copy + tail;
+      memcpy(kids, v->children, v->child_count * sizeof *kids);
+      tail += v->child_count;
+      for (size_t k = 0; k < v->child_count; k++) {
+        if (compat_number(&kids[k])) {
+          compat_to_px(&kids[k]);
+        }
+      }
+      v->children = kids;
+    }
+  }
+  *owned = copy;
+  return GTEXT_CSS_OK;
+}
+
+
 /**
  * The argument grammar of a dashed function (Mixins 1, 2.1): "<dashed-function> = --*( <declaration-value>#? )", so no arguments at all, or comma-separated
  * arguments none of which is empty ("Empty arguments are not allowed by <declaration-value>#"), with the {} wrapper of Values 5 as a whole argument that holds something
@@ -687,8 +791,33 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
     return GTEXT_CSS_E_UNSUPPORTED;
   }
-  st = run_match(registry, compiled, values, count, options, options->quirks && (info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, info.name_length == 4 && memcmp(info.name, "clip", 4) == 0,
+  /* the two prefixed names the Compatibility Standard gives a number to (see compat_numbers()) */
+  unsigned compat_mode = 0;
+  GTEXT_CSS_Component_Value * compat_values = NULL;
+  const GTEXT_Allocator * match_alloc = options->allocator ? options->allocator : css_registry_allocator(registry);
+  if (named != target) {
+    GTEXT_CSS_Property_Info named_info;
+    if (gtext_css_registry_property_info(registry, named, &named_info) && (named_info.flags & GTEXT_CSS_PROP_ALIAS) && named_info.name_length >= 11 &&
+        memcmp(named_info.name, "-webkit-", 8) == 0) {
+      if (named_info.name_length == 19 && memcmp(named_info.name, "-webkit-perspective", 19) == 0) {
+        compat_mode = 1;
+      }
+      else if (named_info.name_length == 17 && memcmp(named_info.name, "-webkit-transform", 17) == 0) {
+        compat_mode = 2;
+      }
+    }
+  }
+  if (compat_mode) {
+    st = compat_numbers(match_alloc, compat_mode, values, count, &compat_values);
+    if (st != GTEXT_CSS_OK) {
+      out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+      return st;
+    }
+  }
+  st = run_match(registry, compiled, compat_values ? compat_values : values, count, options,
+      options->quirks && (info.flags & GTEXT_CSS_PROP_QUIRK_UNITLESS) != 0, info.name_length == 4 && memcmp(info.name, "clip", 4) == 0,
       anchor_functions_of(info.name, info.name_length), info.name, info.name_length, out);
+  gtext_allocator_free(match_alloc, compat_values);
   if (st != GTEXT_CSS_OK) {
     gtext_css_property_value_free(out);
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
