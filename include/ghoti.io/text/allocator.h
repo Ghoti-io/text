@@ -28,11 +28,11 @@
  * means an allocator written for any of them works with all of them, rather
  * than needing a near-identical copy per library.
  *
- * `text` declared its own copy for a while, on the reading that
- * CONVENTIONS.md's "standalone by design" meant no dependency on cutil. That
- * was a misreading: a dependency inside the suite is fine so long as the graph
- * stays a DAG, and cutil is its root. The copy is gone and this is a typedef,
- * so a caller who was already using `GTEXT_Allocator` needs no change.
+ * `text` declared its own copy for a while, on the reading that being
+ * standalone meant no dependency on cutil. That was a misreading: a dependency
+ * inside the suite is fine so long as the graph stays a DAG, and cutil is its
+ * root. The copy is gone and this is a typedef, so a caller who was already
+ * using `GTEXT_Allocator` needs no change.
  */
 
 #ifndef GHOTI_IO_GTEXT_ALLOCATOR_H

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read the at-rule parsing vectors of the pinned web-platform-tests as data (C4d).
+"""Read the at-rule parsing vectors of the pinned web-platform-tests as data.
 
     extract-wpt-atrules.py <wpt checkout> <out file>
 

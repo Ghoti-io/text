@@ -862,9 +862,8 @@ static GTEXT_TOML_Value * scan_decimal(toml_ctx * ctx) {
   if (is_float) {
     /* gtext_number_strtod() rather than strtod(): strtod reads the decimal
      * point LC_NUMERIC names, so in a comma locale it would stop at the point
-     * and read 3.14 as 3. That is the defect notes/text/LOCALE-INDEPENDENT-
-     * NUMBERS.md is about, and this module gets it right by reusing the fix
-     * rather than by being careful. */
+     * and read 3.14 as 3. This module gets that right by reusing the locale
+     * independent conversion rather than by being careful. */
     char * end = NULL;
     double d = gtext_number_strtod(ctx->alloc, digits, &end);
     toml_buf_free(ctx->alloc, &text);

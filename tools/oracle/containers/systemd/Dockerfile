@@ -16,8 +16,7 @@
 # than hoped away: it **rewrites CR to LF** (the four spellings of a carriage return
 # all arrive as 0x0a while an 0x0e escape arrives as 0x0e, so the rewriting is the
 # logger's) and it **truncates at 2,097 bytes**. Documents whose words would hit
-# either are excluded and counted. notes/text/INI-DIALECTS.md section A.17 has the
-# transcript.
+# either are excluded and counted.
 #
 # **This machine has no systemd at all** - no `systemd-analyze`, no `systemctl`,
 # PID 1 is `init` - while carrying 164 unit files shipped by other packages. So the

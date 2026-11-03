@@ -253,8 +253,7 @@ TEST(YamlMerge, AQuotedMergeKeyIsAnOrdinaryString) {
 
    PyYAML accepts these and builds a cyclic Python object (its repr prints
    "{...}"), which a garbage-collected language can hold and C cannot.  That is
-   a deliberate divergence and is recorded in notes/text/SOAK-FINDINGS.md
-   finding 8, not an oversight.
+   a deliberate divergence, not an oversight.
 
    What is *not* refused is the lower bound of this check, and it is the half
    worth testing: an alias to an ancestor is ordinary YAML and is not

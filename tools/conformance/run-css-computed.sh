@@ -149,7 +149,7 @@ sample_defect=$(awk -F'\t' 'BEGIN { OFS = "\t" } !/^#/ && NF >= 7 { print; exit 
 defects_empty=no
 if [ -z "$sample_defect" ]; then
 	defects_empty=yes
-	sample_defect=$(awk -F'\t' 'BEGIN { OFS = "\t" } !/^#/ && NF >= 7 { $6 = "C2a"; print; exit }' "$exceptions")
+	sample_defect=$(awk -F'\t' 'BEGIN { OFS = "\t" } !/^#/ && NF >= 7 { $6 = "values"; print; exit }' "$exceptions")
 fi
 [ -n "$sample_defect" ] || { echo "control lists: both lists are empty, so nothing about them can be shown" >&2; exit 1; }
 for kind in exception defect; do
@@ -158,7 +158,7 @@ for kind in exception defect; do
 	[ -n "$line" ] || line=$sample_defect
 	id=$(printf '%s' "$line" | cut -f1)
 	prop=$(printf '%s' "$line" | cut -f2)
-	{ cat "$list"; printf 'css/control/planted.html#0\t%s\t10px\tcompute\tplanted\t%s\tplanted: this case passes "quoted" in a page that is not there\n' "$prop" "$( [ "$kind" = exception ] && echo resolved-value || echo C2a )"; } > "$scratch/stale-$kind"
+	{ cat "$list"; printf 'css/control/planted.html#0\t%s\t10px\tcompute\tplanted\t%s\tplanted: this case passes "quoted" in a page that is not there\n' "$prop" "$( [ "$kind" = exception ] && echo resolved-value || echo values )"; } > "$scratch/stale-$kind"
 	if [ "$kind" = exception ]; then
 		expect stale-$kind "STALE EXCEPTIONS" gate "$vectors" "$scratch/stale-$kind" "$defects" "$unscored"
 	else

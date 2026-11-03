@@ -45,8 +45,7 @@ Seven scores:
 worse shape than a pin nothing asserts. Pinning it to a name no document can spell
 makes `[DEFAULT]` an ordinary section on both sides - correct, since inheritance is a
 lookup policy over a parsed tree and not a rule of the grammar - and it silently took
-the whole defaults chain out of scope. §22.7 of notes/text/INI-DIALECTS.md is the cost:
-`${sect:key}` did not consult the defaults, the comment over the wrong code claimed the
+the whole defaults chain out of scope. The cost was this: `${sect:key}` did not consult the defaults, the comment over the wrong code claimed the
 rule had been *measured* when it had been inferred, and no instrument here could fail.
 The unit test that carries it now was written from a probe, so nothing in this tree would
 notice if the reference changed. The `defaults` score is that gap closed: the reference

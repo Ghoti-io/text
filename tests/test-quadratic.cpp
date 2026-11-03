@@ -1942,7 +1942,7 @@ std::vector<Shape> build_shapes() {
   add("css", "CSS grammar: nested functions that the grammar names once each", 1500,
       css_grammar("[ f( [ g( a* ) ]* ) ]+", [](size_t k) { return repeat("f(g(a a) g(a)) ", k); }));
   add("css", "CSS grammar: linking a chain of types that can match nothing", 500, css_link_chain()).per_byte = 0;
-  // ---- the value layer: math functions, colors, and the function types (C1b) ----
+  // ---- the value layer: math functions, colors, and the function types ----
   add("css", "CSS math: a sum of many terms of one unit", 8000,
       css_value_read(false, [](size_t k) { return "calc(1px" + repeat(" + 1px", k) + ")"; }));
   add("css", "CSS math: a sum of many terms of unlike units (nothing simplifies away)", 4000,

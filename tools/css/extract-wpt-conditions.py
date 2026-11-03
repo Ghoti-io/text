@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read the media query vectors of the pinned web-platform-tests as data (C4a).
+"""Read the media query vectors of the pinned web-platform-tests as data.
 
     extract-wpt-conditions.py <wpt checkout> <out dir>
 
@@ -114,7 +114,7 @@ def main():
                 rest = css
                 mb, unreadable = media_blocks(css)
                 if unreadable or re.search(r'@(media|supports)[^{;]*;', css, re.I) or re.search(r'@media[^{]*\{[^}]*\}\s*[a-z.#]', css[:0]):
-                    unextracted.append((rel, 1, 'the page tests the recovery of a block-less or nested conditional rule (needs the style sheet compiler, C4c)'))
+                    unextracted.append((rel, 1, 'the page tests the recovery of a block-less or nested conditional rule (needs the style sheet compiler)'))
                     break
                 for prelude, body, off, end in mb:
                     colors = re.findall(r'background(?:-color)?\s*:\s*(green|red|lime)\b', body)
@@ -123,7 +123,7 @@ def main():
                         blocks.append([prelude, colors[-1], line_of(text, sm.start(1) + off)])
                     pass
                 if '@custom-media' in css:
-                    unextracted.append((rel, 1, 'the page defines @custom-media rules in its style sheet (scored with the sheet: the definitions are collected from rules, C4c)'))
+                    unextracted.append((rel, 1, 'the page defines @custom-media rules in its style sheet (scored with the sheet: the definitions are collected from rules)'))
                     break
                 if blocks:
                     basec = re.findall(r'background(?:-color)?\s*:\s*(green|red|lime)\b', strip(css, mb))
@@ -165,7 +165,7 @@ def main():
                     blocks = []
                     mb, unreadable = media_blocks(css, '@supports')
                     if unreadable or re.search(r'@(media|supports)[^{;]*;', css, re.I) or '@media' in css.lower():
-                        unextracted.append((rel, 1, 'the page tests the recovery of a block-less or nested conditional rule (needs the style sheet compiler, C4c)'))
+                        unextracted.append((rel, 1, 'the page tests the recovery of a block-less or nested conditional rule (needs the style sheet compiler)'))
                         break
                     for prelude, body, off, end in mb:
                         colors = re.findall(r'background(?:-color)?\s*:\s*(green|red|lime)\b', body)

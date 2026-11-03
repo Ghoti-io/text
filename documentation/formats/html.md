@@ -1141,7 +1141,7 @@ Everything the two share is the same on purpose. These are the departures and wh
 
 ## Measured
 
-Numbers are from the gates' output; the commands are named so they can be run again. **They are a log**: each block says which stage it measured and on what date, and none is kept current by hand. The figures of today's tree - vectors, exceptions, plants, seeds, divergence entries, shapes, tests - are the output of `tools/phase3-counts.py` (and `tools/html/counts.py` and `tools/encoding/counts.py` under it), which is what the plan record (`notes/text/XML-HTML-PLAN.md`, "Phase 3k as built") quotes.
+Numbers are from the gates' output; the commands are named so they can be run again. **They are a log**: each block says which stage it measured and on what date, and none is kept current by hand. The figures of today's tree - vectors, exceptions, plants, seeds, divergence entries, shapes, tests - are the output of `tools/phase3-counts.py` (and `tools/html/counts.py` and `tools/encoding/counts.py` under it), which is where a figure quoted elsewhere comes from.
 
 Public API (phase 3f), measured 2026-10-12 on the development machine:
 

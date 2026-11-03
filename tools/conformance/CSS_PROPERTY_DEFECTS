@@ -6,5 +6,5 @@
 # Owners: canonical-serialization (the specified value is written in its shortest or normalized form), grammar (the grammar of the
 # property or of a type it names accepts or refuses what the draft does not), function-types (a function the library implements in code
 # does not take a form the draft gives it), pin (the pinned data lacks or words differently what the draft says), values (a value
-# layer feature: math functions, substitution, url modifiers), shorthand (the expansion or the writing back of a shorthand: the C2a layer, whose
-# vectors are scored from C2a on, lacks something about the shorthand that the page has).
+# layer feature: math functions, substitution, url modifiers), shorthand (the expansion or the writing back of a shorthand: the shorthand layer
+# lacks something about the shorthand that the page has).

@@ -417,8 +417,8 @@ TEST(Toml, MaxDepthIsEnforcedAndZeroMeansNoLimit) {
 TEST(Toml, ADocumentNestedPastAnyStackIsParsedAndFreed) {
   // The reason the value parser and the teardown both work on the heap. With
   // max_depth at 0 a caller has asked for no limit, and the contract is that
-  // this still does not crash - which is what notes/text/HEAP-STACK-WALKS.md
-  // took the YAML module from "unless you asked for no limit" to.
+  // this still does not crash - which is what the YAML module's contract
+  // is too, and was not before it moved to the heap.
   const int depth = 100000;
   std::string deep = "a = ";
   deep.append(depth, '[');

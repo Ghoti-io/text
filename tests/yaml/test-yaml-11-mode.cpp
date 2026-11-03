@@ -319,9 +319,9 @@ TEST(Yaml11Mode, ASexagesimalKeepsItsTypeAcrossARoundTrip) {
  * not these, and it is also what makes these the worse half - a document said
  * "0:30" and the library answered 30, with nothing anywhere to disagree.
  *
- * Measured against PyYAML's resolver over the 49 spellings below and in
- * ../../notes/text/SOAK-FINDINGS.md: 17 disagreements before, 9 after the
- * trailing-colon fix alone, 0 after this one.
+ * Measured against PyYAML's resolver over the 49 spellings below and in the
+ * soak's findings: 17 disagreements before, 9 after the trailing-colon fix
+ * alone, 0 after this one.
  *
  * The values are asserted and not only the types, because a rule that admits
  * the right texts and adds them up wrong would pass a type check. */

@@ -24,7 +24,7 @@ tests of web-platform-tests' css/css-values and css/css-color/parsing.
 The vectors are made by tools/css/extract-wpt-values.py from the pinned checkout (the pages' own scripts, run
 with recording helpers). A vector is a value a page puts into a property and what it expects (kind "valid": the
 specified serialization; "invalid": no match; "equiv": the two values are written alike, test_math_specified).
-tools/css/ has no registry of properties yet (C1c), so PROP_GRAMMAR gives each property a hand-written grammar; a
+This script reads no registry of properties, so PROP_GRAMMAR gives each property a hand-written grammar; a
 property without one is not scored and is counted, and the gate has a floor on how many were scored.
 
 A colour is compared as the pages compare it (color-testcommon.js, fuzzy_test_valid_color): the numbers within

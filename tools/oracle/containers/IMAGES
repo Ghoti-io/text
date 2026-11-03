@@ -79,8 +79,7 @@ tomllib	docker.io/library/python:3.14-slim@sha256:7bf6c3111fe094f8ee1a1cbcdc63c4
 # channel comparison were re-run inside the pin before anything was built on them.
 # The answers are byte-identical - 3.13 rewrote `_read_inner()` and added
 # `MultilineContinuationError`, and 3.14 changed nothing this format can see. So the
-# transcripts in notes/text/INI-DIALECTS.md section 19, taken on the host, describe
-# the pinned reference too.
+# probes taken on the host's own interpreter describe the pinned reference too.
 #
 # **The reference's channel is a file**, and that is a measurement, not a detail:
 # Python's universal-newline translation applies to `read(path)` and not to
@@ -199,7 +198,7 @@ inidesktop	localhost/ghoti-text-oracle-inidesktop:2.84.4	glib 2.84.4, desktop-fi
 # built from an older copy of driver.c would answer confidently and wrongly.
 #
 # The upstream version here, 2.47.3, is the same one this machine's own git is, so
-# the probes recorded in notes/text/INI-DIALECTS.md §A.4 and the gate's reference
+# the probes taken on the host and the gate's reference
 # are the same implementation. That is luck rather than design and will not
 # survive the next Debian release; the pin is what makes it checkable either way.
 gitconfig	localhost/ghoti-text-oracle-gitconfig:2.47.3	git 1:2.47.3-0+deb13u1	git config: whether the document is legal, and what every value is
@@ -256,9 +255,8 @@ editorconfig	localhost/ghoti-text-oracle-editorconfig:0.12.11	editorconfig-core-
 # `init`, while 164 unit files sit under /usr/lib/systemd shipped by other packages.
 # So the corpus is local and the reference cannot be, which is the reverse of the
 # Desktop Entry pin - and the reason this was the last of the five dialects rather
-# than the third. Whether this oracle was usable at all was an open question in
-# notes/text/INI-DIALECTS.md §A.13 from the first day of the INI work to the day it
-# was answered.
+# than the third. Whether this oracle was usable at all was an open question from
+# the first day of the INI work to the day it was answered.
 #
 # systemd and this module **disagree on purpose**, and the gate is shaped around it:
 # systemd keeps a file with a bad line and drops the line, while this module refuses

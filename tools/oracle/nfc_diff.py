@@ -143,7 +143,7 @@ def persistent_driver(archive):
 def _host_runtime_path(path):
     """A `/work/...` path from the build container, as the host sees it.
 
-    install.sh mounts the workspace at `/work` and sets GHOTI_HOST_ROOT to
+    install.sh mounts the source tree at `/work` and sets GHOTI_HOST_ROOT to
     the host path of that mount. The driver is linked in the container and
     executed on the host, so its rpath has to name the host prefix. `-L`
     stays on `/work` so the container's linker can still open the library.

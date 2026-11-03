@@ -4,8 +4,7 @@
 
 The documentation half of adding a parser. The code half - the headers, the
 option struct, the streaming and DOM entry points, the namespace block and
-the limits contract - is in \ref core_module "the Core module page" and in
-the suite `CONVENTIONS.md`; this page is about what the format's page must
+the limits contract - is in \ref core_module "the Core module page"; this page is about what the format's page must
 answer before the parser is considered finished.
 
 One format, one page, under `documentation/formats/`. A format does not share

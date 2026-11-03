@@ -93,7 +93,7 @@ The plants of fuzz_css_compute.cpp (COMPUTE_PLANTS; each is found by replaying i
   block-takes-any-custom-name  a block takes a custom property whose name no identifier has: the cssText cannot be read back as it was written.
   pending-longhand-written-empty a longhand declared with var() or attr() is written with no value: the cssText cannot be read back.
   mixed-longhands-written-as-a-shorthand  a shorthand is written over longhands some of which are a CSS-wide keyword: the text is another value.
-  alias-not-a-fixed-point       a keyword alias maps its own result on (flow-start to start): the fixed point of a computed style, which the seeds of the C2e families reach.
+  alias-not-a-fixed-point       a keyword alias maps its own result on (flow-start to start): the fixed point of a computed style, which the seeds of the computed-value families reach.
   context-leaks-its-groups      freeing a compute context leaves the table of logical groups: the allocator.
 
 The plants of fuzz_css_custom.cpp (CUSTOM_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-custom):
@@ -101,7 +101,7 @@ The plants of fuzz_css_custom.cpp (CUSTOM_PLANTS; each is found by replaying its
   rope-release-leaks-its-leaves  releasing a rope leaves the text leaves: the allocator.
   cascade-takes-any-custom-name  the cascade takes a custom property whose name no identifier has, where a block does not: the two compute differently.
   budget-lets-sixteen-times-through  a joined value may have sixteen times the tokens the budget allows: the counter's bound.
-  block-refuses-a-pending-custom-property  the block API refuses `--a: var(--b)` as the cascade did before C2c: the two do not take a declaration alike.
+  block-refuses-a-pending-custom-property  the block API refuses `--a: var(--b)` as the cascade did before it substituted a pending value: the two do not take a declaration alike.
   attr-taint-scan-stops-at-thirty-two the scan for a URL that attr() made looks at the first thirty-two options of a function: the dump.
   join-ignores-a-failed-allocation  a join that cannot allocate is taken as the guaranteed-invalid value: the status.
   rules-are-found-by-the-wrong-name  a rule found by name is looked up by a prefix of the name: it is not the one at its index.

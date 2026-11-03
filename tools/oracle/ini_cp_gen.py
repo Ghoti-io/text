@@ -207,8 +207,8 @@ PIN_INTERPOLATION = {
 # ordinary section on both sides and there is no inheritance in the gate at all. That
 # pin is correct - value inheritance is a lookup policy over a parsed tree rather than a
 # rule of the grammar, and leaving it on would make every section's item list include
-# another section's keys - but it took a *rule* out of scope with it, and §22.7 of
-# notes/text/INI-DIALECTS.md is what that cost: `${sect:key}` did not consult the
+# another section's keys - but it took a *rule* out of scope with it, and this is what that
+# cost: `${sect:key}` did not consult the
 # defaults, the comment over the wrong code said "measured rather than inferred from
 # symmetry", and it had been inferred. No instrument could have caught it. The unit test
 # that carries it now was written from a probe, so if the reference changed, nothing

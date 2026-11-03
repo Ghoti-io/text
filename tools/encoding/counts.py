@@ -20,8 +20,7 @@
 
     tools/encoding/counts.py
 
-The number of plants, of seeds, of lines of the divergence list and of tests are written down once, in the plan record (notes/text/XML-HTML-PLAN.md, "Phase 3i as
-built"), from this script's output; every other place says what is counted and where to see it. Re-run it when one of the lists changes.
+The number of plants, of seeds, of lines of the divergence list and of tests are written down once, from this script's output; every other place says what is counted and where to see it. Re-run it when one of the lists changes.
 
 Copyright 2026 by Corey Pennycuff
 """

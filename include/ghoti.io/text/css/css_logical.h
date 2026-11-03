@@ -38,7 +38,7 @@
  *
  * "Although the specified value of each property remains distinct, paired properties share a computed value. This shared value is determined
  * by cascading the declarations of both properties together as one." So the map is a function of the **flow** (the computed `writing-mode`,
- * `direction` and `text-orientation` of the element itself) and the cascade of C2b calls it per element; the computed-value layer (css_computed.h)
+ * `direction` and `text-orientation` of the element itself) and the cascade (css_cascade.h) calls it per element; the computed-value layer (css_computed.h)
  * calls it to decide which declaration of a group wins each slot.
  *
  * ## The flow

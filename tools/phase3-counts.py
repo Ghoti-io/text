@@ -11,9 +11,8 @@
 Everything printed is counted from the file or the listing that defines it, at the moment this runs: the vectors of the pinned
 suites, the exception and divergence lists, the plants, the fuzz seeds, the quadratic shapes (tools/html/counts.py asks the suite
 itself) and the Encoding module's own counts (tools/encoding/counts.py). `--tests` also asks each built test program for its list
-of tests (`--gtest_list_tests`; build them first) and prints the tests per family. The plan record
-(notes/text/XML-HTML-PLAN.md, "Phase 3k as built") quotes this output with the date and the commit; no other document types a number
-that this prints. Re-run it when a list changes and compare: `tools/phase3-counts.py > /tmp/c; diff` against the plan's block.
+of tests (`--gtest_list_tests`; build them first) and prints the tests per family. A record that quotes this output gives the date and the commit; no other document types a
+number that this prints. Re-run it when a list changes and compare: `tools/phase3-counts.py > /tmp/c; diff` against the quoted block.
 """
 
 import collections

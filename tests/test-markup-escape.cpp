@@ -15,9 +15,8 @@
  * and not a second copy of the code's comparisons. A typo in either shows up as
  * a code point the two disagree on. That is still one reading of the
  * specification by one author, so the same predicate was also run against
- * libxml2 and expat over the whole range when it was written; what that found
- * is in notes/text/XML-HTML-PLAN.md, not here, because neither library is a
- * dependency of this test suite.
+ * libxml2 and expat over the whole range when it was written; neither library
+ * is a dependency of this test suite, so that run is not repeated here.
  *
  * Copyright 2026 by Corey Pennycuff
  */

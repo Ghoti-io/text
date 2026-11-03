@@ -52,7 +52,7 @@ TEST(YamlStandardTags, TimestampNormalizesOffset) {
  * expression is `:[0-9][0-9] :[0-9][0-9]` - two colon-separated pairs, neither
  * optional - so `2025-02-14 10:30+02` is a `!!str`, and PyYAML resolves it as
  * one. The test asserted what the code did rather than what the specification
- * says, which is the failure mode CONVENTIONS.md warns about; it now asserts
+ * says, which is the failure mode of a test that follows its code; it now asserts
  * both halves.
  */
 TEST(YamlStandardTags, TimestampRequiresSeconds) {

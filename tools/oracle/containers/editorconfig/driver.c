@@ -8,8 +8,8 @@
  * editorconfig-core-test, whose 34 `parser` assertions
  * tools/conformance/run-ini-editorconfig.sh scores on their own; these two are
  * here to be differed against, and a disagreement between them is a finding
- * rather than a failure - notes/text/INI-DIALECTS.md records which of them is
- * wrong about what.
+ * rather than a failure - the divergence list of the editorconfig gate records which
+ * of them is wrong about what.
  *
  * Protocol: a batch, because a container invocation per document would be tens
  * of thousands of them. Per document, `<len>\n` then that many bytes of the

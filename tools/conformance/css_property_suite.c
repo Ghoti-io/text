@@ -31,7 +31,7 @@
 //   ERR TAB <status>                 any other status
 //
 // With `-n` as the only argument the line instead names the property's nature: `SHORTHAND` or `LONGHAND` (an alias is what its target
-// is) for a name the registry has, or `UNKNOWN`, so the scorer can tell a shorthand's vectors, whose serialization belongs to C2a.
+// is) for a name the registry has, or `UNKNOWN`, so the scorer can tell a shorthand's vectors, whose serialization belongs to the shorthand layer.
 // With `-s` the request is a shorthand's value and the answer is what a declaration block makes of it (gtext_css_block_add_text, then CSSOM's
 // getPropertyValue of the shorthand): `SH TAB <text>`, or `INVALID`, `UNKNOWN`, `UNDECIDED` (the property or a longhand cannot be decided or the
 // shorthand has no rule), `ERR TAB <status>`. With `-l` the flags field is a comma separated list of longhand names and the answer is `LH` followed

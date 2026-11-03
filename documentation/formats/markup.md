@@ -7,8 +7,7 @@ fragments, doctypes, elements, text, CDATA sections, comments and processing
 instructions, with namespace-aware names and attributes, built and changed
 through an API that refuses what would break it and leaves the tree as it was
 when it does. **This is the tree and the lexical rules for writing it.** The
-parsers that fill it and the writers that read it are separate pages (see
-`notes/text/XML-HTML-PLAN.md`); nothing on this page reads or writes a markup
+parsers that fill it and the writers that read it are separate pages; nothing on this page reads or writes a markup
 language - \ref format_xml "XML" is the first parser that fills the tree and the
 first writer that reads it - and the sections below say what has and has not been
 checked.

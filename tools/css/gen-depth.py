@@ -5,8 +5,8 @@
 
   parses      a value derived from the grammar (and the initial value) is accepted by the library: the grammar compiled and matches
   serializes  the value serializes, and the text parses and serializes to the same text (a fixed point)
-  computes    the computed value is implemented (C2a fills it; 0 until then)
-  wpt         the WPT value vectors of the property are scored (C1d fills it; 0 until then)
+  computes    the computed value is implemented
+  wpt         the WPT value vectors of the property are scored
 
 The first two are measured by tools/css/css_registry_report.c; the last two are edited by the layer that implements them. A
 descriptor has no computed value (``-``).

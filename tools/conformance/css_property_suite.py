@@ -13,9 +13,9 @@ The vectors are made by tools/css/extract-wpt-props.py from the pinned checkout:
   again).
 * **invalid** (`test_invalid_value`): the value must be refused. A failure is `invalid-accepted`.
 * **shorthand** (`test_shorthand_value`): the value must parse as the value of the shorthand (`parse`), and a declaration block
-  made of it must have the longhand values the page lists (`expand`: CSSOM's getPropertyValue of each longhand, C2a).
+  made of it must have the longhand values the page lists (`expand`: CSSOM's getPropertyValue of each longhand).
 
-Not scored in this slice, and printed with their counts: computed-value vectors (C2d), selector vectors (C3), rule vectors (C4),
+Not scored in this slice, and printed with their counts: computed-value vectors, selector vectors, rule vectors,
 and the expected string of a vector the page compares with its own function (held to `parse` and `roundtrip` only). The
 serialization of a shorthand is scored at `serialize`: a block holding the shorthand's value must write it (getPropertyValue of the
 shorthand) as the page expects.
@@ -214,7 +214,7 @@ def main():
             requests.append((flag, prop, v['expected']))
     lines = run_runner(runner, requests)
 
-    # the shorthands: what a declaration block makes of the value (C2a)
+    # the shorthands: what a declaration block makes of the value
     sh_ser, sh_exp = {}, {}
     sh_reqs, sh_ids = [], []
     lh_reqs, lh_ids = [], []
@@ -449,8 +449,8 @@ def main():
               len(scored), sum(1 for s in scored if s[1] == 'valid'), sum(1 for s in scored if s[1] == 'invalid'),
               sum(1 for s in scored if s[1] == 'shorthand'), npass, sum(1 for i in failures if i in exceptions),
               sum(1 for i in failures if i in defects), sum(absent_seen.values()), len(absent_seen)))
-    print('css property: not scored here: computed %d (C2d), selector %d (C3), rule %d (C4); of the scored, shorthand serialization %d '
-          '(C2a, scored at serialize), custom-compared %d (parse and roundtrip only), shorthand longhand expectations %d (C2a, scored at expand)' % (
+    print('css property: not scored here: computed %d, selector %d, rule %d; of the scored, shorthand serialization %d '
+          '(scored at serialize), custom-compared %d (parse and roundtrip only), shorthand longhand expectations %d (scored at expand)' % (
               counts_unscored['computed'], counts_unscored['selector'], counts_unscored['rule'], shorthand_ser, custom, longhand_expect))
     by_stage = {}
     for f in failures.values():

@@ -27,8 +27,6 @@
  * this library can be loaded into one process without the dynamic linker
  * binding one caller to the other version's implementation.  The programmer
  * writes the short name; the linker sees the namespaced one.
- *
- * See CONVENTIONS.md section 4.
  */
 
 #ifndef GHOTI_IO_GTEXT_LIBVER_H

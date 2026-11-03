@@ -23,8 +23,7 @@
  *
  * html_equivalent: the comparison between the tree an XML parser reads from an
  * `xhtml`-mode document and the tree an HTML parser reads from the same bytes.
- * The rules are the ones in notes/text/XML-HTML-PLAN.md ("The Phase 3 exit item"),
- * eight of them, and this is the one place they are implemented: the unit tests
+ * The rules are the eight below, and this is the one place they are implemented: the unit tests
  * (tests/test-xhtml-writer.cpp) include this header, and so does the harness
  * that scores the writer against html5lib and parse5 (html_ours.c). A rule
  * changed here changes both, and cannot be weakened in one of them.

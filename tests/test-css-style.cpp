@@ -22,7 +22,7 @@
 /**
  * @file
  *
- * The computed-style call (css_style.h) and the presentation attributes (css_presentation.h): the requirements of the specification of phase C2d,
+ * The computed-style call (css_style.h) and the presentation attributes (css_presentation.h): the requirements of the specification of the computed-style layer,
  * one test each, the SVG fixtures of tests/data/css/svg/ computed and compared with their expected dumps byte for byte, and the dump and the hash.
  */
 

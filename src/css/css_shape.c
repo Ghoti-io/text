@@ -98,7 +98,7 @@ static const css_fn_type TYPES[] = {
   /* Masking 1 */
   {"geometry-box", GTEXT_CSS_REF_TYPE,
       "<shape-box> | fill-box | stroke-box | view-box"},
-  /* Fill and Stroke 3 / Masking: the property the shape functions name; the generated registry (C1c) has it too and, chained first, wins */
+  /* Fill and Stroke 3 / Masking: the property the shape functions name; the generated registry has it too and, chained first, wins */
   {"fill-rule", GTEXT_CSS_REF_PROPERTY,
       "nonzero | evenodd"},
   /* Backgrounds 3: the property `round` takes; the generated registry wins when chained first */

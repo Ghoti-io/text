@@ -146,7 +146,7 @@ sample_defect=$(awk -F'\t' 'BEGIN { OFS = "\t" } !/^#/ && NF >= 7 { print; exit 
 defects_empty=no
 if [ -z "$sample_defect" ]; then
 	defects_empty=yes
-	sample_defect=$(awk -F'\t' 'BEGIN { OFS = "\t" } !/^#/ && NF >= 7 { $6 = "C1d"; print; exit }' "$exceptions")
+	sample_defect=$(awk -F'\t' 'BEGIN { OFS = "\t" } !/^#/ && NF >= 7 { $6 = "values"; print; exit }' "$exceptions")
 fi
 [ -n "$first" ] && [ -n "$sample_defect" ] || { echo "control lists: the exception list is empty, so nothing about the lists can be shown" >&2; exit 1; }
 for kind in exception defect; do

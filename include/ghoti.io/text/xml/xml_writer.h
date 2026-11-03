@@ -167,7 +167,7 @@
  * to the DTD mode, identifier policy, and equivalent external resources
  * described above. The
  * HTML-parser half is checked against html5lib and parse5 (`make
- * check-html-oracle`; see notes/text/XML-HTML-PLAN.md), and will be against this
+ * check-html-oracle`), and will be against this
  * library's own HTML parser when there is one. The mode never applies a
  * `<meta charset>`: the references are given characters.
  */

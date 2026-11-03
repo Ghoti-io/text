@@ -170,12 +170,12 @@ is taken as `unset` by the cascade (the computed style substitutes it, and maps 
 
 `gtext_css_cascaded_at()` gives the winners in a canonical order that does not depend on the order the candidates were added in: the registered properties
 by id, then the custom properties by name. Each winner is a `GTEXT_CSS_Cascade_Entry` with its provenance: the property, the custom property's name, the value,
-the shorthand it came through, whether `all` declared it, the origin, importance, layer, context, specificity, scope, order, and the C0 ids and span of the
+the shorthand it came through, whether `all` declared it, the origin, importance, layer, context, specificity, scope, order, and the ids and span of the
 rule and declaration the caller put in the keys. With `keep_losers` the losers of each property are kept in descending order of precedence, each marked
 `GTEXT_CSS_LOSS_OUTRANKED` or `GTEXT_CSS_LOSS_ROLLED_BACK` (it sorts above the winner and a rollback took it out). `gtext_css_cascaded_dump()` and
 `gtext_css_cascaded_hash()` are a canonical text and a hash of the whole result.
 
-`gtext_css_candidates_add_declaration()` takes a declaration of a C0 tree: an invalid value never enters the cascade (so a lower-priority valid declaration
+`gtext_css_candidates_add_declaration()` takes a declaration of a parsed tree: an invalid value never enters the cascade (so a lower-priority valid declaration
 wins), and an unknown property is dropped; both are recorded as **diagnostics** that name the property (`gtext_css_candidates_diagnostic()`).
 
 ## Computing the winners
@@ -270,4 +270,4 @@ Each criterion of the sort order, each rolling keyword, the flow, `all` and the 
 every cascade against a **reference model** written criterion by criterion with rollbacks resolved by removing and starting again; its seeds are replayed
 by `make test`. Planted defects (every pair of neighbouring criteria swapped, each rolling keyword undone, memory let go of) are seen caught by the unit
 tests and the seeds in `make test` and by the fuzzer in `make check-css-fuzz-plants`; the quadratic suite has shapes for the sort, the chains, the layers
-and the custom property names, and plants that make each quadratic. The browser differential of cascaded results is the element layer's (C2d).
+and the custom property names, and plants that make each quadratic. The browser differential of cascaded results is the element layer's.

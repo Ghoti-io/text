@@ -368,8 +368,8 @@ GTEXT_INI_Dialect gtext_ini_dialect_systemd(void) {
   /*
    * Field by field, for the reason the two dialects above give. Every value here
    * was measured against systemd 257 rather than read off `systemd.syntax(7)`;
-   * notes/text/INI-DIALECTS.md §A.17 has the transcript, and five of these
-   * contradict the manual page or fill a silence in it.
+   * the gate holds the probes, and five of these contradict the manual page or
+   * fill a silence in it.
    */
   GTEXT_INI_Dialect d;
   memset(&d, 0, sizeof(d));
@@ -509,7 +509,8 @@ GTEXT_INI_Dialect gtext_ini_dialect_configparser(void) {
    * documentation describes what `configparser` does, the module's own docstring
    * describes its regular expressions, and neither defines a format. So every
    * value below is a measurement against CPython 3.13.5 and nothing below is a
-   * citation. notes/text/INI-DIALECTS.md §19 has the transcript.
+   * citation. The gate (`make check-ini-configparser-oracle`) holds the
+   * measurements.
    *
    * Two of these were settled by reading the implementation rather than by
    * probing, and both had to be: `_read_inner()`'s indent bookkeeping cannot be

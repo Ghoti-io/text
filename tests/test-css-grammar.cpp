@@ -691,7 +691,7 @@ TEST(CssGrammarTypes, EachValueNamesTheGrammarSlotThatMatchedIt) {
   EXPECT_EQ(std::string(t, len), "auto");
   t = gtext_css_compiled_slot_text(g.c, l->children[0].slot, &len);
   ASSERT_NE(t, nullptr);
-  EXPECT_EQ(std::string(t, len), "<length-percentage [0,∞]>"); // a native type since C1b
+  EXPECT_EQ(std::string(t, len), "<length-percentage [0,∞]>"); // a native type of the engine
   t = gtext_css_compiled_slot_text(g.c, l->slot, &len);
   ASSERT_NE(t, nullptr);
   EXPECT_EQ(std::string(t, len), "[ <length-percentage [0,∞]> | auto ]{1,2}");

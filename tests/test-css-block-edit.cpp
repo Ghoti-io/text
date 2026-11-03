@@ -341,7 +341,7 @@ TEST(CssBlockFind, TheLastDeclarationOfAPropertyAnAliasAndACustomName) {
   gtext_css_block_change_free(&change);
 }
 
-/* ---- the pending shorthand (css_shorthand.h, after C2e-f) --------------------------------------------------------------------------- */
+/* ---- the pending shorthand (css_shorthand.h) --------------------------------------------------------------------------- */
 
 // CSS Variables 1 / Values 5: "If a shorthand property ... contains var() ... the shorthand property must serialize to that original (arbitrary substitution function-containing) value".
 TEST(CssBlockShorthandValue, APendingShorthandReadsAsItsOriginalValue) {

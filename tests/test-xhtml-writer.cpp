@@ -33,8 +33,8 @@
  *   trees (accepted ones round-trip; refused ones are refused with
  *   GTEXT_XML_E_XHTML or an XML status, never written).
  * - The comparison function the HTML parser half of the exit gate uses
- *   (html_equivalent, tools/oracle/html_equivalent.h) is specified in
- *   notes/text/XML-HTML-PLAN.md and tested here against the XML side: it holds
+ *   (html_equivalent, tools/oracle/html_equivalent.h) is specified there and
+ *   tested here against the XML side: it holds
  *   between a tree and its round-tripped self, and fails for every difference
  *   except the declaration.
  * - The allocator and the sink failing at every point.
@@ -223,8 +223,8 @@ struct Collect {
 
 // ---- html_equivalent: the comparison the HTML parser half uses ------------
 //
-// Defined once, in C, in tools/oracle/html_equivalent.h (rules 1-8 of
-// notes/text/XML-HTML-PLAN.md), and included here and by the harness that scores
+// Defined once, in C, in tools/oracle/html_equivalent.h (rules 1-8 of that
+// header), and included here and by the harness that scores
 // this mode against html5lib and parse5 (tools/oracle/html_ours.c). This file
 // tests it against the XML side below.
 

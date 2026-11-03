@@ -26,7 +26,7 @@
  * this is a loop over statements with an explicit stack for the values. The
  * stack is not an optimisation: `text`'s contract is that no document crashes
  * it whatever its nesting, which a recursive-descent value parser cannot
- * promise once max_depth is 0 (notes/text/HEAP-STACK-WALKS.md).
+ * promise once max_depth is 0 (the YAML module has the same contract).
  *
  * The redefinition rules are the hard part of TOML, not the grammar. They are
  * four rules and not one, they were pinned against the pinned reference rather

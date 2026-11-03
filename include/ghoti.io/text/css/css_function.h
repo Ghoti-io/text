@@ -432,7 +432,7 @@ typedef enum {
 /** @brief The substitution function of a name, or NONE. */
 GTEXT_API GTEXT_CSS_Substitution_Kind gtext_css_substitution_kind(const char * name, size_t length);
 
-/** @brief What the function needs before it can be resolved (C2's business; stays unresolved until then). `progress()` and `ident()` need
+/** @brief What the function needs before it can be resolved (a function that needs the element's context stays unresolved without it). `progress()` and `ident()` need
  *  nothing themselves: their arguments are scanned for the functions that do. */
 GTEXT_API GTEXT_CSS_Needs gtext_css_substitution_needs(GTEXT_CSS_Substitution_Kind kind);
 

@@ -122,7 +122,7 @@ PAIRS = [
 ]
 
 
-# declarations of the C2e families, one compute per entry (root, root-plain and a parent/child): the fixed point of a computed value is only
+# declarations of the computed-value families, one compute per entry (root, root-plain and a parent/child): the fixed point of a computed value is only
 # compared when a computation succeeds, and only these compute-mode seeds reach it
 FAMILIES = [
     "color: color-mix(in oklch, red 30%, blue)", "color: color-mix(in srgb, red, blue 20%)", "color: color-mix(in hsl longer hue, red, blue)",

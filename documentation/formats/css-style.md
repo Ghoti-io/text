@@ -468,7 +468,7 @@ controls make the gate fail on purpose, among them eight of the thirteen defects
 seen by the unit tests).
 
 **The cascade.** The twelve style-sheet documents (`cascade-*` in `tools/oracle/css_style_gen.py`) put a presentation attribute, a rule of a `<style>` element
-(selectors `#id`, `*` and an element's name; selector matching is C3) and the `style` attribute on one element, with `!important`, with equal and unequal specificity and
+(selectors `#id`, `*` and an element's name; the full selector matching is css-selectors.md's) and the `style` attribute on one element, with `!important`, with equal and unequal specificity and
 with a shorthand, and the three agree on all of them. What the population still does not reach is the rest of the cascade: layers, `@scope`, shadow contexts and
 selectors other than those three, which the unit tests and the cascade's own fuzzer cover and a browser cannot be asked about until selectors exist here.
 

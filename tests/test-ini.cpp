@@ -8,8 +8,8 @@
  * `desktop-file-validate` 0.28-1 before it was written, and the cases where the
  * two references disagree with each other - or where one of them disagrees with
  * the specification - are called out by name, because those are the assertions
- * that would otherwise look arbitrary. The evidence is in
- * notes/text/INI-DIALECTS.md §A.2, §A.3 and §A.9.
+ * that would otherwise look arbitrary. The evidence is the
+ * reference run on the same input, which the documentation page for the format describes.
  *
  * Copyright 2026 by Corey Pennycuff
  */
@@ -1020,7 +1020,7 @@ TEST(IniGeneric, EveryDocumentTheStrictDialectAcceptsParsesTheSameWay) {
 // Every assertion in this section was measured against git 2.47.3 before it was
 // written, with `git config --file <f> --list -z` so that a valueless key is
 // distinguishable from an empty one and a value containing a newline is not split.
-// The transcript is in notes/text/INI-DIALECTS.md §A.4 and §A.12; the generated
+// The inputs were run through git first; the generated
 // differential that runs the same comparison over 20,000 documents is
 // `make check-ini-git-oracle`.
 //
@@ -1663,7 +1663,7 @@ TEST(IniGit, UnescapeAndTheParserShareOneImplementation) {
 // Every rule here was measured against **two** cores, editorconfig-core-c 0.12.11
 // and editorconfig-core-py 0.17.1, and against specification 0.17.2 and its
 // conformance suite - which is the only normative INI conformance suite that
-// exists. The probe transcript is notes/text/INI-DIALECTS.md §A.16;
+// exists. Each construct was probed on both cores first;
 // `make conformance-ini-editorconfig` scores the suite's 34 grammar assertions and
 // `make check-ini-editorconfig-oracle` differs against both cores over 20,000
 // generated documents.
@@ -2200,8 +2200,8 @@ TEST(IniEditorConfig, EveryShapeWritesBackByteForByte) {
 //
 // Every rule here was measured against **systemd 257** in a pinned container, because
 // this machine has no systemd at all - no `systemd-analyze`, no `systemctl`, PID 1 is
-// `init` - while carrying 165 unit files shipped by other packages. The transcript is
-// notes/text/INI-DIALECTS.md §A.17; `make check-ini-systemd-oracle` runs the same
+// `init` - while carrying 165 unit files shipped by other packages. The inputs were
+// measured against systemd 257 in a container; `make check-ini-systemd-oracle` runs the same
 // comparison over 5,000 generated documents and `make conformance-ini-systemd` reads
 // every unit file on the machine.
 //
@@ -2627,8 +2627,8 @@ TEST(IniSystemd, EveryShapeWritesBackByteForByte) {
 // ------------------------------------------------------ the configparser dialect
 //
 // **This dialect has no specification**, so every assertion below is a
-// measurement against CPython 3.13.5 and none of them is a citation. The probe
-// transcript is notes/text/INI-DIALECTS.md §19; `make check-ini-configparser-oracle`
+// measurement against CPython 3.13.5 and none of them is a citation. Each
+// input was probed first; `make check-ini-configparser-oracle`
 // differs against a pinned interpreter over generated documents, and there is no
 // conformance target because there is nothing to conform to.
 //

@@ -5,8 +5,8 @@
 # on somebody remembering to run the right target before pushing.
 #
 # The suite resolves its dependencies through pkg-config and nothing else, so
-# cutil is built and installed into a prefix inside the workspace first, the
-# same way ../bootstrap.sh does it locally. There is deliberately no
+# cutil is built and installed into a prefix under the runner's work directory
+# first, the way the suite's install script does it. There is deliberately no
 # sibling-checkout fallback in the Makefile, so this is the only path.
 name: CI
 
@@ -189,9 +189,8 @@ jobs:
 
       # The cross toolchain on the runner itself. tools/cross-windows.sh uses a
       # container only as a way to *get* a toolchain, and prefers one already on
-      # PATH - which is what makes this job possible at all: the Containerfile
-      # lives in the workspace notes and is not published with this library, so
-      # CI could not build that image.
+      # PATH - which is what makes this job possible at all: the image's recipe
+      # is not part of this library, so CI could not build it.
       - name: Install build dependencies
         run: |
           sudo apt-get update

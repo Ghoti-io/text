@@ -7,7 +7,7 @@ specification 0.17.2 makes it legal.
 
 **The intent reading matters more here than in any other differential in this
 module**, because neither reference is right. Both cores fail the normative
-conformance suite, and the probe in notes/text/INI-DIALECTS.md §A.16 found
+conformance suite, and a probe of both found
 nineteen constructs on which at least one of them departs from the specification.
 So "both cores agree with us" is not the target and would sometimes be a failure;
 what the gate checks is the specification's rule, with each known departure

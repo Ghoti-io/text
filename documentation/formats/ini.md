@@ -9,9 +9,9 @@ which is the only INI dialect with both a normative document and two independent
 reference implementations to measure against - and they disagree with each other
 and with the specification often enough that the disagreements are the most
 useful part of this page. Every claim here was checked against GLib's `GKeyFile`
-2.84.4 and `desktop-file-validate` 0.28-1 before it was written; the
-reproductions are in the workspace at `notes/text/INI-DIALECTS.md` §A.2, §A.3
-and §A.9. The format index is \ref text_format_references "Formats".
+2.84.4 and `desktop-file-validate` 0.28-1 before it was written; each
+was reproduced by running the reference on a minimal input before it was written
+down. The format index is \ref text_format_references "Formats".
 
 ## Normative references
 
@@ -354,8 +354,8 @@ around saying so.
 
 **Twenty constructs in all** separate at least one core from the specification, the
 inline-comment truncation above included - eleven of them core-c's and fourteen
-core-py's, overlapping in five. All were measured;
-`notes/text/INI-DIALECTS.md` §A.16 has the transcript, and the gate's
+core-py's, overlapping in five. All were measured by
+running the references, and the gate's
 `divergence-c` and `divergence-py` scores hold each one as a standing assertion.
 The others worth naming here, because each is a rule a reader might otherwise copy
 from a reference:
@@ -494,9 +494,8 @@ human; a parser handing back a tree cannot. So the differential compares the
 
 #### What the systemd differential measured
 
-The oracle question was open from the first day of this work, and
-`notes/text/INI-DIALECTS.md` §A.13 listed it as the one reference whose feasibility had
-never been tested. The answer is yes, with two caveats that took four probe rounds to
+The oracle question was open from the first day of this work: systemd was the one
+reference whose feasibility had never been tested. The answer is yes, with two caveats that took four probe rounds to
 find:
 
 - **`systemd-analyze verify` exits 0 on a syntax error.** Its exit status reports
@@ -1480,7 +1479,7 @@ out not to be one, and the thing that reached the parser was not on the list:
   of the generator's axes did. It made those values come back empty.
 
 - **Win32 `.ini`, again.** Deliberately absent, and not because its reference is out
-  of reach - a `GetPrivateProfileStringA` probe under wine runs in this workspace
+  of reach - a `GetPrivateProfileStringA` probe under wine runs
   today. `GetPrivateProfileString` is documented as consulting the registry's
   `IniFileMapping` for the section and reading the file only *"if there is no
   subkey or entry for the section name"*, so its answer is not a function of the

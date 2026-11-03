@@ -14,8 +14,7 @@
 # target where `long` is 4 bytes and `size_t` is 8. It is not a Windows test
 # run. The Makefile finds Windows with `findstring MINGW64_NT` on `uname -s`,
 # true only under MSYS2, so a cross build from Linux is a *third* target beside
-# linux and the native MSYS2 one. Real Windows stays the authority; see
-# notes/suite/CONTAINERS.md section 3.
+# linux and the native MSYS2 one. Real Windows stays the authority.
 #
 # Compile-only, deliberately. Linking would need cutil, chron, unicode and
 # regex cross-built too, and the question here is whether this library's own
@@ -24,19 +23,18 @@
 # ## Two ways to get a toolchain, one script
 #
 # If x86_64-w64-mingw32-gcc is already on PATH, the compile runs here, in this
-# process. Otherwise it runs in a container built from the Containerfile in
-# notes/suite/CONTAINERS.md, which exists to *provide* the toolchain and is not
-# otherwise part of the question.
+# process. Otherwise it runs in a container image that holds the toolchain
+# (GTEXT_MINGW_IMAGE names it); the image exists to *provide* the toolchain and
+# is not otherwise part of the question.
 #
 # Both arms run the same inner script, which is why it is a heredoc with
-# $WORKROOT standing in for the workspace root rather than two copies with a
-# literal path each. A reader comparing two copies across files, or across arms,
+# $WORKROOT standing in for the root of the tree that holds the dependencies'
+# prefix rather than two copies with a literal path each. A reader comparing two copies across files, or across arms,
 # is a reader who will miss a difference.
 #
 # The native arm is what lets this run in CI, where installing mingw is one
-# apt-get and building a container image is not: the Containerfile lives in the
-# workspace notes, which are not published with this library, so CI could not
-# build the image even if it wanted to. GTEXT_CROSS_ENGINE=container forces the
+# apt-get and building a container image is not: the image's recipe is not part
+# of this library, so CI could not build it even if it wanted to. GTEXT_CROSS_ENGINE=container forces the
 # container arm on a host that has both, which is how the container arm stays
 # exercised.
 #
@@ -85,7 +83,7 @@ if [ "$NATIVE" -eq 0 ]; then
   if ! $ENGINE image exists "$IMAGE" > /dev/null 2>&1 \
       && ! $ENGINE image inspect "$IMAGE" > /dev/null 2>&1; then
     echo "cross-windows: no host mingw-w64, and $IMAGE is not built; not run" >&2
-    echo "  see notes/suite/CONTAINERS.md for the Containerfile, or install" >&2
+    echo "  build or pull an image that holds mingw-w64, or install" >&2
     echo "  gcc-mingw-w64-x86-64 and binutils-mingw-w64-x86-64" >&2
     exit 77
   fi
@@ -103,7 +101,7 @@ fi
 WS=$(cd "$WORKSPACE" 2> /dev/null && pwd)
 if [ -z "$WS" ]; then
   echo "cross-windows: GTEXT_WORKSPACE=$WORKSPACE is not a directory" >&2
-  echo "  it must be the workspace root - the directory holding .local and" >&2
+  echo "  it must be the root of the tree that holds .local and" >&2
   echo "  this library's checkout. Unset it to use the default, ../.." >&2
   exit 1
 fi
@@ -247,7 +245,7 @@ fi
 
 if [ "$NATIVE" -eq 1 ]; then
   echo "cross-windows: using the host's x86_64-w64-mingw32 toolchain"
-  # The workspace is this machine's, so $WORKROOT is where it actually is, and
+  # The tree is this machine's, so $WORKROOT is where it actually is, and
   # the wine output directory needs no mount.
   WORKROOT="$WS" REL="$REL" GTEXT_WINE_OUT="$OUT" sh -c "$SCRIPT"
   status=$?

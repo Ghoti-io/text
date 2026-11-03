@@ -46,7 +46,7 @@
  * | GTEXT_CSS_SELECTOR_COMPOUND | `:host()`, `:host-context()`, `::slotted()` | one compound selector |
  * | GTEXT_CSS_SELECTOR_REAL_LIST | `:not()`, the `of S` of `:nth-child()` | unforgiving; no pseudo-element |
  *
- * **A selector that is not valid is an answer, not a failure** (the rule of C0): the call returns GTEXT_CSS_OK, the list is NULL, and the result
+ * **A selector that is not valid is an answer, not a failure** (the rule of CSS parsing: it does not fail on content): the call returns GTEXT_CSS_OK, the list is NULL, and the result
  * holds a diagnostic with a span and a reference to the sentence of the draft that makes it invalid. A failure is an argument, memory or a
  * limit, each limit its own status.
  *

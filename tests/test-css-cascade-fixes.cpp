@@ -534,7 +534,7 @@ TEST(CssCascadeFixes, ALayerIsFoundOnlyUnderItsOwnParentWhateverTheTableHolds) {
 }
 
 TEST(CssCascadeFixes, ACustomPropertyHoldingVarIsCarriedAsPending) {
-  /* found by the cascade fuzzer: `--a: var(--m)` parses as PENDING. The cascade carries it as the value of any pending property is carried (C2c substitutes it when
+  /* found by the cascade fuzzer: `--a: var(--m)` parses as PENDING. The cascade carries it as the value of any pending property is carried (the substitution step substitutes it when
      the style is computed), and the candidates before and after it cascade around it as they would. */
   Set s;
   s.add("--a", "5", K().order(0, 0, 0));

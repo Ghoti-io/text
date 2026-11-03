@@ -807,7 +807,7 @@ TEST(CssCustom, RandomInACalculationIsTheNumberItsBaseValuePicks) {
 /* ---- the block API and the cascade carry a pending custom value --------------------------------------------------------- */
 
 TEST(CssCustom, TheBlockAndTheCascadeAgreeOnAPendingCustomValue) {
-  // The carry-over of C2b: `--a: var(--b)` was refused by both. Now both take it, hand it on as PENDING, and the computed styles agree.
+  // The carry-over of the cascade: `--a: var(--b)` was refused by both. Now both take it, hand it on as PENDING, and the computed styles agree.
   World w;
   ASSERT_EQ(w.build(), GTEXT_CSS_OK);
   const std::string decls = "--a: var(--b) 2px; --b: 3px; width: var(--a, 9px)";

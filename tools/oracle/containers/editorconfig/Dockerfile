@@ -8,7 +8,8 @@
 # `editorconfig-core-test`, whose 34 `parser` assertions
 # tools/conformance/run-ini-editorconfig.sh scores separately. These two are here
 # to be *differed against*, and a disagreement between them is the finding -
-# notes/text/INI-DIALECTS.md records which questions each one answers wrongly.
+# the divergence list of the editorconfig gate records which questions each one
+# answers wrongly.
 #
 # The sharing between them is **the specification and the conformance suite, not
 # code**: different languages, different authors, no common dependency. So
