@@ -650,6 +650,54 @@ TEST(CssomComputed, AMutationFromTheLayoutCallbackIsRefused) {
   EXPECT_EQ(probe.seen, GTEXT_CSS_E_REENTRANT);
 }
 
+/* The document is the caller's to release or to change from inside the read of a computed style: from a callback of the layout the read in flight must still finish on
+   what it holds, whatever the callback did to the document. */
+namespace {
+
+struct Reenter {
+  std::function<void()> act;
+  int calls = 0;
+  static GTEXT_CSS_Status used(void * user, const void *, const GTEXT_CSS_Selector_List *, GTEXT_CSS_Property_Id, bool * applies, GTEXT_CSS_Value_Set **) {
+    Reenter * self = static_cast<Reenter *>(user);
+    if (self->calls++ == 0 && self->act) {
+      self->act();
+    }
+    *applies = false;
+    return GTEXT_CSS_OK;
+  }
+};
+
+}  // namespace
+
+TEST(CssomComputed, TheDocumentReleasedFromTheLayoutCallbackDoesNotEndTheReadInFlight) {
+  Reenter r;
+  GTEXT_CSSOM_Layout_Interface iface{};
+  iface.size = sizeof iface;
+  iface.user = &r;
+  iface.used_value = &Reenter::used;
+  UnmapAllocator ua;
+  Cs m(kPage, [&](GTEXT_CSSOM_Config & c) { c.layout = &iface; }, &ua.alloc);
+  r.act = [&] { m.doc->release(); };
+  Decl a = m.computed("#a");
+  EXPECT_GT(length(a.d), 400u) << "the read finished";
+  EXPECT_EQ(r.calls >= 1, true);
+}
+
+TEST(CssomComputed, ReplacingTheComputeContextFromTheLayoutCallbackIsRefusedWhileTheReadRuns) {
+  Reenter r;
+  GTEXT_CSSOM_Layout_Interface iface{};
+  iface.size = sizeof iface;
+  iface.user = &r;
+  iface.used_value = &Reenter::used;
+  UnmapAllocator ua;
+  Cs m(kPage, [&](GTEXT_CSSOM_Config & c) { c.layout = &iface; }, &ua.alloc);
+  GTEXT_CSS_Status seen = GTEXT_CSS_OK;
+  r.act = [&] { seen = gtext_cssom_document_set_compute_context(m.d(), nullptr); };
+  Decl a = m.computed("#a");
+  EXPECT_GT(length(a.d), 400u);
+  EXPECT_EQ(seen, GTEXT_CSS_E_REENTRANT);
+}
+
 TEST(CssomComputed, ADeclarationOutlivesTheDocumentHandleAndKeepsWhatItHad) {
   GTEXT_CSSOM_Decl * held = nullptr;
   {

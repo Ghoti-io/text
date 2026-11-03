@@ -113,6 +113,8 @@ struct css_core {
   struct GTEXT_CSSOM_Document * document;   ///< NULL once the handle was released.
   unsigned in_callback;                ///< Inside a notification: nesting depth.
   unsigned in_finalizer;               ///< Inside a finalizer: nesting depth.
+  unsigned computing;                  ///< Computed-style reads running (cssom_computed.c): the caller's tree and layout callbacks run inside them.
+  bool computed_teardown_pending;      ///< The document handle was released during such a read: the computed state goes when the read ends.
   css_obj * dead_head;                 ///< The queue of objects being freed.
   bool freeing;                        ///< The loop that frees the queue is running.
   GTEXT_CSSOM_Counters counters;

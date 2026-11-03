@@ -29,6 +29,7 @@
 #define GHOTI_IO_GTEXT_TESTS_CSSOM_TEST_SUPPORT_H
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -37,6 +38,11 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/mman.h>
+#endif
 
 #include <ghoti.io/text/css.h>
 
@@ -50,6 +56,65 @@ namespace cot {
 inline const GTEXT_CSS_Registry * R() {
   return reg::shared();
 }
+
+/// An allocator that gives every block pages of its own and makes them inaccessible when the block is freed (the address range is never handed out again, so a stale pointer
+/// cannot land in a later block). A read of a freed block then faults, with or without a sanitizer: the document's allocator lives inside the document, and a delivery that
+/// reads it after the last release has read memory that is no longer there.
+struct UnmapAllocator {
+  GTEXT_Allocator alloc;
+  std::map<void *, size_t> sizes;   ///< The block and the bytes the caller asked for.
+  std::set<void *> freed;           ///< The blocks that were freed: their pages stay, unreadable.
+  UnmapAllocator() {
+    alloc.ctx = this;
+    alloc.malloc_fn = [](void * ctx, size_t n) -> void * { return static_cast<UnmapAllocator *>(ctx)->take(n); };
+    alloc.calloc_fn = [](void * ctx, size_t c, size_t n) -> void * { return static_cast<UnmapAllocator *>(ctx)->take(c * n); };   // fresh pages are zero
+    alloc.realloc_fn = [](void * ctx, void * p, size_t n) -> void * {
+      auto * self = static_cast<UnmapAllocator *>(ctx);
+      void * q = self->take(n);
+      if (q && p) {
+        const size_t old = self->sizes[p];
+        std::memcpy(q, p, old < n ? old : n);
+        self->drop(p);
+      }
+      return q;
+    };
+    alloc.free_fn = [](void * ctx, void * p) { static_cast<UnmapAllocator *>(ctx)->drop(p); };
+  }
+  static size_t span(size_t n) {
+    const size_t page = 4096;
+    return ((n ? n : 1) + page - 1) / page * page;
+  }
+  void * take(size_t n) {
+#ifdef _WIN32
+    void * p = VirtualAlloc(nullptr, span(n), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+#else
+    void * p = mmap(nullptr, span(n), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) {
+      p = nullptr;
+    }
+#endif
+    if (p) {
+      sizes[p] = n;
+    }
+    return p;
+  }
+  void drop(void * p) {
+    if (!p) {
+      return;
+    }
+    auto it = sizes.find(p);
+    ASSERT_TRUE(it != sizes.end());
+    const size_t n = it->second;
+    sizes.erase(it);
+    freed.insert(p);
+#ifdef _WIN32
+    VirtualFree(p, span(n), MEM_DECOMMIT);
+#else
+    madvise(p, span(n), MADV_DONTNEED);
+    mprotect(p, span(n), PROT_NONE);
+#endif
+  }
+};
 
 /// One event, copied out of the borrowed pointers.
 struct Ev {

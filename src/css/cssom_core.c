@@ -238,7 +238,7 @@ void gtext_cssom_document_release(GTEXT_CSSOM_Document * document) {
   gtext_allocator_free(&a, document);
   css_events_teardown(core);
   css_scope_teardown_all(core);
-  css_computed_teardown(core);
+  css_computed_teardown_soon(core);
   css_index_teardown(core);
   css_core_release(core);
 }

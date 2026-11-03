@@ -341,6 +341,15 @@ void css_computed_teardown(css_core * core) {
   cs->ctx = NULL;
 }
 
+void css_computed_teardown_soon(css_core * core) {
+  if (core->computing > 0) {
+    /* a callback of the caller's tree or layout released the handle in the middle of a read: the read goes on with the contexts and the cache it holds */
+    core->computed_teardown_pending = true;
+    return;
+  }
+  css_computed_teardown(core);
+}
+
 void css_computed_free(css_core * core) {
   css_cmps * cs = core->cs;
   if (!cs) {
@@ -357,6 +366,9 @@ GTEXT_CSS_Status gtext_cssom_document_set_compute_context(GTEXT_CSSOM_Document *
     return GTEXT_CSS_E_INVALID;
   }
   css_core * core = css_document_core(document);
+  if (core->computing > 0 || core->in_callback || core->in_finalizer) {
+    return GTEXT_CSS_E_REENTRANT;   /* the read that is running holds the contexts this would free */
+  }
   core->config.compute_context = context;
   css_cmps * cs = core->cs;
   if (!cs) {
@@ -657,7 +669,7 @@ static GTEXT_CSS_Status is_rendered(css_core * core, const css_comp * c, bool * 
 
 /* ---- the refresh -------------------------------------------------------------------------------------------------------------------------------------- */
 
-GTEXT_CSS_Status css_computed_refresh(GTEXT_CSSOM_Decl * d) {
+static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
   css_comp * c = d->comp;
   css_core * core = d->obj.core;
   if (!c || c->detached || !css_document_alive(core)) {
@@ -744,6 +756,17 @@ GTEXT_CSS_Status css_computed_refresh(GTEXT_CSSOM_Decl * d) {
   c->cepoch = cs->cepoch;
   d->version++;
   return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status css_computed_refresh(GTEXT_CSSOM_Decl * d) {
+  css_core * core = d->obj.core;   /* the declaration holds the core, so the core outlives the read whatever the callbacks do to the handle */
+  core->computing++;
+  const GTEXT_CSS_Status st = refresh_read(d);
+  if (--core->computing == 0 && core->computed_teardown_pending) {
+    core->computed_teardown_pending = false;
+    css_computed_teardown(core);
+  }
+  return st;
 }
 
 /* ---- the entry points ----------------------------------------------------------------------------------------------------------------------------------- */

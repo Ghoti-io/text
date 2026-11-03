@@ -335,7 +335,9 @@ GTEXT_API uint64_t gtext_cssom_document_generation(const GTEXT_CSSOM_Document * 
  * @brief Replace the compute context (a resize that changes the environment of the computed values, a new color scheme).
  *
  * The style cache and the styles that computed declarations hold are dropped (they belong to the context they were made with, which the caller may free after this call), and every
- * computed declaration reads its values again on its next call. NULL: back to the context the document makes itself.
+ * computed declaration reads its values again on its next call. NULL: back to the context the document makes itself. GTEXT_CSS_E_REENTRANT from a callback of the
+ * caller's tree or layout, or of an observer, that runs while a computed declaration is being read: the read holds the context. A callback may release the document handle; the read
+ * finishes on what it holds, and the document's computed state goes when it ends.
  */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_document_set_compute_context(GTEXT_CSSOM_Document * document, const GTEXT_CSS_Compute_Context * context);
 

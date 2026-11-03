@@ -136,6 +136,8 @@ void css_computed_element_released(css_core * core, const void * element);
 
 /// The document handle was released: every style goes, every declaration is frozen, the session is torn down.
 void css_computed_teardown(css_core * core);
+/// The document handle is gone: tear the computed state down now, or when the read that is running (one of whose callbacks released the handle) ends.
+void css_computed_teardown_soon(css_core * core);
 
 /// The session's memory (at the last release of the core).
 void css_computed_free(css_core * core);
