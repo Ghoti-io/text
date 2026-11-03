@@ -364,9 +364,30 @@ static GTEXT_CSS_Status typed_rule(css_core * core, const css_rule * rule, bool 
   return st;
 }
 
-/// Whether the rule's cssText has a frame of rules inside it: it is a kind with a `cssRules` and has some.
+/// Whether a rule inside another is written as nothing: a nested-declarations rule with no declaration in it. Both browsers write no line for it ("filtering out empty strings").
+static bool writes_nothing(css_rule * rule) {
+  if (rule->kind != GTEXT_CSSOM_RULE_NESTED_DECLARATIONS) {
+    return false;
+  }
+  if (rule->style) {
+    return gtext_css_block_count(rule->style->block) == 0;
+  }
+  const GTEXT_CSS_Declaration * decls = NULL;
+  size_t n = 0;
+  return !css_rule_declarations(rule, &decls, &n) || n == 0;
+}
+
+/// The first rule inside `rule`, at or after `from`, that is written as something (NULL for none).
+static css_rule * next_written(css_rule * from) {
+  while (from && writes_nothing(from)) {
+    from = css_rule_list_next(from);
+  }
+  return from;
+}
+
+/// Whether the rule's cssText has a frame of rules inside it: it is a kind with a `cssRules` and has some that are written.
 static bool has_children(const css_rule * rule) {
-  return rule->rules.count > 0;
+  return rule->rules.count > 0 && next_written(css_rule_list_first(&rule->rules)) != NULL;
 }
 
 typedef enum {
@@ -668,7 +689,7 @@ static GTEXT_CSS_Status write_rule(sw * w, css_rule * top) {
           cap = cap ? cap * 2 : 16;
         }
         stack[sp].rule = pending;
-        stack[sp].next = css_rule_list_first(&pending->rules);
+        stack[sp].next = next_written(css_rule_list_first(&pending->rules));
         sp++;
       }
       pending = NULL;
@@ -688,7 +709,7 @@ static GTEXT_CSS_Status write_rule(sw * w, css_rule * top) {
       continue;
     }
     pending = f->next;
-    f->next = css_rule_list_next(pending);
+    f->next = next_written(css_rule_list_next(pending));
     emitz(w, "\n  ");
   }
   gtext_allocator_free(&a, stack);
@@ -725,7 +746,7 @@ GTEXT_CSS_Status gtext_cssom_rule_css_text(GTEXT_CSSOM_Rule * rule, char ** out,
   }
   css_core * core = rule->obj.core;
   GTEXT_Allocator a = core->alloc;
-  const bool leaf = !has_children(rule);
+  const bool leaf = rule->rules.count == 0;   /* a rule whose rules are all written as nothing is not a leaf: its text depends on theirs */
   if (leaf && rule->cache && rule->cache->version == rule->version) {
     char * copy = css_core_dup(core, rule->cache->text, rule->cache->length);
     if (!copy) {

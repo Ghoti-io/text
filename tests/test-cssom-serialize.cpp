@@ -110,6 +110,75 @@ TEST(CssomSerializeStyle, NestedDeclarationsRulesAreTheirDeclarations) {
   EXPECT_EQ(first("a { @media print { color: red; } }"), "a {\n  @media print {\n  color: red;\n}\n}");
 }
 
+// A nested-declarations rule that has lost its last declaration is written as nothing, and the rule around it writes no line for it: Chromium 156 and Firefox 158 both write
+// `a {\n  & b { }\n  & c { }\n}` for it (tools/oracle/css_cssom_gen.py records the sequences), and not an indented empty line.
+TEST(CssomSerializeStyle, ANestedDeclarationsRuleWithNothingInItIsNotAnEmptyLine) {
+  {
+    Doc doc;
+    Sheet s(doc, "a { & b{} color:red; & c{} }");
+    Rule nd = path(s, {0, 1});
+    ASSERT_EQ(gtext_cssom_rule_kind(nd.r), GTEXT_CSSOM_RULE_NESTED_DECLARATIONS);
+    Decl d = style_of(nd.r);
+    ASSERT_EQ(remove(d.d, "color").st, GTEXT_CSS_OK);
+    EXPECT_EQ(css(nd.r), "");
+    EXPECT_EQ(css(path(s, {0}).r), "a {\n  & b { }\n  & c { }\n}");
+    EXPECT_EQ(sheet_text(s.s), "a {\n  & b { }\n  & c { }\n}\n") << "and so does the sheet";
+  }
+  {
+    Doc doc;
+    Sheet s(doc, "a { & b{} color:red }");
+    Rule nd = path(s, {0, 1});
+    Decl d = style_of(nd.r);
+    ASSERT_EQ(remove(d.d, "color").st, GTEXT_CSS_OK);
+    EXPECT_EQ(css(path(s, {0}).r), "a {\n  & b { }\n}");
+  }
+  {
+    Doc doc;
+    Sheet s(doc, "a { @media print { b{} color:red } }");
+    Rule nd = path(s, {0, 0, 1});
+    ASSERT_EQ(gtext_cssom_rule_kind(nd.r), GTEXT_CSSOM_RULE_NESTED_DECLARATIONS);
+    Decl d = style_of(nd.r);
+    ASSERT_EQ(remove(d.d, "color").st, GTEXT_CSS_OK);
+    EXPECT_EQ(css(path(s, {0}).r), "a {\n  @media print {\n  & b { }\n}\n}");
+  }
+  {
+    // a rule with nothing but such a rule inside it is written as a rule with nothing inside it
+    Doc doc;
+    Sheet s(doc, "a { @media print { color:red } }");
+    Rule m = path(s, {0, 0});
+    ASSERT_EQ(gtext_cssom_rule_kind(m.r), GTEXT_CSSOM_RULE_MEDIA);
+    Rule nd = path(s, {0, 0, 0});
+    ASSERT_EQ(gtext_cssom_rule_kind(nd.r), GTEXT_CSSOM_RULE_NESTED_DECLARATIONS);
+    Decl d = style_of(nd.r);
+    ASSERT_EQ(remove(d.d, "color").st, GTEXT_CSS_OK);
+    EXPECT_EQ(css(m.r), "@media print {\n}");
+  }
+}
+
+// A style rule whose only rule inside is written as nothing is written as a rule with none: "If decls and rules are both null, append ' }'" (CSSOM, as served 2026-11-03; Chromium
+// 156 writes `a { }`, Firefox 158 writes `a {\n}`: browsers-differ, the served sentence decides). And the first rule inside a grouping rule may be the empty one.
+TEST(CssomSerializeStyle, AStyleRuleWhoseOnlyRuleInsideIsEmptyIsWrittenWithNone) {
+  {
+    Doc doc;
+    Sheet s(doc, "a { & b{} color:red }");
+    Rule a = path(s, {0});
+    Rule nd = path(s, {0, 1});
+    ASSERT_EQ(gtext_cssom_rule_delete_rule(a.r, 0, nullptr), GTEXT_CSS_OK);
+    Decl d = style_of(nd.r);
+    ASSERT_EQ(remove(d.d, "color").st, GTEXT_CSS_OK);
+    EXPECT_EQ(css(a.r), "a { }");
+  }
+  {
+    Doc doc;
+    Sheet s(doc, "a { @media print { color:red; & b{} } }");
+    Rule nd = path(s, {0, 0, 0});
+    ASSERT_EQ(gtext_cssom_rule_kind(nd.r), GTEXT_CSSOM_RULE_NESTED_DECLARATIONS);
+    Decl d = style_of(nd.r);
+    ASSERT_EQ(remove(d.d, "color").st, GTEXT_CSS_OK);
+    EXPECT_EQ(css(path(s, {0}).r), "a {\n  @media print {\n  & b { }\n}\n}");
+  }
+}
+
 // CSSOM, CSSMediaRule: "The string '@media', followed by a single SPACE. The result of performing serialize a media query list ... A single SPACE, followed by the string '{', ...
 // followed by a newline. The result of performing serialize a CSS rule on each rule in the rule's cssRules list ... indenting each item with two spaces ... A newline, followed by
 // the string '}'". An empty list is written as nothing between the two spaces (the pinned serialize-media-rule.html: '@media  {\n}').

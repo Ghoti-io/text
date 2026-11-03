@@ -334,3 +334,6 @@ container-condition-reads-the-environment	cssom_events.c	  out->environment = 0;
 container-kinds-not-collected	cssom_events.c	    out->container |= gtext_css_container_query_kinds(query, i);	    (void)i;	events
 container-degraded-summary-asks-nothing	cssom_events.c	  c->container = 0xffu;\n		eventsoom
 container-kinds-leak-the-axis	css_container.c	  return q->in.nodes[q->in.roots[index]].bits & (MQC_SIZE | MQC_STYLE | MQC_SCROLL | MQC_ANCHORED | MQC_UNKNOWN);	  return q->in.nodes[q->in.roots[index]].bits;	container
+empty-nested-declarations-writes-a-line	cssom_rule_serialize.c	    f->next = next_written(css_rule_list_next(pending));	    f->next = css_rule_list_next(pending);	serialize
+empty-nested-declarations-first-child-written	cssom_rule_serialize.c	        stack[sp].next = next_written(css_rule_list_first(&pending->rules));	        stack[sp].next = css_rule_list_first(&pending->rules);	serialize
+empty-nested-declarations-keeps-its-frame	cssom_rule_serialize.c	  return rule->rules.count > 0 && next_written(css_rule_list_first(&rule->rules)) != NULL;	  return rule->rules.count > 0;	serialize
