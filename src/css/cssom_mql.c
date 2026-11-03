@@ -112,7 +112,7 @@ GTEXT_CSS_Status gtext_cssom_match_media(GTEXT_CSSOM_Document * document, const 
   }
   char * canon = NULL;
   size_t canon_length = 0;
-  st = gtext_css_media_list_serialize_buffer(list, &core->alloc, &canon, &canon_length);
+  st = gtext_css_media_list_serialize_as_read_buffer(list, &core->alloc, &canon, &canon_length);   /* `media` is the text as read, as the browsers write it */
   if (st != GTEXT_CSS_OK) {
     gtext_css_media_list_free(list);
     return st;

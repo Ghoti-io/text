@@ -54,3 +54,10 @@ starting-style-records-are-always-included	css_rule_index.c	if ((tv & TV_STARTIN
 or-is-not-commutative	css_media_eval.c	GTEXT_CSS_Tristate css_tri_or(GTEXT_CSS_Tristate a, GTEXT_CSS_Tristate b) {\n  if (a == GTEXT_CSS_TRI_TRUE || b == GTEXT_CSS_TRI_TRUE) {	GTEXT_CSS_Tristate css_tri_or(GTEXT_CSS_Tristate a, GTEXT_CSS_Tristate b) {\n  if (a == GTEXT_CSS_TRI_UNKNOWN) {\n    return GTEXT_CSS_TRI_UNKNOWN;\n  }\n  if (a == GTEXT_CSS_TRI_TRUE || b == GTEXT_CSS_TRI_TRUE) {	fuzz
 the-declaration-memo-is-dropped	css_media_eval.c	      if (css_decl_memo_get(ci, n->text, n->text_length, dv, n->value_length, &memo)) {	      if (0 && css_decl_memo_get(ci, n->text, n->text_length, dv, n->value_length, &memo)) {	supports
 winner-sort-reads-a-global	css_conditions.c	  const css_def * a = &d->items[x];\n  const css_def * b = &d->items[y];	  static const struct GTEXT_CSS_Condition_Defs * last;\n  if (!last) {\n    last = d;\n  }\n  const css_def * a = &last->items[x];\n  const css_def * b = &last->items[y];	mediathreads
+a-leaf-is-not-kept-as-it-was-read	css_media_parse.c	    if (P->o.source && src->span.offset < src->span.end && src->span.end <= P->o.source_length) {	    if (0) {	media
+the-text-entry-has-no-source	css_media_parse.c	  o.source = text ? text : "";	  o.source = NULL;	media
+a-nul-is-kept-in-a-leaf-as-it-was-read	css_media_parse.c	        if (raw[k] == 0) {\n          copy[w++] = (char)0xEF;	        if (0) {\n          copy[w++] = (char)0xEF;	media
+a-custom-name-is-not-kept-as-it-was-read	css_media_parse.c	    if (nd->kind == MQN_CUSTOM && P->o.source && nd->span.offset	    if (0 && nd->kind == MQN_CUSTOM && P->o.source && nd->span.offset	media
+a-leaf-is-written-as-read-with-its-closing-tokens	css_media_serialize.c	      if (o->as_read && n->asread) {	      if (0 && o->as_read && n->asread) {	media
+a-custom-name-is-written-as-read-closed	css_media_serialize.c	      if (o->as_read && n->asread && !f->bare) {	      if (0) {	media
+a-query-asked-for-as-read-is-written-closed	css_media_serialize.c	  out_t o = {&sink, GTEXT_CSS_OK, as_read};\n  sframe * stack	  out_t o = {&sink, GTEXT_CSS_OK, false};\n  sframe * stack	media

@@ -113,6 +113,8 @@ static void rule_destroy(css_obj * o) {
     css_obj_release_internal(&r->style->obj);
   }
   css_media_owner_gone(&r->media);
+  css_media_read_drop(&r->obj, &r->media_read, false);
+  css_media_read_drop(&r->obj, &r->media_read_next, false);
   css_source_release(r->source);
   gtext_allocator_free(&a, r);
 }

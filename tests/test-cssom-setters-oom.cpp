@@ -48,6 +48,7 @@ struct Scenario {
   std::function<GTEXT_CSS_Status(Sheet &)> op;
   size_t min_failures = 3;   ///< The allocations the call is known to make at least.
   bool constructed = false;  ///< A constructed sheet whose rules are first set from `css`.
+  std::function<void(Sheet &)> prepare = nullptr;   ///< Run on the sheet before the call is measured (and before the state it is compared with is taken).
 };
 
 GTEXT_CSS_Status sel(Sheet & s, std::initializer_list<size_t> p, const char * text) {
@@ -96,6 +97,9 @@ GTEXT_CSS_Status media_append(Sheet & s, std::initializer_list<size_t> p, const 
 void make_sheet(Sheet & s, Doc & doc, const Scenario & sc) {
   if (!sc.constructed) {
     s.status = gtext_cssom_sheet_new_parsed(doc.d, sc.css, std::strlen(sc.css), nullptr, &s.s);
+    if (s.status == GTEXT_CSS_OK && sc.prepare) {
+      sc.prepare(s);
+    }
     return;
   }
   s.status = gtext_cssom_sheet_new_constructed(doc.d, nullptr, &s.s);
@@ -106,7 +110,12 @@ void make_sheet(Sheet & s, Doc & doc, const Scenario & sc) {
 
 const Scenario kScenarios[] = {
     {"mediaText of a sheet", "a{}", [](Sheet & s) { return media_set(s, {}, "screen, (min-width: 1px)"); }, 1},
+    {"mediaText of a sheet that ends in an unclosed parenthesis", "a{}", [](Sheet & s) { return media_set(s, {}, "print, screen and ( a , (b ( c"); }, 1},
     {"mediaText of a media rule", "@media screen { a {} }", [](Sheet & s) { return media_set(s, {0}, "print, tv"); }},
+    {"mediaText of a media rule that ends in an unclosed parenthesis", "@media screen { a {} }", [](Sheet & s) { return media_set(s, {0}, "print, screen and ( a , (b ( c"); }},
+    {"mediaText of an import that ends in an unclosed parenthesis", "@import url(a.css) screen;", [](Sheet & s) { return media_set(s, {0}, "tv, (a:b"); }},
+    {"appendMedium to a media rule that has an unclosed parenthesis", "@media screen { a {} }", [](Sheet & s) { return media_append(s, {0}, "(x ( y"); }, 3, false,
+     [](Sheet & s) { EXPECT_EQ(media_set(s, {0}, "screen and (a"), GTEXT_CSS_OK); }},
     {"appendMedium to an import", "@import url(a.css) screen;", [](Sheet & s) { return media_append(s, {0}, "print"); }},
     {"replaceSync", "a { b {} } @media print { c {} }", [](Sheet & s) {
        return gtext_cssom_sheet_replace_sync(s.s, "x { y {} } z {} @import 'q';", 27, nullptr);
@@ -152,6 +161,24 @@ const Scenario kScenarios[] = {
     {"fontFamily keeps the feature blocks", "@font-feature-values F { @swash { a: 1 } }", [](Sheet & s) { return attr_set(s, {0}, "fontFamily", "G, H"); }},
 };
 
+/// The sheet's dump, and for the scenarios that change a sheet's media, the text of its list as read (the dump does not say it).
+std::string snap(Sheet & s, const Scenario & sc) {
+  std::string out = dump(s.s);
+  if (std::string(sc.name).find("mediaText of a sheet") == 0) {
+    GTEXT_CSSOM_Media_List * m = nullptr;
+    if (gtext_cssom_sheet_media(s.s, &m) == GTEXT_CSS_OK) {
+      char * t = nullptr;
+      size_t n = 0;
+      if (gtext_cssom_media_text(m, &t, &n) == GTEXT_CSS_OK) {
+        out += "\nmedia: " + std::string(t, n);
+        gtext_cssom_buffer_free(&reinterpret_cast<css_obj *>(m)->core->alloc, t);
+      }
+      gtext_cssom_media_release(m);
+    }
+  }
+  return out;
+}
+
 TEST(CssomSettersOom, EveryMutatorIsAllOrNothing) {
   for (const Scenario & sc : kScenarios) {
     std::string want;
@@ -164,7 +191,7 @@ TEST(CssomSettersOom, EveryMutatorIsAllOrNothing) {
       ASSERT_EQ(s.status, GTEXT_CSS_OK) << sc.name;
       want_status = sc.op(s);
       ASSERT_EQ(want_status, GTEXT_CSS_OK) << sc.name;
-      want = dump(s.s);
+      want = snap(s, sc);
     }
     size_t failures = 0;
     for (size_t n = 1; n < 100000; n++) {
@@ -174,7 +201,7 @@ TEST(CssomSettersOom, EveryMutatorIsAllOrNothing) {
         Sheet s;
         make_sheet(s, doc, sc);
         ASSERT_EQ(s.status, GTEXT_CSS_OK) << sc.name;
-        if (std::string(sc.name).find("mediaText of a sheet") == 0 || std::string(sc.name).find("mediaText of a media") == 0 || std::string(sc.name).find("appendMedium") == 0) {
+        if (std::string(sc.name).find("mediaText of a") == 0 || std::string(sc.name).find("appendMedium") == 0) {
           /* the list object is made the first time it is asked for and stays: not what the call is measured on */
           GTEXT_CSSOM_Media_List * m = nullptr;
           if (std::string(sc.name).find("sheet") != std::string::npos) {
@@ -190,7 +217,7 @@ TEST(CssomSettersOom, EveryMutatorIsAllOrNothing) {
           Rule r = in_keyframes ? path(s, {0, 0}) : path(s, {0});
           Decl d = style_of(r.r);
         }
-        const std::string before = dump(s.s);
+        const std::string before = snap(s, sc);
         const uint64_t generation = gtext_cssom_document_generation(doc.d);
         const uint64_t version = gtext_cssom_sheet_version(s.s);
         GTEXT_CSSOM_Counters c0;
@@ -201,12 +228,12 @@ TEST(CssomSettersOom, EveryMutatorIsAllOrNothing) {
         fa.disarm();
         if (!fa.failed) {
           ASSERT_EQ(st, GTEXT_CSS_OK) << sc.name << " at " << n;
-          EXPECT_EQ(dump(s.s), want) << sc.name << ": the sweep ended at " << n;
+          EXPECT_EQ(snap(s, sc), want) << sc.name << ": the sweep ended at " << n;
           break;
         }
         failures++;
         ASSERT_EQ(st, GTEXT_CSS_E_OOM) << sc.name << ": allocation " << n << " " << gtext_css_status_string(st);
-        EXPECT_EQ(dump(s.s), before) << sc.name << ": allocation " << n;
+        EXPECT_EQ(snap(s, sc), before) << sc.name << ": allocation " << n;
         EXPECT_EQ(gtext_cssom_document_generation(doc.d), generation) << sc.name << " " << n;
         EXPECT_EQ(gtext_cssom_sheet_version(s.s), version) << sc.name << " " << n;
         EXPECT_EQ(doc.events.size(), events) << sc.name << " " << n << ": no event for a call that failed";
@@ -217,7 +244,7 @@ TEST(CssomSettersOom, EveryMutatorIsAllOrNothing) {
         EXPECT_EQ(c1.tree_bytes, c0.tree_bytes) << sc.name << " " << n;
         // and the same call again, now that nothing fails, is the unswept call: the ids are the ones it would have had
         EXPECT_EQ(sc.op(s), GTEXT_CSS_OK) << sc.name << " " << n;
-        EXPECT_EQ(dump(s.s), want) << sc.name << ": the retry after allocation " << n;
+        EXPECT_EQ(snap(s, sc), want) << sc.name << ": the retry after allocation " << n;
       }
       EXPECT_TRUE(fa.live.empty()) << sc.name << ": allocation " << n << " leaked";
       EXPECT_EQ(fa.bad_frees, 0u);

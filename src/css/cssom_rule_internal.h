@@ -155,6 +155,15 @@ typedef struct {
 
 const css_kind_info * css_kind(GTEXT_CSSOM_Rule_Kind kind);
 
+/// The media query list of a sheet, an `@import` rule or an `@media` rule as it was read, where that is not the canonical text it is stored as: a `<general-enclosed>` that the end of the
+/// input closed (`screen and (`) is stored closed (`screen and ()`), because the prelude of a rule must read back as the list it came from, and read back as it was written. `text[i]` is
+/// query `i` of the canonical text as it was read, or NULL where the canonical query is that (cssom_media.c).
+typedef struct css_media_read {
+  size_t count;                    ///< Queries of the canonical text.
+  char ** text;                    ///< `count` entries.
+  size_t bytes;                    ///< What it charged to its owner.
+} css_media_read;
+
 struct GTEXT_CSSOM_Rule {
   css_obj obj;
   uint8_t kind;                    ///< GTEXT_CSSOM_Rule_Kind.
@@ -183,6 +192,8 @@ struct GTEXT_CSSOM_Rule {
   size_t run_count;
   GTEXT_CSSOM_Decl * style;        ///< The declaration block, built the first time it is asked for (internal count held).
   struct GTEXT_CSSOM_Media_List * media;   ///< `media` of an `@import` or `@media`, made the first time it is asked for (internal count held).
+  css_media_read * media_read;     ///< `@import`, `@media`: the media query list as read, or NULL when it is the canonical text; dropped by any change of the rule's own part (css_own_swap()).
+  css_media_read * media_read_next;   ///< ... the one the change in progress installs (set by the media list's setters before the rule is replaced; css_own_swap() moves it to `media_read`).
 };
 
 css_rule * css_rule_from_obj(css_obj * o);
@@ -261,6 +272,7 @@ struct GTEXT_CSSOM_Sheet {
   const void * owner_node;
   bool disabled, alternate, origin_clean, constructed, disallow_modification;
   char * media_text;               ///< The sheet's media query list, canonical; NULL for the empty list.
+  css_media_read * media_read;     ///< ... as it was read, or NULL when that is `media_text`.
   struct GTEXT_CSSOM_Media_List * media;   ///< `media`, made the first time it is asked for (internal count held).
   unsigned pending_replace;        ///< `replace()` calls begun and not completed (a constructed sheet).
   size_t rule_total;               ///< Rules at every depth.

@@ -27,6 +27,13 @@
  * the empty list, which matches everything. `appendMedium` and `deleteMedium` compare by serialization. The same list object is returned every time its owner is asked
  * (`sheet.media === sheet.media`); it is reference counted like every object and keeps its owner reachable while it is held.
  *
+ * **The text is the text as it was read.** A `<general-enclosed>` that Media Queries 4 keeps unknown (`(a b)`, `foo(x)`) is written as it was written, white space, comments and
+ * escapes included, and one that the end of the input closed stays unclosed: `screen and (` reads back as `screen and (`, which is what Chromium and Firefox write. The rule stores the
+ * closed text (`screen and ()`), because an unclosed parenthesis in a prelude would take the `{` after it, and keeps the text as read beside it: `mediaText`, `item()`, a rule's
+ * `conditionText` and `cssText`, an `@import` rule's `cssText` and `matchMedia().media` write the text as read; `length` counts the queries of the closed text; `appendMedium` and
+ * `deleteMedium` compare a medium with the items as they were read (`screen and (` and `screen and ()` are two media); a script's own `matchMedia`-free readers (the style engine,
+ * the import request, the event summary) see the closed text, which means the same. Setting the list again, or any other change of the rule's own part, ends the text as read.
+ *
  * Setting the text of a sheet's list moves the sheet's version and sends `SHEET_MEDIA_CHANGED`; of a rule's, replaces the rule as a whole (css_cssom_rule.h) and sends `RULE_REPLACED`.
  * A change that leaves the serialization as it was is `UNCHANGED`: no version, no event.
  */

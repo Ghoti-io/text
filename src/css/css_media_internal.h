@@ -138,8 +138,10 @@ typedef struct {
   uint32_t kid_count;
   uint32_t v1;            ///< FEATURE: the value (the one written, or the left one of a double range).
   uint32_t v2;            ///< FEATURE: the right value of a double range.
-  const char * text;      ///< QUERY: the media type, lower case and decoded; ENCLOSED: the serialization; CUSTOM: the name (`--x`, as written).
+  const char * text;      ///< QUERY: the media type, lower case and decoded; ENCLOSED: the canonical serialization; CUSTOM: the name (`--x`, as written).
   size_t text_length;
+  const char * asread;    ///< ENCLOSED read with its source text, when `text` is not what was read (white space or comments inside it, or the closing tokens the end of the input supplied): the text as it was read; NULL otherwise.
+  size_t asread_length;
   const char * name;      ///< ENCLOSED that looks like a feature (`(name: value)`, `(name)`): the name, lower case; NULL otherwise.
   size_t name_length;
   const char * value;     ///< ... and its value as CSS text (NULL for the boolean form).
@@ -166,6 +168,7 @@ struct GTEXT_CSS_Media_List_Internal {
   size_t math_count, math_cap;
   uint32_t * roots;      ///< The node of each query.
   size_t root_count, root_cap;
+  bool as_read_differs;  ///< Some ENCLOSED node has `asread`.
   uint32_t dependencies; ///< Bits of 1 << css_mq_dep of every feature mentioned (known or not).
   uint64_t features_lo, features_hi; ///< Bit i: media feature row i is mentioned (rows 0..127).
 };

@@ -93,11 +93,11 @@ the-style-of-a-typed-rule-is-unsupported	cssom_rule.c	  const bool typed = css_t
 descriptors-are-not-listed-with-the-length	cssom_decl.c	  *out = gtext_css_block_count(decl->block) + css_typed_desc_count(decl);	  *out = gtext_css_block_count(decl->block);	setters
 a-descriptor-is-not-written-in-css-text	cssom_decl.c	  if (st == GTEXT_CSS_OK && decl->ndescs) {\n    st = css_typed_desc_text(decl, &b);\n  }	  if (0) {\n    st = css_typed_desc_text(decl, &b);\n  }	setters
 selector-block-is-built-after-the-swap	cssom_setters.c	  if (style) {\n    /* the block, not the syntax	  if (0) {\n    /* the block, not the syntax	setters
-an-unchanged-media-text-is-a-change	cssom_media.c	  if (same) {\n    if (outcome) {\n      outcome->kind = GTEXT_CSSOM_UNCHANGED;\n    }\n    return GTEXT_CSS_OK;\n  }	  if (0) {\n    return GTEXT_CSS_OK;\n  }	media
+an-unchanged-media-text-is-a-change	cssom_media.c	  if (same) {\n    css_media_read_free(core, read);\n    if (outcome) {\n      outcome->kind = GTEXT_CSSOM_UNCHANGED;\n    }\n    return GTEXT_CSS_OK;\n  }	  if (0) {\n    return GTEXT_CSS_OK;\n  }	media
 an-ambiguous-medium-is-appended	cssom_media.c	  if (st == GTEXT_CSS_OK && queries != 1) {\n    /* CSSOM, 4.1	  if (st == GTEXT_CSS_OK && 0) {\n    /* CSSOM, 4.1	media
 delete-of-two-media-is-not-found	cssom_media.c	  if (st == GTEXT_CSS_OK && queries != 1) {\n    out->kind = GTEXT_CSSOM_UNCHANGED;   /* CSSOM: "Let m	  if (0) {\n    out->kind = GTEXT_CSSOM_UNCHANGED;   /* CSSOM: "Let m	media
-a-medium-already-there-is-appended-again	cssom_media.c	          present = present || (all[i].length == one.len && memcmp(all[i].data, one.data, one.len) == 0);	          present = false;	media
-deleting-a-medium-that-is-not-there-succeeds	cssom_media.c	        st = GTEXT_CSS_E_NOT_FOUND;   /* "If nothing was removed, then throw a NotFoundError exception." */	        st = GTEXT_CSS_OK;	media
+a-medium-already-there-is-appended-again	cssom_media.c	      present = present || span_eq(item_read(have, i, all[i]), mine);	      present = false;	media
+deleting-a-medium-that-is-not-there-succeeds	cssom_media.c	      st = GTEXT_CSS_E_NOT_FOUND;   /* "If nothing was removed, then throw a NotFoundError exception." */	      st = GTEXT_CSS_OK;	media
 the-import-prefix-is-lost-from-a-media-change	cssom_media.c	    if (!tb_puts(&header, "@import ") || !tb_put(&header, p, from) || (n && !tb_put(&header, canon, n))) {	    if (!tb_puts(&header, "@import ") || !tb_put(&header, p, 0) || (n && !tb_put(&header, canon, n))) {	media
 a-list-past-the-end-is-not-null	cssom_media.c	    *is_null = !found;	    *is_null = false;	media
 a-sheets-media-change-sends-no-version	cssom_media.c	    s->media_text = copy;\n    css_sheet_bump(s);	    s->media_text = copy;	media
@@ -337,3 +337,16 @@ container-kinds-leak-the-axis	css_container.c	  return q->in.nodes[q->in.roots[i
 empty-nested-declarations-writes-a-line	cssom_rule_serialize.c	    f->next = next_written(css_rule_list_next(pending));	    f->next = css_rule_list_next(pending);	serialize
 empty-nested-declarations-first-child-written	cssom_rule_serialize.c	        stack[sp].next = next_written(css_rule_list_first(&pending->rules));	        stack[sp].next = css_rule_list_first(&pending->rules);	serialize
 empty-nested-declarations-keeps-its-frame	cssom_rule_serialize.c	  return rule->rules.count > 0 && next_written(css_rule_list_first(&rule->rules)) != NULL;	  return rule->rules.count > 0;	serialize
+the-list-is-read-as-the-closed-text	cssom_media.c	  return owner_obj_text(list->owner, out, true);	  return owner_obj_text(list->owner, out, false);	media
+a-media-rule-forgets-its-list-as-read	cssom_setters.c	  rule->media_read = rule->media_read_next;	  rule->media_read = NULL;	media
+a-media-rules-text-ignores-its-list-as-read	cssom_rule_serialize.c	    if (rule->media_read) {\n      /* an `@media` whose	    if (0) {\n      /* an `@media` whose	media
+an-imports-text-ignores-its-list-as-read	cssom_rule_serialize.c	  if (rule->kind == GTEXT_CSSOM_RULE_IMPORT && rule->media_read) {	  if (rule->kind == GTEXT_CSSOM_RULE_IMPORT && 0) {	media
+a-medium-is-compared-as-the-closed-text	cssom_media.c	      present = present || span_eq(item_read(have, i, all[i]), mine);	      present = present || span_eq(all[i], (span){one.data, one.len});	media
+a-medium-is-deleted-as-the-closed-text	cssom_media.c	      kept += !span_eq(item_read(have, i, all[i]), mine);	      kept += !span_eq(all[i], (span){one.data, one.len});	media
+length-counts-the-queries-of-the-text-as-read	cssom_media.c	  GTEXT_CSS_Status st = owner_obj_text(list->owner, &b, false);   /* the queries are those of the canonical text */\n  if (st == GTEXT_CSS_OK && b.oom) {\n    st = GTEXT_CSS_E_OOM;\n  }\n  if (st == GTEXT_CSS_OK) {\n    *out = split_queries(b.data, b.len, NULL, 0);	  GTEXT_CSS_Status st = owner_obj_text(list->owner, &b, true);\n  if (st == GTEXT_CSS_OK && b.oom) {\n    st = GTEXT_CSS_E_OOM;\n  }\n  if (st == GTEXT_CSS_OK) {\n    *out = split_queries(b.data, b.len, NULL, 0);	media
+an-item-is-the-closed-text	cssom_media.c	    one = item_read(owner_read(list->owner), index, all[index]);	    one = all[index];	media
+a-new-sheets-media-is-read-closed	cssom_sheet.c	    st = css_media_canonical_read(core, o.media, strlen(o.media), &canon, &read);	    st = css_media_canonical_read(core, o.media, strlen(o.media), &canon, NULL);	media
+a-sheets-media-forgets-its-list-as-read	cssom_media.c	    if (!read_take(&s->obj, &s->media_read, read)) {	    if (!read_take(&s->obj, &s->media_read, (css_media_read *)(css_media_read_free(core, read), NULL))) {	media
+a-change-that-only-the-list-as-read-sees-is-unchanged	cssom_media.c	 && now_read.len == want_read.len &&\n                    (now_read.len == 0 || memcmp(now_read.data, want_read.data, now_read.len) == 0);	;	media
+an-escaped-parenthesis-closes-a-leaf	cssom_media.c	      else if (c == '\\' && j + 1 < n) {\n        j++;   /* an escape	      else if (0) {\n        j++;   /* an escape	media
+match-media-writes-the-closed-text	cssom_mql.c	st = gtext_css_media_list_serialize_as_read_buffer(list, &core->alloc, &canon, &canon_length);	st = gtext_css_media_list_serialize_buffer(list, &core->alloc, &canon, &canon_length);	mediaquery

@@ -101,6 +101,18 @@ GTEXT_CSS_Conditions * conditions_with_metrics(bool with) {
   return c;
 }
 
+// `media` is the text of the list as it was read (Chromium 156 and Firefox 158 agree): an unclosed parenthesis stays unclosed, white space and comments inside a <general-enclosed> stay.
+TEST(CssomMediaQuery, MediaIsTheListAsItWasRead) {
+  World w;
+  const char * rows[][2] = {{"screen and (", "screen and ("}, {"(a (b ( c", "(a (b ( c"}, {"screen and ( a )", "screen and ( a )"}, {"(--x", "(--x"}, {"(foo(a", "(foo(a)"},
+                            {"not (foo(", "not (foo()"}, {"(color", "(color)"}, {"screen,  print", "screen, print"}, {"screen and (a:\"x", "screen and (a:\"x"}};
+  for (const auto & r : rows) {
+    Mql m(w.d(), r[0]);
+    ASSERT_EQ(m.status, GTEXT_CSS_OK) << r[0];
+    EXPECT_EQ(m.media(), r[1]) << r[0];
+  }
+}
+
 TEST(CssomMediaQuery, MatchMediaParsesAndEvaluatesForTheDocumentsConditions) {
   Cond c(1000);
   World w([&](GTEXT_CSSOM_Config & cfg) { cfg.conditions = c.c; });

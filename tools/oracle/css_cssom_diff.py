@@ -55,7 +55,7 @@ CLASSES = ("served-text", "standard-newer", "reference-old", "reference-wrong", 
 # a divergence in which the browsers agree and this library does not is allowed in these classes: the library follows a served sentence (or a newer draft) they do not. Class `ours` is a
 # defect of the library with an owner, and there may be at most MAX_OURS of them (a ceiling that only goes down and ends at 0).
 OURS_OK = ("served-text", "standard-newer", "reference-old", "env-fixed")
-MAX_OURS = int(os.environ.get("CSS_CSSOM_ORACLE_MAX_OURS", "4"))
+MAX_OURS = int(os.environ.get("CSS_CSSOM_ORACLE_MAX_OURS", "0"))
 LIST = os.path.join(HERE, "css_cssom_divergences.txt")
 # the other differentials' names of a class, and what each is for the report (one vocabulary: the first two are the classes `served-text` and `browsers-differ`)
 TABLE = {"standard-newer": "served-text", "reference-old": "browsers-differ", "reference-wrong": "browsers-differ", "reference-narrow": "browsers-differ", "legacy-compat": "browsers-differ", "env-fixed": "browsers-differ"}
@@ -70,6 +70,9 @@ def population(work, seed, count):
     with open(path, "w", encoding="utf-8") as f:
         for i in range(count):
             f.write(json.dumps(css_cssom_gen.Gen(seed, i).document(), ensure_ascii=False) + "\n")
+        # after the `count` documents, so that the documents before them are the ones a population of that size always had
+        for d in css_cssom_gen.media_general_documents():
+            f.write(json.dumps(d, ensure_ascii=False) + "\n")
     return path
 
 

@@ -37,6 +37,7 @@
 typedef struct {
   const GTEXT_Markup_Sink * sink;
   GTEXT_CSS_Status st;
+  bool as_read;   ///< A `<general-enclosed>` that the end of the input closed is written as it was read, without the tokens that closed it.
 } out_t;
 
 static void put(out_t * o, const char * s, size_t n) {
@@ -302,10 +303,20 @@ static GTEXT_CSS_Status write_condition(const struct GTEXT_CSS_Media_List_Intern
       }
       break;
     case MQN_ENCLOSED:
-      put(o, n->text, n->text_length);
+      if (o->as_read && n->asread) {
+        put(o, n->asread, n->asread_length);
+      }
+      else {
+        put(o, n->text, n->text_length);
+      }
       sp--;
       break;
     case MQN_CUSTOM:
+      if (o->as_read && n->asread && !f->bare) {
+        put(o, n->asread, n->asread_length);   /* the text as read (`(--x`, `( --x )`), parentheses included */
+        sp--;
+        break;
+      }
       if (!f->bare) {
         puts_(o, "(");
       }
@@ -411,7 +422,7 @@ static GTEXT_CSS_Status write_query(const struct GTEXT_CSS_Media_List_Internal *
 }
 
 GTEXT_CSS_Status css_mq_serialize_node(const struct GTEXT_CSS_Media_List_Internal * in, uint32_t node, const GTEXT_Markup_Sink * sink) {
-  out_t o = {sink, GTEXT_CSS_OK};
+  out_t o = {sink, GTEXT_CSS_OK, false};
   sframe * stack = gtext_allocator_malloc(&in->alloc, (in->node_count + 1) * sizeof(sframe));
   if (!stack) {
     return GTEXT_CSS_E_OOM;
@@ -421,12 +432,12 @@ GTEXT_CSS_Status css_mq_serialize_node(const struct GTEXT_CSS_Media_List_Interna
   return st;
 }
 
-GTEXT_CSS_Status gtext_css_media_list_serialize(const GTEXT_CSS_Media_List * list, const GTEXT_Markup_Sink * sink) {
+static GTEXT_CSS_Status serialize_list(const GTEXT_CSS_Media_List * list, const GTEXT_Markup_Sink * sink, bool as_read) {
   if (!list || !sink || !sink->write) {
     return GTEXT_CSS_E_INVALID;
   }
   const struct GTEXT_CSS_Media_List_Internal * in = &list->in;
-  out_t o = {sink, GTEXT_CSS_OK};
+  out_t o = {sink, GTEXT_CSS_OK, as_read};
   sframe * stack = gtext_allocator_malloc(&in->alloc, (in->node_count + 1) * sizeof(sframe));
   if (!stack) {
     return GTEXT_CSS_E_OOM;
@@ -439,6 +450,10 @@ GTEXT_CSS_Status gtext_css_media_list_serialize(const GTEXT_CSS_Media_List * lis
   }
   gtext_allocator_free(&in->alloc, stack);
   return o.st;
+}
+
+GTEXT_CSS_Status gtext_css_media_list_serialize(const GTEXT_CSS_Media_List * list, const GTEXT_Markup_Sink * sink) {
+  return serialize_list(list, sink, false);
 }
 
 typedef struct {
@@ -472,13 +487,13 @@ static GTEXT_Markup_Status sbuf_write(void * user, const char * bytes, size_t le
   return GTEXT_MARKUP_OK;
 }
 
-GTEXT_CSS_Status gtext_css_media_list_serialize_buffer(const GTEXT_CSS_Media_List * list, const GTEXT_Allocator * allocator, char ** out, size_t * out_length) {
+static GTEXT_CSS_Status serialize_buffer(const GTEXT_CSS_Media_List * list, const GTEXT_Allocator * allocator, char ** out, size_t * out_length, bool as_read) {
   if (!list || !out || !out_length) {
     return GTEXT_CSS_E_INVALID;
   }
   sbuf b = {allocator ? allocator : gtext_allocator_default(), NULL, 0, 0, false};
   GTEXT_Markup_Sink sink = {sbuf_write, &b};
-  GTEXT_CSS_Status st = gtext_css_media_list_serialize(list, &sink);
+  GTEXT_CSS_Status st = serialize_list(list, &sink, as_read);
   if (st == GTEXT_CSS_OK && !b.data) {
     sbuf_write(&b, "", 0);
     if (!b.data) {
@@ -496,6 +511,43 @@ GTEXT_CSS_Status gtext_css_media_list_serialize_buffer(const GTEXT_CSS_Media_Lis
   if (st != GTEXT_CSS_OK) {
     gtext_allocator_free(b.alloc, b.data);
     return st;
+  }
+  *out = b.data;
+  *out_length = b.length;
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_css_media_list_serialize_buffer(const GTEXT_CSS_Media_List * list, const GTEXT_Allocator * allocator, char ** out, size_t * out_length) {
+  return serialize_buffer(list, allocator, out, out_length, false);
+}
+
+GTEXT_CSS_Status gtext_css_media_list_serialize_as_read_buffer(const GTEXT_CSS_Media_List * list, const GTEXT_Allocator * allocator, char ** out, size_t * out_length) {
+  return serialize_buffer(list, allocator, out, out_length, true);
+}
+
+GTEXT_CSS_Status gtext_css_media_list_serialize_query_buffer(const GTEXT_CSS_Media_List * list, size_t index, bool as_read, const GTEXT_Allocator * allocator, char ** out, size_t * out_length) {
+  if (!list || !out || !out_length || index >= list->in.root_count) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  const struct GTEXT_CSS_Media_List_Internal * in = &list->in;
+  sbuf b = {allocator ? allocator : gtext_allocator_default(), NULL, 0, 0, false};
+  GTEXT_Markup_Sink sink = {sbuf_write, &b};
+  out_t o = {&sink, GTEXT_CSS_OK, as_read};
+  sframe * stack = gtext_allocator_malloc(&in->alloc, (in->node_count + 1) * sizeof(sframe));
+  if (!stack) {
+    return GTEXT_CSS_E_OOM;
+  }
+  write_query(in, in->roots[index], &o, stack);
+  gtext_allocator_free(&in->alloc, stack);
+  if (o.st == GTEXT_CSS_OK && !b.data) {
+    sbuf_write(&b, "", 0);
+  }
+  if (b.failed) {
+    o.st = GTEXT_CSS_E_OOM;
+  }
+  if (o.st != GTEXT_CSS_OK) {
+    gtext_allocator_free(b.alloc, b.data);
+    return o.st;
   }
   *out = b.data;
   *out_length = b.length;

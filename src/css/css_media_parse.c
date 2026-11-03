@@ -2195,6 +2195,22 @@ static GTEXT_CSS_Status finish(parser * P) {
         in->features_hi |= (uint64_t)1 << (nd->feature - 64);
       }
     }
+    if (nd->kind == MQN_CUSTOM && P->o.source && nd->span.offset < nd->span.end && nd->span.end <= P->o.source_length) {
+      /* `(--x` is the name of a custom media query to this library and a `<general-enclosed>` to the browsers, which write it as it was read */
+      const char * raw = P->o.source + nd->span.offset;
+      const size_t rn = nd->span.end - nd->span.offset;
+      if (rn != nd->text_length + 2 || raw[0] != '(' || memcmp(raw + 1, nd->text, nd->text_length) != 0 || raw[rn - 1] != ')') {
+        char * copy = css_arena_alloc(&in->arena, rn + 1);
+        if (!copy) {
+          return GTEXT_CSS_E_OOM;
+        }
+        memcpy(copy, raw, rn);
+        copy[rn] = 0;
+        nd->asread = copy;
+        nd->asread_length = rn;
+        in->as_read_differs = true;
+      }
+    }
     if (nd->kind != MQN_ENCLOSED) {
       continue;
     }
@@ -2253,6 +2269,39 @@ static GTEXT_CSS_Status finish(parser * P) {
       nd->text_length = inner_len + 2;
     }
     gtext_css_serialize_buffer_free(&so, inner);
+    /* With the text the spans point into, the leaf also keeps the text it was read from, white space, comments and escapes included, which is how Chromium and Firefox write it
+       (`( a )`, a comment inside it, and `screen and (` where `text` is the closed `screen and ()`). `text` stays the canonical one: the text a rule's prelude is stored as and read back from,
+       which must close what the end of the input left open (or the `)` it lacks would swallow the `{` after it). A NUL becomes U+FFFD, as the input stream preprocessing of CSS
+       Syntax 3 has it, because the texts built from this are C strings. */
+    if (P->o.source && src->span.offset < src->span.end && src->span.end <= P->o.source_length) {
+      const char * raw = P->o.source + src->span.offset;
+      const size_t rn = src->span.end - src->span.offset;
+      size_t nuls = 0;
+      for (size_t k = 0; k < rn; k++) {
+        nuls += raw[k] == 0;
+      }
+      char * copy = css_arena_alloc(&in->arena, rn + 2 * nuls + 1);
+      if (!copy) {
+        return GTEXT_CSS_E_OOM;
+      }
+      size_t w = 0;
+      for (size_t k = 0; k < rn; k++) {
+        if (raw[k] == 0) {
+          copy[w++] = (char)0xEF;
+          copy[w++] = (char)0xBF;
+          copy[w++] = (char)0xBD;
+        }
+        else {
+          copy[w++] = raw[k];
+        }
+      }
+      copy[w] = 0;
+      if (w != nd->text_length || memcmp(copy, nd->text, w) != 0) {
+        nd->asread = copy;
+        nd->asread_length = w;
+        in->as_read_differs = true;
+      }
+    }
     /* A block shaped like a feature -- `(name)` or `(name: value)` -- keeps its parts for an extension callback. */
     if (src->kind == GTEXT_CSS_VALUE_BLOCK && ks < ke && is_ident(&kids[ks])) {
       size_t after = skip_ws(kids, ke, ks + 1);
@@ -2340,6 +2389,10 @@ bool gtext_css_media_list_query_replaced(const GTEXT_CSS_Media_List * list, size
 
 size_t gtext_css_media_list_node_count(const GTEXT_CSS_Media_List * list) {
   return list ? list->in.node_count : 0;
+}
+
+bool gtext_css_media_list_as_read_differs(const GTEXT_CSS_Media_List * list) {
+  return list && list->in.as_read_differs;
 }
 
 /* ---- entry points -------------------------------------------------------- */
@@ -2522,6 +2575,8 @@ GTEXT_CSS_Status gtext_css_media_list_parse(const char * text, size_t length, co
   if (!po.allocator) {
     po.allocator = o.allocator;
   }
+  o.source = text ? text : "";
+  o.source_length = length;
   GTEXT_CSS_Tree * tree = NULL;
   GTEXT_CSS_Result pr;
   memset(&pr, 0, sizeof pr);

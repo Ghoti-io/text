@@ -237,6 +237,138 @@ TEST(CssomMedia, AnImportsMediaAreTheQueriesAfterItsUrlLayerAndSupports) {
   EXPECT_EQ(shape(s), "import,import,style");
 }
 
+namespace {
+
+std::string cond(GTEXT_CSSOM_Rule * r) {
+  char * out = nullptr;
+  size_t n = 0;
+  bool nul = false;
+  const GTEXT_CSS_Status st = gtext_cssom_rule_get_attribute(r, "conditionText", 13, &out, &n, &nul);
+  if (st != GTEXT_CSS_OK) {
+    return std::string("<") + gtext_css_status_string(st) + ">";
+  }
+  std::string s(out, n);
+  gtext_cssom_buffer_free(&reinterpret_cast<css_obj *>(r)->core->alloc, out);
+  return s;
+}
+
+}  // namespace
+
+// Chromium 156 and Firefox 158 write the media of a list as they were read: a <general-enclosed> keeps its white space and comments, and an unclosed parenthesis is not closed. The
+// rule stores the closed text (an unclosed `(` would take the `{` after it), so the library keeps both.
+TEST(CssomMedia, AnUnclosedParenthesisIsWrittenAsItWasReadAndTheRuleKeepsItsBlock) {
+  Doc doc;
+  Sheet s(doc, "@media screen { a { color: red } b {} } c {}");
+  Rule r = path(s, {0});
+  Media m = rule_media(r.r);
+  EXPECT_EQ(set_text(m.m, "screen and (").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(m.m), "screen and (");
+  EXPECT_EQ(cond(r.r), "screen and (");
+  EXPECT_EQ(css(r.r), "@media screen and ( {\n  a { color: red; }\n  b { }\n}") << "the block is still the rule's";
+  EXPECT_EQ(shape(s), "media[style,style],style");
+  EXPECT_NE(path(s, {0, 1}).r, nullptr);
+  EXPECT_EQ(count(m.m), 1u);
+  EXPECT_EQ(item(m.m, 0), "screen and (");
+  // a list that is read the same is not a change, and one that is closed the same way is: the text a script reads moves
+  EXPECT_EQ(set_text(m.m, "screen and (").o.kind, GTEXT_CSSOM_UNCHANGED);
+  EXPECT_EQ(set_text(m.m, "screen and ()").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(m.m), "screen and ()");
+  EXPECT_EQ(css(r.r), "@media screen and () {\n  a { color: red; }\n  b { }\n}");
+  // an ordinary text ends it
+  EXPECT_EQ(set_text(m.m, "(a (b ( c").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(m.m), "(a (b ( c");
+  EXPECT_EQ(set_text(m.m, "print").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(m.m), "print");
+  EXPECT_EQ(css(r.r), "@media print {\n  a { color: red; }\n  b { }\n}");
+  // the white space and the comments of a leaf, and its escapes
+  EXPECT_EQ(set_text(m.m, "screen and ( a ), print and (x/**/y)").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(m.m), "screen and ( a ), print and (x/**/y)");
+  EXPECT_EQ(count(m.m), 2u);
+  EXPECT_EQ(item(m.m, 0), "screen and ( a )");
+  EXPECT_EQ(item(m.m, 1), "print and (x/**/y)");
+  EXPECT_EQ(css(r.r), "@media screen and ( a ), print and (x/**/y) {\n  a { color: red; }\n  b { }\n}");
+  EXPECT_EQ(set_text(m.m, "screen and (a)").o.kind, GTEXT_CSSOM_CHANGED) << "(a) is not ( a )";
+  EXPECT_EQ(text(m.m), "screen and (a)");
+  EXPECT_EQ(set_text(m.m, "x and ( a\\ b )").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(m.m), "x and ( a\\ b )");
+}
+
+TEST(CssomMedia, AnUnclosedParenthesisInTheMediaOfASheetAnImportAndAConstructedSheet) {
+  Doc doc;
+  Sheet s(doc, "@import url(a.css) print; @media screen { a {} }");
+  Media sm = sheet_media(s.s);
+  EXPECT_EQ(set_text(sm.m, "tv and (a:b").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(sm.m), "tv and (a:b");
+  EXPECT_EQ(count(sm.m), 1u);
+  EXPECT_EQ(set_text(sm.m, "tv and (a:b").o.kind, GTEXT_CSSOM_UNCHANGED);
+  EXPECT_EQ(set_text(sm.m, "tv and (a:b)").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(sm.m), "tv and (a:b)");
+  Rule imp = path(s, {0});
+  Media im = rule_media(imp.r);
+  EXPECT_EQ(set_text(im.m, "screen and (").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(im.m), "screen and (");
+  EXPECT_EQ(css(imp.r), "@import url(\"a.css\") screen and (;");
+  EXPECT_EQ(shape(s), "import,media[style]") << "the semicolon is the rule's";
+  EXPECT_EQ(append(im.m, "tv").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(css(imp.r), "@import url(\"a.css\") screen and (, tv;");
+  EXPECT_EQ(set_text(im.m, "tv").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(css(imp.r), "@import url(\"a.css\") tv;");
+  GTEXT_CSSOM_Sheet_Options o = gtext_cssom_sheet_options_default();
+  o.media = "screen and ( a ), (b (c";
+  Sheet made(doc, "a{}", &o);
+  ASSERT_EQ(made.status, GTEXT_CSS_OK);
+  Media mm = sheet_media(made.s);
+  EXPECT_EQ(text(mm.m), "screen and ( a ), (b (c") << "the option of a new sheet is read as a script sets it";
+  EXPECT_EQ(count(mm.m), 2u);
+}
+
+TEST(CssomMedia, AppendAndDeleteCompareMediaAsTheyWereRead) {
+  Doc doc;
+  Sheet s(doc, "@media screen, print { a {} }");
+  Rule r = path(s, {0});
+  Media m = rule_media(r.r);
+  EXPECT_EQ(set_text(m.m, "print, screen and (").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(append(m.m, "tv").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(m.m), "print, screen and (, tv") << "the unclosed query is a query of its own, and the new one follows it";
+  EXPECT_EQ(count(m.m), 3u);
+  EXPECT_EQ(item(m.m, 1), "screen and (");
+  EXPECT_EQ(append(m.m, "screen and (").o.kind, GTEXT_CSSOM_UNCHANGED) << "the same medium as it was read";
+  EXPECT_EQ(append(m.m, "screen and ()").o.kind, GTEXT_CSSOM_CHANGED) << "the closed one is another medium";
+  EXPECT_EQ(text(m.m), "print, screen and (, tv, screen and ()");
+  EXPECT_EQ(css(r.r), "@media print, screen and (, tv, screen and () {\n  a { }\n}");
+  EXPECT_EQ(del(m.m, "screen and ()").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text(m.m), "print, screen and (, tv");
+  EXPECT_EQ(del(m.m, "tv").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text(m.m), "print, screen and (");
+  EXPECT_EQ(del(m.m, "print").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text(m.m), "screen and (") << "what is left keeps the way it was read";
+  EXPECT_EQ(del(m.m, "screen and ()").st, GTEXT_CSS_E_NOT_FOUND) << "closed, it is another medium";
+  EXPECT_EQ(del(m.m, "screen and (").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text(m.m), "");
+  EXPECT_EQ(css(r.r), "@media  {\n  a { }\n}");
+  // two whose white space differs are two media; the second one does not match the first when they are read
+  EXPECT_EQ(set_text(m.m, "(a  b)").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(append(m.m, "(a b)").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(m.m), "(a  b), (a b)");
+}
+
+// The queries are told apart in the canonical text: a comma or a parenthesis in a string or after a backslash is not one.
+TEST(CssomMedia, ALeafWithAStringOrAnEscapeIsOneQuery) {
+  Doc doc;
+  Sheet s(doc, "@media screen { a {} }");
+  Rule r = path(s, {0});
+  Media m = rule_media(r.r);
+  EXPECT_EQ(set_text(m.m, "x and (a\\), b), print").st, GTEXT_CSS_OK);
+  EXPECT_EQ(count(m.m), 2u) << "an escaped parenthesis closes nothing, and the comma after it is inside the leaf";
+  EXPECT_EQ(item(m.m, 0), "x and (a\\), b)");
+  EXPECT_EQ(set_text(m.m, "x and (a: \", ) b\"), print").st, GTEXT_CSS_OK);
+  EXPECT_EQ(count(m.m), 2u) << "a comma and a parenthesis in a string";
+  EXPECT_EQ(append(m.m, "tv").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(text(m.m), "x and (a: \", ) b\"), print, tv");
+  EXPECT_EQ(del(m.m, "print").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text(m.m), "x and (a: \", ) b\"), tv");
+}
+
 TEST(CssomMedia, AListFollowsItsOwnerAndOutlivesIt) {
   Doc doc;
   GTEXT_CSSOM_Media_List * held = nullptr;

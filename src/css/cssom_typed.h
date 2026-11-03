@@ -89,6 +89,18 @@ void css_rule_replaced(css_rule * rule, GTEXT_CSS_Selector_List * before, bool b
 /// The canonical text of a media query list (a text always parses: a bad query is `not all`), appended to `out`.
 GTEXT_CSS_Status css_media_canonical(css_core * core, const char * text, size_t length, tbuf * out);
 
+/// The canonical text of a media query list, and in `*read` (when not NULL) the as-read form of its queries if any differs from the canonical one (NULL otherwise): a new
+/// object that the caller installs (css_media_read_install_sheet(), the media list's setters) or frees (css_media_read_free()).
+GTEXT_CSS_Status css_media_canonical_read(css_core * core, const char * text, size_t length, tbuf * out, struct css_media_read ** read);
+void css_media_read_free(css_core * core, struct css_media_read * read);
+/// Make `read` (or none, NULL) the as-read form of the media list of a sheet; takes it in every case. The old one is dropped. False when the charge to the sheet's limit fails (nothing changed).
+bool css_media_read_install_sheet(struct GTEXT_CSSOM_Sheet * sheet, struct css_media_read * read);
+/// Drop the as-read form of a rule or a sheet (the owner stays, its bytes are credited). With `credit` false the owner is going and its bytes go with it.
+void css_media_read_drop(css_obj * owner, struct css_media_read ** slot, bool credit);
+/// Where the media query list begins in the canonical prelude of an `@import` (after the url, `layer` and `supports()`).
+size_t css_import_media_start(const char * s, size_t n);
+/// The prelude of an `@media` rule, or of an `@import`, as it was read: `prelude` is the canonical one the typed model holds. Appended to `out`; the canonical prelude when the rule keeps no other.
+GTEXT_CSS_Status css_rule_prelude_read(const css_rule * rule, const char * prelude, size_t length, tbuf * out);
 /// The media query list of an `@import` or `@media` rule as text, in a new buffer, without making the `MediaList` object (which would take an id).
 GTEXT_CSS_Status css_rule_media_text(css_rule * rule, char ** out, size_t * length);
 void css_media_owner_gone(struct GTEXT_CSSOM_Media_List ** list);

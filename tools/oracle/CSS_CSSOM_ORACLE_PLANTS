@@ -2,3 +2,8 @@
 an-ambiguous-medium-is-appended
 parsed-list-replaces-in-place
 typed-css-text-is-not-the-declaration-blocks
+the-list-is-read-as-the-closed-text
+a-media-rules-text-ignores-its-list-as-read
+an-imports-text-ignores-its-list-as-read
+a-sheets-media-forgets-its-list-as-read
+match-media-writes-the-closed-text

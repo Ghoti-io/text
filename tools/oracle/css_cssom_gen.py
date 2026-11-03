@@ -149,6 +149,24 @@ def setter_documents():
     return docs
 
 
+# A `<general-enclosed>` of a media query list is written as it was read (white space, comments and escapes kept, and an unclosed parenthesis not closed): the shapes Chromium 156 and
+# Firefox 158 agree on. The ones with a known feature (`(color`) are closed, as a feature is parsed and written; `(foo(a` has its condition closed and its function not.
+MEDIA_GENERAL = ["screen and (", "(a (b ( c", "(a (b) ", "screen and (a:b", "screen and (a/**/b)", "screen and ( a )", "screen and (  a   b  )", "screen and foo( a )", "(a:\"x", "(a: url(x",
+                 "(--x", "(foo(a", "not (foo(", "(color", "(min-width: 1px", "(not (color)", "screen and (color", "screen and (\\41 b)", "screen and ('x' )", "screen and (a  ,  b)",
+                 "screen and (a: url( x ))", "screen and ( { a } )", "screen and (a /* x", "screen and foo(a, b", "screen and (--x: y; z", "(a\n\tb)", "not ( a )", "screen and ( a ) and ( b )",
+                 "only screen and (x: y "]
+
+
+def media_general_documents():
+    docs = []
+    for m in MEDIA_GENERAL:
+        docs.append({"g": "media-general", "ops": [["S", "@media screen{a{}} @import url(a.css) print;"], ["M", "0", m], ["V", "0", "conditionText"], ["V", "0", "cssText"], ["M", "", m],
+                                                    ["MA", "0", "tv"], ["V", "0", "conditionText"], ["MD", "0", "tv"], ["V", "0", "conditionText"], ["MD", "0", m], ["MM", m]]})
+        docs.append({"g": "media-general-import", "ops": [["S", "@import url(a.css) print; @media screen{a{}}"], ["M", "0", m], ["V", "0", "cssText"], ["MA", "0", "tv"], ["V", "0", "cssText"],
+                                                           ["MD", "0", "tv"], ["V", "0", "cssText"], ["Z", "1", "@media print{b{}}"], ["V", "1", "cssText"]]})
+    return docs
+
+
 _FIXED = None
 
 

@@ -1373,3 +1373,131 @@ TEST(CssMediaApi, TheIfConditionHookAnswersMedia) {
   EXPECT_EQ(env.condition(env.user, GTEXT_CSS_CONDITION_SUPPORTS, &t1, nullptr), GTEXT_CSS_TRI_UNKNOWN) << "until the supports half is here";
   EXPECT_EQ(gtext_css_conditions_condition(c.c, GTEXT_CSS_CONDITION_MEDIA, &t3), GTEXT_CSS_TRI_FALSE);
 }
+
+namespace {
+
+/// Query `index` of `p` as the browsers write it (`as_read`) or as the canonical text.
+std::string query_text(const Parsed & p, size_t index, bool as_read) {
+  char * out = nullptr;
+  size_t n = 0;
+  EXPECT_EQ(gtext_css_media_list_serialize_query_buffer(p.list, index, as_read, nullptr, &out, &n), GTEXT_CSS_OK);
+  std::string s(out, n);
+  gtext_css_media_buffer_free(nullptr, out);
+  return s;
+}
+
+std::string list_read(const Parsed & p) {
+  char * out = nullptr;
+  size_t n = 0;
+  EXPECT_EQ(gtext_css_media_list_serialize_as_read_buffer(p.list, nullptr, &out, &n), GTEXT_CSS_OK);
+  std::string s(out, n);
+  gtext_css_media_buffer_free(nullptr, out);
+  return s;
+}
+
+}  // namespace
+
+// Chromium 156 and Firefox 158 write a <general-enclosed> as it was read, and agree on every row. The canonical text is the closed one, which reads back as the same list (a rule's
+// prelude is stored as it, and an unclosed parenthesis in it would take the `{` after it).
+TEST(CssMediaAsRead, AGeneralEnclosedIsWrittenAsItWasRead) {
+  struct Row {
+    const char * input;
+    const char * canonical;
+    const char * as_read;
+  };
+  const Row rows[] = {
+      {"screen and (", "screen and ()", "screen and ("},
+      {"(a (b ( c", "(a (b ( c)))", "(a (b ( c"},
+      {"(a (b) ", "(a (b))", "(a (b) "},
+      {"screen and (a:b", "screen and (a:b)", "screen and (a:b"},
+      {"screen and (a/**/b)", "screen and (a/**/b)", "screen and (a/**/b)"},   // the serializer writes the comment two identifiers need between them
+      {"screen and ( a )", "screen and (a)", "screen and ( a )"},
+      {"screen and (  a   b  )", "screen and (a b)", "screen and (  a   b  )"},
+      {"screen and foo( a )", "screen and foo(a)", "screen and foo( a )"},
+      {"(a:\"x", "(a:\"x\")", "(a:\"x"},
+      {"(a: url(x", "(a: url(x))", "(a: url(x"},
+      {"(--x", "(--x)", "(--x"},
+      {"( --x )", "(--x)", "( --x )"},
+      {"(foo(a", "(foo(a))", "(foo(a)"},
+      {"not (foo(", "not (foo())", "not (foo()"},
+      {"screen and (a /* x", "screen and (a)", "screen and (a /* x"},
+      {"screen and (\\41 b)", "screen and (Ab)", "screen and (\\41 b)"},
+      {"screen and (a\r\nb)", "screen and (a b)", "screen and (a\r\nb)"},
+      {"screen and ('x' )", "screen and (\"x\")", "screen and ('x' )"},
+  };
+  for (const Row & r : rows) {
+    Parsed p(r.input);
+    ASSERT_EQ(p.status, GTEXT_CSS_OK) << r.input;
+    EXPECT_EQ(p.text(), r.canonical) << r.input;
+    EXPECT_EQ(query_text(p, 0, false), r.canonical) << r.input;
+    EXPECT_EQ(query_text(p, 0, true), r.as_read) << r.input;
+    EXPECT_EQ(list_read(p), r.as_read) << r.input;
+    EXPECT_EQ(gtext_css_media_list_as_read_differs(p.list), std::string(r.canonical) != r.as_read) << r.input;
+    Parsed again(p.text());
+    EXPECT_EQ(again.text(), r.canonical) << "the canonical text is a fixed point: " << r.input;
+  }
+}
+
+TEST(CssMediaAsRead, AKnownFeatureIsParsedAndWrittenNotKept) {
+  // "(color" is the feature (color) in both browsers: it is closed, and white space inside a feature is the serializer's
+  const char * rows[][2] = {{"(color", "(color)"}, {"(min-width: 1px", "(min-width: 1px)"}, {"(not (color)", "(not (color))"}, {"screen and (color", "screen and (color)"},
+                            {"( color )", "(color)"}, {"(min-width : 1px)", "(min-width: 1px)"}};
+  for (const auto & r : rows) {
+    Parsed p(r[0]);
+    ASSERT_EQ(p.status, GTEXT_CSS_OK) << r[0];
+    EXPECT_EQ(query_text(p, 0, true), r[1]) << r[0];
+    EXPECT_FALSE(gtext_css_media_list_as_read_differs(p.list)) << r[0];
+  }
+}
+
+TEST(CssMediaAsRead, EachQueryHasItsOwnAsReadText) {
+  Parsed p("screen and ( a ), print, (b (c");
+  ASSERT_EQ(p.status, GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_css_media_list_query_count(p.list), 3u);
+  EXPECT_EQ(query_text(p, 0, true), "screen and ( a )");
+  EXPECT_EQ(query_text(p, 1, true), "print");
+  EXPECT_EQ(query_text(p, 2, true), "(b (c");
+  EXPECT_EQ(query_text(p, 2, false), "(b (c))");
+  EXPECT_EQ(p.text(), "screen and (a), print, (b (c))");
+  EXPECT_EQ(list_read(p), "screen and ( a ), print, (b (c");
+  char * out = nullptr;
+  size_t n = 0;
+  EXPECT_EQ(gtext_css_media_list_serialize_query_buffer(p.list, 3, true, nullptr, &out, &n), GTEXT_CSS_E_INVALID) << "past the end";
+}
+
+TEST(CssMediaAsRead, WithoutTheSourceTheLeafIsWrittenFromItsValues) {
+  // the entries that take component values do not have the text unless the caller gives it
+  GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+  GTEXT_CSS_Tree * tree = nullptr;
+  GTEXT_CSS_Result pr;
+  std::memset(&pr, 0, sizeof pr);
+  const std::string text = "screen and ( a )";
+  ASSERT_EQ(gtext_css_parse_component_values(text.data(), text.size(), &po, &tree, &pr), GTEXT_CSS_OK);
+  GTEXT_CSS_Media_List * list = nullptr;
+  ASSERT_EQ(gtext_css_media_list_parse_values(tree->values, tree->value_count, nullptr, &list, nullptr), GTEXT_CSS_OK);
+  EXPECT_FALSE(gtext_css_media_list_as_read_differs(list));
+  char * out = nullptr;
+  size_t n = 0;
+  ASSERT_EQ(gtext_css_media_list_serialize_as_read_buffer(list, nullptr, &out, &n), GTEXT_CSS_OK);
+  EXPECT_EQ(std::string(out, n), "screen and (a)");
+  gtext_css_media_buffer_free(nullptr, out);
+  gtext_css_media_list_free(list);
+  GTEXT_CSS_Media_Options mo = gtext_css_media_options_default();
+  mo.source = text.data();
+  mo.source_length = text.size();
+  ASSERT_EQ(gtext_css_media_list_parse_values(tree->values, tree->value_count, &mo, &list, nullptr), GTEXT_CSS_OK);
+  EXPECT_TRUE(gtext_css_media_list_as_read_differs(list));
+  ASSERT_EQ(gtext_css_media_list_serialize_as_read_buffer(list, nullptr, &out, &n), GTEXT_CSS_OK);
+  EXPECT_EQ(std::string(out, n), "screen and ( a )") << "with the source the leaf is what was read";
+  gtext_css_media_buffer_free(nullptr, out);
+  gtext_css_media_list_free(list);
+  gtext_css_tree_free(tree);
+  gtext_css_result_free(&pr);
+}
+
+TEST(CssMediaAsRead, ANulIsAReplacementCharacter) {
+  const std::string input = std::string("screen and (a") + '\0' + "b)";
+  Parsed p(input);
+  ASSERT_EQ(p.status, GTEXT_CSS_OK);
+  EXPECT_EQ(query_text(p, 0, true), "screen and (a\xEF\xBF\xBD" "b)") << "the texts built from this are C strings";
+}

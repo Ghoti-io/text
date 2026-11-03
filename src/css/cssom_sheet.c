@@ -55,6 +55,7 @@ static void sheet_destroy(css_obj * o) {
   css_rule_list_release_all(&s->rules);
   css_media_owner_gone(&s->media);
   gtext_allocator_free(&a, s->media_text);
+  css_media_read_drop(&s->obj, &s->media_read, false);
   css_source_release(s->source);
   css_ns_env_release(s->ns);
   gtext_allocator_free(&a, s->href);
@@ -122,17 +123,24 @@ static GTEXT_CSS_Status sheet_make(GTEXT_CSSOM_Document * document, const char *
     /* kept in its canonical form: a text always parses */
     tbuf canon;
     tb_init(&canon, &core->alloc);
-    st = css_media_canonical(core, o.media, strlen(o.media), &canon);
+    css_media_read * read = NULL;
+    st = css_media_canonical_read(core, o.media, strlen(o.media), &canon, &read);
     if (st == GTEXT_CSS_OK && canon.len) {
       size_t cn = 0;
       s->media_text = tb_take(&canon, &cn);
       if (!s->media_text || !css_obj_charge(&s->obj, cn + 1)) {
+        css_media_read_free(core, read);
         css_obj_release_external(&s->obj);
         return s->media_text ? GTEXT_CSS_E_LIMIT_CSSOM : GTEXT_CSS_E_OOM;
+      }
+      if (!css_media_read_install_sheet(s, read)) {
+        css_obj_release_external(&s->obj);
+        return GTEXT_CSS_E_LIMIT_CSSOM;
       }
     }
     else {
       tb_free(&canon);
+      css_media_read_free(core, read);
     }
     if (st != GTEXT_CSS_OK) {
       css_obj_release_external(&s->obj);

@@ -139,6 +139,9 @@ static size_t split_queries(const char * s, size_t n, span * out, size_t cap) {
       else if (c == '"' || c == '\'') {
         quote = c;
       }
+      else if (c == '\\' && j + 1 < n) {
+        j++;   /* an escape (`\)` is no parenthesis) */
+      }
       else if (c == '(' || c == '[') {
         depth++;
       }
@@ -167,9 +170,133 @@ static size_t split_queries(const char * s, size_t n, span * out, size_t cap) {
   return count;
 }
 
+/* ---- the list as it was read ------------------------------------------------------------------------------------------------------------------ */
+
+static void read_free_raw(GTEXT_Allocator * a, css_media_read * r) {
+  if (r) {
+    for (size_t i = 0; i < r->count; i++) {
+      gtext_allocator_free(a, r->text[i]);
+    }
+    gtext_allocator_free(a, r->text);
+    gtext_allocator_free(a, r);
+  }
+}
+
+void css_media_read_free(css_core * core, css_media_read * r) {
+  GTEXT_Allocator a = core->alloc;
+  read_free_raw(&a, r);
+}
+
+/// A table of `count` queries with none read otherwise. NULL on memory.
+static css_media_read * read_new(css_core * core, size_t count) {
+  GTEXT_Allocator a = core->alloc;
+  css_media_read * r = gtext_allocator_calloc(&a, 1, sizeof *r);
+  if (!r) {
+    return NULL;
+  }
+  r->text = gtext_allocator_calloc(&a, count ? count : 1, sizeof *r->text);
+  if (!r->text) {
+    gtext_allocator_free(&a, r);
+    return NULL;
+  }
+  r->count = count;
+  r->bytes = sizeof *r + (count ? count : 1) * sizeof *r->text;
+  return r;
+}
+
+/// Set entry `i` to a copy of the text. False on memory.
+static bool read_set(css_core * core, css_media_read * r, size_t i, const char * text, size_t n) {
+  char * copy = css_core_dup(core, text, n);
+  if (!copy) {
+    return false;
+  }
+  r->text[i] = copy;
+  r->bytes += n + 1;
+  return true;
+}
+
+/// Whether no entry differs from the canonical text.
+static bool read_empty(const css_media_read * r) {
+  for (size_t i = 0; i < r->count; i++) {
+    if (r->text[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void css_media_read_drop(css_obj * owner, css_media_read ** slot, bool credit) {
+  css_media_read * r = *slot;
+  if (!r) {
+    return;
+  }
+  *slot = NULL;
+  if (credit) {
+    css_obj_credit(owner, r->bytes);
+  }
+  css_media_read_free(owner->core, r);
+}
+
+/// Take `read` for the slot of `owner` (an empty one is none), charging its bytes. False, with `read` freed and the slot untouched, when the limit would be passed.
+static bool read_take(css_obj * owner, css_media_read ** slot, css_media_read * read) {
+  if (read && read_empty(read)) {
+    css_media_read_free(owner->core, read);
+    read = NULL;
+  }
+  if (read && !css_obj_charge(owner, read->bytes)) {
+    css_media_read_free(owner->core, read);
+    return false;
+  }
+  css_media_read_drop(owner, slot, true);
+  *slot = read;
+  return true;
+}
+
+bool css_media_read_install_sheet(struct GTEXT_CSSOM_Sheet * sheet, css_media_read * read) {
+  return read_take(&sheet->obj, &sheet->media_read, read);
+}
+
+/// The canonical text `c` with the queries of `read` put in the places of the ones they replace, appended to `out`.
+static GTEXT_CSS_Status read_join(const char * c, size_t n, const css_media_read * read, tbuf * out) {
+  if (!read) {
+    return !n || tb_put(out, c, n) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  }
+  const size_t count = split_queries(c, n, NULL, 0);
+  if (count != read->count) {
+    return GTEXT_CSS_E_INTERNAL;
+  }
+  span * all = count ? gtext_allocator_malloc(&out->alloc, count * sizeof *all) : NULL;
+  if (count && !all) {
+    return GTEXT_CSS_E_OOM;
+  }
+  if (count) {
+    split_queries(c, n, all, count);
+  }
+  size_t at = 0;
+  bool ok = true;
+  for (size_t i = 0; ok && i < count; i++) {
+    const size_t from = (size_t)(all[i].data - c);
+    ok = tb_put(out, c + at, from - at);
+    if (ok && read->text[i]) {
+      ok = tb_put(out, read->text[i], strlen(read->text[i]));
+    }
+    else if (ok) {
+      ok = tb_put(out, all[i].data, all[i].length);
+    }
+    at = from + all[i].length;
+  }
+  ok = ok && tb_put(out, c + at, n - at);
+  gtext_allocator_free(&out->alloc, all);
+  return ok ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+}
+
 /// The canonical text of a media query list as written: parsed ("a text always parses": a bad query is `not all`) and serialized. `queries` receives the count; `clean` is false when
-/// any query was replaced or a diagnostic other than "unknown, kept" was raised.
-static GTEXT_CSS_Status canonical(css_core * core, const char * text, size_t length, tbuf * out, size_t * queries, bool * clean) {
+/// any query was replaced or a diagnostic other than "unknown, kept" was raised. When `read` is not NULL it receives the queries as they were read if any differs from its canonical
+/// text (an unclosed `<general-enclosed>`), NULL otherwise.
+static GTEXT_CSS_Status canonical(css_core * core, const char * text, size_t length, tbuf * out, size_t * queries, bool * clean, css_media_read ** read) {
+  if (read) {
+    *read = NULL;
+  }
   GTEXT_CSS_Media_Options mo = gtext_css_media_options_default();
   mo.allocator = &core->alloc;
   mo.parse.max_input_bytes = core->config.max_input_bytes;
@@ -199,6 +326,33 @@ static GTEXT_CSS_Status canonical(css_core * core, const char * text, size_t len
     *queries = gtext_css_media_list_query_count(list);
     gtext_css_media_buffer_free(&core->alloc, buf);
   }
+  if (st == GTEXT_CSS_OK && read && gtext_css_media_list_as_read_differs(list)) {
+    const size_t count = gtext_css_media_list_query_count(list);
+    css_media_read * r = read_new(core, count);
+    if (!r) {
+      st = GTEXT_CSS_E_OOM;
+    }
+    for (size_t i = 0; st == GTEXT_CSS_OK && i < count; i++) {
+      char * closed = NULL;
+      char * asread = NULL;
+      size_t cn = 0, an = 0;
+      st = gtext_css_media_list_serialize_query_buffer(list, i, false, &core->alloc, &closed, &cn);
+      if (st == GTEXT_CSS_OK) {
+        st = gtext_css_media_list_serialize_query_buffer(list, i, true, &core->alloc, &asread, &an);
+      }
+      if (st == GTEXT_CSS_OK && (cn != an || memcmp(closed, asread, cn) != 0) && !read_set(core, r, i, asread, an)) {
+        st = GTEXT_CSS_E_OOM;
+      }
+      gtext_css_media_buffer_free(&core->alloc, closed);
+      gtext_css_media_buffer_free(&core->alloc, asread);
+    }
+    if (st != GTEXT_CSS_OK) {
+      css_media_read_free(core, r);
+    }
+    else {
+      *read = r;
+    }
+  }
   gtext_css_media_list_free(list);
   if (clean) {
     *clean = ok;
@@ -207,7 +361,7 @@ static GTEXT_CSS_Status canonical(css_core * core, const char * text, size_t len
 }
 
 /// The prefix and the media of an `@import`'s canonical prelude: the pieces that are the url, `layer` and `supports()`, and where the queries begin.
-static size_t import_media_start(const char * s, size_t n) {
+size_t css_import_media_start(const char * s, size_t n) {
   size_t i = 0;
   size_t pieces = 0;
   while (i < n) {
@@ -257,14 +411,17 @@ static size_t import_media_start(const char * s, size_t n) {
   return n;
 }
 
-/// The media query list of a sheet, an `@import` rule or an `@media` rule as text, appended to `out`.
-static GTEXT_CSS_Status owner_obj_text(const css_obj * owner, tbuf * out) {
+/// The media query list of a sheet, an `@import` rule or an `@media` rule as text, appended to `out`: the canonical text, or, when `as_read`, the text as it was read.
+static GTEXT_CSS_Status owner_obj_text(const css_obj * owner, tbuf * out, bool as_read) {
   if (!owner) {
     return GTEXT_CSS_E_INVALID_STATE;
   }
   if (owner->kind == GTEXT_CSSOM_OBJECT_SHEET) {
     const css_sheet * s = (const css_sheet *)(uintptr_t)owner;
-    return !s->media_text || tb_put(out, s->media_text, strlen(s->media_text)) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+    if (!s->media_text) {
+      return GTEXT_CSS_OK;
+    }
+    return read_join(s->media_text, strlen(s->media_text), as_read ? s->media_read : NULL, out);
   }
   css_rule * r = (css_rule *)(uintptr_t)owner;
   GTEXT_CSS_Atrule * a = NULL;
@@ -276,23 +433,35 @@ static GTEXT_CSS_Status owner_obj_text(const css_obj * owner, tbuf * out) {
   const char * p = gtext_css_atrule_prelude_text(a, &n);
   size_t from = 0;
   if (r->kind == GTEXT_CSSOM_RULE_IMPORT) {
-    from = import_media_start(p, n);
+    from = css_import_media_start(p, n);
   }
-  if (n > from && !tb_put(out, p + from, n - from)) {
-    st = GTEXT_CSS_E_OOM;
+  if (n > from) {
+    st = read_join(p + from, n - from, as_read ? r->media_read : NULL, out);
   }
   gtext_css_atrule_free(a);
   return st;
 }
 
+/// What the user reads of the list: as it was read.
 static GTEXT_CSS_Status owner_text(GTEXT_CSSOM_Media_List * list, tbuf * out) {
-  return owner_obj_text(list->owner, out);
+  return owner_obj_text(list->owner, out, true);
+}
+
+GTEXT_CSS_Status css_rule_prelude_read(const css_rule * rule, const char * prelude, size_t length, tbuf * out) {
+  if (!rule->media_read || (rule->kind != GTEXT_CSSOM_RULE_MEDIA && rule->kind != GTEXT_CSSOM_RULE_IMPORT)) {
+    return !length || tb_put(out, prelude, length) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  }
+  const size_t from = rule->kind == GTEXT_CSSOM_RULE_IMPORT ? css_import_media_start(prelude, length) : 0;
+  if (from && !tb_put(out, prelude, from)) {
+    return GTEXT_CSS_E_OOM;
+  }
+  return read_join(prelude + from, length - from, rule->media_read, out);
 }
 
 GTEXT_CSS_Status css_rule_media_text(css_rule * rule, char ** out, size_t * length) {
   tbuf b;
   tb_init(&b, &rule->obj.core->alloc);
-  GTEXT_CSS_Status st = owner_obj_text(&rule->obj, &b);
+  GTEXT_CSS_Status st = owner_obj_text(&rule->obj, &b, false);
   if (st != GTEXT_CSS_OK || b.oom) {
     tb_free(&b);
     return st != GTEXT_CSS_OK ? st : GTEXT_CSS_E_OOM;
@@ -324,13 +493,16 @@ GTEXT_CSS_Status gtext_cssom_media_text(GTEXT_CSSOM_Media_List * list, char ** o
   return GTEXT_CSS_OK;
 }
 
+static css_media_read * owner_read(const css_obj * owner);
+static span item_read(const css_media_read * read, size_t i, span item);
+
 GTEXT_CSS_Status gtext_cssom_media_length(GTEXT_CSSOM_Media_List * list, size_t * out) {
   if (!list || !out) {
     return GTEXT_CSS_E_INVALID;
   }
   tbuf b;
   tb_init(&b, &list->obj.core->alloc);
-  GTEXT_CSS_Status st = owner_text(list, &b);
+  GTEXT_CSS_Status st = owner_obj_text(list->owner, &b, false);   /* the queries are those of the canonical text */
   if (st == GTEXT_CSS_OK && b.oom) {
     st = GTEXT_CSS_E_OOM;
   }
@@ -348,7 +520,7 @@ GTEXT_CSS_Status gtext_cssom_media_item(GTEXT_CSSOM_Media_List * list, size_t in
   css_core * core = list->obj.core;
   tbuf b;
   tb_init(&b, &core->alloc);
-  GTEXT_CSS_Status st = owner_text(list, &b);
+  GTEXT_CSS_Status st = owner_obj_text(list->owner, &b, false);   /* the queries are those of the canonical text */
   if (st == GTEXT_CSS_OK && b.oom) {
     st = GTEXT_CSS_E_OOM;
   }
@@ -366,7 +538,7 @@ GTEXT_CSS_Status gtext_cssom_media_item(GTEXT_CSSOM_Media_List * list, size_t in
       return GTEXT_CSS_E_OOM;
     }
     split_queries(b.data, b.len, all, count);
-    one = all[index];
+    one = item_read(owner_read(list->owner), index, all[index]);   /* and each is written as it was read */
     found = true;
     gtext_allocator_free(&core->alloc, all);
   }
@@ -405,21 +577,72 @@ static GTEXT_CSS_Status begin(GTEXT_CSSOM_Media_List * list, GTEXT_CSSOM_Outcome
   return GTEXT_CSS_OK;
 }
 
-/// Make `canon` (a canonical list) the owner's list. UNCHANGED when it already is.
-static GTEXT_CSS_Status store(GTEXT_CSSOM_Media_List * list, const char * canon, size_t n, GTEXT_CSSOM_Outcome * outcome) {
+static css_media_read * owner_read(const css_obj * owner) {
+  if (!owner) {
+    return NULL;
+  }
+  if (owner->kind == GTEXT_CSSOM_OBJECT_SHEET) {
+    return ((const css_sheet *)(uintptr_t)owner)->media_read;
+  }
+  return ((const css_rule *)(uintptr_t)owner)->media_read;
+}
+
+/// Query `i` as it was read: the entry of `read`, or the canonical text `item`.
+static span item_read(const css_media_read * read, size_t i, span item) {
+  if (read && i < read->count && read->text[i]) {
+    span r = {read->text[i], strlen(read->text[i])};
+    return r;
+  }
+  return item;
+}
+
+static bool span_eq(span a, span b) {
+  return a.length == b.length && (a.length == 0 || memcmp(a.data, b.data, a.length) == 0);
+}
+
+/// The queries of the canonical text `now`, in a new array (NULL when there are none), `*count` of them. `*st` is OOM when the array could not be made.
+static span * items_of(css_core * core, const tbuf * now, size_t * count, GTEXT_CSS_Status * st) {
+  *count = split_queries(now->data, now->len, NULL, 0);
+  if (!*count) {
+    return NULL;
+  }
+  span * all = gtext_allocator_malloc(&core->alloc, *count * sizeof *all);
+  if (!all) {
+    *st = GTEXT_CSS_E_OOM;
+    return NULL;
+  }
+  split_queries(now->data, now->len, all, *count);
+  return all;
+}
+
+/// Make `canon` (a canonical list) the owner's list, read as `read` (NULL when it is the canonical text; taken in every case). UNCHANGED when it already is.
+static GTEXT_CSS_Status store(GTEXT_CSSOM_Media_List * list, const char * canon, size_t n, css_media_read * read, GTEXT_CSSOM_Outcome * outcome) {
   css_core * core = list->obj.core;
-  tbuf now;
+  tbuf now, now_read, want_read;
   tb_init(&now, &core->alloc);
-  GTEXT_CSS_Status st = owner_text(list, &now);
-  if (st == GTEXT_CSS_OK && now.oom) {
+  tb_init(&now_read, &core->alloc);
+  tb_init(&want_read, &core->alloc);
+  GTEXT_CSS_Status st = owner_obj_text(list->owner, &now, false);
+  if (st == GTEXT_CSS_OK) {
+    st = owner_obj_text(list->owner, &now_read, true);
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = read_join(canon, n, read, &want_read);
+  }
+  if (st == GTEXT_CSS_OK && (now.oom || now_read.oom || want_read.oom)) {
     st = GTEXT_CSS_E_OOM;
   }
-  const bool same = st == GTEXT_CSS_OK && now.len == n && (n == 0 || memcmp(now.data, canon, n) == 0);
+  const bool same = st == GTEXT_CSS_OK && now.len == n && (n == 0 || memcmp(now.data, canon, n) == 0) && now_read.len == want_read.len &&
+                    (now_read.len == 0 || memcmp(now_read.data, want_read.data, now_read.len) == 0);
   tb_free(&now);
+  tb_free(&now_read);
+  tb_free(&want_read);
   if (st != GTEXT_CSS_OK) {
+    css_media_read_free(core, read);
     return st;
   }
   if (same) {
+    css_media_read_free(core, read);
     if (outcome) {
       outcome->kind = GTEXT_CSSOM_UNCHANGED;
     }
@@ -429,9 +652,14 @@ static GTEXT_CSS_Status store(GTEXT_CSSOM_Media_List * list, const char * canon,
     css_sheet * s = (css_sheet *)(uintptr_t)list->owner;
     char * copy = n ? css_core_dup(core, canon, n) : NULL;
     if (n && !copy) {
+      css_media_read_free(core, read);
       return GTEXT_CSS_E_OOM;
     }
     GTEXT_Allocator a = core->alloc;
+    if (!read_take(&s->obj, &s->media_read, read)) {
+      gtext_allocator_free(&a, copy);
+      return GTEXT_CSS_E_LIMIT_CSSOM;
+    }
     gtext_allocator_free(&a, s->media_text);
     s->media_text = copy;
     css_sheet_bump(s);
@@ -452,6 +680,7 @@ static GTEXT_CSS_Status store(GTEXT_CSSOM_Media_List * list, const char * canon,
   if (r->kind == GTEXT_CSSOM_RULE_MEDIA) {
     if (!tb_puts(&header, "@media") || (n && (!tb_puts(&header, " ") || !tb_put(&header, canon, n)))) {
       tb_free(&header);
+      css_media_read_free(core, read);
       return GTEXT_CSS_E_OOM;
     }
   }
@@ -460,11 +689,12 @@ static GTEXT_CSS_Status store(GTEXT_CSSOM_Media_List * list, const char * canon,
     st = css_rule_typed(core, r, true, &a);
     if (st != GTEXT_CSS_OK) {
       tb_free(&header);
+      css_media_read_free(core, read);
       return st;
     }
     size_t pl = 0;
     const char * p = gtext_css_atrule_prelude_text(a, &pl);
-    const size_t from = import_media_start(p, pl);
+    const size_t from = css_import_media_start(p, pl);
     if (!tb_puts(&header, "@import ") || !tb_put(&header, p, from) || (n && !tb_put(&header, canon, n))) {
       st = GTEXT_CSS_E_OOM;
     }
@@ -475,11 +705,19 @@ static GTEXT_CSS_Status store(GTEXT_CSSOM_Media_List * list, const char * canon,
   }
   if (st != GTEXT_CSS_OK || header.oom) {
     tb_free(&header);
+    css_media_read_free(core, read);
     return st != GTEXT_CSS_OK ? st : GTEXT_CSS_E_OOM;
+  }
+  /* the list as read goes in with the new prelude: css_own_swap() moves it in the same step that replaces the rule's text, so an event of the change already reads it */
+  css_media_read_drop(&r->obj, &r->media_read_next, true);
+  if (!read_take(&r->obj, &r->media_read_next, read)) {
+    tb_free(&header);
+    return GTEXT_CSS_E_LIMIT_CSSOM;
   }
   bool ignored = false;
   st = css_rule_replace_own(r, header.data, header.len, "", 0, r->kind == GTEXT_CSSOM_RULE_IMPORT, NULL, NULL, &ignored, outcome);
   tb_free(&header);
+  css_media_read_drop(&r->obj, &r->media_read_next, true);   /* still there only when the rule was not replaced */
   if (st == GTEXT_CSS_OK && ignored) {
     return GTEXT_CSS_E_INTERNAL;   /* a canonical list is always a valid one */
   }
@@ -503,12 +741,14 @@ GTEXT_CSS_Status gtext_cssom_media_set_text(GTEXT_CSSOM_Media_List * list, const
   tbuf canon;
   tb_init(&canon, &core->alloc);
   size_t queries = 0;
-  st = canonical(core, text ? text : "", length, &canon, &queries, NULL);
+  css_media_read * read = NULL;
+  st = canonical(core, text ? text : "", length, &canon, &queries, NULL, &read);
   if (st == GTEXT_CSS_OK && canon.oom) {
+    css_media_read_free(core, read);
     st = GTEXT_CSS_E_OOM;
   }
   if (st == GTEXT_CSS_OK) {
-    st = store(list, canon.data ? canon.data : "", canon.len, out);
+    st = store(list, canon.data ? canon.data : "", canon.len, read, out);
   }
   tb_free(&canon);
   return st;
@@ -532,9 +772,10 @@ GTEXT_CSS_Status gtext_cssom_media_append(GTEXT_CSSOM_Media_List * list, const c
   tb_init(&one, &core->alloc);
   tb_init(&now, &core->alloc);
   size_t queries = 0;
-  st = canonical(core, medium ? medium : "", length, &one, &queries, NULL);
+  css_media_read * one_read = NULL;
+  st = canonical(core, medium ? medium : "", length, &one, &queries, NULL, &one_read);
   if (st == GTEXT_CSS_OK) {
-    st = owner_text(list, &now);
+    st = owner_obj_text(list->owner, &now, false);
   }
   if (st == GTEXT_CSS_OK && (one.oom || now.oom)) {
     st = GTEXT_CSS_E_OOM;
@@ -545,20 +786,14 @@ GTEXT_CSS_Status gtext_cssom_media_append(GTEXT_CSSOM_Media_List * list, const c
     out->kind = GTEXT_CSSOM_UNCHANGED;
   }
   else if (st == GTEXT_CSS_OK) {
-    const size_t count = split_queries(now.data, now.len, NULL, 0);
+    /* compared as they were read: `screen and (` and `screen and ()` are two media */
+    const css_media_read * have = owner_read(list->owner);
+    const span mine = item_read(one_read, 0, (span){one.data, one.len});
+    size_t count = 0;
+    span * all = items_of(core, &now, &count, &st);
     bool present = false;
-    if (count) {
-      span *all = gtext_allocator_malloc(&core->alloc, count * sizeof *all);
-      if (!all) {
-        st = GTEXT_CSS_E_OOM;
-      }
-      else {
-        split_queries(now.data, now.len, all, count);
-        for (size_t i = 0; i < count; i++) {
-          present = present || (all[i].length == one.len && memcmp(all[i].data, one.data, one.len) == 0);
-        }
-        gtext_allocator_free(&core->alloc, all);
-      }
+    for (size_t i = 0; st == GTEXT_CSS_OK && i < count; i++) {
+      present = present || span_eq(item_read(have, i, all[i]), mine);
     }
     if (st == GTEXT_CSS_OK && present) {
       out->kind = GTEXT_CSSOM_UNCHANGED;
@@ -566,15 +801,32 @@ GTEXT_CSS_Status gtext_cssom_media_append(GTEXT_CSSOM_Media_List * list, const c
     else if (st == GTEXT_CSS_OK) {
       tbuf next;
       tb_init(&next, &core->alloc);
+      css_media_read * nr = NULL;
       if ((now.len && (!tb_put(&next, now.data, now.len) || !tb_puts(&next, ", "))) || !tb_put(&next, one.data, one.len) || next.oom) {
         st = GTEXT_CSS_E_OOM;
       }
-      else {
-        st = store(list, next.data, next.len, out);
+      if (st == GTEXT_CSS_OK && (have || one_read)) {
+        nr = read_new(core, count + 1);
+        st = nr ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+        for (size_t i = 0; st == GTEXT_CSS_OK && i <= count; i++) {
+          const char * t = i < count ? (have && i < have->count ? have->text[i] : NULL) : (one_read ? one_read->text[0] : NULL);
+          if (t && !read_set(core, nr, i, t, strlen(t))) {
+            st = GTEXT_CSS_E_OOM;
+          }
+        }
+        if (st != GTEXT_CSS_OK) {
+          css_media_read_free(core, nr);
+          nr = NULL;
+        }
+      }
+      if (st == GTEXT_CSS_OK) {
+        st = store(list, next.data, next.len, nr, out);
       }
       tb_free(&next);
     }
+    gtext_allocator_free(&core->alloc, all);
   }
+  css_media_read_free(core, one_read);
   tb_free(&one);
   tb_free(&now);
   return st;
@@ -599,9 +851,10 @@ GTEXT_CSS_Status gtext_cssom_media_delete(GTEXT_CSSOM_Media_List * list, const c
   tb_init(&now, &core->alloc);
   tb_init(&next, &core->alloc);
   size_t queries = 0;
-  st = canonical(core, medium ? medium : "", length, &one, &queries, NULL);
+  css_media_read * one_read = NULL;
+  st = canonical(core, medium ? medium : "", length, &one, &queries, NULL, &one_read);
   if (st == GTEXT_CSS_OK) {
-    st = owner_text(list, &now);
+    st = owner_obj_text(list->owner, &now, false);
   }
   if (st == GTEXT_CSS_OK && (one.oom || now.oom)) {
     st = GTEXT_CSS_E_OOM;
@@ -610,45 +863,65 @@ GTEXT_CSS_Status gtext_cssom_media_delete(GTEXT_CSSOM_Media_List * list, const c
     out->kind = GTEXT_CSSOM_UNCHANGED;   /* CSSOM: "Let m be the result of parsing the given value. If m is null, then return." (none, or more than one, query) */
   }
   else if (st == GTEXT_CSS_OK) {
-    const size_t count = split_queries(now.data, now.len, NULL, 0);
-    span *all = count ? gtext_allocator_malloc(&core->alloc, count * sizeof *all) : NULL;
-    if (count && !all) {
-      st = GTEXT_CSS_E_OOM;
+    const css_media_read * have = owner_read(list->owner);
+    const span mine = item_read(one_read, 0, (span){one.data, one.len});
+    size_t count = 0;
+    span * all = items_of(core, &now, &count, &st);
+    size_t kept = 0;
+    for (size_t i = 0; st == GTEXT_CSS_OK && i < count; i++) {
+      kept += !span_eq(item_read(have, i, all[i]), mine);
     }
-    else {
-      if (count) {
-        split_queries(now.data, now.len, all, count);
+    if (st == GTEXT_CSS_OK && kept == count) {
+      st = GTEXT_CSS_E_NOT_FOUND;   /* "If nothing was removed, then throw a NotFoundError exception." */
+    }
+    css_media_read * nr = NULL;
+    if (st == GTEXT_CSS_OK && have) {
+      nr = read_new(core, kept);
+      st = nr ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+    }
+    for (size_t i = 0, k = 0; st == GTEXT_CSS_OK && i < count; i++) {
+      if (span_eq(item_read(have, i, all[i]), mine)) {
+        continue;
       }
-      bool found = false;
-      for (size_t i = 0; st == GTEXT_CSS_OK && i < count; i++) {
-        if (all[i].length == one.len && memcmp(all[i].data, one.data, one.len) == 0) {
-          found = true;
-          continue;
-        }
-        if ((next.len && !tb_puts(&next, ", ")) || !tb_put(&next, all[i].data, all[i].length)) {
-          st = GTEXT_CSS_E_OOM;
-        }
-      }
-      gtext_allocator_free(&core->alloc, all);
-      if (st == GTEXT_CSS_OK && !found) {
-        st = GTEXT_CSS_E_NOT_FOUND;   /* "If nothing was removed, then throw a NotFoundError exception." */
-      }
-      else if (st == GTEXT_CSS_OK && next.oom) {
+      if ((next.len && !tb_puts(&next, ", ")) || !tb_put(&next, all[i].data, all[i].length)) {
         st = GTEXT_CSS_E_OOM;
       }
-      else if (st == GTEXT_CSS_OK) {
-        st = store(list, next.data ? next.data : "", next.len, out);
+      if (st == GTEXT_CSS_OK && nr && have && i < have->count && have->text[i] && !read_set(core, nr, k, have->text[i], strlen(have->text[i]))) {
+        st = GTEXT_CSS_E_OOM;
       }
+      k++;
+    }
+    if (st == GTEXT_CSS_OK && next.oom) {
+      st = GTEXT_CSS_E_OOM;
+    }
+    gtext_allocator_free(&core->alloc, all);
+    if (st == GTEXT_CSS_OK) {
+      st = store(list, next.data ? next.data : "", next.len, nr, out);
+    }
+    else {
+      css_media_read_free(core, nr);
     }
   }
+  css_media_read_free(core, one_read);
   tb_free(&one);
   tb_free(&now);
   tb_free(&next);
   return st;
 }
 
-GTEXT_CSS_Status css_media_canonical(css_core * core, const char * text, size_t length, tbuf * out) {
+GTEXT_CSS_Status css_media_canonical_read(css_core * core, const char * text, size_t length, tbuf * out, css_media_read ** read) {
   size_t queries = 0;
-  const GTEXT_CSS_Status st = canonical(core, text, length, out, &queries, NULL);
-  return st == GTEXT_CSS_OK && out->oom ? GTEXT_CSS_E_OOM : st;
+  const GTEXT_CSS_Status st = canonical(core, text, length, out, &queries, NULL, read);
+  if (st == GTEXT_CSS_OK && out->oom) {
+    if (read) {
+      css_media_read_free(core, *read);
+      *read = NULL;
+    }
+    return GTEXT_CSS_E_OOM;
+  }
+  return st;
+}
+
+GTEXT_CSS_Status css_media_canonical(css_core * core, const char * text, size_t length, tbuf * out) {
+  return css_media_canonical_read(core, text, length, out, NULL);
 }

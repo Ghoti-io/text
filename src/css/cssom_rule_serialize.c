@@ -38,6 +38,7 @@
 #include "css_shorthand_internal.h"
 #include "css_sheet_internal.h"
 #include "cssom_rule_internal.h"
+#include "cssom_typed.h"
 
 /* ---- the output ---------------------------------------------------------------------------------------------------------------------------------- */
 
@@ -475,7 +476,26 @@ static GTEXT_CSS_Status write_group_header(sw * w, css_rule * rule) {
     if (!(root_in_style && prelude_length)) {
       emitz(w, " ");
     }
-    emit(w, prelude, prelude_length);
+    if (rule->media_read) {
+      /* an `@media` whose last query the end of the input closed is written as it was read (the typed model holds the closed one) */
+      tbuf shown;
+      tb_init(&shown, &w->core->alloc);
+      st = css_rule_prelude_read(rule, prelude, prelude_length, &shown);
+      if (st == GTEXT_CSS_OK && shown.oom) {
+        st = GTEXT_CSS_E_OOM;
+      }
+      if (st == GTEXT_CSS_OK) {
+        emit(w, shown.data, shown.len);
+      }
+      tb_free(&shown);
+      if (st != GTEXT_CSS_OK) {
+        gtext_css_atrule_free(a);
+        return st;
+      }
+    }
+    else {
+      emit(w, prelude, prelude_length);
+    }
   }
   emitz(w, " {");
   gtext_css_atrule_free(a);
@@ -649,6 +669,41 @@ static GTEXT_CSS_Status open_rule(sw * w, css_rule * rule, form * out) {
   st = typed_rule(core, rule, false, &a);
   if (st != GTEXT_CSS_OK) {
     return st;
+  }
+  if (rule->kind == GTEXT_CSSOM_RULE_IMPORT && rule->media_read) {
+    /* the typed model writes the media of an `@import` last, and as the canonical text has it: the unclosed ones are put back as they were read */
+    collect c;
+    tb_init(&c.b, &core->alloc);
+    const GTEXT_Markup_Sink csink = {collect_write, &c};
+    st = gtext_css_atrule_serialize(a, &csink);
+    size_t pl = 0;
+    const char * prelude = gtext_css_atrule_prelude_text(a, &pl);
+    const size_t from = css_import_media_start(prelude, pl);
+    if (st == GTEXT_CSS_OK && c.b.oom) {
+      st = GTEXT_CSS_E_OOM;
+    }
+    if (st == GTEXT_CSS_OK) {
+      tbuf shown;
+      tb_init(&shown, &core->alloc);
+      st = css_rule_prelude_read(rule, prelude, pl, &shown);   /* the whole prelude: the pieces before the media are the same text */
+      if (st == GTEXT_CSS_OK && shown.oom) {
+        st = GTEXT_CSS_E_OOM;
+      }
+      const size_t closed = pl - from;
+      /* `...<media>;` */
+      if (st == GTEXT_CSS_OK && c.b.len >= closed + 1 && c.b.data[c.b.len - 1] == ';' && memcmp(c.b.data + c.b.len - 1 - closed, prelude + from, closed) == 0) {
+        emit(w, c.b.data, c.b.len - 1 - closed);
+        emit(w, shown.data + from, shown.len - from);
+        emitz(w, ";");
+      }
+      else if (st == GTEXT_CSS_OK) {
+        emit(w, c.b.data, c.b.len);
+      }
+      tb_free(&shown);
+    }
+    tb_free(&c.b);
+    gtext_css_atrule_free(a);
+    return st != GTEXT_CSS_OK ? st : w->st;
   }
   const GTEXT_Markup_Sink sink = sw_sink(w);
   st = gtext_css_atrule_serialize(a, &sink);

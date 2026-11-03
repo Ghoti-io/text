@@ -260,6 +260,8 @@ typedef struct {
   size_t max_depth;                  ///< Deepest nesting of conditions (`not (not (...))`, parentheses). Default 256; at most 2^24. GTEXT_CSS_E_LIMIT_CONDITION_DEPTH. The parser, the evaluator and the serializer do not recurse in the C stack at any depth.
   size_t max_diagnostics;            ///< Most diagnostics kept (the rest are counted). Default 1,024.
   GTEXT_CSS_Parse_Options parse;     ///< For the text entry point: the limits of tokenizing (css_core.h).
+  const char * source;               ///< For the entry points that take component values: the text their spans are byte offsets into, when the caller still has it (NULL for none; gtext_css_media_list_parse() uses its own text). With it a `<general-enclosed>` is kept as it was written, white space, comments and escapes included; without it the leaf is written from its component values.
+  size_t source_length;              ///< The length of `source`.
 } GTEXT_CSS_Media_Options;
 
 /** @brief The defaults, spelled out. */
@@ -345,6 +347,25 @@ GTEXT_API GTEXT_CSS_Status gtext_css_media_list_serialize(const GTEXT_CSS_Media_
 
 /** @brief gtext_css_media_list_serialize() to a new NUL-terminated buffer; release it with gtext_css_media_buffer_free(). */
 GTEXT_API GTEXT_CSS_Status gtext_css_media_list_serialize_buffer(const GTEXT_CSS_Media_List * list, const GTEXT_Allocator * allocator, char ** out, size_t * out_length);
+
+/**
+ * @brief Whether the text of some query as it was read differs from its canonical text: a `<general-enclosed>` with white space or a comment inside it that the canonical text does not
+ * keep (`( a )`), or one that the end of the input closed (`screen and (`). Always false for a list made without its source text (GTEXT_CSS_Media_Options::source).
+ */
+GTEXT_API bool gtext_css_media_list_as_read_differs(const GTEXT_CSS_Media_List * list);
+
+/** @brief gtext_css_media_list_serialize_buffer() with each `<general-enclosed>` as it was read (see gtext_css_media_list_serialize_query_buffer()); the same text when nothing differs. */
+GTEXT_API GTEXT_CSS_Status gtext_css_media_list_serialize_as_read_buffer(const GTEXT_CSS_Media_List * list, const GTEXT_Allocator * allocator, char ** out, size_t * out_length);
+
+/**
+ * @brief The text of query `index` (0 to gtext_css_media_list_query_count() - 1) to a new NUL-terminated buffer: as gtext_css_media_list_serialize_buffer() writes it, or, when
+ * `as_read`, with each `<general-enclosed>` as it was read, which is what Chromium and Firefox write (`screen and (`, where the closed text is `screen and ()`; `( a )`, where it is `(a)`). The
+ * canonical text is the one that reads back as the same list, closed; the as-read text is for display and for comparing a medium with the items of a CSSOM `MediaList`. Release the buffer with
+ * gtext_css_media_buffer_free().
+ *
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (a NULL argument or an index past the end); GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_media_list_serialize_query_buffer(const GTEXT_CSS_Media_List * list, size_t index, bool as_read, const GTEXT_Allocator * allocator, char ** out, size_t * out_length);
 
 /** @brief Release a buffer from gtext_css_media_list_serialize_buffer(). */
 GTEXT_API void gtext_css_media_buffer_free(const GTEXT_Allocator * allocator, char * buffer);
