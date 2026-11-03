@@ -37,9 +37,11 @@ caller for, the specificity rule and the status in this library are the rows of 
 `selectors` data of the pinned webref (159 selectors) and `tools/css/selectors-supplement.tsv` (what webref omits, and the semantics of each row). `make
 check-css-selectors` regenerates both generated files and fails on a difference, on a selector of the pin that has no row, on a stale row, and on an implemented row
 that `tests/css_selector_rows.h` has no probe for; its `--controls` make each mistake in a copy and require the report. An unknown or vendor-prefixed name is not a
-row, and its selector is invalid. A row is `implemented` (parsed, written and matched), `parse-only` (parsed and written; a match is `GTEXT_CSS_E_UNSUPPORTED` or never:
+row, and its selector is invalid (a `::-webkit-` pseudo-element is the one exception, below). A row is `implemented` (parsed, written and matched), `parse-only` (parsed and written; a match is `GTEXT_CSS_E_UNSUPPORTED` or never:
 the column combinator `||` and `:nth-col()`, `:current()`, `:active-view-transition-type()`) or `unsupported` (the page selectors `:first`, `:left`, ... and
 `:link-to()`: invalid in a style rule).
+
+**`::-webkit-` pseudo-elements.** Selectors 4, "Compatibility": a pseudo-element named `-webkit-` and an identifier that no row names (`::-webkit-scrollbar`, `::-webkit-input-placeholder`, `::-webkit-anything`) is valid, keeps its rule, and matches nothing. It is one row of the tables (`::-webkit-`, flag `webkit`); the simple selector carries the name, which is written lower case with its escapes, as Chromium and Firefox write it. A user action pseudo-class may follow it and no pseudo-element may (`::-webkit-a::before` and `::before::-webkit-a` are invalid, as are `::-webkitfoo` and `::-webkit-a(1)`); it counts as a pseudo-element for the specificity (0,0,1). A `-webkit-` pseudo-class that no row names stays unknown and invalid: the browsers differ on those (Chromium takes `:-webkit-any-link` and `:-webkit-full-screen`, Firefox neither).
 
 ## Specificity
 

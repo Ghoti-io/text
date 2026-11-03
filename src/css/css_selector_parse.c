@@ -914,6 +914,14 @@ static bool parse_pseudo(P * p, const V * v, size_t * pos, size_t hi, const sctx
       row = find_row(true, functional, lower, nm->length, 2);
     }
   }
+  if (row < 0 && colons == 2 && !functional && nm->length >= 8 && css_sel_ieq(nm->data, 8, "-webkit-", 8)) {
+    /* Selectors 4, "Compatibility": a ::-webkit- pseudo-element that is not known is a valid pseudo-element that matches nothing (both pinned browsers accept it, write it lower
+       case, and refuse ::-webkitfoo, one with arguments, one after another pseudo-element and one before ::before). Its name is the identifier. */
+    row = GTEXT_CSS_SEL_PE_WEBKIT_ANY;
+  }
+  if (row >= 0 && (sel_rows[row].flags & SELF_WEBKIT) && p->o && p->o->refuse_unknown_webkit) {
+    row = -1;   /* the selector() of a condition does not support what a style rule only accepts */
+  }
   if (row < 0 || sel_rows[row].status == SELS_UNSUPPORTED) {
     diag(p, GTEXT_CSS_SELDIAG_UNKNOWN_SELECTOR, here, REF_UNKNOWN);
     return false;
@@ -925,7 +933,7 @@ static bool parse_pseudo(P * p, const V * v, size_t * pos, size_t hi, const sctx
   s->kind = is_pe ? GTEXT_CSS_SIMPLE_PSEUDO_ELEMENT : GTEXT_CSS_SIMPLE_PSEUDO_CLASS;
   s->pseudo = r->alias_row;
   const sel_row * canon = &sel_rows[r->alias_row];
-  s->name = sdup(p, canon->base, strlen(canon->base));
+  s->name = (canon->flags & SELF_WEBKIT) ? sdup_lower(p, nm->data, nm->length) : sdup(p, canon->base, strlen(canon->base));
   s->legacy = is_pe && r->colons == 1;
   if (is_pe) {
     if (c->no_pe) {

@@ -241,6 +241,18 @@ TEST(CssSupports, SelectorFunction) {
   EXPECT_FALSE(c.yes("selector(> a)")) << "not a relative selector";
 }
 
+// Selectors 4, "Compatibility", makes an unknown ::-webkit- pseudo-element valid in a style rule; the selector() of a condition does not support it (the pinned
+// css-conditional/js/CSS-supports-L4.html and at-supports-selector-003.html, and both browsers: CSS.supports("selector(::-webkit-unknown-pseudo-element)") is false).
+TEST(CssSupports, SelectorFunctionRefusesAnUnknownWebkitPseudoElement) {
+  Cond c;
+  EXPECT_FALSE(c.yes("selector(::-webkit-unknown-pseudo-element)"));
+  EXPECT_EQ(c.tri("selector(::-webkit-unknown-pseudo-element)"), GTEXT_CSS_TRI_FALSE);
+  EXPECT_TRUE(c.yes("not selector(::-webkit-unknown-pseudo)"));
+  EXPECT_FALSE(c.yes("selector(a::-webkit-x:hover)"));
+  EXPECT_TRUE(c.yes("selector(a::before)"));
+  EXPECT_TRUE(c.yes("selector(a:hover)"));
+}
+
 namespace {
 bool local_name(void *, GTEXT_CSS_Element_Handle, GTEXT_CSS_String * out) {
   out->data = "a";

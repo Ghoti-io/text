@@ -76,7 +76,7 @@ ARGS = {
 SPECS = {"class": "SELSPEC_CLASS", "element": "SELSPEC_ELEMENT", "id": "SELSPEC_ID", "zero": "SELSPEC_ZERO", "max": "SELSPEC_MAX",
          "nth": "SELSPEC_NTH", "hostfn": "SELSPEC_HOSTFN", "slotted": "SELSPEC_SLOTTED", "nesting": "SELSPEC_NESTING"}
 STATUSES = {"implemented": "SELS_IMPLEMENTED", "parse-only": "SELS_PARSE_ONLY", "unsupported": "SELS_UNSUPPORTED"}
-FLAGS = {"ua": "SELF_UA", "tree": "SELF_TREE", "legacy": "SELF_LEGACY", "page": "SELF_PAGE"}
+FLAGS = {"ua": "SELF_UA", "tree": "SELF_TREE", "legacy": "SELF_LEGACY", "page": "SELF_PAGE", "webkit": "SELF_WEBKIT"}
 DEPS = ["name", "id", "class", "attr", "state", "tree", "sibling", "first-last", "nth", "empty", "has", "lang", "dir", "logical", "column",
         "scope", "host", "nesting", "pseudo"]
 CALLBACKS = ["PARENT", "LOCAL_NAME", "NAMESPACE_URI", "ID", "CLASS_COUNT", "CLASS_AT", "ATTRIBUTE", "PREVIOUS_SIBLING", "NEXT_SIBLING",
@@ -94,6 +94,7 @@ STATES = ["HOVER", "ACTIVE", "FOCUS", "FOCUS_VISIBLE", "FOCUS_WITHIN", "TARGET",
 SPECIAL_NAMES = {
     "E": "TY_TYPE", "*": "TY_UNIVERSAL", "#id": "TY_ID", ".class": "TY_CLASS", "[attr]": "TY_ATTR", "ns|": "TY_NS",
     ">": "CB_CHILD", "+": "CB_NEXT", "~": "CB_SUBSEQUENT", "||": "CB_COLUMN", " ": "CB_DESCENDANT", "&": "PC_NESTING",
+    "::-webkit-": "PE_WEBKIT_ANY",
 }
 
 
@@ -347,6 +348,7 @@ typedef enum { PCLASS_NA = 0, PCLASS_NONE, PCLASS_USER, PCLASS_NONTREE } sel_pcl
 #define SELF_TREE 0x2u
 #define SELF_LEGACY 0x4u
 #define SELF_PAGE 0x8u
+#define SELF_WEBKIT 0x10u
 
 /// One selector of the tables.
 typedef struct {

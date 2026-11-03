@@ -160,6 +160,7 @@ static const SelectorProbe selector_probes[] = {
   {"::field-content", "::field-content", "::field-content", 0, 0, 1},
   {"::field-separator", "::field-separator", "::field-separator", 0, 0, 1},
   {"::file-selector-button", "::file-selector-button", "::file-selector-button", 0, 0, 1},
+  {"::-webkit-", "::-WebKit-Something", "::-webkit-something", 0, 0, 1},
   {":first-letter", ":first-letter", "::first-letter", 0, 0, 1},
   {"::first-letter", "::first-letter", "::first-letter", 0, 0, 1},
   {":first-line", ":first-line", "::first-line", 0, 0, 1},

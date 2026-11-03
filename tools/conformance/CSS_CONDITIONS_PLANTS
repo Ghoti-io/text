@@ -61,3 +61,4 @@ a-custom-name-is-not-kept-as-it-was-read	css_media_parse.c	    if (nd->kind == M
 a-leaf-is-written-as-read-with-its-closing-tokens	css_media_serialize.c	      if (o->as_read && n->asread) {	      if (0 && o->as_read && n->asread) {	media
 a-custom-name-is-written-as-read-closed	css_media_serialize.c	      if (o->as_read && n->asread && !f->bare) {	      if (0) {	media
 a-query-asked-for-as-read-is-written-closed	css_media_serialize.c	  out_t o = {&sink, GTEXT_CSS_OK, as_read};\n  sframe * stack	  out_t o = {&sink, GTEXT_CSS_OK, false};\n  sframe * stack	media
+selector-function-accepts-an-unknown-webkit-pseudo-element	css_media_parse.c	    so.refuse_unknown_webkit = true;	    so.refuse_unknown_webkit = false;	supports

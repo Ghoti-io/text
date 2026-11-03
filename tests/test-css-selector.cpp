@@ -132,9 +132,58 @@ TEST(CssSelector, TheTablesNameEverySelectorOfTheSelectorsPinAndNothingUnknownPa
   EXPECT_FALSE(gtext_css_selector_row(n, &row));
   EXPECT_EQ(gtext_css_selector_find_row(":nonesuch"), -1);
   // "An unknown selector (including a vendor-prefixed one the Compatibility Standard does not alias) makes its selector invalid"
-  for (const char * bad : {":nonesuch", "::nonesuch", ":-webkit-any-link", "::-webkit-scrollbar", ":-moz-focusring", ":hover()", ":not", ":is", "::before()", ":nth-child"}) {
+  for (const char * bad : {":nonesuch", "::nonesuch", ":-webkit-any-link", ":-webkit-nonesuch", "::-moz-focusring", ":-moz-focusring", ":hover()", ":not", ":is", "::before()", ":nth-child"}) {
     EXPECT_EQ(written(bad), "INVALID") << bad;
   }
+}
+
+/* ---- ::-webkit- pseudo-elements ------------------------------------------------------------------------------ */
+
+// Selectors 4, "Compatibility": a ::-webkit- pseudo-element no row names is a valid pseudo-element that matches nothing. Chromium 156 and Firefox 158 agree on each line below (they write the
+// name lower case and with its escapes, take the user action pseudo-classes after it, and refuse a pseudo-element after it or before it, arguments, and a name with no hyphen after webkit).
+TEST(CssSelectorWebkit, AnyWebkitPseudoElementIsValid) {
+  const char * rows[][2] = {
+      {"span::-webkit-something-invalid", "span::-webkit-something-invalid"},
+      {"::-WeBkIt-sOmEtHiNg-NoNeXiSt123", "::-webkit-something-nonexist123"},
+      {"::-webkit-\\ escaped", "::-webkit-\\ escaped"},
+      {"::-webkit-", "::-webkit-"},
+      {"::-webkit-a:hover", "::-webkit-a:hover"},
+      {"::-webkit-a:active", "::-webkit-a:active"},
+      {"::-webkit-a:hover:active", "::-webkit-a:hover:active"},
+      {"::-webkit-input-placeholder", "::-webkit-input-placeholder"},
+      {"::-webkit-file-upload-button", "::-webkit-file-upload-button"},
+      {"::-webkit-scrollbar", "::-webkit-scrollbar"},
+      {"::-webkit-slider-thumb", "::-webkit-slider-thumb"},
+      {"::-webkit-search-cancel-button", "::-webkit-search-cancel-button"},
+      {"::-webkit-details-marker", "::-webkit-details-marker"},
+      {"::-webkit-a, b", "::-webkit-a, b"},
+      {"a > ::-webkit-a", "a > ::-webkit-a"},
+      {":host::-webkit-a", ":host::-webkit-a"},
+      {"::part(x)::-webkit-a", "::part(x)::-webkit-a"},
+      {"::-webkit--x", "::-webkit--x"},
+      {"::-webkit-a-", "::-webkit-a-"},
+      {"::-webkit-a\\(", "::-webkit-a\\("},
+      {"::-WEBKIT-A", "::-webkit-a"},
+  };
+  for (const auto & r : rows) {
+    EXPECT_EQ(written(r[0]), r[1]) << r[0];
+  }
+  EXPECT_EQ(written("*::-webkit-a"), "::-webkit-a") << "as Chromium and Firefox write it, and `*::before` is written";
+}
+
+TEST(CssSelectorWebkit, WhatIsNotAWebkitPseudoElementIsInvalid) {
+  for (const char * bad : {"::-webkitfoo", "span::-webkitfoo", "::-webkit", "::-webkit-a(1)", "::-webkit-a(b)", "::-webkit-a:first-child", "::-webkit-a::before", "::before::-webkit-a",
+                           "::after::-webkit-a", "::-webkit-a::-webkit-b", "::-webkit-a::part(x)", "::-webkit-a::selection", "a:not(::-webkit-a)", "::-moz-foo", "::-ms-foo", "::-o-foo",
+                           ":-webkit-a", ":-webkit-a:hover", "::webkit-a", "::-webkit"}) {
+    EXPECT_EQ(written(bad), "INVALID") << bad;
+  }
+}
+
+TEST(CssSelectorWebkit, ItCountsAsAPseudoElement) {
+  EXPECT_EQ(spec_of("::-webkit-a"), "(0,0,1)");
+  EXPECT_EQ(spec_of("span::-webkit-a"), "(0,0,2)");
+  EXPECT_EQ(spec_of("#x.y::-webkit-a:hover"), "(1,2,1)");
+  EXPECT_EQ(spec_of("::part(x)::-webkit-a"), "(0,0,2)");
 }
 
 /* ---- specificity -------------------------------------------------------------------------------------------- */
@@ -506,7 +555,7 @@ TEST(CssSelectorPseudoElements, TheyEndTheComplexSelectorAndFollowTheirRules) {
   EXPECT_EQ(written("::before:not(:hover)"), "::before:not(:hover)");
   EXPECT_EQ(written("::before:not(.a)"), "INVALID");
   EXPECT_EQ(written("::before:before"), "INVALID") << "the legacy spelling is only for the first";
-  EXPECT_EQ(written("::-webkit-foo"), "INVALID");
+  EXPECT_EQ(written("::-webkit-foo"), "::-webkit-foo") << "any ::-webkit- pseudo-element is valid";
 }
 
 TEST(CssSelectorPseudoElements, PartAndSlottedTakeWhatTheShadowDraftsAllow) {

@@ -1333,6 +1333,25 @@ TEST(CssSheetMutants, TheLimitOfAnOuterScopeAppliesToTheSubjectOfAnInnerOne) {
   EXPECT_EQ(win(pg, ix, inside, "color"), "red");
 }
 
+// A ::-webkit- pseudo-element matches nothing in a query of the element, and is asked for by its name like any other (both pinned browsers keep the rule: Selectors 4, "Compatibility").
+TEST(CssSheetMutants, AWebkitPseudoElementIsAskedForByItsNameAndTheRuleIsKept) {
+  Compiled c("p::-webkit-a { color: red } p::-WEBKIT-b { margin-top: 1px } p { padding-left: 3px }");
+  ASSERT_EQ(c.st, GTEXT_CSS_OK);
+  Page pg;
+  const int p = pg.t.add(0, "p");
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(c), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, p, "color", "::-webkit-a"), "red");
+  EXPECT_EQ(win(pg, ix, p, "color", "::-webkit-b"), "-");
+  EXPECT_EQ(win(pg, ix, p, "margin-top", "::-webkit-b"), "1px") << "the name is lower case";
+  EXPECT_EQ(win(pg, ix, p, "margin-top", "::-webkit-a"), "-");
+  EXPECT_EQ(win(pg, ix, p, "color", "::before"), "-");
+  EXPECT_EQ(win(pg, ix, p, "color"), "-");
+  EXPECT_EQ(win(pg, ix, p, "padding-left"), "3px");
+}
+
 TEST(CssSheetMutants, APseudoElementIsAskedForByItsNameAndNoOtherOneAnswers) {
   Compiled c("p::before { color: red } p::after { margin-top: 1px } p::first-line { margin-left: 2px } p { padding-left: 3px }");
   ASSERT_EQ(c.st, GTEXT_CSS_OK);

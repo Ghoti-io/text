@@ -5,7 +5,7 @@
 #  3 arg        the grammar of what follows the name: none, ident, type, attr, compound, compound-list, forgiving, real, relative, anb, anb-of,
 #               lang, dir, levels, state, idents-comma, part-idents, name-or-star, pt-name, enum:<a,b,...>
 #  4 flags      ua (a user action pseudo-class), tree (a pseudo-class that asks the tree: never after ::part()), legacy (a pseudo-element the
-#               single-colon spelling of which is still valid), alias=<canonical name>, page (a page selector); "-" for none
+#               single-colon spelling of which is still valid), webkit (the row stands for every ::-webkit-<ident> that no other row names), alias=<canonical name>, page (a page selector); "-" for none
 #  5 pclass     the pseudo-classes that may follow this pseudo-element: none, user, nontree, or names (user,disabled); "-" for a pseudo-class
 #  6 follow     the pseudo-elements that may follow this one, by name without colons; *shadow is every one but ::part() and ::slotted(); "-" none
 #  7 state      the GTEXT_CSS_STATE_* bits (without the prefix) a match of it asks the caller for, comma separated, or "-"
@@ -142,6 +142,7 @@ ns|	type	none	-	-	-	-	NAMESPACE_URI	zero	name	implemented	namespace prefix (extr
 ::marker	element	none	-	user	-	-	-	element	pseudo	implemented	
 ::placeholder	element	none	-	user	-	-	-	element	pseudo	implemented	
 ::file-selector-button	element	none	-	user	-	-	-	element	pseudo	implemented	
+::-webkit-	element	none	webkit	user	-	-	-	element	pseudo	implemented	Selectors 4, compat: every ::-webkit-<ident> is a valid pseudo-element that matches nothing, written as it was, lower case (extra)
 ::backdrop	element	none	-	user	-	-	-	element	pseudo	implemented	
 ::checkmark	element	none	-	user	-	-	-	element	pseudo	implemented	
 ::clear-icon	element	none	-	user	-	-	-	element	pseudo	implemented	

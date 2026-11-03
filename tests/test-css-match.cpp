@@ -255,6 +255,13 @@ TEST_F(CssMatch, SyntaxErrorsAreReportedAsAnErrorWithTheDiagnosticAndNothingElse
   EXPECT_EQ(all(d, ".5cm"), "!syntax");
   EXPECT_EQ(all(d, "div % address, p"), "!syntax");
   EXPECT_EQ(all(d, ":is(.a, ::b), .x"), "root p1 p2 l1 l3 l5") << "a forgiving list inside does not make the query fail";
+  // Selectors 4, "Compatibility": qS and qSA do not throw for a ::-webkit- pseudo-element, which matches nothing; "webkit-prefix without dash is invalid" and so is a second pseudo-element
+  EXPECT_EQ(all(d, "li::-webkit-something-invalid"), "");
+  EXPECT_EQ(all(d, "li::-webkit-something-invalid:hover"), "");
+  EXPECT_EQ(all(d, "li::-webkit-something-invalid:active"), "");
+  EXPECT_EQ(all(d, "li::-webkit-something-invalid, li"), "l1 l2 l3 l4 l5") << "the rest of the list still matches";
+  EXPECT_EQ(all(d, "li::-webkit-something-invalid::before"), "!syntax");
+  EXPECT_EQ(all(d, "li::-webkitfoo"), "!syntax");
 }
 
 TEST_F(CssMatch, LinkStatesWithVisitedNeverMatching) {

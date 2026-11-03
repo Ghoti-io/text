@@ -1212,6 +1212,7 @@ static feat_result parse_supports_function(parser * P, const GTEXT_CSS_Component
     kind = MQN_SELECTOR;
     GTEXT_CSS_Selector_Options so = gtext_css_selector_options_default();
     so.allocator = &P->alloc;
+    so.refuse_unknown_webkit = true;   /* CSS.supports("selector(::-webkit-unknown-pseudo-element)") is false, though a style rule with one is kept */
     GTEXT_CSS_Selector_Result sr;
     GTEXT_CSS_Status st = gtext_css_selector_parse_values(k + s, e - s, &so, &sel, &sr);
     gtext_css_selector_result_free(&sr);

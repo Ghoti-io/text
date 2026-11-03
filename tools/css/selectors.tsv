@@ -115,6 +115,7 @@ ns|	type	none	-	-	-	-	NAMESPACE_URI	zero	name	implemented	namespace prefix (extr
 :volume-locked	class	none	-	-	-	VOLUME_LOCKED	STATE	class	state	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#selectordef-volume-locked	pin
 :where()	class	forgiving	-	-	-	-	-	zero	logical	implemented		selectors.json	https://drafts.csswg.org/selectors-4/#where-pseudo	pin
 :xr-overlay	class	none	-	-	-	XR_OVERLAY	STATE	class	state	implemented		webxr-dom-overlays.json	https://immersive-web.github.io/dom-overlays/#selectordef-xr-overlay	pin
+::-webkit-	element	none	webkit	user	-	-	-	element	pseudo	implemented	Selectors 4, compat: every ::-webkit-<ident> is a valid pseudo-element that matches nothing, written as it was, lower case (extra)	-	-	extra
 :after	element	none	legacy	user	marker,column	-	-	element	pseudo	implemented	legacy single-colon spelling of ::after	CSS.json	https://drafts.csswg.org/css2/#selectordef-after	pin
 ::after	element	none	legacy	user	marker,column	-	-	element	pseudo	implemented		css-pseudo.json	https://drafts.csswg.org/css-pseudo-4/#selectordef-after	pin
 ::backdrop	element	none	-	user	-	-	-	element	pseudo	implemented		css-position-4.json	https://drafts.csswg.org/css-position-4/#selectordef-backdrop	pin

@@ -324,6 +324,9 @@ typedef struct {
   size_t max_diagnostics;
   /** For the text entry point: the limits of tokenizing and parsing the text (css_core.h). */
   GTEXT_CSS_Parse_Options parse;
+  /** A `::-webkit-` pseudo-element that no row names is invalid, as it is in the selector() of a condition (CSS.supports("selector(::-webkit-unknown-pseudo-element)") is false, though the same
+   *  selector in a style rule is valid and matches nothing: Selectors 4, "Compatibility"; CSS Conditional 4, selector()). Default false. */
+  bool refuse_unknown_webkit;
 } GTEXT_CSS_Selector_Options;
 
 /** @brief The defaults, spelled out. */

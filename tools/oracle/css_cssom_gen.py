@@ -167,6 +167,63 @@ def media_general_documents():
     return docs
 
 
+# A pseudo-element named -webkit-<ident> that no browser knows is valid (Selectors 4, "Compatibility"): the selectors both pinned browsers accept and refuse, and the ones on which
+# they differ (a vendor pseudo-class, a pseudo-class after the pseudo-element that only one takes).
+WEBKIT_SELECTORS = ["span::-webkit-something-invalid",
+                    "::-WeBkIt-sOmEtHiNg-NoNeXiSt123",
+                    "::-webkit-\\ escaped",
+                    "::-webkitfoo",
+                    "::-webkit-",
+                    "::-webkit-a:hover",
+                    "::-webkit-a:active",
+                    "::-webkit-a:first-child",
+                    "::-webkit-a::before",
+                    "::before::-webkit-a",
+                    "::-webkit-a::-webkit-b",
+                    "::-webkit-input-placeholder",
+                    "::-webkit-file-upload-button",
+                    "::-webkit-scrollbar",
+                    "::-webkit-scrollbar-thumb:horizontal",
+                    "::-webkit-slider-thumb",
+                    "::-webkit-search-cancel-button",
+                    "::-webkit-a(1)",
+                    "::-webkit-a(b)",
+                    "a:-webkit-any-link",
+                    "a:-webkit-foo",
+                    "a:-webkit-autofill",
+                    ":-webkit-full-screen",
+                    "::-webkit-details-marker",
+                    "::-webkit-validation-bubble",
+                    "a::-webkit-a, b",
+                    "*::-webkit-a",
+                    "a > ::-webkit-a",
+                    "a::-webkit-a:is(.x)",
+                    "a:not(::-webkit-a)",
+                    "a:is(::-webkit-a)",
+                    "a:where(::-webkit-a)",
+                    "::after::-webkit-a",
+                    ":host::-webkit-a",
+                    "::part(x)::-webkit-a",
+                    "::-webkit-a::part(x)",
+                    "::-moz-foo",
+                    "::-ms-foo",
+                    "::-o-foo",
+                    "::-webkit-A",
+                    "::-WEBKIT-a",
+                    "::-webkit-a-",
+                    "::-webkit-1",
+                    "::-webkit--x",
+                    "::-webkit-\\31 x",
+                    "::-webkit-a\\(",
+                    "::-webkit-a:hover:active",
+                    "::-webkit-a::selection",
+                    "::-webkit-a:focus-visible"]
+
+
+def selector_webkit_documents():
+    return [{"g": "selector-webkit", "ops": [["S", s + " {color:red}"], ["V", "0", "selectorText"], ["V", "0", "cssText"]]} for s in WEBKIT_SELECTORS]
+
+
 _FIXED = None
 
 

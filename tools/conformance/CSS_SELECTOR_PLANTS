@@ -95,3 +95,8 @@ visited-is-link	css_match.c	  if (r->state) {\n    return (state_of(ctx, e) & r-
 sheet-a-pseudo-element-request-matches-any-pseudo-element	css_match.c	  if (a->pseudo != b->pseudo || a->anb_a != b->anb_a || a->anb_b != b->anb_b || a->string_count != b->string_count) {	  if (0) {	sheet
 match-scope-change-keeps-the-memo	css_match.c	  return ctx->scope ? (const void *)ctx->scope : (const void *)&ctx->scope;\n}\n\nstatic bool exists_above	  return NULL;\n}\n\nstatic bool exists_above	match-cost,match-seeds
 match-scope-change-keeps-the-memo	css_match.c	  ctx->tree_scope = tree_scope;\n  css_memo_clear(ctx);\n}	  ctx->tree_scope = tree_scope;\n}	match-cost,match-seeds
+an-unknown-webkit-pseudo-element-is-invalid	css_selector_parse.c	    row = GTEXT_CSS_SEL_PE_WEBKIT_ANY;	    row = -1;	selector
+a-webkit-pseudo-element-is-written-by-its-row	css_selector_serialize.c	  if (r->flags & SELF_WEBKIT) {	  if (0) {	selector
+a-webkit-pseudo-element-keeps-the-case-it-was-written-in	css_selector_parse.c	sdup_lower(p, nm->data, nm->length) : sdup(p, canon->base	sdup(p, nm->data, nm->length) : sdup(p, canon->base	selector
+webkit-without-a-hyphen-is-a-webkit-pseudo-element	css_selector_parse.c	css_sel_ieq(nm->data, 8, "-webkit-", 8)	css_sel_ieq(nm->data, 7, "-webkit", 7)	selector
+two-webkit-pseudo-elements-are-the-same-one	css_match.c	(sel_rows[a->pseudo].flags & SELF_WEBKIT) && (a->name.length	0 && (sel_rows[a->pseudo].flags & SELF_WEBKIT) && (a->name.length	sheet

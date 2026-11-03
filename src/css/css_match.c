@@ -791,6 +791,9 @@ static bool same_pe(const GTEXT_CSS_Simple * a, const GTEXT_CSS_Simple * b) {
   if (a->pseudo != b->pseudo || a->anb_a != b->anb_a || a->anb_b != b->anb_b || a->string_count != b->string_count) {
     return false;
   }
+  if ((sel_rows[a->pseudo].flags & SELF_WEBKIT) && (a->name.length != b->name.length || (a->name.length && memcmp(a->name.data, b->name.data, a->name.length)))) {
+    return false;   /* two ::-webkit- pseudo-elements are the same when their names are */
+  }
   for (size_t i = 0; i < a->string_count; i++) {
     if (a->strings[i].length != b->strings[i].length || (a->strings[i].length && memcmp(a->strings[i].data, b->strings[i].data, a->strings[i].length))) {
       return false;

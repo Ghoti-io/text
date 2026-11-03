@@ -106,6 +106,10 @@ static void ser_strings(W * w, const GTEXT_CSS_Simple * s, const char * sep) {
 static void ser_pseudo(W * w, const GTEXT_CSS_Simple * s) {
   const sel_row * r = css_sel_row_of(s);
   puts_(w, s->kind == GTEXT_CSS_SIMPLE_PSEUDO_ELEMENT ? "::" : ":");
+  if (r->flags & SELF_WEBKIT) {
+    put_ident(w, &s->name);   /* the name is the identifier that was written (an escape, a space in it, is written back as an escape) */
+    return;
+  }
   put(w, r->base, strlen(r->base));
   if (!s->functional) {
     return;
