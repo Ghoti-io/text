@@ -45,6 +45,15 @@ def load_tsv(path):
     return rows
 
 
+def _probe_module():
+    """css_probe.py beside this file (the gates run with -I, which leaves the script's directory off the path)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('css_probe', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'css_probe.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     regenerate = '--regenerate' in sys.argv
@@ -107,6 +116,9 @@ def main():
             problems.append('SUITE PROBLEMS: %s:%d: class %r is not one of %s' % (os.path.basename(exc_path), n, cls, ', '.join(CLASSES)))
         elif cls in ('draft-newer', 'wpt-wrong') and not quotes_a_sentence(reason):
             problems.append('SUITE PROBLEMS: %s:%d: a %s reason quotes a sentence of the served draft' % (os.path.basename(exc_path), n, cls))
+        if cls == 'wpt-tentative':
+            probe = _probe_module()
+            problems += ['SUITE PROBLEMS: %s:%d: %s' % (os.path.basename(exc_path), n, x) for x in probe.problems(vec, reason, probe.load())]
         exceptions[vec + '\t' + query] = (got, n)
     unexplained = [k for k in failures if k not in exceptions]
     stale = []

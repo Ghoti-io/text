@@ -134,6 +134,11 @@ awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF != 6 || done { print; next
 expect class-not-one-of-the-four "SUITE PROBLEMS" score "$vectors" "$runner" "$scratch/class" "$unscored"
 awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF != 6 || done { print; next } $5 == "wpt-tentative" { $1 = "css/selectors/not-tentative.html#0"; done = 1 } { print }' "$exceptions" > "$scratch/tentative"
 expect tentative-class-on-a-page-that-is-not "SUITE PROBLEMS" score "$vectors" "$runner" "$scratch/tentative" "$unscored"
+# a tentative exception that does not name the recorded answers of both browsers, and one that names another vector's
+awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF != 6 || done { print; next } $5 == "wpt-tentative" { sub(/ \[record: [^]]*\]/, "", $6); done = 1 } { print }' "$exceptions" > "$scratch/norecord"
+expect tentative-without-record "recorded answers of both browsers" score "$vectors" "$runner" "$scratch/norecord" "$unscored"
+awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF != 6 || done { print; next } $5 == "wpt-tentative" { sub(/\[record: [^]]*\]/, "[record: css/control/other.tentative.html#0]", $6); done = 1 } { print }' "$exceptions" > "$scratch/otherrecord"
+expect tentative-with-another-vectors-record "which is not this vector" score "$vectors" "$runner" "$scratch/otherrecord" "$unscored"
 expect floor "below the floor" env CSS_SELECTOR_MIN_SCORED=999999 python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$unscored"
 expect ceiling "above the ceiling" env CSS_SELECTOR_MAX_EXCEPTIONS=0 python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$unscored"
 head -n -1 "$unscored" > "$scratch/unscored-short"

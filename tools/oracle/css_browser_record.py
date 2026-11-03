@@ -49,7 +49,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
 CASES = os.path.join(ROOT, "tools", "conformance", "css_browser_cases.tsv")
-# The lists whose lines are asked of the browsers: the defects, and the exceptions that name the recorded answers (a served-text or browsers-differ exception is
+# The lists whose lines are asked of the browsers: the defects, and the exceptions that name the recorded answers (a served-text, browsers-differ or wpt-tentative exception is
 # looked up in the record by its property and value, so a line that leaves the defect list for the exception list must stay in the record).
 DEFECTS = [os.path.join(ROOT, "tools", "conformance", n) for n in ("CSS_COMPUTED_DEFECTS", "CSS_PROPERTY_DEFECTS", "CSS_COMPUTED_EXCEPTIONS", "CSS_PROPERTY_EXCEPTIONS")]
 OUT = os.path.join(ROOT, "tools", "conformance", "css_browser_answers.jsonl")
@@ -125,7 +125,7 @@ def load_cases(case_files, defect_files):
                 cols = line.split("\t")
                 if len(cols) < 3:
                     continue
-                if base.endswith("_EXCEPTIONS") and (len(cols) < 6 or cols[5] not in ("served-text", "browsers-differ")):
+                if base.endswith("_EXCEPTIONS") and (len(cols) < 6 or cols[5] not in ("served-text", "browsers-differ", "wpt-tentative")):
                     continue
                 vector, prop, value = cols[0], cols[1], unesc(cols[2])
                 key = (prop, value)

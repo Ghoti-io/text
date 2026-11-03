@@ -174,7 +174,7 @@ def main():
                 problems.append('%s: the class is wpt-tentative and the page is not named tentative' % ident)
         elif f[5] != 'browsers-differ' and not quotes_a_sentence(f[6]):
             problems.append('%s: the reason quotes no sentence of the served text (a quotation of four words and twenty characters at least)' % ident)
-        if f[5] == 'served-text':
+        if f[5] in ('served-text', 'wpt-tentative'):
             problems += record_problems(ident, f[6], record, f[1], False, f[2].replace('\\t', '\t').replace('\\n', '\n').replace('\\\\', '\\'))
         elif f[5] == 'browsers-differ':
             problems += record_problems(ident, f[6], record, f[1], True, f[2].replace('\\t', '\t').replace('\\n', '\n').replace('\\\\', '\\'))
@@ -216,7 +216,7 @@ def main():
         elif v['call'] in ('test_computed_serialization', 'test_used_serialization'):
             reason = 'the call is about a used value'
         elif v.get('pseudo'):
-            reason = 'a pseudo-element (selectors, C3)'
+            reason = 'a pseudo-element (selectors)'
         elif v.get('custom'):
             reason = 'the page compares with a function of its own'
         elif not v.get('prop') or v.get('value') is None:

@@ -7,7 +7,7 @@
 @bottom-left-corner	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
 @bottom-right	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
 @bottom-right-corner	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
-@charset	CHARSET	1	1	1	1	1	0	0	decoded by C0
+@charset	CHARSET	1	1	1	1	1	0	0	decoded by the tokenizer and parser
 @color-profile	COLOR_PROFILE	1	1	1	0	1	0	0	typed data for color; conversion is color's
 @container	CONTAINER	1	1	1	1	0	0	0	a conditional group rule evaluated for an element (css_container.h)
 @contents	PRESERVED	1	0	1	0	0	1	0	Mixins: preserved, inactive

@@ -1,22 +1,22 @@
-# The vectors of the computed-value gate that are not scored, by page and reason: a page this cannot model (a rule or a script that needs selectors or a browser, C3), a call
+# The vectors of the computed-value gate that are not scored, by page and reason: a page this cannot model (a rule or a script that needs selectors or a browser), a call
 # that is not a comparison of a computed value, a pseudo-element, a property the pin does not have. Written by run-css-computed.sh --regenerate; the gate fails on a page
 # that is not listed, a count that differs, and a listed page that is scored now. Columns: page, vectors, reason.
-css/css-anchor-position/anchor-ident-function.html	6	the page cannot be modeled: a selector this cannot match (.anchor: selectors are C3)
+css/css-anchor-position/anchor-ident-function.html	6	the page cannot be modeled: a selector this cannot match (.anchor: the selector layer is not used here)
 css/css-anchor-position/try-tactic-alignment.html	6	the pin has no property flip-block
 css/css-anchor-position/try-tactic-alignment.html	8	the pin has no property flip-inline
 css/css-anchor-position/try-tactic-alignment.html	8	the pin has no property flip-x
 css/css-anchor-position/try-tactic-alignment.html	6	the pin has no property flip-y
-css/css-color/color-mix-currentcolor-visited-getcomputedstyle.html	1	the page cannot be modeled: a selector this cannot match (a:link: selectors are C3)
-css/css-color/relative-currentcolor-visited-getcomputedstyle.html	1	the page cannot be modeled: a selector this cannot match (a:link: selectors are C3)
+css/css-color/color-mix-currentcolor-visited-getcomputedstyle.html	1	the page cannot be modeled: a selector this cannot match (a:link: the selector layer is not used here)
+css/css-color/relative-currentcolor-visited-getcomputedstyle.html	1	the page cannot be modeled: a selector this cannot match (a:link: the selector layer is not used here)
 css/css-fonts/parsing/font-size-adjust-computed.html	17	the page cannot be modeled: an at-rule in a style sheet
 css/css-grid/grid-lanes/tentative/parsing/flow-tolerance-computed.html	7	the pin has no property flow-tolerance
 css/css-grid/grid-lanes/tentative/parsing/grid-lanes-direction-computed.html	11	the pin has no property grid-lanes-direction
 css/css-grid/grid-lanes/tentative/parsing/grid-lanes-pack-computed.html	2	the pin has no property grid-lanes-pack
 css/css-grid/grid-lanes/tentative/parsing/grid-lanes-shorthand-computed.html	14	the pin has no property grid-lanes
 css/css-properties-values-api/registered-property-computation.html	66	the page cannot be modeled: a page with 0 elements with the id target
-css/css-pseudo/parsing/marker-supported-properties.html	68	a pseudo-element (selectors, C3)
+css/css-pseudo/parsing/marker-supported-properties.html	68	a pseudo-element (selectors)
 css/css-shapes/shape-functions/shape-function-computed.html	35	the page cannot be modeled: a script that changes the document before the vectors (.remove()
-css/css-ui/parsing/resize-computed.html	2	a pseudo-element (selectors, C3)
+css/css-ui/parsing/resize-computed.html	2	a pseudo-element (selectors)
 css/css-values/attr-serialization.html	1	the call is about a used value
 css/css-values/calc-angle-values.html	27	the call compares transform matrices within an epsilon
 css/css-values/calc-infinity-nan-computed.html	14	the call compares transform matrices within an epsilon

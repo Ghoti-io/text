@@ -23,7 +23,7 @@
 A `test_computed_value("width", "10px", "10px")` is asked of `#target` in the page's document: its markup (`<div id="container"><div id="target">`), the
 rules of its `<style>` (`#container { font-size: 40px }`), and whatever its scripts did first. This program reads the markup and the style sheets of every page
 that has computed-value vectors (VECTORS_DIR/computed.json, made by extract-wpt-props.py), and decides whether the question can be put to this library, which has no
-selector matching yet (C3):
+selector matching yet:
 
 * the document is read as the browser builds it: an HTML page (html5lib's tree is not needed for these pages: a tag soup reader that opens, closes and nests
   elements, the void elements being void, with `html` and `body` around the body's content) or an XML page (an SVG one);
@@ -266,7 +266,7 @@ def model(root, file, text):
         for selectors, decls in rules:
             for sel in [s.strip() for s in selectors.split(",")]:
                 if not (sel in ("*", "body", "html", ":root") or (sel.startswith("#") and re.fullmatch(r"#[A-Za-z_][\w-]*", sel)) or re.fullmatch(r"[a-z][a-z0-9]*", sel)):
-                    return None, None, "a selector this cannot match (%s: selectors are C3)" % sel, []
+                    return None, None, "a selector this cannot match (%s: the selector layer is not used here)" % sel, []
                 if sel.startswith("#") and not any(e["id"] == sel[1:] for e in elements):
                     continue
                 if re.fullmatch(r"[a-z][a-z0-9]*", sel) and sel not in ("body", "html") and not any(e["local"] == sel for e in elements):

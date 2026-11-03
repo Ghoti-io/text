@@ -168,8 +168,8 @@ def main():
                 problems.append('%s: the class is wpt-tentative and the page is not named tentative' % ident)
         elif f[5] != 'browsers-differ' and not quotes_a_sentence(f[6]):
             problems.append('%s: the reason quotes no sentence of the draft (a quotation of four words and twenty characters at least)' % ident)
-        if f[5] in ('served-text', 'browsers-differ'):
-            # a quoted sentence of the served text that entails the library's answer, or a silent text and two browsers that differ, and in both the recorded answers
+        if f[5] in ('served-text', 'browsers-differ', 'wpt-tentative'):
+            # a tentative page decides nothing, so its exception names what the browsers answer a quoted sentence of the served text that entails the library's answer, or a silent text and two browsers that differ, and in both the recorded answers
             # of both browsers (tools/conformance/css_browser_answers.jsonl), which the gate looks up
             if record is None:
                 record = _record_module()

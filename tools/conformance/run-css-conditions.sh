@@ -108,6 +108,8 @@ if [ -n "$line" ]; then
 fi
 { cat "$exceptions"; printf 'css/control/planted.html#0\tdiv\tser:div\tdraft-newer\tplanted: this case passes "and the sentence quoted here is long"\n'; } > "$scratch/stale"
 expect stale-exception "STALE EXCEPTIONS" python3 -I "$suite_py" "$vectors" "$runner" "$scratch/stale" "$unscored"
+awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF != 5 || done { print; next } $4 == "wpt-tentative" { sub(/ \[record: [^]]*\]/, "", $5); done = 1 } { print }' "$exceptions" > "$scratch/norecord"
+expect tentative-without-record "recorded answers of both browsers" python3 -I "$suite_py" "$vectors" "$runner" "$scratch/norecord" "$unscored"
 head -n -1 "$unscored" > "$scratch/unscored-short"
 expect unscored-page-missing "UNSCORED VECTORS" python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$scratch/unscored-short"
 { cat "$unscored"; printf 'css/control/planted.html\t3\tplanted\n'; } > "$scratch/unscored-extra"

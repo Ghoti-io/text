@@ -107,6 +107,15 @@ def score(vectors_dir, runner):
     return sel, failures, scored
 
 
+def _probe_module():
+    """css_probe.py beside this file (the gates run with -I, which leaves the script's directory off the path)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('css_probe', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'css_probe.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def main():
     args = sys.argv[1:]
     regenerate = '--regenerate' in args
@@ -134,6 +143,8 @@ def main():
         elif f[4] == 'wpt-tentative':
             if not vid.split('#')[0].endswith('.tentative.html'):
                 problems.append('%s: class wpt-tentative on a page that is not a tentative test' % vid)
+            probe = _probe_module()
+            problems += probe.problems(vid, f[5], probe.load())
         elif not quotes_a_sentence(f[5]):
             problems.append('%s: the reason quotes no sentence of the served draft' % vid)
         if f[2] not in STAGES:

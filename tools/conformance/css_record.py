@@ -29,11 +29,11 @@ def load_record():
 
 
 def record_problems(ident, reason, record, prop=None, differ=False, value=None, specified=False):
-    """A `served-text` exception quotes the sentence (checked as for the other classes) and names the recorded answers of both browsers: `[record: *]` is this vector's
+    """A `served-text` or `wpt-tentative` exception quotes the sentence (checked as for the other classes) and names the recorded answers of both browsers: `[record: *]` is this vector's
     own case in the record (CSS_COMPUTED_DEFECTS:<vector>, CSS_PROPERTY_DEFECTS:<vector> or, once the line is an exception, CSS_COMPUTED_EXCEPTIONS:<vector> or CSS_PROPERTY_EXCEPTIONS:<vector>), or ids of hand cases are listed after `record:` separated by semicolons."""
     m = re.search(r'\[record: ([^\]]+)\]', reason)
     if not m:
-        return ['%s: a served-text exception names the recorded answers of both browsers as [record: *] or [record: <case id>; ...]' % ident]
+        return ['%s: a served-text or wpt-tentative exception names the recorded answers of both browsers as [record: *] or [record: <case id>; ...]' % ident]
     ids = [x.strip() for x in m.group(1).split(';')]
     out = []
     for i in ids:

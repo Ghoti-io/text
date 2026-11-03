@@ -111,6 +111,15 @@ def run_runner(runner, requests):
     return out
 
 
+def _probe_module():
+    """css_probe.py beside this file (the gates run with -I, which leaves the script's directory off the path)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('css_probe', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'css_probe.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def load_exceptions(path):
     entries = {}
     problems = []
@@ -124,6 +133,9 @@ def load_exceptions(path):
             continue
         if '"' not in f[2]:
             problems.append('%s:%d: the reason quotes no sentence of the draft' % (path, n))
+        if 'tentative' in f[0]:
+            probe = _probe_module()
+            problems += ['%s:%d: %s' % (path, n, x) for x in probe.problems(f[0], f[2], probe.load())]
         entries[f[0]] = (unescape(f[1]), f[2])
     return entries, problems
 

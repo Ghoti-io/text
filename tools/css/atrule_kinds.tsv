@@ -54,7 +54,7 @@ right-top	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
 right-middle	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
 right-bottom	PAGE_MARGIN	page	1	1	1	1	1	0	a margin rule of a page
 property	PROPERTY	top,group	1	1	1	1	1	0	applied by css_at_property.h; a typed view here
-charset	CHARSET	top	1	1	1	1	1	0	decoded by C0
+charset	CHARSET	top	1	1	1	1	1	0	decoded by the tokenizer and parser
 starting-style	STARTING_STYLE	top,group,style	1	1	1	1	0	0	a conditional group rule: a node of the sheet
 view-transition	VIEW_TRANSITION	top,group	1	1	1	1	1	0	typed; the applicable rule is the last in cascade order
 custom-media	CUSTOM_MEDIA	top,group	1	1	1	1	0	0	collected by the conditions object (css_condition.h)

@@ -371,7 +371,7 @@ TEST(CssAtrule, CustomPropertyWithABadTokenIsDropped) {
   EXPECT_NE(q.css().find("--x"), std::string::npos);
 }
 
-// ---- the review of C4: what the grammars cannot say, and what both browsers drop ---------------------------------------------------------------------
+// ---- the review of the at-rule layer: what the grammars cannot say, and what both browsers drop ---------------------------------------------------------------------
 
 TEST(CssAtrule, CounterStyleNamesThatAnAuthorCannotDefine) {
   /* Counter Styles 3, 3: `none`, the CSS-wide keywords and the names decimal, disc, circle, square, disclosure-open and disclosure-closed are not names an author

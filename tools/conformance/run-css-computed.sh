@@ -83,7 +83,7 @@ if [ "$1" = "--regenerate" ]; then
 	[ -f "$scratch/failures.json" ] || { echo "the gate wrote no failures" >&2; exit 1; }
 	python3 -I "$root/tools/conformance/classify-computed.py" "$scratch/failures.json" "$root/tools/conformance/computed_classes.tsv" "$exceptions" "$defects"
 	{
-		printf '# The vectors of the computed-value gate that are not scored, by page and reason: a page this cannot model (a rule or a script that needs selectors or a browser, C3), a call\n'
+		printf '# The vectors of the computed-value gate that are not scored, by page and reason: a page this cannot model (a rule or a script that needs selectors or a browser), a call\n'
 		printf '# that is not a comparison of a computed value, a pseudo-element, a property the pin does not have. Written by run-css-computed.sh --regenerate; the gate fails on a page\n'
 		printf '# that is not listed, a count that differs, and a listed page that is scored now. Columns: page, vectors, reason.\n'
 		cat "$scratch/unscored"

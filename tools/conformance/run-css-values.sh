@@ -108,6 +108,8 @@ awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF < 3 { print; next } { gsub(/"/, "", 
 expect reason-without-quote "SUITE PROBLEMS" python3 "$suite_py" "$vectors" "$runner" "$scratch/unquoted"
 awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 3 || done { print; next } { $2 = "a planted answer"; done = 1; print }' "$exceptions" > "$scratch/answer"
 expect listed-answer "STALE EXCEPTIONS" python3 "$suite_py" "$vectors" "$runner" "$scratch/answer"
+awk -F'\t' 'BEGIN { OFS = "\t"; done = 0 } /^#/ || NF < 3 || done { print; next } $1 ~ /tentative/ { sub(/ \[record: [^]]*\]/, "", $3); done = 1 } { print }' "$exceptions" > "$scratch/norecord"
+expect tentative-without-record "recorded answers of both browsers" python3 "$suite_py" "$vectors" "$runner" "$scratch/norecord"
 expect floor "below the floor" env CSS_VALUES_MIN_SCORED=99999 python3 "$suite_py" "$vectors" "$runner" "$exceptions"
 
 # The library with one rule undone. Each is a defect a vector must catch.
