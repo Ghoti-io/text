@@ -447,8 +447,9 @@ void css_events_emit(css_core * core, const css_cssom_event * e, GTEXT_CSSOM_Out
   }
   delivery_begin(core);
   deliver_one(core, &q, outcome);
-  delivery_end(core);
+  /* freed while the delivery still holds the core: the last release of it may be the observer's, and the allocator is the core's */
   qevent_free(core, &q);
+  delivery_end(core);
 }
 
 bool css_events_wanted(const css_core * core) {

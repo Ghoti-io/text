@@ -31,12 +31,20 @@
  * happens to a batch when the document handle goes.
  */
 
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <cctype>
+#include <map>
 #include <set>
 #include <sstream>
 
 #include <gtest/gtest.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/mman.h>
+#endif
 
 #include "cssom_events_test_support.h"
 
@@ -780,6 +788,101 @@ TEST(CssomEventDelivery, TheDocumentMayBeReleasedFromInsideACallAndNothingIsCall
   EXPECT_TRUE(second.seen.empty()) << "the document is gone: no observer is called after the one that released it";
   EXPECT_EQ(get(d, "color"), "red") << "and the object it held is valid";
   gtext_cssom_decl_release(d);
+}
+
+namespace {
+
+/// An allocator that gives every block pages of its own and returns them to the system when the block is freed. A read of a freed block then faults, with or without a
+/// sanitizer: the document's allocator lives inside the document, and a delivery that reads it after the last release has read memory that is no longer there.
+struct UnmapAllocator {
+  GTEXT_Allocator alloc;
+  std::map<void *, size_t> sizes;   ///< The block and the bytes the caller asked for.
+  UnmapAllocator() {
+    alloc.ctx = this;
+    alloc.malloc_fn = [](void * ctx, size_t n) -> void * { return static_cast<UnmapAllocator *>(ctx)->take(n); };
+    alloc.calloc_fn = [](void * ctx, size_t c, size_t n) -> void * { return static_cast<UnmapAllocator *>(ctx)->take(c * n); };   // fresh pages are zero
+    alloc.realloc_fn = [](void * ctx, void * p, size_t n) -> void * {
+      auto * self = static_cast<UnmapAllocator *>(ctx);
+      void * q = self->take(n);
+      if (q && p) {
+        const size_t old = self->sizes[p];
+        std::memcpy(q, p, old < n ? old : n);
+        self->drop(p);
+      }
+      return q;
+    };
+    alloc.free_fn = [](void * ctx, void * p) { static_cast<UnmapAllocator *>(ctx)->drop(p); };
+  }
+  static size_t span(size_t n) {
+    const size_t page = 4096;
+    return ((n ? n : 1) + page - 1) / page * page;
+  }
+  void * take(size_t n) {
+#ifdef _WIN32
+    void * p = VirtualAlloc(nullptr, span(n), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+#else
+    void * p = mmap(nullptr, span(n), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) {
+      p = nullptr;
+    }
+#endif
+    if (p) {
+      sizes[p] = n;
+    }
+    return p;
+  }
+  void drop(void * p) {
+    if (!p) {
+      return;
+    }
+    auto it = sizes.find(p);
+    ASSERT_TRUE(it != sizes.end());
+    const size_t n = it->second;
+    sizes.erase(it);
+#ifdef _WIN32
+    VirtualFree(p, 0, MEM_RELEASE);
+    (void)n;
+#else
+    munmap(p, span(n));
+#endif
+  }
+};
+
+}  // namespace
+
+TEST(CssomEventDelivery, ReleasingTheOnlyHandleFromAnObserverOfAnEventThatHoldsNoObjectLeavesNothingToReadAfterward) {
+  /* Nothing but the delivery keeps the core alive here (a registered sheet, or the conditions, is no object of the document), so the release the observer makes is the
+     last one before the delivery ends; the event must be gone by then. The allocator unmaps what it frees, so this fails without a sanitizer too. */
+  for (int which = 0; which < 3; which++) {
+    UnmapAllocator pa;
+    auto doc = std::make_unique<Doc>(nullptr, &pa.alloc);
+    ASSERT_EQ(doc->status, GTEXT_CSS_OK);
+    Compiled sheet("p{color:red}");
+    Cond cond(500);
+    if (which == 1) {
+      ASSERT_EQ(gtext_cssom_document_register_sheet(doc->d, GTEXT_CSS_ORIGIN_USER, sheet.s, nullptr), GTEXT_CSS_OK);
+    }
+    Rec rec(doc->d);
+    int calls = 0;
+    rec.hook = [&](const GTEXT_CSSOM_Event & e, Seen &) {
+      calls++;
+      EXPECT_EQ(e.sheet, nullptr);
+      EXPECT_EQ(e.rule, nullptr);
+      doc->release();
+      rec.handle = 0;
+      return GTEXT_CSS_OK;
+    };
+    GTEXT_CSS_Status st = GTEXT_CSS_E_INTERNAL;
+    GTEXT_CSSOM_Document * d = doc->d;
+    switch (which) {
+    case 0: st = gtext_cssom_document_register_sheet(d, GTEXT_CSS_ORIGIN_USER, sheet.s, nullptr); break;
+    case 1: st = gtext_cssom_document_unregister_sheet(d, sheet.s, nullptr); break;
+    default: st = gtext_cssom_document_set_conditions(d, cond.c, nullptr); break;
+    }
+    EXPECT_EQ(st, GTEXT_CSS_OK) << which;
+    EXPECT_EQ(calls, 1) << which;
+    EXPECT_TRUE(pa.sizes.empty()) << which << ": every block of the document went back";
+  }
 }
 
 /* ---- batches --------------------------------------------------------------------------------------------------------------------------------------------- */
