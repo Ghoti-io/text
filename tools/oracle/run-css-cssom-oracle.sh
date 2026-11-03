@@ -117,6 +117,18 @@ rows[0]["r"][1] = "NotARealError"
 json.dump(rows, open(sys.argv[1] + "/answers-ours.json", "w"))
 PY
 expect answer-changed "UNLISTED" classify
+# the driver that asked the browsers is not the one in the repository: the header of the answers names the SHA-256 of cssom_driver.mjs (in a copy of the run, which the controls
+# after this one do not use)
+rm -rf "$scratch/hdr"
+cp -r "$base" "$scratch/hdr"
+python3 - "$scratch/hdr" <<'PY'
+import json, sys
+p = sys.argv[1] + "/header-chromium.json"
+h = json.load(open(p))
+h["mounted_driver"] = {"cssom_driver.mjs": "0" * 64}
+json.dump(h, open(p, "w"))
+PY
+expect driver-changed "HEADER" $diff_py --work "$scratch/hdr" --stage classify
 # this library's source with one rule undone, measured against browsers that did not change: the edits of one name are one defect (tools/conformance/CSS_CSSOM_PLANTS)
 for name in $(grep -v '^#' "$root/tools/oracle/CSS_CSSOM_ORACLE_PLANTS" | awk 'NF { print $1 }'); do
 	rm -rf "$scratch/p-$name"

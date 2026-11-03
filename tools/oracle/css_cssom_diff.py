@@ -37,6 +37,7 @@ Gecko), and a divergence between them is `browsers-differ` unless the served tex
 
 import argparse
 import collections
+import hashlib
 import json
 import os
 import subprocess
@@ -90,7 +91,28 @@ def ops_tsv(docs):
     return "\n".join(out) + "\n"
 
 
+def mounted_driver():
+    """The driver is mounted from this repository, not baked into the pinned image (the image digest would move with every edit of it), so its SHA-256 goes into the header of the
+    answers it made: a replay is refused when the driver now in the repository is not the one that asked the browsers."""
+    return {os.path.basename(DRIVER): hashlib.sha256(open(DRIVER, "rb").read()).hexdigest()}
+
+
+def header_problems(work):
+    problems = []
+    want = mounted_driver()
+    for e in ENGINES:
+        path = os.path.join(work, "header-%s.json" % e)
+        if not os.path.exists(path):
+            problems.append("HEADER: %s says which driver made the %s answers, and it is not there; ask the browsers again" % (os.path.basename(path), e))
+            continue
+        got = json.load(open(path)).get("mounted_driver")
+        if got != want:
+            problems.append("HEADER: the %s answers were made by %s, and the driver in the repository is %s; ask the browsers again" % (e, json.dumps(got), json.dumps(want)))
+    return problems
+
+
 def run_browsers(engine, docs):
+    mounted = mounted_driver()
     inner = ["sh", "-c", 'cd /opt/cssprop && exec node "%s" %s' % (DRIVER, engine)]
     data = "".join(json.dumps(d, ensure_ascii=False) + "\n" for d in docs)
     run = subprocess.run(oracle_env.command("cssprop", inner), input=data.encode("utf-8", "surrogatepass"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
@@ -100,6 +122,7 @@ def run_browsers(engine, docs):
     if lines and lines[-1] == "":
         lines.pop()
     header = json.loads(lines[0][1:])
+    header["mounted_driver"] = mounted
     rows = [json.loads(x) for x in lines[1:]]
     if len(rows) != len(docs):
         raise SystemExit("css_cssom_diff: the %s driver answered %d documents to %d" % (engine, len(rows), len(docs)))
@@ -258,6 +281,8 @@ def main():
         if a.replay:
             for e in ENGINES:
                 json.dump(json.load(open(os.path.join(a.replay, "answers-%s.json" % e))), open(os.path.join(a.work, "answers-%s.json" % e), "w"))
+                if os.path.exists(os.path.join(a.replay, "header-%s.json" % e)):
+                    json.dump(json.load(open(os.path.join(a.replay, "header-%s.json" % e))), open(os.path.join(a.work, "header-%s.json" % e), "w"))
         else:
             for e in ENGINES:
                 header, rows = run_browsers(e, docs)
@@ -270,6 +295,9 @@ def main():
             mine = os.path.join(a.work, "answers-%s.json" % e)
             if a.replay and not os.path.exists(mine):
                 json.dump(json.load(open(os.path.join(a.replay, "answers-%s.json" % e))), open(mine, "w"))
+            head = os.path.join(a.work, "header-%s.json" % e)
+            if a.replay and not os.path.exists(head) and os.path.exists(os.path.join(a.replay, "header-%s.json" % e)):
+                json.dump(json.load(open(os.path.join(a.replay, "header-%s.json" % e))), open(head, "w"))
         ans = {e: json.load(open(os.path.join(a.work, "answers-%s.json" % e))) for e in ENGINES + ["ours"]}
         found = divergences(docs, ans)
         counts = collections.Counter(f for f, _, _ in found)
@@ -277,6 +305,7 @@ def main():
         for f, who, w in found:
             witness.setdefault(f, (who, w))
         listed, problems = load_list(a.list)
+        problems = problems + header_problems(a.work)
         default_population = a.seed == 1 and a.count == 600
         bad = []
         for f in sorted(counts):
