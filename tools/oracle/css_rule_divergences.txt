@@ -27,7 +27,6 @@ A:page:d:@bottom-left:KKD	reference-narrow	28	Paged Media 3 defines the margin r
 A:keyframes:d:animation-timing-function:KKD	reference-narrow	3	The declarations of a keyframe block with a timeline range selector (entry, exit, cover), which Firefox 158 drops with the block (see the line for the selector).
 A:keyframes:d:display:KKD	reference-narrow	5	The declarations of a keyframe block with a timeline range selector (entry, exit, cover), which Firefox 158 drops with the block (see the line for the selector).
 A:keyframes:d:opacity:KKD	reference-narrow	5	The declarations of a keyframe block with a timeline range selector (entry, exit, cover), which Firefox 158 drops with the block (see the line for the selector).
-A:supports:h:ch!ff!	legacy-compat	6	Both browsers write a selector() whose forgiving list skipped an empty entry as it was written (`:is(a,)`), this library writes the list it kept.
 A:page:d:size:DKD	reference-wrong	28	size is a descriptor of the page box and no property of a margin box; both browsers keep a `size` declaration in a margin rule, this library drops a name its registry does not hold as a property of that block.
 A:page:d:marks:KDD	reference-narrow	51	Paged Media 3 defines the marks descriptor; neither browser implements it and both drop it, this library keeps it.
 A:keyframes:d:keyframe:cover:KKD	reference-narrow	24	Scroll-driven Animations 1: a keyframe selector may be a <timeline-range-name> followed by a percentage; Firefox 158 does not implement it and drops the block, Chromium 156 and this library keep it.
