@@ -142,7 +142,7 @@ typedef struct {
 GTEXT_CSS_Status css_block_diff(GTEXT_CSS_Declaration_Block * from, GTEXT_CSS_Declaration_Block * to, css_block_delta * diff);
 void css_block_diff_free(css_block_delta * diff);
 
-#define CSS_LEAF_CAP 1024u   ///< Room for the leaves of any shorthand: `all` has about 600.
+#define CSS_LEAF_CAP 4096u   ///< Room for the leaves of any shorthand: `all` has about 600 and the properties the caller registered (a registry with more registered properties than fit makes `all` unusable: expand_one() refuses it, see MAX_LONGHANDS_OF_ONE).
 
 bool css_shorthand_leaves(const GTEXT_CSS_Registry * registry, GTEXT_CSS_Property_Id shorthand, GTEXT_CSS_Property_Id * out, size_t cap, size_t * n);
 

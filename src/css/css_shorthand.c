@@ -55,7 +55,7 @@ static bool kw_is(const GTEXT_CSS_Value * v, const char * word) {
   return true;
 }
 
-#define MAX_LONGHANDS_OF_ONE 1024u
+#define MAX_LONGHANDS_OF_ONE 4096u   /* `all`: the pin's longhands and the ones the caller registered, about 3,400 of them at most; with more, `all` is refused with GTEXT_CSS_E_LIMIT_DECLARATIONS */
 #define MAX_RESULT_ITEMS ((size_t)1 << 20)
 #define ANY_BUDGET 50000u
 #define MAX_LEAVES 128u

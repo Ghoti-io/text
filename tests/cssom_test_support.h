@@ -137,6 +137,7 @@ struct Doc {
   /// Runs inside the tap, after the event was recorded; its status is the observer's.
   std::function<GTEXT_CSS_Status()> inside;
   GTEXT_CSS_Status status = GTEXT_CSS_E_INTERNAL;
+  const GTEXT_CSS_Registry * registry = nullptr;   ///< The registry of the document when the test gave it one of its own (the names of the properties of an event are looked up in it).
 
   explicit Doc(const std::function<void(GTEXT_CSSOM_Config &)> & tweak = nullptr, const GTEXT_Allocator * alloc = nullptr) {
     GTEXT_CSSOM_Config c = gtext_cssom_config_default();
@@ -145,6 +146,7 @@ struct Doc {
     if (tweak) {
       tweak(c);
     }
+    registry = c.registry;
     status = gtext_cssom_document_new(&c, &d);
     if (status == GTEXT_CSS_OK) {
       css_cssom_set_tap(css_document_core(d), &Doc::tap, this);
@@ -170,7 +172,7 @@ struct Doc {
     ev.kind = e->kind;
     for (size_t i = 0; i < e->property_count; i++) {
       GTEXT_CSS_Property_Info info;
-      gtext_css_registry_property_info(R(), e->properties[i], &info);
+      gtext_css_registry_property_info(self->registry ? self->registry : R(), e->properties[i], &info);
       ev.props.emplace_back(info.name, info.name_length);
     }
     for (size_t i = 0; i < e->custom_count; i++) {

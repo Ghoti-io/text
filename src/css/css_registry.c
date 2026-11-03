@@ -122,6 +122,9 @@ struct GTEXT_CSS_Registry {
   size_t hash_cap;
   override_rec * overrides;
   size_t noverrides, capoverrides;
+  GTEXT_CSS_Property_Id * all_extra;  ///< The caller's longhands that `all` resets besides the generated ones (found when the registry is frozen).
+  size_t nall_extra;
+  GTEXT_CSS_Property_Id all_id;       ///< The generated `all`.
 
   lazy_grammar * gprops;       ///< One for each generated property.
   lazy_grammar * gtypes;       ///< One for each generated type: only `def` is used.
@@ -455,7 +458,7 @@ bool gtext_css_registry_property_info(const GTEXT_CSS_Registry * r, GTEXT_CSS_Pr
     info->logical_group = p->group ? css_tstr_c(gtext_css_tbl_groups[p->group - 1].name) : NULL;
     info->source = css_tstr_c(p->source);
     info->alias_of = current_id(r, (GTEXT_CSS_Property_Id)p->alias_of);
-    info->longhand_count = p->longhand_count;
+    info->longhand_count = p->longhand_count + (id == r->all_id ? r->nall_extra : 0);
     info->reset_longhand_count = p->reset_count;
     info->style_name_count = p->style_count;
     info->flags = p->flags | GTEXT_CSS_PROP_GENERATED;
@@ -482,6 +485,9 @@ GTEXT_CSS_Property_Id gtext_css_registry_longhand(const GTEXT_CSS_Registry * r, 
   }
   if ((size_t)id <= gtext_css_tbl_property_count) {
     const css_tbl_property * p = &gtext_css_tbl_properties[id - 1];
+    if (id == r->all_id && index >= p->longhand_count && index - p->longhand_count < r->nall_extra) {
+      return r->all_extra[index - p->longhand_count];   /* a property the caller registered: `all` resets it too (CSS Cascade 4, 3.1) */
+    }
     return index < p->longhand_count ? current_id(r, (GTEXT_CSS_Property_Id)gtext_css_tbl_property_refs[p->longhand_first + index]) : 0;
   }
   const cprop * c = &r->cprops[id - gtext_css_tbl_property_count - 1];
@@ -1015,6 +1021,7 @@ static void reg_destroy(GTEXT_CSS_Registry * r) {
   gtext_allocator_free(&a, r->cprops);
   gtext_allocator_free(&a, r->hash);
   gtext_allocator_free(&a, r->overrides);
+  gtext_allocator_free(&a, r->all_extra);
   if (r->lock_made) {
     GCU_MUTEX_DESTROY(r->lock);
   }
@@ -1051,6 +1058,10 @@ GTEXT_CSS_Status gtext_css_registry_builder_new(const GTEXT_CSS_Registry_Options
     return GTEXT_CSS_E_INVALID;
   }
   r->lock_made = true;
+  {
+    const size_t all_row = gen_find("all", 3, NULL);
+    r->all_id = all_row == (size_t)-1 ? 0 : (GTEXT_CSS_Property_Id)(all_row + 1);
+  }
   r->gprops = gtext_allocator_calloc(&a, gtext_css_tbl_property_count, sizeof *r->gprops);
   r->gtypes = gtext_allocator_calloc(&a, gtext_css_tbl_type_count, sizeof *r->gtypes);
   r->gdescs = gtext_allocator_calloc(&a, gtext_css_tbl_descriptor_count, sizeof *r->gdescs);
@@ -2170,6 +2181,34 @@ static GTEXT_CSS_Status freeze_run(GTEXT_CSS_Registry_Builder * builder, GTEXT_C
         }
         return gr.status;
       }
+    }
+  }
+  /* `all` resets every longhand: the ones the caller registered are longhands of it too. An alias, a shorthand and an override (which replaces a property
+   * `all` already lists, by id, through current_id()) are not added. */
+  {
+    size_t n = 0;
+    for (size_t i = 0; i < r->ncprops; i++) {
+      const cprop * c = &r->cprops[i];
+      if (!c->alias_of && !c->overridden && !(c->flags & (GTEXT_CSS_PROP_SHORTHAND | GTEXT_CSS_PROP_CUSTOM))) {
+        n++;
+      }
+    }
+    if (r->all_id && n) {
+      GTEXT_CSS_Property_Id * extra = gtext_allocator_malloc(&r->alloc, n * sizeof *extra);
+      if (!extra) {
+        fill_result(result, GTEXT_CSS_E_OOM, "all", 3);
+        return GTEXT_CSS_E_OOM;
+      }
+      size_t k = 0;
+      for (size_t i = 0; i < r->ncprops; i++) {
+        const cprop * c = &r->cprops[i];
+        if (!c->alias_of && !c->overridden && !(c->flags & (GTEXT_CSS_PROP_SHORTHAND | GTEXT_CSS_PROP_CUSTOM))) {
+          extra[k++] = (GTEXT_CSS_Property_Id)(gtext_css_tbl_property_count + 1 + i);
+        }
+      }
+      gtext_allocator_free(&r->alloc, r->all_extra);
+      r->all_extra = extra;
+      r->nall_extra = n;
     }
   }
   *out = r;

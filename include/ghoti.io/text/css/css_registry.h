@@ -463,6 +463,10 @@ GTEXT_API GTEXT_CSS_Status gtext_css_registry_register_custom(GTEXT_CSS_Registry
  * is still a builder: it keeps every registration, nothing the attempt compiled is remembered (a later registration is taken into
  * account by the next freeze), and the result names the property to blame, with `detail` saying which kind of failure it was.
  *
+ * `all` resets every property: the properties registered here (not an alias, a shorthand, a custom property or an override of a property the pin has, which `all` lists already) become
+ * longhands of `all` in the frozen registry. The tables that read the longhands of one shorthand hold 4,096, so in a registry of more than about 3,400 registered properties a declaration
+ * of `all` is refused with GTEXT_CSS_E_LIMIT_DECLARATIONS (the registry itself is fine, and every other property works); nothing is left out of `all` silently.
+ *
  * @param builder The builder. Not NULL.
  * @param out Receives the registry; written only on success. Not NULL.
  * @param result NULL, or filled.

@@ -358,3 +358,6 @@ a-change-of-all-is-not-called-all	cssom_decl.c	      ev.all_changed = bsearch(&w
 remove-of-all-reads-too-few-leaves	css_block.c	      if (!css_shorthand_leaves(block->registry, id, leaves, CSS_LEAF_CAP, &nleaf)) {	      if (!css_shorthand_leaves(block->registry, id, leaves, 16, &nleaf)) {	all
 font-stretch-calculation-names-no-keyword	css_shorthand_serialize.c	  if (kw || !t || !it || !it->set || strncmp(t, "calc(", 5) != 0) {	  if (1) {	decl
 logical-intermixed-longhands-do-not-stop-a-shorthand	css_shorthand_serialize.c	    if (taken || logical_intermixed(&c, lv, nl)) {	    if (taken) {	decl
+all-lists-no-registered-property	css_registry.c	    if (id == r->all_id && index >= p->longhand_count	    if (0 && id == r->all_id && index >= p->longhand_count	all
+all-longhand-count-ignores-registered-properties	css_registry.c	p->longhand_count + (id == r->all_id ? r->nall_extra : 0);	p->longhand_count;	all
+all-over-the-tables-is-expanded-anyway	css_shorthand.c	  if (nlong > MAX_LONGHANDS_OF_ONE || nl > MAX_LONGHANDS_OF_ONE) {	  if (0) {	all
