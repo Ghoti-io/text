@@ -1765,7 +1765,7 @@ ifeq ($(OS_NAME), Linux)
 		printf "############################"; \
 		printf "\033[0m\n\n"; \
 		LD_PRELOAD= LD_LIBRARY_PATH="$(TSAN_APP_DIR)" \
-			TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:allocator_may_return_null=1 \
+			GTEXT_TEST_SLOWDOWN=4 TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:allocator_may_return_null=1 \
 			$$test_exe --gtest_brief=1 || failed="$$failed $$test_name"; \
 	done; \
 	if [ -n "$$failed" ]; then \
@@ -1806,7 +1806,7 @@ ifeq ($(OS_NAME), Linux)
 	for test_exe in $(TSAN_TEST_EXECUTABLES); do \
 		test_name=$$(basename $$test_exe $(EXE_EXTENSION)); \
 		output=$$(LD_PRELOAD= LD_LIBRARY_PATH="$(TSAN_APP_DIR)" \
-			TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:allocator_may_return_null=1 \
+			GTEXT_TEST_SLOWDOWN=4 TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:allocator_may_return_null=1 \
 			$$test_exe --gtest_brief=1 2>&1); \
 		code=$$?; \
 		num=$$(printf '%s' "$$output" | grep -oE '\[=+\] [0-9]+ tests? from' | grep -oE '[0-9]+' | head -1); \

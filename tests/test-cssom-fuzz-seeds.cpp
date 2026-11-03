@@ -122,7 +122,9 @@ TEST_F(CssomDeclFuzzSeeds, EverySeedHoldsEveryProperty) {
   }
   const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
   RecordProperty("replay_seconds", std::to_string(seconds));
-  EXPECT_LT(seconds, 120.0) << files.size() << " seeds took " << seconds << " s";
+  const char * slow_env = std::getenv("GTEXT_TEST_SLOWDOWN");   // a known slow host (an emulator, Valgrind, a sanitizer) multiplies the bound, as the other seed replays do
+  const double slow = slow_env && std::atof(slow_env) >= 1.0 && std::atof(slow_env) <= 1000.0 ? std::atof(slow_env) : 1.0;
+  EXPECT_LT(seconds, 120.0 * slow) << files.size() << " seeds took " << seconds << " s";
 }
 
 } // namespace

@@ -177,7 +177,9 @@ TEST(CssomThreads, OneWriterAndEightReadersEveryResultIsTheSingleThreadedOneAtTh
   }
   gtext_css_rule_index_free(slot.index);
   EXPECT_EQ(bad.load(), 0);
-  EXPECT_GT(checked.load(), 100u) << "the readers did work while the writer wrote";
+  const char * slow_env = std::getenv("GTEXT_TEST_SLOWDOWN");   // under Valgrind the threads take turns and the readers get fewer reads in the writer's time
+  const double slow = slow_env && std::atof(slow_env) >= 1.0 && std::atof(slow_env) <= 1000.0 ? std::atof(slow_env) : 1.0;
+  EXPECT_GT(static_cast<double>(checked.load()), 100.0 / slow) << "the readers did work while the writer wrote";
 }
 
 }  // namespace
