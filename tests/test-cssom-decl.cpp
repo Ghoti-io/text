@@ -780,3 +780,19 @@ TEST(CssomDecl, ALonghandKeptAsWrittenIsUpdatedInPlaceWhenItIsSetToAValueTheLibr
   ASSERT_EQ(set(d.d, "color", "blue").st, GTEXT_CSS_OK);
   EXPECT_EQ(text_of(d.d), "voice-family: var(--x); color: blue; margin: 1px;");
 }
+
+// found by the libFuzzer soak of fuzz_cssom_decl (reproducer-item-order-after-css-text.seed): cssText set to text that serializes the same as the declarations, but whose longhands stand in
+// another order (a complete margin is written as one shorthand whatever the order), left the old order in place; item(i) showed it
+TEST(CssomDecl, CssTextSetToTheSameTextStillTakesTheOrderOfTheNewList) {
+  Doc doc;
+  Decl d(doc);
+  ASSERT_EQ(set_text(d.d, "margin-right:1px;margin-bottom:1px;margin-left:1px;margin-top:1px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin: 1px;");
+  ASSERT_EQ(set_text(d.d, "margin: 1px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin: 1px;");
+  char * name = nullptr;
+  size_t len = 0;
+  ASSERT_EQ(gtext_cssom_decl_item(d.d, 0, &name, &len), GTEXT_CSS_OK);
+  EXPECT_EQ(std::string(name, len), "margin-top");
+  gtext_cssom_buffer_free(gtext_cssom_document_allocator(doc.d), name);
+}

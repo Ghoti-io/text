@@ -940,6 +940,29 @@ GTEXT_CSS_Status gtext_cssom_decl_set_property(GTEXT_CSSOM_Decl * decl, const ch
   return st;
 }
 
+/// Whether two blocks list the same properties in the same order. A complete shorthand is written the same whatever the order of its longhands, so the text cannot tell.
+static bool same_item_order(const GTEXT_CSS_Declaration_Block * a, const GTEXT_CSS_Declaration_Block * b) {
+  size_t i = 0, j = 0;
+  for (;;) {
+    while (i < a->count && a->items[i].dead) {
+      i++;
+    }
+    while (j < b->count && b->items[j].dead) {
+      j++;
+    }
+    if (i == a->count || j == b->count) {
+      return i == a->count && j == b->count;
+    }
+    const blk_item * x = &a->items[i];
+    const blk_item * y = &b->items[j];
+    if (x->property != y->property || x->custom_length != y->custom_length || (x->custom_length && memcmp(x->custom_name, y->custom_name, x->custom_length) != 0)) {
+      return false;
+    }
+    i++;
+    j++;
+  }
+}
+
 GTEXT_CSS_Status gtext_cssom_decl_set_css_text(GTEXT_CSSOM_Decl * decl, const char * text, size_t length, GTEXT_CSSOM_Outcome * outcome) {
   GTEXT_CSSOM_Outcome local;
   GTEXT_CSSOM_Outcome * out = outcome ? outcome : &local;
@@ -994,8 +1017,15 @@ GTEXT_CSS_Status gtext_cssom_decl_set_css_text(GTEXT_CSSOM_Decl * decl, const ch
     return st;
   }
   if (!changed) {
-    gtext_css_block_free(neu);
     out->attribute_written = written;
+    if (!same_item_order(decl->block, neu)) {
+      /* the same text, a different order of the longhands of a shorthand: item(i) shows it, no property's value changed, so no event */
+      GTEXT_CSS_Declaration_Block * old = decl->block;
+      decl->block = neu;
+      gtext_css_block_free(old);
+      return GTEXT_CSS_OK;
+    }
+    gtext_css_block_free(neu);
     return GTEXT_CSS_OK;
   }
   GTEXT_CSS_Declaration_Block * old = decl->block;

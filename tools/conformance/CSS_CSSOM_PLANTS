@@ -311,3 +311,4 @@ typed-css-text-is-not-the-declaration-blocks	cssom_typed.c	  if (v.ndescs == 0) 
 a-margin-box-takes-every-property	css_atrule.c	(c->a->kind == GTEXT_CSS_ATRULE_PAGE_MARGIN ? "page-margin" : at_name)	at_name	setters
 a-pseudo-page-keeps-its-case	css_atrule.c	    if (kind == GTEXT_CSS_ATRULE_PAGE) {\n      /* a pseudo-page	    if (0) {\n      /* a pseudo-page	setters
 an-opaque-longhand-set-moves-to-the-end	css_block.c	    if ((block->items[slots[i] - 1].opaque && is_shorthand_id(reg, block->items[slots[i] - 1].property)) || opaque_covers_after(	    if (block->items[slots[i] - 1].opaque || opaque_covers_after(	decl,seeds
+css-text-with-the-same-text-keeps-the-old-order	cssom_decl.c	    if (!same_item_order(decl->block, neu)) {	    if (0) {	decl
