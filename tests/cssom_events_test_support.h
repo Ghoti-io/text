@@ -71,7 +71,9 @@ struct Seen {
   bool has_condition = false;
   uint32_t cond_environment = 0;
   uint64_t cond_features0 = 0;
+  uint32_t cond_container = 0;
   bool cond_custom = false;
+  bool cond_unknown = false;
   std::vector<std::string> props, customs;
   std::vector<uint32_t> ids;
   bool all = false;
@@ -167,6 +169,8 @@ struct Rec {
     s.cond_environment = e->condition_dependencies.environment;
     s.cond_features0 = e->condition_dependencies.features[0];
     s.cond_custom = e->condition_dependencies.custom_media;
+    s.cond_container = e->condition_dependencies.container;
+    s.cond_unknown = e->condition_dependencies.unknown_features;
     for (size_t i = 0; i < e->property_count; i++) {
       GTEXT_CSS_Property_Info info;
       gtext_css_registry_property_info(R(), e->properties[i], &info);

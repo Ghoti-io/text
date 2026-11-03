@@ -3,3 +3,4 @@ computed	test-cssom-computed.cpp
 computedoom	test-cssom-computed-oom.cpp
 wptcomputed	test-cssom-wpt-computed.cpp
 match	test-css-match.cpp
+container	test-css-container.cpp

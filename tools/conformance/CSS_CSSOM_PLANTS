@@ -329,3 +329,8 @@ compute-context-replaced-in-the-middle-of-a-read	cssom_computed.c	  if (core->co
 released-in-the-middle-of-a-read-edits-the-records	cssom_computed.c	  if (core->computing == 0) {\n    release_now(core, cs, element);\n    return;\n  }	  if (1) {\n    release_now(core, cs, element);\n    return;\n  }	computed
 deferred-release-never-applied	cssom_computed.c	    release_now(core, cs, cs->released[i]);	    (void)i;	computed
 release-that-cannot-be-written-down-is-forgotten	cssom_computed.c	      cs->released_lost = true;\n      return;	      return;	computedoom
+container-rule-has-no-condition	cssom_events.c	  if (rule->kind == GTEXT_CSSOM_RULE_SUPPORTS || rule->kind == GTEXT_CSSOM_RULE_CONTAINER) {	  if (rule->kind == GTEXT_CSSOM_RULE_SUPPORTS) {	events
+container-condition-reads-the-environment	cssom_events.c	  out->environment = 0;   /* the size of a container is not a fact about the environment; the kinds below say what is asked */\n		events
+container-kinds-not-collected	cssom_events.c	    out->container |= gtext_css_container_query_kinds(query, i);	    (void)i;	events
+container-degraded-summary-asks-nothing	cssom_events.c	  c->container = 0xffu;\n		eventsoom
+container-kinds-leak-the-axis	css_container.c	  return q->in.nodes[q->in.roots[index]].bits & (MQC_SIZE | MQC_STYLE | MQC_SCROLL | MQC_ANCHORED | MQC_UNKNOWN);	  return q->in.nodes[q->in.roots[index]].bits;	container

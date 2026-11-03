@@ -33,6 +33,7 @@
 
 #include <fstream>
 #include <cctype>
+#include <cstring>
 #include <set>
 #include <sstream>
 
@@ -433,6 +434,60 @@ TEST(CssomEventContents, ASupportsRuleGivesItsCondition) {
   Rec rec(c.d());
   ASSERT_EQ(gtext_cssom_sheet_insert_rule(s, "@supports (display: grid){ p{} }", 32, 0, nullptr, nullptr), GTEXT_CSS_OK);
   EXPECT_TRUE(rec.seen.at(0).has_condition);
+}
+
+/* Conditional 5, 3: a container query asks the query container, not the environment. The summary of the rule says which kinds of question it asks, as the summary of an
+   @media rule says which parts of the environment it reads. */
+TEST(CssomEventContents, AContainerRuleGivesItsConditionAndWhatItAsksOfItsContainer) {
+  Ctx c;
+  GTEXT_CSSOM_Sheet * s = c.owned("a{}");
+  Rec rec(c.d());
+  ASSERT_EQ(gtext_cssom_sheet_insert_rule(s, "@container side (min-width: 400px){ p{} }", 41, 0, nullptr, nullptr), GTEXT_CSS_OK);
+  const Seen & e = rec.seen.at(0);
+  ASSERT_TRUE(e.has_condition) << "an @container rule has a condition";
+  EXPECT_EQ(e.cond_container, GTEXT_CSS_CONTAINER_ASKS_SIZE);
+  EXPECT_EQ(e.cond_environment, 0u) << "the viewport is not what a container query reads";
+  EXPECT_NE(e.cond_features0, 0u) << "and the feature row of min-width is named";
+  EXPECT_TRUE(e.complete);
+}
+
+TEST(CssomEventContents, TheKindsAContainerQueryAsksAreAllListed) {
+  struct Case {
+    const char * text;
+    uint32_t asks;
+    bool unknown;
+  };
+  const Case cases[] = {
+      {"@container (width > 100px){ p{} }", GTEXT_CSS_CONTAINER_ASKS_SIZE, false},
+      {"@container style(--x: 1){ p{} }", GTEXT_CSS_CONTAINER_ASKS_STYLE, false},
+      {"@container scroll-state(stuck: top){ p{} }", GTEXT_CSS_CONTAINER_ASKS_SCROLL_STATE, false},
+      {"@container anchored(fallback: top){ p{} }", GTEXT_CSS_CONTAINER_ASKS_ANCHORED, false},
+      {"@container (width > 100px) and style(--x: 1){ p{} }", GTEXT_CSS_CONTAINER_ASKS_SIZE | GTEXT_CSS_CONTAINER_ASKS_STYLE, false},
+      {"@container side{ p{} }", 0u, false},
+      {"@container (foo: bar){ p{} }", GTEXT_CSS_CONTAINER_ASKS_UNKNOWN, true},
+  };
+  for (const Case & k : cases) {
+    SCOPED_TRACE(k.text);
+    Ctx c;
+    GTEXT_CSSOM_Sheet * s = c.owned("a{}");
+    Rec rec(c.d());
+    ASSERT_EQ(gtext_cssom_sheet_insert_rule(s, k.text, std::strlen(k.text), 0, nullptr, nullptr), GTEXT_CSS_OK);
+    const Seen & e = rec.seen.at(0);
+    ASSERT_TRUE(e.has_condition);
+    EXPECT_EQ(e.cond_container, k.asks);
+    EXPECT_EQ(e.cond_unknown, k.unknown);
+    EXPECT_EQ(e.cond_environment & ~(1u << 9), 0u) << "no part of the environment, apart from the extension bit of an unknown feature";
+  }
+}
+
+TEST(CssomEventContents, ASelectorChangeInsideAContainerRuleDoesNotCarryItsCondition) {
+  Ctx c;
+  GTEXT_CSSOM_Sheet * s = c.owned("@container side (min-width: 400px){ p{} }");
+  GTEXT_CSSOM_Rule * outer = c.rule_at(s, 0);
+  GTEXT_CSSOM_Rule * inner = c.inner_at(outer, 0);
+  Rec rec(c.d());
+  ASSERT_EQ(gtext_cssom_rule_set_selector_text(inner, "q", 1, nullptr), GTEXT_CSS_OK);
+  EXPECT_FALSE(rec.seen.at(0).has_condition) << "a style rule has none: the rule around it is not summarized with it";
 }
 
 TEST(CssomEventContents, AReplacedSheetIsOneEventWithNoRuleAndAnythingMayHaveChanged) {

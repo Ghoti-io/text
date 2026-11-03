@@ -336,6 +336,7 @@ typedef struct {
   uint64_t features[2];  ///< Bit i of the pair: media feature row i is mentioned (rows 0 to 127).
   bool custom_media;     ///< Mentions a `(--name)`.
   bool unknown_features; ///< Mentions a feature the table does not list.
+  uint32_t container;    ///< Of a container query list (an `@container` rule): the GTEXT_CSS_CONTAINER_ASKS_* kinds of question it asks its query container, with `environment` 0 (a container's size is not the environment's). 0 for any other list.
 } GTEXT_CSS_Condition_Dependencies;
 
 /** @brief The dependencies of a media query list. */

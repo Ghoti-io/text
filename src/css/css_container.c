@@ -144,7 +144,7 @@ uint32_t gtext_css_container_query_kinds(const GTEXT_CSS_Container_Query * q, si
   if (!q || index >= q->in.root_count) {
     return 0;
   }
-  return q->in.nodes[q->in.roots[index]].bits;
+  return q->in.nodes[q->in.roots[index]].bits & (MQC_SIZE | MQC_STYLE | MQC_SCROLL | MQC_ANCHORED | MQC_UNKNOWN);   /* the axis bits are the evaluator's, not part of the contract */
 }
 
 /* ---- the call's tables -------------------------------------------------------------------------------------------- */

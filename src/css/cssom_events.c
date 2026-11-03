@@ -75,6 +75,7 @@ static void condition_everything(GTEXT_CSS_Condition_Dependencies * c) {
   c->features[0] = c->features[1] = UINT64_MAX;
   c->custom_media = true;
   c->unknown_features = true;
+  c->container = 0xffu;
 }
 
 /// The dependencies of a media query list's text (`supports` false) or a supports condition's. False if the parse failed for lack of resources.
@@ -96,7 +97,32 @@ static bool condition_of_text(css_core * core, const char * text, size_t length,
   return true;
 }
 
-/// The condition of a rule that has one the summary can read: `@media` and `@import` (their media query list) and `@supports`.
+/// The dependencies of an `@container` rule's prelude: what its conditions ask of their query container, not of the environment. False if the parse failed for lack of resources.
+static bool container_of_text(css_core * core, const char * text, size_t length, GTEXT_CSS_Condition_Dependencies * out) {
+  GTEXT_CSS_Media_Options mo = gtext_css_media_options_default();
+  mo.allocator = &core->alloc;
+  mo.parse.max_input_bytes = core->config.max_input_bytes;
+  GTEXT_CSS_Container_Query * query = NULL;
+  GTEXT_CSS_Media_Result result;
+  memset(&result, 0, sizeof result);
+  const GTEXT_CSS_Status st = gtext_css_container_parse(text, length, &mo, &query, &result);
+  gtext_css_media_result_free(&result);
+  if (st != GTEXT_CSS_OK || !query) {
+    gtext_css_media_list_free(query);
+    return false;
+  }
+  gtext_css_media_list_dependencies(query, out);
+  out->environment = 0;   /* the size of a container is not a fact about the environment; the kinds below say what is asked */
+  out->container = 0;
+  const size_t count = gtext_css_container_query_count(query);
+  for (size_t i = 0; i < count; i++) {
+    out->container |= gtext_css_container_query_kinds(query, i);
+  }
+  gtext_css_media_list_free(query);
+  return true;
+}
+
+/// The condition of a rule that has one the summary can read: `@media` and `@import` (their media query list), `@supports` and `@container`.
 static bool rule_condition(css_core * core, css_rule * rule, GTEXT_CSS_Condition_Dependencies * out, bool * has) {
   *has = false;
   if (rule->kind == GTEXT_CSSOM_RULE_MEDIA || rule->kind == GTEXT_CSSOM_RULE_IMPORT) {
@@ -111,14 +137,14 @@ static bool rule_condition(css_core * core, css_rule * rule, GTEXT_CSS_Condition
     *has = ok;
     return ok;
   }
-  if (rule->kind == GTEXT_CSSOM_RULE_SUPPORTS) {
+  if (rule->kind == GTEXT_CSSOM_RULE_SUPPORTS || rule->kind == GTEXT_CSSOM_RULE_CONTAINER) {
     GTEXT_CSS_Atrule * a = NULL;
     if (css_rule_typed(core, rule, true, &a) != GTEXT_CSS_OK) {
       return false;
     }
     size_t n = 0;
     const char * p = gtext_css_atrule_prelude_text(a, &n);
-    const bool ok = condition_of_text(core, p ? p : "", n, true, out);
+    const bool ok = rule->kind == GTEXT_CSSOM_RULE_CONTAINER ? container_of_text(core, p ? p : "", n, out) : condition_of_text(core, p ? p : "", n, true, out);
     gtext_css_atrule_free(a);
     *has = ok;
     return ok;

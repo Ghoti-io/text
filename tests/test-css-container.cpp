@@ -99,6 +99,23 @@ TEST(CssContainerParse, AnUnknownFeatureIsGeneralEnclosedAndSelectsNoContainer) 
   }
 }
 
+/* css_container.h: "The kinds of feature the `index`th condition asks of its container (GTEXT_CSS_CONTAINER_ASKS_*; 0 for a name alone)": those bits and no other, whichever axis a size
+   feature reads. */
+TEST(CssContainerParse, TheKindsAConditionAsksAreTheDocumentedBitsAndNoOther) {
+  const struct {
+    const char * text;
+    uint32_t kinds;
+  } cases[] = {{"(min-width: 1px)", GTEXT_CSS_CONTAINER_ASKS_SIZE}, {"(inline-size > 1px)", GTEXT_CSS_CONTAINER_ASKS_SIZE}, {"(height)", GTEXT_CSS_CONTAINER_ASKS_SIZE},
+      {"(aspect-ratio: 1/1)", GTEXT_CSS_CONTAINER_ASKS_SIZE}, {"style(--a: 1)", GTEXT_CSS_CONTAINER_ASKS_STYLE}, {"name", 0u}};
+  for (const auto & c : cases) {
+    SCOPED_TRACE(c.text);
+    GTEXT_CSS_Container_Query * q = nullptr;
+    ASSERT_EQ(gtext_css_container_parse(c.text, std::strlen(c.text), nullptr, &q, nullptr), GTEXT_CSS_OK);
+    EXPECT_EQ(gtext_css_container_query_kinds(q, 0), c.kinds);
+    gtext_css_media_list_free(q);
+  }
+}
+
 TEST(CssContainerParse, SerializationIsCanonicalAndAFixedPoint) {
   EXPECT_EQ(serialized("card (min-width:400px) and (max-width:  900px)"), "card (min-width: 400px) and (max-width: 900px)");
   EXPECT_EQ(serialized("(INLINE-SIZE > 10px), NAME"), "(inline-size > 10px), NAME");

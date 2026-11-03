@@ -46,7 +46,7 @@ struct Scn {
 
 std::string signature(const Seen & s) {
   std::string out = std::string(kind_name(s.kind)) + "|p" + path_text(s.path) + (s.has_path ? "+" : "-") + "|s" + s.selectors + "|b" + s.selectors_before + "|d" +
-                    std::to_string(s.deps) + "/" + std::to_string(s.deps_before) + "|c" + (s.has_condition ? std::to_string(s.cond_environment) : "-") + "|" + join(s.props) + "|" +
+                    std::to_string(s.deps) + "/" + std::to_string(s.deps_before) + "|c" + (s.has_condition ? std::to_string(s.cond_environment) + "/" + std::to_string(s.cond_container) : "-") + "|" + join(s.props) + "|" +
                     join(s.customs) + (s.all ? "|all" : "") + "|n" + std::to_string(s.descendants) + (s.detached ? "|det" : "");
   return out;
 }
@@ -57,6 +57,8 @@ const std::vector<Scn> & scenarios() {
           [](Ctx & c) { return gtext_cssom_rule_insert_rule(c.rules[0], "p.q > span:hover{color:red}", 26, 1, nullptr, nullptr); }, 1, true},
       {"insert a media rule", [](Ctx & c) { c.owned("a{}"); },
           [](Ctx & c) { return gtext_cssom_sheet_insert_rule(c.sheets[0], "@media (min-width: 3px){ b{} }", 30, 0, nullptr, nullptr); }, 1, true},
+      {"insert a container rule", [](Ctx & c) { c.owned("a{}"); },
+          [](Ctx & c) { return gtext_cssom_sheet_insert_rule(c.sheets[0], "@container side (min-width: 3px) and style(--x: 1){ b{} }", 55, 0, nullptr, nullptr); }, 1, true},
       {"delete a rule", [](Ctx & c) { c.owned("a{} @media screen{ b{} c.d{} }"); c.rule_at(c.sheets[0], 1); },
           [](Ctx & c) { return gtext_cssom_rule_delete_rule(c.rules[0], 1, nullptr); }, 1, true},
       {"set a selector text", [](Ctx & c) { c.owned("a.b, #c{color:red}"); c.style_of(c.rule_at(c.sheets[0], 0)); },   // the block is made the first time it is asked for, and stays
@@ -154,6 +156,9 @@ void sweep(bool batch) {
                 const Seen & x = rec.seen[i];
                 const bool marked = x.deps == GTEXT_CSSOM_DEP_ALL || x.deps_before == GTEXT_CSSOM_DEP_ALL || x.cond_environment == 0x3ffu || signature(x) != want[i];
                 EXPECT_TRUE(marked) << "a summary that could not be made says what it could not make (" << n << ")";
+                if (x.has_condition && x.cond_environment == 0x3ffu) {
+                  EXPECT_EQ(x.cond_container, 0xffu) << "and a condition it could not make asks every kind of question of a container too (" << n << ")";
+                }
               }
               EXPECT_EQ(std::string(kind_name(rec.seen[i].kind)), want[i].substr(0, want[i].find('|'))) << "the kind is always right";
             }
