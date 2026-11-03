@@ -71,6 +71,10 @@ const PROBE = `(json) => {
 const OPS = `(json) => {
   const doc = JSON.parse(json);
   const NULL = '\\u0001null';
+  // Firefox shares the rules of <style> elements with the same text, across documents of this page too: a comment makes each text its own (a comment is not part of any rule)
+  window.__n = (window.__n || 0) + 1;
+  let made = 0;
+  const uniq = () => ' /* ' + window.__n + '.' + (made++) + ' */';
   for (const e of Array.from(document.head.querySelectorAll('style'))) {
     e.remove();
   }
@@ -103,7 +107,7 @@ const OPS = `(json) => {
       const k = op[0];
       if (k === 'S') {
         const e = document.createElement('style');
-        e.textContent = op[1];
+        e.textContent = op[1] + uniq();
         document.head.appendChild(e);
         sheet = e.sheet;
         sheets.push(sheet);
@@ -123,7 +127,7 @@ const OPS = `(json) => {
         document.adoptedStyleSheets = list;
       } else if (k === 'H') {
         const e = document.createElement('style');
-        e.textContent = op[1];
+        e.textContent = op[1] + uniq();
         document.head.appendChild(e);
         sheet = e.sheet;
         sheets.push(sheet);

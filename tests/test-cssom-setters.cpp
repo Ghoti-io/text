@@ -276,8 +276,8 @@ TEST(CssomSetters, ACounterStyleDescriptorIsReplacedAsAWhole) {
   const std::string before = dump(s.s);
   EXPECT_EQ(set_attr(c.r, "system", "invalid (").o.kind, GTEXT_CSSOM_IGNORED_INVALID_VALUE);
   EXPECT_EQ(dump(s.s), before) << "an invalid value changes nothing";
-  EXPECT_EQ(set_attr(c.r, "suffix", "").o.kind, GTEXT_CSSOM_CHANGED) << "the empty string removes the descriptor";
-  EXPECT_EQ(css(c.r), "@counter-style c { system: cyclic; symbols: x y z; }");
+  EXPECT_EQ(set_attr(c.r, "suffix", "").o.kind, GTEXT_CSSOM_IGNORED_INVALID_VALUE) << "CSS Counter Styles 3, 9.2: an invalid value (the empty text is one) does nothing";
+  EXPECT_EQ(css(c.r), "@counter-style c { system: cyclic; symbols: x y z; suffix: \". \"; }");
   EXPECT_EQ(set_attr(c.r, "pad", "3 '0'").o.kind, GTEXT_CSSOM_CHANGED);
   EXPECT_EQ(attr(c.r, "pad"), "3 \"0\"");
   EXPECT_EQ(set_attr(c.r, "name", "foo bar").o.kind, GTEXT_CSSOM_CHANGED);

@@ -865,6 +865,13 @@ GTEXT_CSS_Status gtext_cssom_rule_set_attribute(GTEXT_CSSOM_Rule * rule, const c
     return GTEXT_CSS_E_LIMIT_INPUT;
   }
   bool ignored = false;
+  if (row->src == SRC_DESC && value_length == 0) {
+    /* CSS Counter Styles 3, 9.2: "parse the given value as the descriptor associated with the attribute. If the result is invalid according to the given descriptor's grammar ... do
+       nothing": the empty text is not a value of any of the descriptors, and both browsers leave the rule as it was (the C5b3 reading, that it removes the descriptor, was nobody's) */
+    out->kind = GTEXT_CSSOM_IGNORED_INVALID_VALUE;
+    out->detail = "the empty text is not a value of the descriptor: nothing changes";
+    return GTEXT_CSS_OK;
+  }
   if (row->src == SRC_DESC) {
     css_core * core = rule->obj.core;
     GTEXT_CSS_Atrule * a = NULL;
@@ -883,9 +890,6 @@ GTEXT_CSS_Status gtext_cssom_rule_set_attribute(GTEXT_CSSOM_Rule * rule, const c
       GTEXT_CSS_Atrule_Descriptor d;
       gtext_css_atrule_descriptor_at(a, i, &d);
       const bool same = d.name_length == dl && memcmp(d.name, row->desc, dl) == 0;
-      if (same && value_length == 0) {
-        continue;   /* the empty string removes the descriptor */
-      }
       const char * t = same ? value : d.text.data;
       const size_t tl = same ? value_length : d.text.length;
       placed = placed || same;

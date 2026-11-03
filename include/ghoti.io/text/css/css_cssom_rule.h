@@ -299,7 +299,7 @@ GTEXT_API bool gtext_cssom_rule_has_attribute(const GTEXT_CSSOM_Rule * rule, con
 
 /**
  * @brief Set an attribute. A readonly attribute is **ignored** (WebIDL: nothing happens; `*outcome` says GTEXT_CSSOM_IGNORED_NOT_ALLOWED_HERE). The writable ones replace the rule as a
- *   whole (see gtext_cssom_rule_set_selector_text()): a value the rule's grammar refuses is ignored (GTEXT_CSSOM_IGNORED_INVALID_VALUE) and the empty string removes a descriptor.
+ *   whole (see gtext_cssom_rule_set_selector_text()): a value the rule's grammar refuses is ignored (GTEXT_CSSOM_IGNORED_INVALID_VALUE), the empty string included (CSS Counter Styles 3, 9.2: "If the result is invalid ... do nothing").
  *   A `@keyframes` or `@counter-style` name is written as an identifier (escaped as needed).
  */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_set_attribute(GTEXT_CSSOM_Rule * rule, const char * name, size_t name_length, const char * value, size_t value_length,

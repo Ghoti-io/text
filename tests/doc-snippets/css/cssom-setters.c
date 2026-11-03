@@ -48,7 +48,7 @@ static void cssom_setters(void) {
   status = gtext_cssom_media_text(list, &css, &length);
   show("mediaText", status, css, document);
 
-  /* a counter style's descriptors are attributes; the empty string removes one */
+  /* a counter style's descriptors are attributes; a value that is not valid for one (the empty string too) does nothing */
   GTEXT_CSSOM_Rule * counter = gtext_cssom_rule_list_at(rules, 2);
   gtext_cssom_rule_set_attribute(counter, "symbols", 7, "x y z", 5, NULL);
   gtext_cssom_rule_set_attribute(counter, "system", 6, "bogus (", 7, &outcome);

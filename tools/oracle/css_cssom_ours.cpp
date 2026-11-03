@@ -496,6 +496,9 @@ std::string run_op(World & w, const std::vector<std::string> & f, GTEXT_CSS_Regi
     else if (f[2] == "cssText") {
       answer = css_text(t.rule);
     }
+    else if (f[2] == "type") {
+      answer = std::to_string(gtext_cssom_rule_type(t.rule));
+    }
     else {
       char * out = nullptr;
       size_t n = 0;
