@@ -796,3 +796,20 @@ TEST(CssomDecl, CssTextSetToTheSameTextStillTakesTheOrderOfTheNewList) {
   EXPECT_EQ(std::string(name, len), "margin-top");
   gtext_cssom_buffer_free(gtext_cssom_document_allocator(doc.d), name);
 }
+
+// found by the libFuzzer soak of fuzz_cssom_decl (reproducer-set-over-a-wide-keyword-shorthand.seed): setProperty() of a shorthand whose earlier declaration was kept as written replaces that
+// declaration; a longhand declared before it is set where it stands, since the shorthand that would have overridden it is the one being replaced
+TEST(CssomDecl, SettingAShorthandKeptAsWrittenLeavesTheLonghandsAlreadyThereInPlace) {
+  Doc doc;
+  Decl d(doc);
+  ASSERT_EQ(set_text(d.d, "color: red; font: caption; font-style: italic; font: caption !important; --a: 1").st, GTEXT_CSS_OK);
+  ASSERT_EQ(set(d.d, "font", "revert").st, GTEXT_CSS_OK);
+  char * name = nullptr;
+  size_t len = 0;
+  ASSERT_EQ(gtext_cssom_decl_item(d.d, 1, &name, &len), GTEXT_CSS_OK);
+  EXPECT_EQ(std::string(name, len), "font-style") << "font-style keeps its place, after color";
+  gtext_cssom_buffer_free(gtext_cssom_document_allocator(doc.d), name);
+  ASSERT_EQ(gtext_cssom_decl_item(d.d, 2, &name, &len), GTEXT_CSS_OK);
+  EXPECT_EQ(std::string(name, len), "--a") << "the other longhands of font are new declarations: they go behind --a";
+  gtext_cssom_buffer_free(gtext_cssom_document_allocator(doc.d), name);
+}

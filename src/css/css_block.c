@@ -647,7 +647,7 @@ static bool value_usable(const GTEXT_CSS_Property_Value * value) {
 
 static bool kill_key(GTEXT_CSS_Declaration_Block * b, GTEXT_CSS_Property_Id property, const char * name, size_t length);
 static bool is_shorthand_id(const GTEXT_CSS_Registry * reg, GTEXT_CSS_Property_Id id);
-static bool opaque_covers_after(const GTEXT_CSS_Declaration_Block * b, size_t from, GTEXT_CSS_Property_Id longhand);
+static bool opaque_covers_after(const GTEXT_CSS_Declaration_Block * b, size_t from, GTEXT_CSS_Property_Id longhand, GTEXT_CSS_Property_Id ignore);
 
 GTEXT_CSS_Status gtext_css_block_set(GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Property_Value * value, bool important,
     GTEXT_CSS_Block_Change * change, GTEXT_CSS_Shorthand_Result * result) {
@@ -721,7 +721,7 @@ GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTE
       fresh++;
       continue;
     }
-    if ((block->items[slots[i] - 1].opaque && is_shorthand_id(reg, block->items[slots[i] - 1].property)) || opaque_covers_after(block, slots[i] - 1, lh.property)) {
+    if ((block->items[slots[i] - 1].opaque && is_shorthand_id(reg, block->items[slots[i] - 1].property)) || opaque_covers_after(block, slots[i] - 1, lh.property, shorthand ? prop : 0)) {
       moved[i] = 1;
       fresh++;
       continue;
@@ -905,15 +905,16 @@ static void cover_adjust(GTEXT_CSS_Declaration_Block * b, GTEXT_CSS_Property_Id 
   }
 }
 
-/// Whether a live opaque shorthand after the slot `from` sets the longhand: a declaration of the longhand before that shorthand is overridden by it.
-static bool opaque_covers_after(const GTEXT_CSS_Declaration_Block * b, size_t from, GTEXT_CSS_Property_Id longhand) {
+/// Whether a live opaque shorthand after the slot `from` sets the longhand: a declaration of the longhand before that shorthand is overridden by it. The shorthand `ignore` (the one being
+/// set, whose opaque declaration this set replaces) does not count.
+static bool opaque_covers_after(const GTEXT_CSS_Declaration_Block * b, size_t from, GTEXT_CSS_Property_Id longhand, GTEXT_CSS_Property_Id ignore) {
   const size_t np = gtext_css_registry_property_count(b->registry);
   if (!b->covered || longhand > np || b->covered[longhand] == 0) {
     return false;
   }
   for (size_t j = from + 1; j < b->count; j++) {
     const blk_item * it = &b->items[j];
-    if (it->dead || !it->opaque || !is_shorthand_id(b->registry, it->property)) {
+    if (it->dead || !it->opaque || it->property == ignore || !is_shorthand_id(b->registry, it->property)) {
       continue;
     }
     GTEXT_CSS_Property_Id leaves[256];

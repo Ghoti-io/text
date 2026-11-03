@@ -15,7 +15,7 @@ block-index-not-used	css_block.c	  GTEXT_CSS_Declaration_Block * b = (GTEXT_CSS_
 cssText-set-keeps-the-old-declarations	cssom_decl.c	  decl->block = neu;\n  /* the names	  gtext_css_block_free(neu);\n  /* the names	decl
 invalid-value-reaches-the-block	cssom_decl.c	  if (pv.outcome == GTEXT_CSS_PROP_RESULT_UNKNOWN || pv.outcome == GTEXT_CSS_PROP_RESULT_INVALID) {\n    const bool unknown	  if (pv.outcome == GTEXT_CSS_PROP_RESULT_UNKNOWN) {\n    const bool unknown	decl
 opaque-dropped-by-the-text-parse	cssom_decl.c	      st = keep_opaque(core, block, d);\n      continue;	      st = GTEXT_CSS_OK;\n      continue;	decl,inline,seeds
-opaque-shorthand-longhand-replaced-in-place	css_block.c	    if ((block->items[slots[i] - 1].opaque && is_shorthand_id(reg, block->items[slots[i] - 1].property)) || opaque_covers_after(block, slots[i] - 1, lh.property)) {	    if (0) {	block
+opaque-shorthand-longhand-replaced-in-place	css_block.c	    if ((block->items[slots[i] - 1].opaque && is_shorthand_id(reg, block->items[slots[i] - 1].property)) || opaque_covers_after(block, slots[i] - 1, lh.property, shorthand ? prop : 0)) {	    if (0) {	block
 opaque-not-written-back	css_shorthand_serialize.c	      put_declaration(out, oi.name, oi.name_length, it->raw, it->raw_length, it->important, first);	      (void)oi;	block,decl,inline
 opaque-importance-lost	css_shorthand_serialize.c	      put_declaration(out, oi.name, oi.name_length, it->raw, it->raw_length, it->important, first);	      put_declaration(out, oi.name, oi.name_length, it->raw, it->raw_length, false, first);	block,decl,inline
 opaque-same-text-counts-as-a-change	css_block.c	    if (it->opaque && it->important == important && it->raw_length == raw_length && memcmp(it->raw, raw, raw_length) == 0) {	    if (0) {	block
@@ -312,3 +312,4 @@ a-margin-box-takes-every-property	css_atrule.c	(c->a->kind == GTEXT_CSS_ATRULE_P
 a-pseudo-page-keeps-its-case	css_atrule.c	    if (kind == GTEXT_CSS_ATRULE_PAGE) {\n      /* a pseudo-page	    if (0) {\n      /* a pseudo-page	setters
 an-opaque-longhand-set-moves-to-the-end	css_block.c	    if ((block->items[slots[i] - 1].opaque && is_shorthand_id(reg, block->items[slots[i] - 1].property)) || opaque_covers_after(	    if (block->items[slots[i] - 1].opaque || opaque_covers_after(	decl,seeds
 css-text-with-the-same-text-keeps-the-old-order	cssom_decl.c	    if (!same_item_order(decl->block, neu)) {	    if (0) {	decl
+a-set-shorthand-counts-the-opaque-one-it-replaces	css_block.c	it->property == ignore	it->property == 0 * ignore	decl,seeds
