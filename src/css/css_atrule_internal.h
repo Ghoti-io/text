@@ -65,6 +65,8 @@ struct GTEXT_CSS_Atrule {
   GTEXT_CSS_Id id;
   const char * prelude;
   size_t prelude_len;
+  const char ** read;                ///< Per query of the media query list or the container query: the query as it was read when that differs from the canonical text, else NULL.
+  size_t nread;
   GTEXT_CSS_String * names;
   bool * quoted;
   size_t nnames;

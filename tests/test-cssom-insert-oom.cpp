@@ -51,6 +51,7 @@ GTEXT_CSS_Status run_insert(Sheet & s, const std::string & text, size_t index) {
 const Scenario kScenarios[] = {
     {"insert a style rule", "a{color:red} b{}", [](Sheet & s) { return run_insert(s, "c > d{margin:1px 2px}", 1); }},
     {"insert a grouping rule with rules inside", "a{}", [](Sheet & s) { return run_insert(s, "@media print{ b{color:red} @supports (a:b){ c{} } d{ & e{} } }", 1); }},
+    {"insert a rule whose general-enclosed is kept as written", "a{}", [](Sheet & s) { return run_insert(s, "@media screen and ( a ) , print { b{} @container  foo ( a:  b ) { c{} } }", 1); }},
     {"insert a declaration block as a rule", "a{ b{} }", [](Sheet & s) { return insert_rule(path(s, {0}).r, "width:1px; color:red", 0).st; }},
     {"insert a nested rule", "a{ b{} }", [](Sheet & s) { return insert_rule(path(s, {0}).r, "> c{ color:red }", 1).st; }},
     {"insert a namespace", "@import url(a.css); @namespace x url(u);", [](Sheet & s) { return run_insert(s, "@namespace y url(v);", 2); }},

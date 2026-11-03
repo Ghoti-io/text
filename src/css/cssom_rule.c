@@ -141,6 +141,12 @@ GTEXT_CSS_Status css_rule_create(css_core * core, GTEXT_CSSOM_Rule_Kind kind, cs
   r->node = node;
   r->run = run;
   r->run_count = run_count;
+  /* a prelude read from the text keeps the queries that are not written as the model writes them (`( a )`): the browsers keep the text of a <general-enclosed> */
+  st = css_rule_read_from_source(r);
+  if (st != GTEXT_CSS_OK) {
+    css_obj_release_internal(&r->obj);
+    return st;
+  }
   *out = r;
   return GTEXT_CSS_OK;
 }

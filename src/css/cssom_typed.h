@@ -100,6 +100,10 @@ void css_media_read_drop(css_obj * owner, struct css_media_read ** slot, bool cr
 /// Where the media query list begins in the canonical prelude of an `@import` (after the url, `layer` and `supports()`).
 size_t css_import_media_start(const char * s, size_t n);
 /// The prelude of an `@media` rule, or of an `@import`, as it was read: `prelude` is the canonical one the typed model holds. Appended to `out`; the canonical prelude when the rule keeps no other.
+/// A rule read from a style sheet's text (a parse, with the text kept): the queries of its prelude that keep their text as it was written, as the rule's `media_read`. Only an
+/// `@media`, `@import` or `@container` with a parenthesis in its prelude is looked at. GTEXT_CSS_OK, or a resource failure (the rule is then not usable: free it).
+GTEXT_CSS_Status css_rule_read_from_source(css_rule * rule);
+
 GTEXT_CSS_Status css_rule_prelude_read(const css_rule * rule, const char * prelude, size_t length, tbuf * out);
 /// The media query list of an `@import` or `@media` rule as text, in a new buffer, without making the `MediaList` object (which would take an id).
 GTEXT_CSS_Status css_rule_media_text(css_rule * rule, char ** out, size_t * length);

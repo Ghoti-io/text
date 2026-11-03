@@ -638,7 +638,7 @@ static GTEXT_CSS_Status attr_value(css_rule * rule, const attr_row * row, tbuf *
   piece pieces[16];
   switch (row->src) {
   case SRC_PRELUDE:
-    st = rule->kind == GTEXT_CSSOM_RULE_MEDIA ? css_rule_prelude_read(rule, prelude, pl, out) : (tb_put(out, prelude, pl) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM);
+    st = rule->kind == GTEXT_CSSOM_RULE_MEDIA || rule->kind == GTEXT_CSSOM_RULE_CONTAINER ? css_rule_prelude_read(rule, prelude, pl, out) : (tb_put(out, prelude, pl) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM);
     break;
   case SRC_NAME: {
     GTEXT_CSS_String s;

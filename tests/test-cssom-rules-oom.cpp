@@ -40,6 +40,7 @@ namespace {
 const char * const kTexts[] = {
     "a{color:red} b > c{margin:1px 2px} @media print{ d{width:1px} @supports (a:b){ e{} } }",
     "@import url(a.css); @namespace s url(urn:s); s|a{ b{} color:red; c{} width:1px } @keyframes k{ from{a:b} 50%{} } @page :first{ margin:1px; @top-left{ content:\"x\" } }",
+    "@import url(a.css) screen and ( a ), print; @media screen and ( a ) , (b/**/c) { x{} @container  foo ( a:  b ) { y{} } @media ( q ) { z{} } }",
     "@charset \"utf-8\"; @bogus; x >{} @layer a, b; @layer c{ z{} } @font-face{font-family:q;src:url(a)} @scope (a){ b{} }",
 };
 

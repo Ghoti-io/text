@@ -219,6 +219,18 @@ const char * gtext_css_atrule_prelude_text(const GTEXT_CSS_Atrule * rule, size_t
   return rule && rule->prelude ? rule->prelude : "";
 }
 
+size_t gtext_css_atrule_prelude_read_count(const GTEXT_CSS_Atrule * rule) {
+  return rule ? rule->nread : 0;
+}
+
+const char * gtext_css_atrule_prelude_read(const GTEXT_CSS_Atrule * rule, size_t index, size_t * length) {
+  const char * s = rule && index < rule->nread ? rule->read[index] : NULL;
+  if (length) {
+    *length = s ? strlen(s) : 0;
+  }
+  return s;
+}
+
 size_t gtext_css_atrule_name_count(const GTEXT_CSS_Atrule * rule) {
   return rule ? rule->nnames : 0;
 }
@@ -471,6 +483,57 @@ static void pbuf_url(pbuf * b, const GTEXT_CSS_String * uri) {
   pbuf_puts(b, ")");
 }
 
+/// The queries of `list` that keep their text as it was read (a `<general-enclosed>` written `( a )`, or closed by the end of the input), kept beside the canonical prelude: the
+/// browsers write those as they were read. Nothing is kept unless the parse was given its source (GTEXT_CSS_Atrule_Options::source).
+static void keep_reads(ctx * c, const GTEXT_CSS_Media_List * list) {
+  GTEXT_CSS_Atrule * a = c->a;
+  if (!list || !gtext_css_media_list_as_read_differs(list)) {
+    return;
+  }
+  const size_t count = gtext_css_media_list_query_count(list);
+  const char ** read = css_arena_alloc(&a->arena, (count ? count : 1) * sizeof *read);
+  if (!read) {
+    fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
+    return;
+  }
+  memset(read, 0, (count ? count : 1) * sizeof *read);
+  bool any = false;
+  for (size_t i = 0; i < count; i++) {
+    char * closed = NULL;
+    char * asread = NULL;
+    size_t cn = 0, an = 0;
+    GTEXT_CSS_Status st = gtext_css_media_list_serialize_query_buffer(list, i, false, &a->alloc, &closed, &cn);
+    if (st == GTEXT_CSS_OK) {
+      st = gtext_css_media_list_serialize_query_buffer(list, i, true, &a->alloc, &asread, &an);
+    }
+    if (st == GTEXT_CSS_OK && (cn != an || memcmp(closed, asread, cn) != 0)) {
+      read[i] = css_arena_strdup(&a->arena, asread, an);
+      if (!read[i]) {
+        st = GTEXT_CSS_E_OOM;
+      }
+      any = true;
+    }
+    gtext_css_media_buffer_free(&a->alloc, closed);
+    gtext_css_media_buffer_free(&a->alloc, asread);
+    if (st != GTEXT_CSS_OK) {
+      fail(c, st, NULL, NULL);
+      return;
+    }
+  }
+  if (any) {
+    a->read = read;
+    a->nread = count;
+  }
+}
+
+/// The options of a media query list parse that is given the source of the prelude.
+static GTEXT_CSS_Media_Options media_options(const ctx * c) {
+  GTEXT_CSS_Media_Options mo = gtext_css_media_options_default();
+  mo.source = c->opt.source;
+  mo.source_length = c->opt.source_length;
+  return mo;
+}
+
 /// The canonical text of the prelude of an `@import` (`url("a.css") layer(x) supports(...) screen`) or an `@namespace` (`x url("u")`), as CSSOM writes them: the URL is always
 /// `url("...")`, and the words after it keep their order, with the media query list as `mediaText` writes it. Left as written when the prelude does not have that shape (the rule is then
 /// invalid and the text is not used).
@@ -547,8 +610,12 @@ static bool canonical_url_prelude(ctx * c, const GTEXT_CSS_Component_Value * p, 
       GTEXT_CSS_Media_List * list = NULL;
       GTEXT_CSS_Media_Result mr;
       memset(&mr, 0, sizeof mr);
-      const GTEXT_CSS_Status ms = gtext_css_media_list_parse_values(p + i, n - i, NULL, &list, &mr);
+      const GTEXT_CSS_Media_Options mo = media_options(c);
+      const GTEXT_CSS_Status ms = gtext_css_media_list_parse_values(p + i, n - i, &mo, &list, &mr);
       gtext_css_media_result_free(&mr);
+      if (ms == GTEXT_CSS_OK) {
+        keep_reads(c, list);
+      }
       char * mt = NULL;
       size_t ml = 0;
       if (ms == GTEXT_CSS_OK && list && gtext_css_media_list_serialize_buffer(list, NULL, &mt, &ml) == GTEXT_CSS_OK && mt) {
@@ -1936,13 +2003,17 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
     GTEXT_CSS_Media_Result mr;
     memset(&mr, 0, sizeof mr);
     GTEXT_CSS_Status ms;
+    const GTEXT_CSS_Media_Options mo = media_options(&cx);
     if (kind == GTEXT_CSS_ATRULE_MEDIA) {
-      ms = gtext_css_media_list_parse_values(p, pn, NULL, &list, &mr);
+      ms = gtext_css_media_list_parse_values(p, pn, &mo, &list, &mr);
     }
     else {
-      ms = gtext_css_container_parse_values(p, pn, NULL, &list, &mr);
+      ms = gtext_css_container_parse_values(p, pn, &mo, &list, &mr);
     }
     gtext_css_media_result_free(&mr);
+    if (ms == GTEXT_CSS_OK) {
+      keep_reads(&cx, list);
+    }
     if (ms == GTEXT_CSS_OK && list) {
       char * buf = NULL;
       size_t bl = 0;

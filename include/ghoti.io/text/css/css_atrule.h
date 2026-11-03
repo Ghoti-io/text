@@ -120,6 +120,8 @@ typedef struct {
   size_t max_diagnostics;             ///< Most diagnostics kept (the rest are counted). Default 1,024.
   size_t max_list;                    ///< Most entries of a list a rule's prelude or a descriptor holds that the model unfolds (`src` entries, keyframe selectors, unicode ranges, feature settings). Default 65,536.
   GTEXT_CSS_Atrule_Parent parent;     ///< Where the rule is read (the default is the top level of a style sheet); a rule the place does not allow is invalid.
+  const char * source;                ///< The text the spans of the rule's component values are byte offsets into, when the caller still has it (NULL for none). With it the queries of an `@media`, `@import` or `@container` prelude that keep their text as it was written (a `<general-enclosed>`: `( a )`) are available from gtext_css_atrule_prelude_read().
+  size_t source_length;               ///< The length of `source`.
 } GTEXT_CSS_Atrule_Options;
 
 /** @brief The defaults, spelled out. */
@@ -187,6 +189,14 @@ GTEXT_API GTEXT_CSS_Span gtext_css_atrule_span(const GTEXT_CSS_Atrule * rule);
 
 /** @brief The prelude as canonical text (`card`, `:first`, `"A", B`); the empty string for a rule with none. Valid for the life of the rule. */
 GTEXT_API const char * gtext_css_atrule_prelude_text(const GTEXT_CSS_Atrule * rule, size_t * length);
+
+/** @brief The queries of a media or container prelude that the model was given the source of (GTEXT_CSS_Atrule_Options::source). An `@media` or `@import` has one for each query of its
+ *  media query list, an `@container` one; 0 when no query keeps its text as it was written, or no source was given. */
+GTEXT_API size_t gtext_css_atrule_prelude_read_count(const GTEXT_CSS_Atrule * rule);
+
+/** @brief Query `index` of the prelude as it was written (`( a )`, where the canonical text, gtext_css_atrule_prelude_text(), has `(a)`), or NULL when it is written as the canonical
+ *  text writes it. Owned by the rule. */
+GTEXT_API const char * gtext_css_atrule_prelude_read(const GTEXT_CSS_Atrule * rule, size_t index, size_t * length);
 
 /** @brief The names of the prelude, decoded, in order: the family names of `@font-feature-values` and `@font-palette-values`, the name of `@counter-style`, `@keyframes`, `@position-try`, `@color-profile`, the namespace prefix, the layer names. */
 GTEXT_API size_t gtext_css_atrule_name_count(const GTEXT_CSS_Atrule * rule);

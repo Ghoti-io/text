@@ -42,12 +42,16 @@ struct Parsed {
   GTEXT_CSS_Atrule * a = nullptr;
   GTEXT_CSS_Atrule_Result res{};
   GTEXT_CSS_Status st = GTEXT_CSS_E_INTERNAL;
-  explicit Parsed(const std::string & css, GTEXT_CSS_Atrule_Parent parent = GTEXT_CSS_ATRULE_PARENT_TOP) {
+  explicit Parsed(const std::string & css, GTEXT_CSS_Atrule_Parent parent = GTEXT_CSS_ATRULE_PARENT_TOP, bool with_source = false) {
     css_test::parse_into(p, gtext_css_parse_stylesheet, css);
     EXPECT_NE(p.tree, nullptr);
     EXPECT_GE(p.tree->rule_count, 1u);
     GTEXT_CSS_Atrule_Options o = gtext_css_atrule_options_default();
     o.parent = parent;
+    if (with_source) {
+      o.source = css.data();
+      o.source_length = css.size();
+    }
     st = gtext_css_atrule_parse(R(), &p.tree->rules[0], &o, &a, &res);
   }
   Parsed(const Parsed &) = delete;
@@ -547,4 +551,32 @@ TEST(CssAtrule, DashedNamesTagsAndMarginBoxes) {
   ASSERT_EQ(gtext_css_atrule_child_count(m.a), 1u);
   EXPECT_EQ(m.css(), "@page {\n  @top-left { content: \"x\" !important; color: red; }\n}");
   EXPECT_EQ(Parsed("@position-try --a { top: 0 !important; left: 0 }").css(), "@position-try --a { left: 0px; }");
+}
+
+// Chromium 156 and Firefox 158 write a rule read from a sheet's text with the text of its <general-enclosed> as it was written (`( a )`). The model keeps that text beside the
+// canonical prelude when it is given the source the spans of the rule index, for each query of an `@media` or `@import` media query list and for the one query of an `@container`.
+TEST(CssAtrule, AMediaImportOrContainerPreludeKeepsTheQueriesThatAreNotWrittenAsTheModelWritesThem) {
+  const auto read = [](const Parsed & p) {
+    std::string out;
+    for (size_t i = 0; i < gtext_css_atrule_prelude_read_count(p.a); i++) {
+      size_t n = 0;
+      const char * s = gtext_css_atrule_prelude_read(p.a, i, &n);
+      out += (i ? "|" : "") + std::string(s ? s : "<same>");
+    }
+    return out;
+  };
+  Parsed media("@media screen and ( a ) , print , (b/**/c) , tv and (x:  y ) { }", GTEXT_CSS_ATRULE_PARENT_TOP, true);
+  EXPECT_EQ(gtext_css_atrule_prelude_read_count(media.a), 4u);
+  EXPECT_EQ(read(media), "screen and ( a )|<same>|<same>|tv and (x:  y )");
+  size_t pl = 0;
+  EXPECT_STREQ(gtext_css_atrule_prelude_text(media.a, &pl), "screen and (a), print, (b/**/c), tv and (x: y)") << "the canonical text is what it was";
+  Parsed container("@container  foo ( a:  b ) { }", GTEXT_CSS_ATRULE_PARENT_TOP, true);
+  EXPECT_EQ(read(container), "foo ( a:  b )");
+  Parsed import("@import url(a.css) layer(x) screen and ( a ), print;", GTEXT_CSS_ATRULE_PARENT_TOP, true);
+  EXPECT_EQ(read(import), "screen and ( a )|<same>") << "an import's list is the queries after the url, layer and supports";
+  // nothing is kept for text that is written as the model writes it, or when the source is not given
+  EXPECT_EQ(gtext_css_atrule_prelude_read_count(Parsed("@media screen and (min-width:1px) { }", GTEXT_CSS_ATRULE_PARENT_TOP, true).a), 0u);
+  EXPECT_EQ(gtext_css_atrule_prelude_read_count(Parsed("@media screen and ( a ) { }").a), 0u) << "no source, no text as read";
+  EXPECT_EQ(gtext_css_atrule_prelude_read_count(nullptr), 0u);
+  EXPECT_EQ(gtext_css_atrule_prelude_read(media.a, 4, nullptr), nullptr);
 }

@@ -541,3 +541,54 @@ TEST(CssomConstructed, AnImportCannotBeInsertedIntoAConstructedSheet) {
   Constructed c(doc);
   EXPECT_EQ(insert_rule(c.s, "@import 'a.css'", 0).st, GTEXT_CSS_E_SYNTAX);
 }
+
+// Chromium 156 and Firefox 158 write a rule read from a style sheet's text as it was read: a <general-enclosed> keeps its white space (`( a )`, not `(a)`), in `@media`, `@container`
+// and `@import`, in the sheet's text, through `insertRule()` and through `replaceSync()`. A feature they know is written from its parts, and a rule that was not read (`@supports`)
+// is not this.
+TEST(CssomMedia, ARuleReadFromASheetsTextKeepsTheTextOfItsGeneralEnclosed) {
+  Doc doc;
+  Sheet s(doc, "@import url(a.css) screen and ( a ); @media  not  ( a )  {a{}} @media screen and (a: b ) , print {a{}} @container  foo ( a:  b ) {a{}} "
+               "@media (min-width:  1px) and ( a ) {a{}} @media (a/**/b) {a{}} @media screen and ( a ) {@media ( b ) {c{}}}");
+  EXPECT_EQ(css(path(s, {0}).r), "@import url(\"a.css\") screen and ( a );");
+  EXPECT_EQ(css(path(s, {1}).r), "@media not ( a ) {\n  a { }\n}");
+  EXPECT_EQ(cond(path(s, {1}).r), "not ( a )");
+  EXPECT_EQ(cond(path(s, {2}).r), "screen and (a: b ), print");
+  EXPECT_EQ(cond(path(s, {3}).r), "foo ( a:  b )");
+  EXPECT_EQ(css(path(s, {3}).r), "@container foo ( a:  b ) {\n  a { }\n}");
+  EXPECT_EQ(cond(path(s, {4}).r), "(min-width: 1px) and ( a )") << "a feature the library knows is written from its parts";
+  EXPECT_EQ(cond(path(s, {5}).r), "(a/**/b)");
+  EXPECT_EQ(cond(path(s, {6, 0}).r), "( b )") << "and one nested in a rule";
+  EXPECT_EQ(cond(path(s, {6}).r), "screen and ( a )");
+  Rule med = path(s, {2});
+  Media m = rule_media(med.r);
+  EXPECT_EQ(text(m.m), "screen and (a: b ), print");
+  EXPECT_EQ(item(m.m, 0), "screen and (a: b )");
+  EXPECT_EQ(item(m.m, 1), "print");
+  Media im = rule_media(path(s, {0}).r);
+  EXPECT_EQ(text(im.m), "screen and ( a )");
+  // a change of the rule's media ends it, and the new text is read as the setter reads it
+  EXPECT_EQ(set_text(m.m, "tv and ( z )").o.kind, GTEXT_CSSOM_CHANGED);
+  EXPECT_EQ(cond(med.r), "tv and ( z )");
+  // insertRule
+  Sheet empty(doc, "a{}");
+  Ins a = insert_rule(empty.s, "@media screen and ( a ) {b{}}", 0);
+  ASSERT_EQ(a.st, GTEXT_CSS_OK);
+  EXPECT_EQ(css(a.rule.r), "@media screen and ( a ) {\n  b { }\n}");
+  Ins c = insert_rule(empty.s, "@container  foo ( a:  b ) {b{}}", 0);
+  ASSERT_EQ(c.st, GTEXT_CSS_OK);
+  EXPECT_EQ(cond(c.rule.r), "foo ( a:  b )");
+  Ins n = insert_rule(a.rule.r, "@media ( q ) {x{}}", 0);
+  ASSERT_EQ(n.st, GTEXT_CSS_OK);
+  EXPECT_EQ(cond(n.rule.r), "( q )") << "inside a rule";
+  Ins plain = insert_rule(empty.s, "@media screen and (min-width:1px) {b{}}", 0);
+  ASSERT_EQ(plain.st, GTEXT_CSS_OK);
+  EXPECT_EQ(cond(plain.rule.r), "screen and (min-width: 1px)");
+  // replaceSync
+  Constructed k(doc);
+  ASSERT_EQ(replace_sync(k.s, "@media screen and ( a ) {b{}} @container ( a ) {c{}}").st, GTEXT_CSS_OK);
+  EXPECT_EQ(cond(at(rules_of(k.s), 0).r), "screen and ( a )");
+  EXPECT_EQ(cond(at(rules_of(k.s), 1).r), "( a )");
+  // a sheet whose rules were compacted keeps them
+  ASSERT_EQ(gtext_cssom_sheet_compact(s.s), GTEXT_CSS_OK);
+  EXPECT_EQ(cond(path(s, {1}).r), "not ( a )");
+}

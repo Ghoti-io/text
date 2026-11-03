@@ -1540,6 +1540,8 @@
 #define gtext_css_atrule_name GHOTIIO_TEXT(gtext_css_atrule_name)
 #define gtext_css_atrule_span GHOTIIO_TEXT(gtext_css_atrule_span)
 #define gtext_css_atrule_prelude_text GHOTIIO_TEXT(gtext_css_atrule_prelude_text)
+#define gtext_css_atrule_prelude_read GHOTIIO_TEXT(gtext_css_atrule_prelude_read)
+#define gtext_css_atrule_prelude_read_count GHOTIIO_TEXT(gtext_css_atrule_prelude_read_count)
 #define gtext_css_atrule_name_count GHOTIIO_TEXT(gtext_css_atrule_name_count)
 #define gtext_css_atrule_name_at GHOTIIO_TEXT(gtext_css_atrule_name_at)
 #define gtext_css_atrule_descriptor_count GHOTIIO_TEXT(gtext_css_atrule_descriptor_count)

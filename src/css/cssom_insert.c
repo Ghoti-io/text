@@ -414,7 +414,16 @@ static GTEXT_CSS_Status insert_text(place * pl, const char * text, size_t length
   }
 
   /* everything that can fail from here on is before the first change */
-  st = css_source_new(core, tree, NULL, 0, &source);
+  /* the text is kept when a query of a prelude in it could be written otherwise than the model writes it (`( a )`): the browsers keep the text of a <general-enclosed> */
+  char * kept = NULL;
+  if (node && text && length && memchr(text, '(', length)) {
+    kept = css_core_dup(core, text, length);
+    if (!kept) {
+      st = GTEXT_CSS_E_OOM;
+      goto fail;
+    }
+  }
+  st = css_source_new(core, tree, kept, kept ? length : 0, &source);
   if (st != GTEXT_CSS_OK) {
     goto fail;
   }

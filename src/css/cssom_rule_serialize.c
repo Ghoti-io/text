@@ -354,6 +354,11 @@ static GTEXT_CSS_Status typed_rule(css_core * core, const css_rule * rule, bool 
   GTEXT_CSS_Atrule_Options o = gtext_css_atrule_options_default();
   o.allocator = &core->alloc;
   o.parent = typed_parent(rule);
+  if (rule->source && rule->source->text) {
+    /* a rule read from a style sheet's text: the queries of its prelude that keep their text as written (`( a )`) are available from the model */
+    o.source = rule->source->text;
+    o.source_length = rule->source->text_length;
+  }
   GTEXT_CSS_Atrule_Result res;
   GTEXT_CSS_Atrule * a = NULL;
   GTEXT_CSS_Status st = gtext_css_atrule_parse(core->registry, &copy, &o, &a, &res);

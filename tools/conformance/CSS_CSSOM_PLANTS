@@ -361,3 +361,7 @@ logical-intermixed-longhands-do-not-stop-a-shorthand	css_shorthand_serialize.c	 
 all-lists-no-registered-property	css_registry.c	    if (id == r->all_id && index >= p->longhand_count	    if (0 && id == r->all_id && index >= p->longhand_count	all
 all-longhand-count-ignores-registered-properties	css_registry.c	p->longhand_count + (id == r->all_id ? r->nall_extra : 0);	p->longhand_count;	all
 all-over-the-tables-is-expanded-anyway	css_shorthand.c	  if (nlong > MAX_LONGHANDS_OF_ONE || nl > MAX_LONGHANDS_OF_ONE) {	  if (0) {	all
+sheet-text-rule-forgets-its-general-enclosed	cssom_rule.c	  st = css_rule_read_from_source(r);	  st = GTEXT_CSS_OK;	media
+inserted-rule-keeps-no-text	cssom_insert.c	  if (node && text && length && memchr(text, '(', length)) {	  if (0) {	media
+container-condition-read-is-not-written-back	cssom_media.c	rule->kind != GTEXT_CSSOM_RULE_IMPORT && rule->kind != GTEXT_CSSOM_RULE_CONTAINER)) {	rule->kind != GTEXT_CSSOM_RULE_IMPORT)) {	media
+typed-rule-gets-no-source-text	cssom_rule_serialize.c	  if (rule->source && rule->source->text) {\n    /* a rule read from a style sheet	  if (0) {\n    /* a rule read from a style sheet	media

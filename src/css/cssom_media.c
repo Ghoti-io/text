@@ -447,8 +447,51 @@ static GTEXT_CSS_Status owner_text(GTEXT_CSSOM_Media_List * list, tbuf * out) {
   return owner_obj_text(list->owner, out, true);
 }
 
+GTEXT_CSS_Status css_rule_read_from_source(css_rule * rule) {
+  if ((rule->kind != GTEXT_CSSOM_RULE_MEDIA && rule->kind != GTEXT_CSSOM_RULE_IMPORT && rule->kind != GTEXT_CSSOM_RULE_CONTAINER) || !rule->node || !rule->source ||
+      !rule->source->text) {
+    return GTEXT_CSS_OK;
+  }
+  /* only a query with a parenthesis in it can keep a text that is not its canonical one (a `<general-enclosed>`, a custom media name): the rest cost nothing */
+  const GTEXT_CSS_Span ps = rule->node->prelude_span;
+  const css_source * src = rule->source;
+  if (ps.end <= ps.offset || ps.end > src->text_length || !memchr(src->text + ps.offset, '(', ps.end - ps.offset)) {
+    return GTEXT_CSS_OK;
+  }
+  css_core * core = rule->obj.core;
+  GTEXT_CSS_Atrule * a = NULL;
+  GTEXT_CSS_Status st = css_rule_typed(core, rule, true, &a);
+  if (st == GTEXT_CSS_E_INTERNAL) {
+    return GTEXT_CSS_OK;   /* the model does not hold it (the rule was invalid for the model): the rule's text is canonical */
+  }
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  const size_t n = gtext_css_atrule_prelude_read_count(a);
+  css_media_read * read = n ? read_new(core, n) : NULL;
+  if (n && !read) {
+    st = GTEXT_CSS_E_OOM;
+  }
+  for (size_t i = 0; st == GTEXT_CSS_OK && i < n; i++) {
+    size_t l = 0;
+    const char * s = gtext_css_atrule_prelude_read(a, i, &l);
+    if (s && !read_set(core, read, i, s, l)) {
+      st = GTEXT_CSS_E_OOM;
+    }
+  }
+  gtext_css_atrule_free(a);
+  if (st != GTEXT_CSS_OK) {
+    css_media_read_free(core, read);
+    return st;
+  }
+  if (read && !read_take(&rule->obj, &rule->media_read, read)) {
+    return GTEXT_CSS_E_LIMIT_CSSOM;
+  }
+  return GTEXT_CSS_OK;
+}
+
 GTEXT_CSS_Status css_rule_prelude_read(const css_rule * rule, const char * prelude, size_t length, tbuf * out) {
-  if (!rule->media_read || (rule->kind != GTEXT_CSSOM_RULE_MEDIA && rule->kind != GTEXT_CSSOM_RULE_IMPORT)) {
+  if (!rule->media_read || (rule->kind != GTEXT_CSSOM_RULE_MEDIA && rule->kind != GTEXT_CSSOM_RULE_IMPORT && rule->kind != GTEXT_CSSOM_RULE_CONTAINER)) {
     return !length || tb_put(out, prelude, length) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
   }
   const size_t from = rule->kind == GTEXT_CSSOM_RULE_IMPORT ? css_import_media_start(prelude, length) : 0;
