@@ -1060,10 +1060,7 @@ static GTEXT_CSS_Status put_u64(const GTEXT_Markup_Sink * sink, uint64_t v) {
   return put(sink, b + n, sizeof b - n);
 }
 
-GTEXT_CSS_Status gtext_cssom_decl_dump(const GTEXT_CSSOM_Decl * decl, const GTEXT_Markup_Sink * sink) {
-  if (!decl || !sink || !sink->write) {
-    return GTEXT_CSS_E_INVALID;
-  }
+static GTEXT_CSS_Status decl_dump_walk(const GTEXT_CSSOM_Decl * decl, const GTEXT_Markup_Sink * sink) {
   css_core * core = decl->obj.core;
   GTEXT_CSS_Status st = puts_(sink, "cssom-decl 1\nowner ");
   if (st == GTEXT_CSS_OK) {
@@ -1150,6 +1147,18 @@ GTEXT_CSS_Status gtext_cssom_decl_dump(const GTEXT_CSSOM_Decl * decl, const GTEX
     }
     tb_free(&b);
   }
+  return st;
+}
+
+GTEXT_CSS_Status gtext_cssom_decl_dump(const GTEXT_CSSOM_Decl * decl, const GTEXT_Markup_Sink * sink) {
+  if (!decl || !sink || !sink->write) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  /* the sink is the caller's code, run in the middle of a walk over the declarations: a mutation from it is refused, as from any callback */
+  css_core * core = decl->obj.core;
+  core->in_callback++;
+  const GTEXT_CSS_Status st = decl_dump_walk(decl, sink);
+  core->in_callback--;
   return st;
 }
 

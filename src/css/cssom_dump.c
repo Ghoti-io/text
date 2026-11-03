@@ -189,10 +189,7 @@ static GTEXT_CSS_Status dump_below(const struct GTEXT_CSSOM_Rule_List * list, si
   return GTEXT_CSS_OK;
 }
 
-GTEXT_CSS_Status gtext_cssom_rule_dump(const GTEXT_CSSOM_Rule * rule, const GTEXT_Markup_Sink * sink) {
-  if (!rule || !sink || !sink->write) {
-    return GTEXT_CSS_E_INVALID;
-  }
+static GTEXT_CSS_Status rule_dump_walk(const GTEXT_CSSOM_Rule * rule, const GTEXT_Markup_Sink * sink) {
   GTEXT_CSS_Status st = puts_(sink, "cssom-rule 1\n");
   if (st == GTEXT_CSS_OK) {
     st = dump_rule(rule, 0, sink);
@@ -203,10 +200,19 @@ GTEXT_CSS_Status gtext_cssom_rule_dump(const GTEXT_CSSOM_Rule * rule, const GTEX
   return st;
 }
 
-GTEXT_CSS_Status gtext_cssom_sheet_dump(const GTEXT_CSSOM_Sheet * sheet, const GTEXT_Markup_Sink * sink) {
-  if (!sheet || !sink || !sink->write) {
+GTEXT_CSS_Status gtext_cssom_rule_dump(const GTEXT_CSSOM_Rule * rule, const GTEXT_Markup_Sink * sink) {
+  if (!rule || !sink || !sink->write) {
     return GTEXT_CSS_E_INVALID;
   }
+  /* the sink is the caller's code, run in the middle of a walk over the rules: a mutation from it is refused, as from any callback */
+  css_core * core = rule->obj.core;
+  core->in_callback++;
+  const GTEXT_CSS_Status st = rule_dump_walk(rule, sink);
+  core->in_callback--;
+  return st;
+}
+
+static GTEXT_CSS_Status sheet_dump_walk(const GTEXT_CSSOM_Sheet * sheet, const GTEXT_Markup_Sink * sink) {
   GTEXT_CSS_Status st = puts_(sink, "cssom-sheet 1\nsheet ");
   if (st == GTEXT_CSS_OK) {
     st = put_u64(sink, sheet->obj.id);
@@ -295,6 +301,18 @@ GTEXT_CSS_Status gtext_cssom_sheet_dump(const GTEXT_CSSOM_Sheet * sheet, const G
   if (st == GTEXT_CSS_OK) {
     st = dump_below(&sheet->rules, 0, NULL, sink);
   }
+  return st;
+}
+
+GTEXT_CSS_Status gtext_cssom_sheet_dump(const GTEXT_CSSOM_Sheet * sheet, const GTEXT_Markup_Sink * sink) {
+  if (!sheet || !sink || !sink->write) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  /* the sink is the caller's code, run in the middle of a walk over the rules: a mutation from it is refused, as from any callback */
+  css_core * core = sheet->obj.core;
+  core->in_callback++;
+  const GTEXT_CSS_Status st = sheet_dump_walk(sheet, sink);
+  core->in_callback--;
   return st;
 }
 

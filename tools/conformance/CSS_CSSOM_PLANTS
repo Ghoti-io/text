@@ -321,5 +321,8 @@ listeners-called-after-the-document-was-released	cssom_mql.c	  for (size_t j = 0
 retained-conditions-take-no-reference	cssom_mql.c	  return document ? gtext_css_conditions_retain(css_document_core((GTEXT_CSSOM_Document *)(uintptr_t)document)->conditions) : NULL;	  return document ? (GTEXT_CSS_Conditions *)(uintptr_t)css_document_core((GTEXT_CSSOM_Document *)(uintptr_t)document)->conditions : NULL;	mediaquery
 batch-queue-not-counted-against-the-budget	cssom_events.c	  if (core->queue_bytes && css_core_room_bytes(core, core->queue_bytes) != GTEXT_CSS_OK) {	  if (0) {	events
 batch-events-copies-not-counted	cssom_events.c	      q.charged = qevent_payload(&q);	      q.charged = 0;	events
+sheet-serialized-with-the-sink-able-to-mutate	cssom_rule_serialize.c	  core->in_callback++;   /* the sink is the caller's code, run in the middle of a walk over the rules */\n	  /* the sink may mutate */\n	serialize
+rule-serialized-with-the-sink-able-to-mutate	cssom_rule_serialize.c	  core->in_callback++;\n  GTEXT_CSS_Status st;	  GTEXT_CSS_Status st;	serialize
+sheet-dumped-with-the-sink-able-to-mutate	cssom_dump.c	  core->in_callback++;\n  const GTEXT_CSS_Status st = sheet_dump_walk(sheet, sink);	  const GTEXT_CSS_Status st = sheet_dump_walk(sheet, sink);	serialize
 computed-state-torn-down-in-the-middle-of-a-read	cssom_computed.c	    core->computed_teardown_pending = true;\n    return;	    css_computed_teardown(core);\n    return;	computed
 compute-context-replaced-in-the-middle-of-a-read	cssom_computed.c	  if (core->computing > 0 || core->in_callback || core->in_finalizer) {	  if (0) {	computed

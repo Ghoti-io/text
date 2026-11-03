@@ -702,13 +702,21 @@ GTEXT_CSS_Status gtext_cssom_rule_serialize(const GTEXT_CSSOM_Rule * rule, const
     return GTEXT_CSS_E_INVALID;
   }
   css_rule * r = (css_rule *)(uintptr_t)rule;
-  sw w = {r->obj.core, sink, 0, GTEXT_CSS_OK};
+  css_core * core = r->obj.core;
+  sw w = {core, sink, 0, GTEXT_CSS_OK};
+  /* the sink is the caller's code, run in the middle of a walk over the rules: a mutation from it is refused, as from any callback */
+  core->in_callback++;
+  GTEXT_CSS_Status st;
   if (r->cache && r->cache->version == r->version) {
     emit(&w, r->cache->text, r->cache->length);
-    r->obj.core->counters.cache_hits++;
-    return w.st;
+    core->counters.cache_hits++;
+    st = w.st;
   }
-  return write_rule(&w, r);
+  else {
+    st = write_rule(&w, r);
+  }
+  core->in_callback--;
+  return st;
 }
 
 GTEXT_CSS_Status gtext_cssom_rule_css_text(GTEXT_CSSOM_Rule * rule, char ** out, size_t * length) {
@@ -767,18 +775,19 @@ GTEXT_CSS_Status gtext_cssom_sheet_serialize(const GTEXT_CSSOM_Sheet * sheet, co
   if (!sheet->origin_clean) {
     return GTEXT_CSS_E_SECURITY;
   }
-  sw w = {sheet->obj.core, sink, 0, GTEXT_CSS_OK};
-  for (css_rule * r = css_rule_list_first(&sheet->rules); r; r = css_rule_list_next(r)) {
-    const GTEXT_CSS_Status st = write_rule(&w, r);
-    if (st != GTEXT_CSS_OK) {
-      return st;
-    }
-    emitz(&w, "\n");
-    if (w.st != GTEXT_CSS_OK) {
-      return w.st;
+  css_core * core = sheet->obj.core;
+  sw w = {core, sink, 0, GTEXT_CSS_OK};
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  core->in_callback++;   /* the sink is the caller's code, run in the middle of a walk over the rules */
+  for (css_rule * r = css_rule_list_first(&sheet->rules); r && st == GTEXT_CSS_OK; r = css_rule_list_next(r)) {
+    st = write_rule(&w, r);
+    if (st == GTEXT_CSS_OK) {
+      emitz(&w, "\n");
+      st = w.st;
     }
   }
-  return GTEXT_CSS_OK;
+  core->in_callback--;
+  return st;
 }
 
 /* ---- what the setters and the typed declaration block read ------------------------------------------------------------------------------------ */

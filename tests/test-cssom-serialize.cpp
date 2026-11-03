@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -244,6 +245,97 @@ TEST(CssomSerializeSheet, AnEditedSheetWritesWhatItHolds) {
 /* ---- the cache ---------------------------------------------------------------------------------------------------------------------------------- */
 
 // A rule with no rules inside it keeps its text for as long as its version stays.
+/* The sink is the caller's code, run in the middle of a walk over the rules and the declarations. A mutation from it is refused like one from any callback, and the walk goes on
+   over what it holds: the document's allocator here unmaps what it frees, so a walk that read a rule the sink had deleted would fault. */
+namespace {
+
+struct Mutating {
+  std::function<GTEXT_CSS_Status()> mutate;
+  std::vector<GTEXT_CSS_Status> seen;
+  std::string out;
+  static GTEXT_Markup_Status write(void * user, const char * p, size_t n) {
+    Mutating * self = static_cast<Mutating *>(user);
+    self->out.append(p, n);
+    if (self->mutate) {
+      self->seen.push_back(self->mutate());
+    }
+    return GTEXT_MARKUP_OK;
+  }
+  GTEXT_Markup_Sink sink() {
+    GTEXT_Markup_Sink k;
+    std::memset(&k, 0, sizeof k);
+    k.user = this;
+    k.write = &Mutating::write;
+    return k;
+  }
+  bool all(GTEXT_CSS_Status want) const {
+    return !seen.empty() && std::all_of(seen.begin(), seen.end(), [&](GTEXT_CSS_Status s) { return s == want; });
+  }
+};
+
+}  // namespace
+
+TEST(CssomSerializeSink, ASheetIsNotMutatedFromTheSinkItIsWrittenTo) {
+  UnmapAllocator ua;
+  Doc doc(nullptr, &ua.alloc);
+  Sheet s(doc, "a { color: red } b { color: blue } c { color: green }");
+  ASSERT_EQ(s.status, GTEXT_CSS_OK);
+  Mutating m;
+  m.mutate = [&] { return gtext_cssom_sheet_delete_rule(s.s, 0, nullptr); };
+  const GTEXT_Markup_Sink sink = m.sink();
+  EXPECT_EQ(gtext_cssom_sheet_serialize(s.s, &sink), GTEXT_CSS_OK);
+  EXPECT_TRUE(m.all(GTEXT_CSS_E_REENTRANT));
+  EXPECT_EQ(gtext_cssom_rule_list_length(s.rules()), 3u) << "nothing was deleted";
+  EXPECT_NE(m.out.find("c { color: green; }"), std::string::npos) << m.out;
+}
+
+TEST(CssomSerializeSink, ARuleAndItsRulesAreNotMutatedFromTheSinkTheyAreWrittenTo) {
+  UnmapAllocator ua;
+  Doc doc(nullptr, &ua.alloc);
+  Sheet s(doc, "@media print { a { color: red } b { color: blue } } d { & e { color: red } }");
+  ASSERT_EQ(s.status, GTEXT_CSS_OK);
+  Rule media = at(s.rules(), 0);
+  Mutating m;
+  m.mutate = [&] { return gtext_cssom_rule_delete_rule(media.r, 0, nullptr); };
+  const GTEXT_Markup_Sink sink = m.sink();
+  EXPECT_EQ(gtext_cssom_rule_serialize(media.r, &sink), GTEXT_CSS_OK);
+  EXPECT_TRUE(m.all(GTEXT_CSS_E_REENTRANT));
+  EXPECT_NE(m.out.find("b { color: blue; }"), std::string::npos) << m.out;
+  // and from a sink that is given a cached leaf
+  Rule leaf = path(s, {0, 0});
+  EXPECT_FALSE(css(leaf.r).empty());
+  m.seen.clear();
+  m.out.clear();
+  m.mutate = [&] { return gtext_cssom_sheet_delete_rule(s.s, 0, nullptr); };
+  EXPECT_EQ(gtext_cssom_rule_serialize(leaf.r, &sink), GTEXT_CSS_OK);
+  EXPECT_TRUE(m.all(GTEXT_CSS_E_REENTRANT));
+}
+
+TEST(CssomSerializeSink, TheDumpsAreNotMutatedFromTheSinkTheyAreWrittenTo) {
+  UnmapAllocator ua;
+  Doc doc(nullptr, &ua.alloc);
+  Sheet s(doc, "@media print { a { color: red } } b { color: blue } c { color: green }");
+  ASSERT_EQ(s.status, GTEXT_CSS_OK);
+  Rule media = at(s.rules(), 0);
+  Rule b = at(s.rules(), 1);
+  Decl bd = style_of(b.r);
+  ASSERT_TRUE(bd.d);
+  Mutating m;
+  const GTEXT_Markup_Sink sink = m.sink();
+  m.mutate = [&] { return gtext_cssom_sheet_delete_rule(s.s, 1, nullptr); };
+  EXPECT_EQ(gtext_cssom_sheet_dump(s.s, &sink), GTEXT_CSS_OK);
+  EXPECT_TRUE(m.all(GTEXT_CSS_E_REENTRANT));
+  m.seen.clear();
+  m.mutate = [&] { return gtext_cssom_rule_delete_rule(media.r, 0, nullptr); };
+  EXPECT_EQ(gtext_cssom_rule_dump(media.r, &sink), GTEXT_CSS_OK);
+  EXPECT_TRUE(m.all(GTEXT_CSS_E_REENTRANT));
+  m.seen.clear();
+  m.mutate = [&] { return set(bd.d, "color", "red").st; };
+  EXPECT_EQ(gtext_cssom_decl_dump(bd.d, &sink), GTEXT_CSS_OK);
+  EXPECT_TRUE(m.all(GTEXT_CSS_E_REENTRANT));
+  EXPECT_EQ(get(bd.d, "color"), "blue");
+}
+
 TEST(CssomSerializeCache, ALeafKeepsItsTextUntilItsVersionMoves) {
   Doc doc;
   Sheet s(doc, "a{color:red} @media print{ b{} }");
