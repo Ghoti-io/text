@@ -1,5 +1,5 @@
 # tools/css/plant-cssom.py: planted defects of the CSSOM layer (C5a), each seen to fail. Columns (tab separated): name, file under src/css/, the text (exactly once, \n is a line feed), what replaces it, the test programs that must fail (comma separated keys of PROGRAMS).
-set-appends-instead-of-replacing	css_block.c	    if (slots[i]) {\n      item_replace(	    if (0) {\n      item_replace(	block,decl
+set-appends-instead-of-replacing	css_block.c	    if (slots[i]) {\n      blk_item * held	    if (0) {\n      blk_item * held	block,decl
 unchanged-set-counts-as-a-change	css_block.c	    if (slots[i] && same[i]) {\n      continue;	    if (0) {\n      continue;	block,decl
 priority-matched-case-sensitively	cssom_decl.c	    if (c >= 'A' && c <= 'Z') {\n      c = (char)(c - 'A' + 'a');	    if (0) {\n      c = (char)(c - 'A' + 'a');	decl
 remove-of-a-shorthand-leaves-its-longhands	css_block.c	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(block->registry, id)) {\n      if (!css_shorthand_leaves	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && 0) {\n      if (!css_shorthand_leaves	block,decl
@@ -15,7 +15,7 @@ block-index-not-used	css_block.c	  GTEXT_CSS_Declaration_Block * b = (GTEXT_CSS_
 cssText-set-keeps-the-old-declarations	cssom_decl.c	  decl->block = neu;\n  /* the names	  gtext_css_block_free(neu);\n  /* the names	decl
 invalid-value-reaches-the-block	cssom_decl.c	  if (pv.outcome == GTEXT_CSS_PROP_RESULT_UNKNOWN || pv.outcome == GTEXT_CSS_PROP_RESULT_INVALID) {\n    const bool unknown	  if (pv.outcome == GTEXT_CSS_PROP_RESULT_UNKNOWN) {\n    const bool unknown	decl
 opaque-dropped-by-the-text-parse	cssom_decl.c	      st = keep_opaque(core, block, d);\n      continue;	      st = GTEXT_CSS_OK;\n      continue;	decl,inline,seeds
-opaque-shorthand-longhand-replaced-in-place	css_block.c	    if (block->items[slots[i] - 1].opaque || opaque_covers_after(block, slots[i] - 1, lh.property)) {	    if (0) {	block
+opaque-shorthand-longhand-replaced-in-place	css_block.c	    if ((block->items[slots[i] - 1].opaque && is_shorthand_id(reg, block->items[slots[i] - 1].property)) || opaque_covers_after(block, slots[i] - 1, lh.property)) {	    if (0) {	block
 opaque-not-written-back	css_shorthand_serialize.c	      put_declaration(out, oi.name, oi.name_length, it->raw, it->raw_length, it->important, first);	      (void)oi;	block,decl,inline
 opaque-importance-lost	css_shorthand_serialize.c	      put_declaration(out, oi.name, oi.name_length, it->raw, it->raw_length, it->important, first);	      put_declaration(out, oi.name, oi.name_length, it->raw, it->raw_length, false, first);	block,decl,inline
 opaque-same-text-counts-as-a-change	css_block.c	    if (it->opaque && it->important == important && it->raw_length == raw_length && memcmp(it->raw, raw, raw_length) == 0) {	    if (0) {	block
@@ -310,3 +310,4 @@ parsed-list-replaces-in-place	css_block.c	    if (block->parse_mode && !(keep_im
 typed-css-text-is-not-the-declaration-blocks	cssom_typed.c	  if (v.ndescs == 0) {\n    tbuf canon;	  if (0) {\n    tbuf canon;	setters
 a-margin-box-takes-every-property	css_atrule.c	(c->a->kind == GTEXT_CSS_ATRULE_PAGE_MARGIN ? "page-margin" : at_name)	at_name	setters
 a-pseudo-page-keeps-its-case	css_atrule.c	    if (kind == GTEXT_CSS_ATRULE_PAGE) {\n      /* a pseudo-page	    if (0) {\n      /* a pseudo-page	setters
+an-opaque-longhand-set-moves-to-the-end	css_block.c	    if ((block->items[slots[i] - 1].opaque && is_shorthand_id(reg, block->items[slots[i] - 1].property)) || opaque_covers_after(	    if (block->items[slots[i] - 1].opaque || opaque_covers_after(	decl,seeds

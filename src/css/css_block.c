@@ -646,6 +646,7 @@ static bool value_usable(const GTEXT_CSS_Property_Value * value) {
 }
 
 static bool kill_key(GTEXT_CSS_Declaration_Block * b, GTEXT_CSS_Property_Id property, const char * name, size_t length);
+static bool is_shorthand_id(const GTEXT_CSS_Registry * reg, GTEXT_CSS_Property_Id id);
 static bool opaque_covers_after(const GTEXT_CSS_Declaration_Block * b, size_t from, GTEXT_CSS_Property_Id longhand);
 
 GTEXT_CSS_Status gtext_css_block_set(GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Property_Value * value, bool important,
@@ -720,7 +721,7 @@ GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTE
       fresh++;
       continue;
     }
-    if (block->items[slots[i] - 1].opaque || opaque_covers_after(block, slots[i] - 1, lh.property)) {
+    if ((block->items[slots[i] - 1].opaque && is_shorthand_id(reg, block->items[slots[i] - 1].property)) || opaque_covers_after(block, slots[i] - 1, lh.property)) {
       moved[i] = 1;
       fresh++;
       continue;
@@ -793,7 +794,15 @@ GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTE
       slots[i] = 0;
     }
     if (slots[i]) {
-      item_replace(&block->items[slots[i] - 1], lh.outcome, lh.wide, lh.set, important, shorthand ? prop : 0, decl);
+      blk_item * held = &block->items[slots[i] - 1];
+      if (held->opaque) {
+        /* a longhand kept as written (the library cannot judge it) that is set to a value it can judge: the declaration stays where it is, as CSSOM's "set a CSS declaration" updates it */
+        gtext_allocator_free(&block->alloc, held->raw);
+        held->raw = NULL;
+        held->raw_length = 0;
+        held->opaque = false;
+      }
+      item_replace(held, lh.outcome, lh.wide, lh.set, important, shorthand ? prop : 0, decl);
     }
     else {
       blk_item * it = &block->items[block->count++];

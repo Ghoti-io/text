@@ -767,3 +767,16 @@ TEST(CssomDecl, AParsedListAppendsTheLaterDeclarationAndDropsTheEarlierOne) {
   ASSERT_EQ(set(d.d, "color", "blue").st, GTEXT_CSS_OK);
   EXPECT_EQ(text_of(d.d), "color: blue; margin: 1px;");
 }
+
+// found by the libFuzzer soak of fuzz_cssom_decl (reproducer-set-over-opaque-longhand.seed): a longhand kept as written because the library cannot judge it (voice-family) that is set
+// to a value it can judge is updated where it stands, as "set a CSS declaration" says, and not moved to the end
+TEST(CssomDecl, ALonghandKeptAsWrittenIsUpdatedInPlaceWhenItIsSetToAValueTheLibraryCanJudge) {
+  Doc doc;
+  Decl d(doc);
+  ASSERT_EQ(set_text(d.d, "voice-family: male !important; color: red; margin: 1px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "voice-family: male !important; color: red; margin: 1px;");
+  ASSERT_EQ(set(d.d, "voice-family", "var(--x)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "voice-family: var(--x); color: red; margin: 1px;");
+  ASSERT_EQ(set(d.d, "color", "blue").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "voice-family: var(--x); color: blue; margin: 1px;");
+}

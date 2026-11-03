@@ -425,6 +425,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     const std::string value = kValues[next() % (sizeof kValues / sizeof kValues[0])];
     const std::string prio = kPriorities[next() % (sizeof kPriorities / sizeof kPriorities[0])];
     const std::string text = kTexts[next() % (sizeof kTexts / sizeof kTexts[0])];
+    if (std::getenv("GTEXT_FUZZ_TRACE")) {
+      std::fprintf(stderr, "step %d: op %u name '%s' value '%s' priority '%s' text '%s'\n", step, op, name.c_str(), value.c_str(), prio.c_str(), text.c_str());
+    }
     for (int which = 0; which < 2; which++) {
       GTEXT_CSSOM_Decl * d = w.decl[which];
       Model & m = w.model[which];
