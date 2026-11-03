@@ -2,7 +2,7 @@
 set-appends-instead-of-replacing	css_block.c	    if (slots[i]) {\n      blk_item * held	    if (0) {\n      blk_item * held	block,decl
 unchanged-set-counts-as-a-change	css_block.c	    if (slots[i] && same[i]) {\n      continue;	    if (0) {\n      continue;	block,decl
 priority-matched-case-sensitively	cssom_decl.c	    if (c >= 'A' && c <= 'Z') {\n      c = (char)(c - 'A' + 'a');	    if (0) {\n      c = (char)(c - 'A' + 'a');	decl
-remove-of-a-shorthand-leaves-its-longhands	css_block.c	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(block->registry, id)) {\n      if (!css_shorthand_leaves	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && 0) {\n      if (!css_shorthand_leaves	block,decl
+remove-of-a-shorthand-leaves-its-longhands	css_block.c	    if (info.flags & GTEXT_CSS_PROP_SHORTHAND) {\n      if (!css_shorthand_leaves	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && 0) {\n      if (!css_shorthand_leaves	block,decl
 unknown-property-checked-after-the-value	cssom_decl.c	  if (!p.known) {\n    ignore(out, GTEXT_CSSOM_IGNORED_UNKNOWN_PROPERTY, 0, "not a supported property");\n    return GTEXT_CSS_OK;\n  }\n  /* 3.	  if (!p.known && value_length) {\n    ignore(out, GTEXT_CSSOM_IGNORED_UNKNOWN_PROPERTY, 0, "not a supported property");\n    return GTEXT_CSS_OK;\n  }\n  /* 3.	decl
 inline-validated-per-call	cssom_inline.c	  if (d->validated && !d->stale) {	  if (0) {	inline
 computed-declaration-writable	cssom_decl.c	  d->readonly = owner_kind == GTEXT_CSSOM_DECL_COMPUTED;	  d->readonly = false;	decl,computed
@@ -350,3 +350,9 @@ a-sheets-media-forgets-its-list-as-read	cssom_media.c	    if (!read_take(&s->obj
 a-change-that-only-the-list-as-read-sees-is-unchanged	cssom_media.c	 && now_read.len == want_read.len &&\n                    (now_read.len == 0 || memcmp(now_read.data, want_read.data, now_read.len) == 0);	;	media
 an-escaped-parenthesis-closes-a-leaf	cssom_media.c	      else if (c == '\\' && j + 1 < n) {\n        j++;   /* an escape	      else if (0) {\n        j++;   /* an escape	media
 match-media-writes-the-closed-text	cssom_mql.c	st = gtext_css_media_list_serialize_as_read_buffer(list, &core->alloc, &canon, &canon_length);	st = gtext_css_media_list_serialize_buffer(list, &core->alloc, &canon, &canon_length);	mediaquery
+all-is-one-declaration-in-a-block	css_block.c	  const bool shorthand = (info.flags & GTEXT_CSS_PROP_SHORTHAND) != 0;\n  GTEXT_CSS_Longhand_List * list = NULL;\n  size_t n = 1;	  const bool shorthand = (info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.name_length == 3 && info.name[0] == 'a');\n  GTEXT_CSS_Longhand_List * list = NULL;\n  size_t n = 1;	all,decl
+the-leaves-of-all-are-not-listed	css_shorthand_serialize.c	    if (is_all_id(c, cur)) {	    if (0) {	all
+all-is-not-a-shorthand-for-getpropertyvalue	cssom_decl.c	  p->shorthand = (info.flags & GTEXT_CSS_PROP_SHORTHAND) != 0;	  p->shorthand = (info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.name_length == 3 && info.name[0] == 'a');	all
+css-text-never-writes-all	css_shorthand_serialize.c	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.flags & GTEXT_CSS_PROP_ALIAS) &&\n        gtext_css_shorthand_kind	    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.flags & GTEXT_CSS_PROP_ALIAS) && !(info.name_length == 3 && memcmp(info.name, "all", 3) == 0) &&\n        gtext_css_shorthand_kind	all
+a-change-of-all-is-not-called-all	cssom_decl.c	      ev.all_changed = bsearch(&want, ids, id_count, sizeof *ids, id_cmp) != NULL;	      ev.all_changed = false;	all
+remove-of-all-reads-too-few-leaves	css_block.c	      if (!css_shorthand_leaves(block->registry, id, leaves, CSS_LEAF_CAP, &nleaf)) {	      if (!css_shorthand_leaves(block->registry, id, leaves, 16, &nleaf)) {	all

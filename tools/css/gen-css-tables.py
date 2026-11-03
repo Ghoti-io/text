@@ -363,6 +363,12 @@ def build(model):
         props[name]["longhands"].extend(names_to_add)
         consolidate["append-longhand"][(scope, name)] = ("used", reason, longhand)
 
+    # `all` is the shorthand of every property but two. CSS Cascade 5, "all": "The all property is a shorthand that resets all CSS properties except direction and unicode-bidi";
+    # it "does not reset custom properties". The pin gives it no longhands; they are the properties that are neither shorthands nor aliases (a shorthand is the properties it sets, an
+    # alias is its target). A property the caller registers later is not among them.
+    props["all"]["longhands"] = sorted(n for n, r in props.items()
+                                       if n not in ("all", "--*", "direction", "unicode-bidi") and not r["alias_of"] and not r["longhands"])
+
     names = sorted(props)
     index = {n: i + 1 for i, n in enumerate(names)}
 

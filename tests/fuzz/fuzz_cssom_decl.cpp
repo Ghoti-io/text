@@ -102,7 +102,7 @@ std::string name_of(GTEXT_CSS_Property_Id id) {
 bool is_shorthand(GTEXT_CSS_Property_Id id) {
   GTEXT_CSS_Property_Info info;
   gtext_css_registry_property_info(registry(), id, &info);
-  return (info.flags & GTEXT_CSS_PROP_SHORTHAND) && name_of(id) != "all";
+  return (info.flags & GTEXT_CSS_PROP_SHORTHAND) != 0;   // `all` too: it is written as its longhands
 }
 
 void leaves(GTEXT_CSS_Property_Id id, std::vector<GTEXT_CSS_Property_Id> & out) {

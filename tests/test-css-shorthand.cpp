@@ -427,7 +427,10 @@ TEST(CssShorthandWide, AllTakesTheWideKeywordsAlone) {
   Block b(R(), "all: red");
   EXPECT_EQ(b.rejected.size(), 1u);
   Block c(R(), "all: revert");
-  EXPECT_EQ(gtext_css_block_count(c.b), 1u) << "revert is kept as written for the cascade to resolve";
+  EXPECT_GT(gtext_css_block_count(c.b), 500u) << "revert is every longhand of all, each kept as written for the cascade to resolve";
+  EXPECT_EQ(get(c, "all"), "revert");
+  EXPECT_EQ(get(c, "color"), "revert");
+  EXPECT_EQ(get(c, "direction"), "") << "all does not reset direction";
 }
 
 /* ---- the block --------------------------------------------------------------------------------------------------------------- */

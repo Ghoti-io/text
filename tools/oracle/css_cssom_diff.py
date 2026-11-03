@@ -72,7 +72,7 @@ def population(work, seed, count):
         for i in range(count):
             f.write(json.dumps(css_cssom_gen.Gen(seed, i).document(), ensure_ascii=False) + "\n")
         # after the `count` documents, so that the documents before them are the ones a population of that size always had
-        for d in css_cssom_gen.media_general_documents() + css_cssom_gen.selector_webkit_documents():
+        for d in css_cssom_gen.media_general_documents() + css_cssom_gen.selector_webkit_documents() + css_cssom_gen.all_documents():
             f.write(json.dumps(d, ensure_ascii=False) + "\n")
     return path
 

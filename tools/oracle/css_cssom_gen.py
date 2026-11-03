@@ -224,6 +224,27 @@ def selector_webkit_documents():
     return [{"g": "selector-webkit", "ops": [["S", s + " {color:red}"], ["V", "0", "selectorText"], ["V", "0", "cssText"]]} for s in WEBKIT_SELECTORS]
 
 
+# `all` is written as its longhands (CSS Cascade 5; CSSOM): what a declaration block says of it after a cssText, a setProperty and a removeProperty. Both browsers agree that a block
+# in which something is left of `all` besides a CSS-wide keyword is the list of every longhand, in each engine's own order and with each engine's own set of properties, so those
+# are not asked: the texts here leave `all` whole or leave nothing of it.
+ALL_TEXTS = ["all: revert", "width: 50px; all: revert", "all: revert; width: 50px; all: unset", "margin: initial; all: revert", "margin-top: 10px; all: revert", "all: inherit",
+             "width: 100px; all: inherit; height: inherit", "direction: ltr; all: inherit; unicode-bidi: plaintext", "width: 100px; --a: a; all: inherit; --b: b; height: inherit",
+             "--foo: bar; all: initial", "all: inherit !important", "all: var(--x)", "all: initial; width: 5px; all: unset", "all: bogus", "all: 10px", "ALL: INHERIT"]
+
+
+def all_documents():
+    docs = []
+    for t in ALL_TEXTS:
+        docs.append({"g": "decl-all", "ops": [["S", "a{}"], ["Y", "0", t], ["V", "0", "cssText"], ["VS", "0", "all"], ["VS", "0", "width"], ["VS", "0", "margin"], ["VS", "0", "font"],
+                                               ["VS", "0", "direction"], ["VP", "0", "all"], ["VP", "0", "width"]]})
+    for t in ["width: 50px; color: green; direction: rtl", "all: revert", "width: 40px; all: revert", "--a: 1; all: revert; direction: rtl", "all: inherit !important"]:
+        docs.append({"g": "decl-all", "ops": [["S", "a{}"], ["Y", "0", t], ["Q", "0", "all"], ["V", "0", "cssText"], ["VS", "0", "all"], ["VS", "0", "direction"], ["VL", "0"]]})
+    for v in ["revert", "unset", "inherit", "initial", "revert-layer", "bogus", "10px", "INHERIT", " inherit ", "var(--x)"]:
+        docs.append({"g": "decl-all", "ops": [["S", "a{width:5px}"], ["P", "0", "all", v, ""], ["V", "0", "cssText"], ["VS", "0", "all"], ["VS", "0", "width"]]})
+        docs.append({"g": "decl-all", "ops": [["S", "a{all:revert}"], ["P", "0", "all", v, "important"], ["V", "0", "cssText"], ["VP", "0", "width"], ["VP", "0", "all"]]})
+    return docs
+
+
 _FIXED = None
 
 

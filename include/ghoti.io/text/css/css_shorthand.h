@@ -42,7 +42,8 @@
  * - LAYERS: comma separated layers, each split as ANY; the longhands are comma lists, the last layer alone carrying the property the grammar
  *   gives only to the final layer (`background-color`); a longhand with no component in a layer gets its initial value for that layer;
  * - COPY: every longhand takes the whole value;
- * - ALL: `all` takes the CSS-wide keywords alone, or a substitution that may yield one (pending);
+ * - ALL: `all` takes the CSS-wide keywords alone, or a substitution that may yield one (pending); it is written as its longhands, every property that is neither a shorthand, an alias,
+ *   a custom property, `direction` nor `unicode-bidi` (CSS Cascade 5, "all"), so that a later declaration of one of them overrides it;
  * - BORDER_RADIUS (the four corners, or the two of one side), FONT, FLEX, GRID_LINE, GRID_TEMPLATE, GRID, OFFSET, TEXT_ALIGN, FONT_SYNTHESIS, TEXT_BOX, LINE_CLAMP: the shorthands whose grammar the
  *   generic split would misread have algorithms of their own.
  *
@@ -189,7 +190,7 @@ GTEXT_API GTEXT_CSS_Declaration_Options gtext_css_declaration_options_default(vo
 
 /** @brief One declaration of a block. The pointers are owned by the block and valid until it is changed or freed. */
 typedef struct {
-  GTEXT_CSS_Property_Id property;      ///< The property (a longhand, `all` or a custom property's `--*`; never a shorthand other than `all`, or an opaque declaration's).
+  GTEXT_CSS_Property_Id property;      ///< The property (a longhand or a custom property's `--*`; never a shorthand, `all` included, unless it is an opaque declaration's).
   GTEXT_CSS_String custom_name;        ///< For a custom property: its name as written, case kept; else empty.
   bool important;                      ///< Declared `!important`.
   GTEXT_CSS_Property_Outcome outcome;  ///< VALID, WIDE or PENDING.
@@ -275,7 +276,7 @@ GTEXT_API bool gtext_css_block_item(const GTEXT_CSS_Declaration_Block * block, s
 typedef struct {
   bool changed;                      ///< The block is different: a declaration was added, removed, or replaced by one that says something else.
   size_t count;                      ///< The entries of `ids`.
-  GTEXT_CSS_Property_Id * ids;       ///< The properties whose declarations changed, in the order they were applied (a shorthand contributes its longhands, `all` itself, a custom property nothing: the caller knows its name). Owned: free the struct with gtext_css_block_change_free().
+  GTEXT_CSS_Property_Id * ids;       ///< The properties whose declarations changed, in the order they were applied (a shorthand contributes its longhands, `all` every property it sets, a custom property nothing: the caller knows its name). Owned: free the struct with gtext_css_block_change_free().
   GTEXT_Allocator alloc;             ///< Private: the allocator `ids` came from.
 } GTEXT_CSS_Block_Change;
 
@@ -298,7 +299,7 @@ GTEXT_API void gtext_css_block_change_free(GTEXT_CSS_Block_Change * change);
  * Removing one longhand does not change the shorthand.
  *
  * @param block The block. Not NULL.
- * @param property A property of the registry that is not a custom property and not `all` (an alias is followed).
+ * @param property A property of the registry that is not a custom property (an alias is followed).
  * @param raw The value as written, trimmed; not NULL, not empty (an empty value is no declaration). Copied.
  * @param raw_length Its length.
  * @param important `!important`.

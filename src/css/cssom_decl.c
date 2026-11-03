@@ -133,15 +133,11 @@ GTEXT_CSSOM_Document * gtext_cssom_decl_document(const GTEXT_CSSOM_Decl * decl) 
 typedef struct {
   bool custom;          ///< A name beginning `--`.
   bool known;           ///< The registry has it (a custom property: its name can be written and read back).
-  bool shorthand;       ///< A shorthand other than `all`.
+  bool shorthand;       ///< A shorthand (`all` too: it is written as its longhands).
   GTEXT_CSS_Property_Id id;   ///< The property, an alias followed; 0 for a custom property.
   const char * name;    ///< A custom property's name as given.
   size_t length;
 } pref;
-
-static bool is_all_info(const GTEXT_CSS_Property_Info * info) {
-  return info->name_length == 3 && memcmp(info->name, "all", 3) == 0;
-}
 
 static void pref_resolve(const css_core * core, const char * name, size_t length, pref * p) {
   memset(p, 0, sizeof *p);
@@ -166,7 +162,7 @@ static void pref_resolve(const css_core * core, const char * name, size_t length
   }
   p->known = true;
   p->id = id;
-  p->shorthand = (info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all_info(&info);
+  p->shorthand = (info.flags & GTEXT_CSS_PROP_SHORTHAND) != 0;
 }
 
 /// The text of a declaration as getPropertyValue writes it: the empty string for a longhand left pending by a shorthand.
@@ -373,9 +369,9 @@ GTEXT_CSS_Status gtext_cssom_decl_get_property_priority(GTEXT_CSSOM_Decl * decl,
     return GTEXT_CSS_OK;   /* a shorthand kept as written */
   }
   /* CSSOM getPropertyPriority: for a shorthand, important when every longhand it maps to is in the declarations and is important */
-  GTEXT_CSS_Property_Id leaves[256];
+  GTEXT_CSS_Property_Id leaves[CSS_LEAF_CAP];
   size_t n = 0;
-  if (!css_shorthand_leaves(core->registry, p.id, leaves, 256, &n) || n == 0) {
+  if (!css_shorthand_leaves(core->registry, p.id, leaves, CSS_LEAF_CAP, &n) || n == 0) {
     return GTEXT_CSS_OK;
   }
   for (size_t i = 0; i < n; i++) {
@@ -666,10 +662,14 @@ static void finish_change(GTEXT_CSSOM_Decl * d, GTEXT_CSS_Property_Id * ids, siz
   ev.custom_names = customs;
   ev.custom_count = custom_count;
   ev.attribute_written = attribute_written;
-  for (size_t i = 0; i < id_count; i++) {
-    GTEXT_CSS_Property_Info info;
-    if (gtext_css_registry_property_info(core->registry, ids[i], &info) && is_all_info(&info)) {
-      ev.all_changed = true;
+  /* `all` is written as its longhands: the change is "all" when it holds every one of them (the list is sorted) */
+  const GTEXT_CSS_Property_Id all = gtext_css_registry_find_property(core->registry, "all", 3);
+  GTEXT_CSS_Property_Info all_info;
+  if (all && gtext_css_registry_property_info(core->registry, all, &all_info) && all_info.longhand_count && id_count >= all_info.longhand_count) {
+    ev.all_changed = true;
+    for (size_t i = 0; i < all_info.longhand_count && ev.all_changed; i++) {
+      const GTEXT_CSS_Property_Id want = gtext_css_registry_longhand(core->registry, all, i);
+      ev.all_changed = bsearch(&want, ids, id_count, sizeof *ids, id_cmp) != NULL;
     }
   }
   if (d->ops && d->ops->commit) {

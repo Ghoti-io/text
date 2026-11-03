@@ -302,11 +302,6 @@ static void fill_result(GTEXT_CSS_Shorthand_Result * r, GTEXT_CSS_Status st) {
   }
 }
 
-static bool is_all(const GTEXT_CSS_Registry * registry, GTEXT_CSS_Property_Id id) {
-  GTEXT_CSS_Property_Info info;
-  return gtext_css_registry_property_info(registry, id, &info) && info.name_length == 3 && memcmp(info.name, "all", 3) == 0;
-}
-
 GTEXT_CSS_Status gtext_css_block_add(GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Property_Value * value, bool important,
     GTEXT_CSS_Shorthand_Result * result) {
   if (result) {
@@ -338,7 +333,7 @@ GTEXT_CSS_Status gtext_css_block_add(GTEXT_CSS_Declaration_Block * block, const 
     fill_result(result, GTEXT_CSS_E_INVALID);
     return GTEXT_CSS_E_INVALID;
   }
-  const bool shorthand = (info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(reg, prop);
+  const bool shorthand = (info.flags & GTEXT_CSS_PROP_SHORTHAND) != 0;
   GTEXT_CSS_Status st;
   if (!shorthand) {
     st = block_reserve(block, 1);
@@ -675,7 +670,7 @@ GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTE
     fill_result(result, GTEXT_CSS_E_INVALID);
     return GTEXT_CSS_E_INVALID;
   }
-  const bool shorthand = (info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(reg, prop);
+  const bool shorthand = (info.flags & GTEXT_CSS_PROP_SHORTHAND) != 0;
   GTEXT_CSS_Longhand_List * list = NULL;
   size_t n = 1;
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
@@ -881,10 +876,10 @@ GTEXT_CSS_Status css_block_set_custom_ex(GTEXT_CSS_Declaration_Block * block, co
   return GTEXT_CSS_OK;
 }
 
-/// Whether a property is a shorthand that is written as its longhands (`all` is one declaration).
+/// Whether a property is a shorthand that is written as its longhands.
 static bool is_shorthand_id(const GTEXT_CSS_Registry * reg, GTEXT_CSS_Property_Id id) {
   GTEXT_CSS_Property_Info info;
-  return gtext_css_registry_property_info(reg, id, &info) && (info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(reg, id);
+  return gtext_css_registry_property_info(reg, id, &info) && (info.flags & GTEXT_CSS_PROP_SHORTHAND);
 }
 
 /// Count (`delta` 1) or uncount (-1) an opaque shorthand against each longhand it sets. The table exists once any opaque shorthand was added.
@@ -892,9 +887,9 @@ static void cover_adjust(GTEXT_CSS_Declaration_Block * b, GTEXT_CSS_Property_Id 
   if (!b->covered) {
     return;
   }
-  GTEXT_CSS_Property_Id leaves[256];
+  GTEXT_CSS_Property_Id leaves[CSS_LEAF_CAP];
   size_t n = 0;
-  if (!css_shorthand_leaves(b->registry, shorthand, leaves, 256, &n)) {
+  if (!css_shorthand_leaves(b->registry, shorthand, leaves, CSS_LEAF_CAP, &n)) {
     return;
   }
   const size_t np = gtext_css_registry_property_count(b->registry);
@@ -917,9 +912,9 @@ static bool opaque_covers_after(const GTEXT_CSS_Declaration_Block * b, size_t fr
     if (it->dead || !it->opaque || it->property == ignore || !is_shorthand_id(b->registry, it->property)) {
       continue;
     }
-    GTEXT_CSS_Property_Id leaves[256];
+    GTEXT_CSS_Property_Id leaves[CSS_LEAF_CAP];
     size_t n = 0;
-    if (css_shorthand_leaves(b->registry, it->property, leaves, 256, &n)) {
+    if (css_shorthand_leaves(b->registry, it->property, leaves, CSS_LEAF_CAP, &n)) {
       for (size_t i = 0; i < n; i++) {
         if (leaves[i] == longhand) {
           return true;
@@ -970,7 +965,7 @@ GTEXT_CSS_Status gtext_css_block_remove(GTEXT_CSS_Declaration_Block * block, GTE
   if (!block || (name ? name_length < 3 || name[0] != '-' || name[1] != '-' : !property)) {
     return GTEXT_CSS_E_INVALID;
   }
-  GTEXT_CSS_Property_Id leaves[257];
+  GTEXT_CSS_Property_Id leaves[CSS_LEAF_CAP + 1];
   size_t nleaf = 1;
   if (name) {
     leaves[0] = 0;
@@ -981,8 +976,8 @@ GTEXT_CSS_Status gtext_css_block_remove(GTEXT_CSS_Declaration_Block * block, GTE
     if (!id || !gtext_css_registry_property_info(block->registry, id, &info) || (info.flags & GTEXT_CSS_PROP_CUSTOM)) {
       return GTEXT_CSS_E_INVALID;
     }
-    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(block->registry, id)) {
-      if (!css_shorthand_leaves(block->registry, id, leaves, 256, &nleaf)) {
+    if (info.flags & GTEXT_CSS_PROP_SHORTHAND) {
+      if (!css_shorthand_leaves(block->registry, id, leaves, CSS_LEAF_CAP, &nleaf)) {
         if (!block_lookup(block, id, NULL, 0)) {
           return GTEXT_CSS_E_UNSUPPORTED;
         }
@@ -1078,7 +1073,7 @@ GTEXT_CSS_Status css_block_set_opaque_ex(GTEXT_CSS_Declaration_Block * block, GT
   }
   const GTEXT_CSS_Property_Id id = gtext_css_registry_resolve_alias(block->registry, property);
   GTEXT_CSS_Property_Info info;
-  if (!id || !gtext_css_registry_property_info(block->registry, id, &info) || (info.flags & GTEXT_CSS_PROP_CUSTOM) || is_all(block->registry, id)) {
+  if (!id || !gtext_css_registry_property_info(block->registry, id, &info) || (info.flags & GTEXT_CSS_PROP_CUSTOM)) {
     return GTEXT_CSS_E_INVALID;
   }
   const bool sh = is_shorthand_id(block->registry, id);
@@ -1347,7 +1342,7 @@ GTEXT_CSS_Status gtext_css_block_get_property_value(const GTEXT_CSS_Declaration_
   if (!id || !gtext_css_registry_property_info(block->registry, id, &info)) {
     return GTEXT_CSS_E_INVALID;
   }
-  if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !is_all(block->registry, id)) {
+  if (info.flags & GTEXT_CSS_PROP_SHORTHAND) {
     return gtext_css_block_shorthand_value(block, id, out, out_length, important);
   }
   const size_t at = block_lookup(block, id, NULL, 0);

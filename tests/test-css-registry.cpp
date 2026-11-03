@@ -189,11 +189,27 @@ TEST(CssRegistryTables, ShorthandsAndTheirLonghands) {
   for (size_t k = 0; k < font.longhand_count; k++) {
     EXPECT_FALSE(resets.count(gtext_css_registry_longhand(r, font.id, k))) << "a longhand is not also a reset-only longhand";
   }
-  // `all` is a shorthand with no list
+  // `all` is the shorthand of every property but `direction`, `unicode-bidi` and the custom ones (CSS Cascade 5, "all"): its longhands are the properties that are neither
+  // shorthands nor aliases
   const GTEXT_CSS_Property_Info all = info(r, "all");
   EXPECT_NE(all.flags & GTEXT_CSS_PROP_SHORTHAND, 0u);
-  EXPECT_EQ(all.longhand_count, 0u);
   EXPECT_EQ(all.inherited, GTEXT_CSS_INHERIT_MIXED);
+  std::set<GTEXT_CSS_Property_Id> of_all;
+  for (size_t k = 0; k < all.longhand_count; k++) {
+    const GTEXT_CSS_Property_Id lh = gtext_css_registry_longhand(r, all.id, k);
+    EXPECT_TRUE(of_all.insert(lh).second) << "a longhand of all once";
+    GTEXT_CSS_Property_Info li;
+    ASSERT_TRUE(gtext_css_registry_property_info(r, lh, &li));
+    EXPECT_EQ(li.flags & (GTEXT_CSS_PROP_SHORTHAND | GTEXT_CSS_PROP_ALIAS | GTEXT_CSS_PROP_CUSTOM), 0u) << std::string(li.name, li.name_length);
+  }
+  EXPECT_FALSE(of_all.count(find(r, "direction")));
+  EXPECT_FALSE(of_all.count(find(r, "unicode-bidi")));
+  EXPECT_TRUE(of_all.count(find(r, "color")));
+  EXPECT_TRUE(of_all.count(find(r, "margin-top")));
+  EXPECT_FALSE(of_all.count(find(r, "margin"))) << "a shorthand is its longhands";
+  EXPECT_FALSE(of_all.count(find(r, "word-wrap"))) << "an alias is its target";
+  EXPECT_TRUE(of_all.count(find(r, "overflow-wrap")));
+  EXPECT_GT(of_all.size(), 500u);
 }
 
 TEST(CssRegistryTables, LogicalGroups) {

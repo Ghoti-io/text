@@ -233,6 +233,11 @@ static bool get_directs(const sctx * c, GTEXT_CSS_Property_Id sh, directs * d) {
   return true;
 }
 
+static bool is_all_id(const sctx * c, GTEXT_CSS_Property_Id id) {
+  GTEXT_CSS_Property_Info info;
+  return gtext_css_registry_property_info(c->reg, id, &info) && info.name_length == 3 && memcmp(info.name, "all", 3) == 0;
+}
+
 static bool is_sh(const sctx * c, GTEXT_CSS_Property_Id id) {
   GTEXT_CSS_Property_Info info;
   return gtext_css_registry_property_info(c->reg, id, &info) && (info.flags & GTEXT_CSS_PROP_SHORTHAND);
@@ -246,6 +251,25 @@ static bool leaves_under(const sctx * c, GTEXT_CSS_Property_Id sh, GTEXT_CSS_Pro
   stack[sp++] = sh;
   while (sp) {
     const GTEXT_CSS_Property_Id cur = stack[--sp];
+    if (is_all_id(c, cur)) {
+      /* `all` has some six hundred longhands, more than the shapes of the other shorthands (`directs`) hold, and none of them is a shorthand */
+      GTEXT_CSS_Property_Info ai;
+      gtext_css_registry_property_info(c->reg, cur, &ai);
+      for (size_t i = 0; i < ai.longhand_count; i++) {
+        const GTEXT_CSS_Property_Id id = resolve(c, gtext_css_registry_longhand(c->reg, cur, i));
+        bool seen = false;
+        for (size_t k = 0; k < *n && !seen; k++) {
+          seen = out[k] == id;
+        }
+        if (!seen) {
+          if (*n == cap) {
+            return false;
+          }
+          out[(*n)++] = id;
+        }
+      }
+      continue;
+    }
     directs d;
     if (!get_directs(c, cur, &d)) {
       return false;
@@ -1857,7 +1881,7 @@ static GTEXT_CSS_Status shorthand_text_in(sctx * c, GTEXT_CSS_Property_Id sh, bo
   *out = NULL;
   *out_len = 0;
   *all_wide = false;
-  GTEXT_CSS_Property_Id leaves[256];
+  GTEXT_CSS_Property_Id leaves[CSS_LEAF_CAP];
   size_t nleaf = 0;
   const GTEXT_Allocator * da = gtext_allocator_default();
   GTEXT_Allocator dflt = *da;
@@ -1866,7 +1890,7 @@ static GTEXT_CSS_Status shorthand_text_in(sctx * c, GTEXT_CSS_Property_Id sh, bo
     return GTEXT_CSS_E_OOM;
   }
   empty[0] = '\0';
-  if (!leaves_under(c, sh, leaves, 256, &nleaf) || nleaf == 0) {
+  if (!leaves_under(c, sh, leaves, CSS_LEAF_CAP, &nleaf) || nleaf == 0) {
     *out = empty;
     return GTEXT_CSS_OK;
   }
@@ -2090,11 +2114,11 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
   for (size_t id = 1; status == GTEXT_CSS_OK && id <= np; id++) {
     GTEXT_CSS_Property_Info info;
     gtext_css_registry_property_info(c.reg, (GTEXT_CSS_Property_Id)id, &info);
-    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.flags & GTEXT_CSS_PROP_ALIAS) && !(info.name_length == 3 && memcmp(info.name, "all", 3) == 0) &&
+    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.flags & GTEXT_CSS_PROP_ALIAS) &&
         gtext_css_shorthand_kind(c.reg, (GTEXT_CSS_Property_Id)id) != GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {
-      GTEXT_CSS_Property_Id lv[256];
+      GTEXT_CSS_Property_Id lv[CSS_LEAF_CAP];
       size_t nl = 0;
-      bool present = leaves_under(&c, (GTEXT_CSS_Property_Id)id, lv, 256, &nl) && nl > 0;
+      bool present = leaves_under(&c, (GTEXT_CSS_Property_Id)id, lv, CSS_LEAF_CAP, &nl) && nl > 0;
       for (size_t m = 0; present && m < nl; m++) {
         present = lv[m] <= np && c.last[lv[m]] != 0;
       }
@@ -2111,9 +2135,9 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
   /* the plan: in that order, each shorthand that can be written and does not hold a longhand another has already taken. The choice does not depend on
      the order of the declarations, so the text written and read again is the same text. */
   for (size_t k = 0; status == GTEXT_CSS_OK && k < ncand; k++) {
-    GTEXT_CSS_Property_Id lv[256];
+    GTEXT_CSS_Property_Id lv[CSS_LEAF_CAP];
     size_t nl = 0;
-    leaves_under(&c, cands[k].sh, lv, 256, &nl);
+    leaves_under(&c, cands[k].sh, lv, CSS_LEAF_CAP, &nl);
     bool taken = false;
     for (size_t m = 0; m < nl && !taken; m++) {
       taken = claim[c.last[lv[m]] - 1] != 0;

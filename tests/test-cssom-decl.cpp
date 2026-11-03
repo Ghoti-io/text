@@ -438,7 +438,9 @@ TEST(CssomDeclEvents, OneEventPerChangeWithTheSortedChangedPropertiesAndNoneForA
   ASSERT_EQ(set_text(d.d, "color: red; --c: 2").o.kind, GTEXT_CSSOM_CHANGED);
   EXPECT_EQ(doc.events[4].customs, (std::vector<std::string>{"--b", "--c"}));
   EXPECT_NE(std::find(doc.events[4].props.begin(), doc.events[4].props.end(), "color"), doc.events[4].props.end());
-  EXPECT_NE(std::find(doc.events[4].props.begin(), doc.events[4].props.end(), "all"), doc.events[4].props.end());
+  EXPECT_GT(doc.events[4].props.size(), 500u) << "the text without `all` removes the longhands it set, and the list names them";
+  EXPECT_NE(std::find(doc.events[4].props.begin(), doc.events[4].props.end(), "width"), doc.events[4].props.end());
+  EXPECT_FALSE(doc.events[4].all) << "the margin had been removed before: the change does not reach every longhand of all";
 }
 
 // A mutation from inside a callback is refused, and the first mutation completes.
