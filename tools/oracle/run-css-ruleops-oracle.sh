@@ -103,6 +103,18 @@ awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 4 { print; next } !d { $4 = "too 
 expect list-reason-short "too short" classify --list "$scratch/short"
 { cat "$list"; printf 'I:never/occurs/here\tserved-text\t1\tthis feature does not occur in any document of the population and must be reported stale\n'; } > "$scratch/stale"
 expect list-stale-feature "STALE" classify --list "$scratch/stale"
+# the driver that asked the browsers is not the one in the repository: the header of the answers names the SHA-256 of rules_driver.mjs (in a copy of the run, which the control
+# after this one does not use)
+rm -rf "$scratch/hdr"
+cp -r "$base" "$scratch/hdr"
+python3 - "$scratch/hdr" <<'PY'
+import json, sys
+p = sys.argv[1] + "/header-chromium.json"
+h = json.load(open(p))
+h["mounted_driver"] = {"rules_driver.mjs": "0" * 64}
+json.dump(h, open(p, "w"))
+PY
+expect driver-changed "HEADER" $diff_py --work "$scratch/hdr" --stage classify
 # an answer of this library changed: the first document's answer for its first operation is made one the browsers did not give
 python3 - "$base" <<'PY'
 import json, sys

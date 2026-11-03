@@ -146,6 +146,7 @@ def run_engine(engine, docs):
     if lines and lines[-1] == "":
         lines.pop()
     header = json.loads(lines[0][1:])
+    header["mounted_driver"] = oracle_env.mounted_driver(DRIVER)
     rows = [json.loads(x) for x in lines[1:]]
     if len(rows) != len(docs):
         raise SystemExit("css_sheet_diff: the %s driver answered %d documents to %d" % (engine, len(rows), len(docs)))
@@ -338,7 +339,7 @@ def main():
                 if shown < 40:
                     shown += 1
                     print("UNLISTED %s %s %s %s" % (cls, feat, key, json.dumps(vals, ensure_ascii=False)))
-        problems = []
+        problems = oracle_env.driver_problems(headers, DRIVER)
         for feat, (cls, count, _reason) in listed.items():
             if a.seed == 1 and a.count == 200 and count > 0:  # a count of 0 is a feature that only a hunt has met: the default population does not have it
                 if seen[feat] == 0:

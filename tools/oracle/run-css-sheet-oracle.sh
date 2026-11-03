@@ -133,6 +133,20 @@ expect list-blanket-reason "LIST" classify --list "$scratch/blanket"
 expect list-feature-gone "GONE" classify --list "$scratch/gone"
 : > "$scratch/empty-list"
 expect list-empty "UNLISTED" classify --list "$scratch/empty-list"
+# the driver that asked the browsers is not the one in the repository: the header of the answers names the SHA-256 of sheet_driver.mjs (in a copy of the answers, which the controls after
+# this one do not use)
+rm -rf "$scratch/hdr"
+mkdir "$scratch/hdr"
+cp "$replay"/chromium.json "$replay"/firefox.json "$scratch/hdr/"
+python3 - "$scratch/hdr" <<'PY'
+import json, sys
+for e in ("chromium", "firefox"):
+    p = sys.argv[1] + "/" + e + ".json"
+    d = json.load(open(p))
+    d[0]["mounted_driver"] = {"sheet_driver.mjs": "0" * 64}
+    json.dump(d, open(p, "w"))
+PY
+expect driver-changed "HEADER" $diff_py --work "$base" --stage classify --replay "$scratch/hdr"
 
 # this library's source with one rule undone, measured against browsers that did not change: the edits of one name are one defect
 for name in $(grep -v '^#' "$root/tools/oracle/CSS_SHEET_ORACLE_PLANTS" | awk 'NF { print $1 }'); do

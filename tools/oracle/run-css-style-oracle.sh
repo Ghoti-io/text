@@ -124,7 +124,7 @@ for p in ours-writes-differently ours-has-no-value engine-writes-differently our
 	expect "plant-$p" "UNLISTED\|COUNT\|GONE\|DIGEST" classify --plant "$p"
 done
 expect plant-control-is-misclassified "CONTROL" classify --plant control-is-misclassified
-for p in header-names-another-browser header-names-another-hash header-is-from-another-driver header-is-missing; do
+for p in header-names-another-browser header-names-another-hash header-is-from-another-driver header-is-from-another-mounted-driver header-is-missing; do
 	expect "plant-$p" "HEADER" classify --plant "$p"
 done
 

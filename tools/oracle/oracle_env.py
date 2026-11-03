@@ -64,6 +64,8 @@ Modes, from GHOTI_ORACLE_MODE:
 Copyright 2026 by Corey Pennycuff
 """
 
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -456,6 +458,25 @@ def check_pin(name):
 ENGINE_NOISE = (
     "Emulate Docker CLI using podman.",
 )
+
+
+def mounted_driver(path):
+    """A driver that is mounted from the repository and not baked into the pinned image (the image digest would move with every edit of it) is named by the SHA-256 of its file in
+    the header of the answers it made: {file name: hash}."""
+    with open(path, "rb") as f:
+        return {os.path.basename(path): hashlib.sha256(f.read()).hexdigest()}
+
+
+def driver_problems(headers, path):
+    """The refusals for answers whose header does not name the driver now in the repository: `headers` is {engine: header dict} (a header with no `mounted_driver` is one an older
+    run wrote, and is refused as well: its driver is not known)."""
+    want = mounted_driver(path)
+    problems = []
+    for engine in sorted(headers):
+        got = (headers[engine] or {}).get("mounted_driver")
+        if got != want:
+            problems.append("HEADER: the %s answers were made by %s, and the driver in the repository is %s; ask the browsers again" % (engine, json.dumps(got), json.dumps(want)))
+    return problems
 
 
 def reference_stderr(text):

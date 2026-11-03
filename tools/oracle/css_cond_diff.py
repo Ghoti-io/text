@@ -123,6 +123,7 @@ def run_engine(engine, docs):
     if lines and lines[-1] == "":
         lines.pop()
     header = json.loads(lines[0][1:])
+    header["mounted_driver"] = oracle_env.mounted_driver(DRIVER)
     rows = [json.loads(x) for x in lines[1:]]
     if len(rows) != len(docs):
         raise SystemExit("css_cond_diff: the %s driver answered %d documents to %d" % (engine, len(rows), len(docs)))
@@ -491,7 +492,7 @@ def main():
             with open(a.write_skeleton, "w", encoding="utf-8") as f:
                 for feat, items in unlisted.items():
                     f.write("%s\tTODO\t%d\t%s\n" % (feat, len(items), json.dumps(items[0][1], ensure_ascii=False)))
-        problems = []
+        problems = oracle_env.driver_problems(headers, DRIVER)
         for feat, (cls, count, _reason) in listed.items():
             if a.seed == 1 and a.count == 200 and count > 0:
                 if seen[feat] == 0:

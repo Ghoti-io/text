@@ -27,7 +27,11 @@
 
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { WebSocket } from 'ws';
+import { createRequire } from 'node:module';
+
+// mounted from the repository, not baked into the image: `ws` is resolved from the image's own package, as the other drivers do
+const require = createRequire('/opt/cssprop/package.json');
+const { WebSocket } = require('ws');
 
 const TIMEOUT_MS = 60000;
 

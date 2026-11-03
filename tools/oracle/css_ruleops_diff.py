@@ -91,6 +91,7 @@ def run_browsers(engine, docs):
     if lines and lines[-1] == "":
         lines.pop()
     header = json.loads(lines[0][1:])
+    header["mounted_driver"] = oracle_env.mounted_driver(DRIVER)
     rows = [json.loads(x) for x in lines[1:]]
     if len(rows) != len(docs):
         raise SystemExit("css_ruleops_diff: the %s driver answered %d documents to %d" % (engine, len(rows), len(docs)))
@@ -191,6 +192,8 @@ def main():
         if a.replay:
             for e in ENGINES:
                 json.dump(json.load(open(os.path.join(a.replay, "answers-%s.json" % e))), open(os.path.join(a.work, "answers-%s.json" % e), "w"))
+                if os.path.exists(os.path.join(a.replay, "header-%s.json" % e)):
+                    json.dump(json.load(open(os.path.join(a.replay, "header-%s.json" % e))), open(os.path.join(a.work, "header-%s.json" % e), "w"))
         else:
             for e in ENGINES:
                 header, rows = run_browsers(e, docs)
@@ -199,6 +202,10 @@ def main():
     if "ours" in stages:
         json.dump(run_ours(a.ours, docs), open(os.path.join(a.work, "answers-ours.json"), "w"), ensure_ascii=False)
     if "classify" in stages:
+        for e in ENGINES:
+            head = os.path.join(a.work, "header-%s.json" % e)
+            if a.replay and not os.path.exists(head) and os.path.exists(os.path.join(a.replay, "header-%s.json" % e)):
+                json.dump(json.load(open(os.path.join(a.replay, "header-%s.json" % e))), open(head, "w"))
         ans = {e: json.load(open(os.path.join(a.work, "answers-%s.json" % e))) for e in ENGINES + ["ours"]}
         found = divergences(docs, ans)
         counts = collections.Counter(f for f, _, _ in found)
@@ -206,6 +213,8 @@ def main():
         for f, who, w in found:
             witness.setdefault(f, (who, w))
         listed, problems = load_list(a.list)
+        heads = {e: (json.load(open(os.path.join(a.work, "header-%s.json" % e))) if os.path.exists(os.path.join(a.work, "header-%s.json" % e)) else {}) for e in ENGINES}
+        problems = problems + oracle_env.driver_problems(heads, DRIVER)
         default_population = a.seed == 1 and a.count == 200
         bad = []
         for f in sorted(counts):

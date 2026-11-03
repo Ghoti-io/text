@@ -461,6 +461,46 @@ def check_cssprop_pin_fires():
         fail("control: a missing cssprop pin was not caught")
 
 
+PROBE_ANSWERS = os.path.join(HERE, "cascade_probe_answers.txt")
+PROBE_DRIVER = os.path.join(CONTAINERS, "cssprop", "cascade_probe.mjs")
+
+
+def probe_driver_problems(answers_text, driver_hash):
+    """The recorded answers of the cascade probe name the SHA-256 of the mounted driver that asked the browsers (`# mounted driver: cascade_probe.mjs sha256 <hash>`), and it has
+    to be the driver in the repository: the driver is not baked into the pinned image, so nothing else says which copy asked."""
+    lines = [l for l in answers_text.split("\n") if l.startswith("# mounted driver: cascade_probe.mjs sha256 ")]
+    if len(lines) != 1:
+        return ["cascade_probe_answers.txt: no (or more than one) line naming the mounted driver's SHA-256"]
+    named = lines[0].split("sha256 ", 1)[1].split()[0]
+    if named != driver_hash:
+        return ["cascade_probe_answers.txt: the answers were made by cascade_probe.mjs %s and the driver in the repository is %s; ask the browsers again" % (named[:12], driver_hash[:12])]
+    return []
+
+
+def driver_sha256(path):
+    import hashlib
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def check_probe_driver():
+    with open(PROBE_ANSWERS, encoding="utf-8") as f:
+        text = f.read()
+    for problem in probe_driver_problems(text, driver_sha256(PROBE_DRIVER)):
+        fail(problem)
+
+
+def check_probe_driver_fires():
+    """The control: answers made by another copy of the driver, and answers that do not say, are refused."""
+    good = "# x\n# mounted driver: cascade_probe.mjs sha256 " + "a" * 64 + " (note)\nA1\t1\n"
+    if probe_driver_problems(good, "a" * 64):
+        fail("control: answers that name the driver in the repository were refused")
+    if not probe_driver_problems(good, "b" * 64):
+        fail("control: answers made by another copy of the driver were not caught")
+    if not probe_driver_problems("# x\nA1\t1\n", "a" * 64):
+        fail("control: answers that do not name a driver were not caught")
+
+
 def check_html_pin(table):
     for problem in html_pin_problems(table):
         fail(problem)
@@ -594,6 +634,8 @@ def main():
     check_css_pin_fires()
     check_cssprop_pin(table)
     check_cssprop_pin_fires()
+    check_probe_driver()
+    check_probe_driver_fires()
     check_encoding_pin(table)
     check_encoding_pin_fires()
     if FAILURES:

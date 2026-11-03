@@ -135,6 +135,7 @@ def run_engine(engine, docs, scheme):
     if lines and lines[-1] == "":
         lines.pop()
     header = json.loads(lines[0][1:])
+    header["mounted_driver"] = oracle_env.mounted_driver(STYLE_DRIVER)
     rows = [json.loads(x) for x in lines[1:]]
     if len(rows) != len(docs):
         raise SystemExit("css_style_diff: the %s driver answered %d documents to %d" % (engine, len(rows), len(docs)))
@@ -228,7 +229,7 @@ def describe(p, desc, scheme):
 
 
 def gate(docs, schemes, flat, ours, answers, headers, args):
-    bad = base.header_problems(headers)
+    bad = base.header_problems(headers) + oracle_env.driver_problems(headers, STYLE_DRIVER)
     keep = [i for i in range(len(flat)) if ours[i] is not None and answers["chromium"][i] is not None and answers["firefox"][i] is not None]
     items = [(flat[i][3], describe(flat[i][3], flat[i][4], flat[i][1]), flat[i][5]) for i in keep]
     o = [ours[i] for i in keep]
@@ -434,6 +435,9 @@ def apply_plant(name, items, o, a, headers, schemes):
     elif name == "header-is-from-another-driver":
         import re
         headers["firefox"]["image"] = re.sub(r"driver [0-9a-f]{64}", "driver " + "0" * 64, headers["firefox"]["image"])
+        return
+    elif name == "header-is-from-another-mounted-driver":
+        headers["firefox"]["mounted_driver"] = {"style_driver.mjs": "0" * 64}
         return
     elif name == "header-is-missing":
         del headers["chromium"]["image"]
