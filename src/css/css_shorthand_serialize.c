@@ -67,6 +67,7 @@ typedef struct {
   GTEXT_Allocator base;         ///< The block's allocator; `alloc` is a shim over it that records a failure in `status`, so that none is lost.
   char ** init_cache_text;      ///< Per property: the serialization of its initial value (NULL unknown), lazily.
   signed char * init_cache_state;
+  signed char * pending_state;  ///< Per shorthand: 1 when the pending longhands it set are written as its one declaration, 2 when they are left out, 0 unknown, lazily.
 } sctx;
 
 static void * shim_malloc(void * ctx, size_t n) {
@@ -129,7 +130,8 @@ static bool sctx_init(sctx * c, const GTEXT_CSS_Declaration_Block * b) {
   c->last = gtext_allocator_calloc(&c->alloc, c->nprops + 1, sizeof *c->last);
   c->init_cache_text = gtext_allocator_calloc(&c->alloc, c->nprops + 1, sizeof *c->init_cache_text);
   c->init_cache_state = gtext_allocator_calloc(&c->alloc, c->nprops + 1, 1);
-  if (!c->last || !c->init_cache_text || !c->init_cache_state) {
+  c->pending_state = gtext_allocator_calloc(&c->alloc, c->nprops + 1, 1);
+  if (!c->last || !c->init_cache_text || !c->init_cache_state || !c->pending_state) {
     return false;
   }
   for (size_t i = 0; i < b->count; i++) {
@@ -161,6 +163,7 @@ static void sctx_free(sctx * c) {
   }
   gtext_allocator_free(&c->alloc, c->init_cache_text);
   gtext_allocator_free(&c->alloc, c->init_cache_state);
+  gtext_allocator_free(&c->alloc, c->pending_state);
   gtext_allocator_free(&c->alloc, c->last);
 }
 
@@ -2152,6 +2155,27 @@ static int mapping_logic(sctx * c, GTEXT_CSS_Property_Id id, const char ** group
   return 4;
 }
 
+/// Whether an item is one the text leaves out: a longhand left pending by a shorthand that holds `var()` (`all: var(--x)`), when that shorthand cannot be written as its one
+/// declaration because one of its longhands was replaced since (`border: red` after it). css_block_text() writes no declaration for it, so it is not in the text that is read
+/// again, and a decision made on account of it (a logical property between the longhands of a shorthand) would be a decision the text does not repeat.
+static bool left_out(sctx * c, const blk_item * it) {
+  if (it->outcome != GTEXT_CSS_PROP_RESULT_PENDING || !it->shorthand || it->shorthand > c->nprops || it->custom_name || it->opaque) {
+    return false;
+  }
+  if (!c->pending_state[it->shorthand]) {
+    GTEXT_CSS_Property_Id lv[CSS_LEAF_CAP];
+    size_t nl = 0;
+    bool whole = leaves_under(c, it->shorthand, lv, CSS_LEAF_CAP, &nl) && nl > 0;
+    for (size_t m = 0; whole && m < nl; m++) {
+      const uint32_t at = lv[m] <= c->nprops ? c->last[lv[m]] : 0;
+      const blk_item * o = at ? &c->b->items[at - 1] : NULL;
+      whole = o && o->outcome == GTEXT_CSS_PROP_RESULT_PENDING && o->shorthand == it->shorthand && o->declaration == it->declaration && o->important == it->important;
+    }
+    c->pending_state[it->shorthand] = whole ? 1 : 2;
+  }
+  return c->pending_state[it->shorthand] == 2;
+}
+
 /// CSSOM, "serialize into a shorthand form": "If any of the intermixed properties in decls between used longhands belong to the same logical property group as a longhand in
 /// used longhands but have a different mapping logic, and are not in used longhands, continue." True when the live declarations from the first of the shorthand's longhands to
 /// the last hold such a property, so the shorthand is not written.
@@ -2164,7 +2188,7 @@ static bool logical_intermixed(sctx * c, const GTEXT_CSS_Property_Id * leaves, s
   }
   for (size_t i = lo; i < hi; i++) {
     const blk_item * it = &c->b->items[i];
-    if (it->dead || it->opaque || it->custom_name || !it->property || it->property > c->nprops || c->last[it->property] != (uint32_t)(i + 1)) {
+    if (it->dead || it->opaque || it->custom_name || !it->property || it->property > c->nprops || c->last[it->property] != (uint32_t)(i + 1) || left_out(c, it)) {
       continue;
     }
     bool used = false;

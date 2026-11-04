@@ -369,3 +369,5 @@ a-sheet-of-another-document-is-adoptable	cssom_scope.c	  return sheet && sheet->
 container-style-never-found	cssom_computed.c	  return r ? r->style : NULL;\n}\n\nGTEXT_CSS_Status gtext_cssom_document_container_interface	  return NULL;\n}\n\nGTEXT_CSS_Status gtext_cssom_document_container_interface	computed
 document-environment-has-no-condition	cssom_computed.c	  env.condition = environment_condition;	  env.condition = NULL;	computed
 computed-background-position-written-from-the-longhands	cssom_decl.c	  else if (p->shorthand && decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED && css_computed_position_text(decl	  else if (p->shorthand && decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED && 0 && css_computed_position_text(decl	computed
+a-pending-longhand-left-out-stops-a-shorthand	css_shorthand_serialize.c	!= (uint32_t)(i + 1) || left_out(c, it)) {	!= (uint32_t)(i + 1)) {	decl,seeds
+every-pending-longhand-counts-as-left-out	css_shorthand_serialize.c	  return c->pending_state[it->shorthand] == 2;	  return true;	decl

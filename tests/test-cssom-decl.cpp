@@ -883,3 +883,43 @@ TEST(CssomDecl, DisplayTakesLayoutWithOneName) {
   ASSERT_EQ(set(d.d, "display", "inline layout(test1)").st, GTEXT_CSS_OK);
   EXPECT_EQ(get(d.d, "display"), "inline layout(test1)");
 }
+
+// found by the libFuzzer soak of fuzz_cssom_decl (reproducer-shorthand-set-over-a-pending-all*.seed): `all: var(--x)` leaves a pending longhand for every property, the logical
+// ones among them, and `border: red` replaces only the border ones. The pending ones are not written (the text they hold is `all`'s, and only `all` can say it), so they are not in
+// the text that is read again; the logical ones among them must not stop the physical `border` from being written, or the text and the text of that text differ. Chromium 156 and
+// Firefox 158 both write `border: red` there (and write the rest differently from each other and from this library, which leaves it out).
+TEST(CssomDeclCssText, APendingLonghandThatIsNotWrittenDoesNotStopAShorthandBeingWritten) {
+  for (const char * value : {"red", "inherit", "initial", "1px solid red"}) {
+    Doc doc;
+    Decl d(doc);
+    ASSERT_EQ(set(d.d, "all", "var(--x)").st, GTEXT_CSS_OK);
+    ASSERT_EQ(set(d.d, "border", value).st, GTEXT_CSS_OK);
+    const std::string text = text_of(d.d);
+    EXPECT_EQ(text, std::string("border: ") + value + ";") << "the pending longhands of `all` are left out, and the border longhands make `border`";
+    Decl again(doc);
+    ASSERT_EQ(set_text(again.d, text).st, GTEXT_CSS_OK);
+    EXPECT_EQ(text_of(again.d), text) << "serialize, parse and serialize is a fixed point";
+  }
+  // the same for the other shorthands that overlap a logical group, and for a side shorthand
+  for (const char * name : {"border-width", "border-color", "margin", "padding", "inset", "border-radius"}) {
+    Doc doc;
+    Decl d(doc);
+    ASSERT_EQ(set(d.d, "all", "var(--x)").st, GTEXT_CSS_OK);
+    ASSERT_EQ(set(d.d, name, "inherit").st, GTEXT_CSS_OK);
+    EXPECT_EQ(text_of(d.d), std::string(name) + ": inherit;");
+  }
+}
+
+// The decision to write a shorthand over a logical property that sits between its longhands is kept where that logical property is written: a pending shorthand that is whole
+// (`border-inline: var(--x)`) is written as itself, and it is a declaration the text holds.
+TEST(CssomDeclCssText, AWrittenPendingShorthandStillCountsAsAnIntermixedLogicalProperty) {
+  Doc doc;
+  Decl d(doc);
+  ASSERT_EQ(set_text(d.d, "border-top-width: 1px; border-inline-width: var(--x); border-right-width: 1px; border-bottom-width: 1px; border-left-width: 1px").st, GTEXT_CSS_OK);
+  const std::string text = text_of(d.d);
+  EXPECT_NE(text.find("border-inline-width: var(--x)"), std::string::npos);
+  EXPECT_EQ(text.find("border-width"), std::string::npos) << "border-inline-width, written, sits between the longhands of border-width";
+  Decl again(doc);
+  ASSERT_EQ(set_text(again.d, text).st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(again.d), text);
+}
