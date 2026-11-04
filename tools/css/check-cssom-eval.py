@@ -22,7 +22,7 @@
     check-cssom-eval.py --controls   run the corpus on copies of the evaluator with a defect planted in each (every one has to fail a case)
     check-cssom-eval.py --node       also run the pages of the corpus in node, where their assertions are checked by a real JavaScript engine
 
-The corpus is not made of pages of the pin: each case is a page written for the evaluator, with a hand-checked outcome, so that an evaluator that unrolls a loop one iteration short,
+The corpus is not made of pages of the pin: each case is a page written for the evaluator, with a hand-checked outcome (and, where the outcome is an op, `has <fields of the op joined by |>`), so that an evaluator that unrolls a loop one iteration short,
 adds a number to a string wrongly or reads a closure's variable from the wrong scope fails here, and not by passing a page of the suite it has misread.
 """
 import importlib.util
@@ -73,6 +73,30 @@ PLANTS = [
     ('shared-state-test-scored', 'cssom_eval.py',
      "                rec.reason = 'shared-state'\n        except Unmodeled as u:",
      "                rec.reason = None\n        except Unmodeled as u:"),
+    ('prefix-offset-in-characters', 'cssom_eval.py',
+     "it.enter_script(len(text[:end].encode('utf-8', 'surrogatepass')), [i for",
+     "it.enter_script(end, [i for"),
+    ('prefix-offset-one-short', 'cssom_eval.py',
+     "            self.ops.append(('doc', str(end)))",
+     "            self.ops.append(('doc', str(end - 1)))"),
+    ('mutation-does-not-freeze-the-document', 'cssom_eval.py',
+     "        if fields[0] in MUTATING_OPS:\n            self.mutated = True",
+     "        if False:\n            self.mutated = True"),
+    ('null-written-as-the-word', 'cssom_eval.py',
+     "    return '' if v is None else to_str(v)",
+     "    return to_str(v)"),
+    ('style-assignment-not-forwarded', 'cssom_eval.py',
+     "    if key == 'style':\n        # [PutForwards=cssText]",
+     "    if key == 'style-':\n        # [PutForwards=cssText]"),
+    ('element-identity-by-lookup', 'cssom_eval.py',
+     "(isinstance(a, HostElem) or isinstance(b, HostElem)) and not isinstance(a, Rt) and not isinstance(b, Rt) and a is not b:\n            # whether",
+     "(isinstance(a, HostElem) or isinstance(b, HostElem)) and not isinstance(a, Rt) and not isinstance(b, Rt) and False:\n            # whether"),
+    ('supports-drops-the-value', 'cssom_eval.py',
+     "            args = [to_str(x) for x in a[:2]]",
+     "            args = [to_str(x) for x in a[:1]]"),
+    ('minus-zero-operand-lost', 'cssom_eval.py',
+     "        return 'n:' + ('-0' if v == 0 and math.copysign(1.0, v) < 0 else js_num_str(v))",
+     "        return 'n:' + js_num_str(v)"),
 ]
 
 
@@ -82,7 +106,7 @@ def load_cases():
         if line.startswith('#') and cur is None:
             continue
         if line.startswith('=== '):
-            cur = {'name': line[4:].strip(), 'tests': None, 'outcome': {}, 'names': {}, 'unread': False, 'page': []}
+            cur = {'name': line[4:].strip(), 'tests': None, 'outcome': {}, 'names': {}, 'has': [], 'unread': False, 'page': []}
             cases.append(cur)
             in_page = False
         elif cur is not None and not in_page:
@@ -94,6 +118,8 @@ def load_cases():
             elif line.startswith('outcome '):
                 _, k, what = line.split(None, 2)
                 cur['outcome'][int(k)] = what.strip()
+            elif line.startswith('has '):
+                cur['has'].append(line[4:])
             elif line.startswith('name '):
                 _, k, what = line.split(None, 2)
                 cur['names'][int(k)] = what
@@ -145,6 +171,10 @@ def run_cases(E, cases):
             have = 'unmodeled:' + t.reason if t.reason is not None else ('fail' if any(o[0] == 'fail' for o in ops) else 'ok')
             if have != want:
                 problems.append('%s: test %d is %s, expected %s' % (c['name'], k, have, want))
+        lines = ['|'.join(op) for op in res.ops]
+        for needle in c['has']:
+            if not any(l.startswith(needle) for l in lines):
+                problems.append('%s: the program has no op that starts with %r' % (c['name'], needle))
         for k, name in c['names'].items():
             if k < len(res.tests) and res.tests[k].name != name:
                 problems.append('%s: test %d is named %r, expected %r' % (c['name'], k, res.tests[k].name, name))
@@ -176,7 +206,7 @@ global.getComputedStyle = () => ({});
 """
     problems = []
     for c in cases:
-        uses = re.search(r'getComputedStyle|document\.|class A|undefinedName|while \(true\) \{ \}', c['page'])
+        uses = re.search(r'getComputedStyle|CSS\.|document\.|class A|undefinedName|while \(true\) \{ \}', c['page'])
         if c['unread'] or uses and 'cleanup' not in c['name']:
             continue
         scripts = re.findall(r'<script>(.*?)</script>', c['page'], re.S)

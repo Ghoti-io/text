@@ -20,8 +20,8 @@
 
     PREFIX=... DEP_PCS=... ARCHIVE=... plant-script.py <vectors dir> <runner object source> [name ...]
 
-Each line of tools/conformance/CSS_CSSOM_SCRIPT_PLANTS is one edit to one file of src/css/, made in a copy of src/ in a scratch directory (the working tree is never touched). The edited
-file is compiled alone and linked ahead of the library's archive into the runner of the scoring interpreter (tools/conformance/css_cssom_script_suite.c), which runs the programs of
+Each line of tools/conformance/CSS_CSSOM_SCRIPT_PLANTS is one edit to one file of src/css/ (or, when the file is written `runner:`, to the runner itself), made in a copy in a scratch
+directory (the working tree is never touched). The edited file is compiled alone and linked ahead of the library's archive into the runner of the scoring interpreter (tools/conformance/css_cssom_script_suite.c), which runs the programs of
 `script.tsv`. The **control** is the same with no edit. A plant has to change the results of the control: `fail` means a test that passes in the control fails; `layout` means a test that
 the control leaves as needing a layout is scored (the library would claim a used value it does not have).
 """
@@ -73,6 +73,8 @@ def main(argv):
     plants = load_plants()
     names = argv[3:] or ['control'] + [p[0] for p in plants]
     program = open(os.path.join(vectors, 'script.tsv'), 'rb').read()
+    # the hand-written programs of the runner ride along: they are the ones that see a defect of the runner's own (the document a script sees, what a new parse carries over)
+    program += b'\n' + open(os.path.join(ROOT, 'tools', 'conformance', 'CSS_CSSOM_SCRIPT_FIXTURES'), 'rb').read()
     scratch = tempfile.mkdtemp(prefix='css-script-plants-')
     failures = 0
     try:
@@ -90,7 +92,22 @@ def main(argv):
             work = os.path.join(scratch, name)
             os.makedirs(work)
             objs = []
-            if plant:
+            run_obj = obj
+            if plant and plant[1] == 'runner:':
+                # a defect in the runner: the edit is made in a copy of its source and the edited runner is linked in place of the unedited one
+                _, _, old, new, must = plant
+                text = open(source, encoding='utf-8').read()
+                if text.count(old) != 1:
+                    sys.stderr.write('plant %s: the text is in the runner %d times, not once\n' % (name, text.count(old)))
+                    return 2
+                edited = os.path.join(work, 'runner_plant.c')
+                open(edited, 'w', encoding='utf-8').write(text.replace(old, new))
+                run_obj = os.path.join(work, 'runner_plant.o')
+                done = sh(['cc', '-std=gnu17', '-O1', '-g', '-D_GNU_SOURCE', '-c', '-I', os.path.join(ROOT, 'include'), '-I', generated] + cflags + [edited, '-o', run_obj])
+                if done.returncode != 0:
+                    sys.stderr.write('plant %s did not compile:\n%s' % (name, done.stderr[-3000:]))
+                    return 2
+            elif plant:
                 _, rel, old, new, must = plant
                 shutil.copytree(os.path.join(ROOT, 'src'), os.path.join(work, 'src'))
                 path = os.path.join(work, 'src', 'css', rel)
@@ -107,7 +124,7 @@ def main(argv):
                     return 2
                 objs = [po]
             exe = os.path.join(work, 'runner')
-            done = sh(['cc', '-o', exe, obj] + objs + [archive] + libs + ['-lm', '-Wl,-rpath,' + os.path.join(prefix, 'lib', 'ghoti.io'), '-Wl,--allow-multiple-definition'])
+            done = sh(['cc', '-o', exe, run_obj] + objs + [archive] + libs + ['-lm', '-Wl,-rpath,' + os.path.join(prefix, 'lib', 'ghoti.io'), '-Wl,--allow-multiple-definition'])
             if done.returncode != 0:
                 sys.stderr.write('plant %s did not link:\n%s' % (name, done.stderr[-3000:]))
                 return 2

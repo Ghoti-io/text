@@ -297,9 +297,9 @@ tests 1
 <!DOCTYPE html><title>t</title><div id=target></div><script>
 test(() => { assert_equals(getComputedStyle(target).display, "block"); }, "named");
 </script>
-=== a-script-before-the-markup-is-incremental
+=== a-script-before-the-markup-sees-a-prefix
 tests 1
-outcome 0 unmodeled:script-before-markup-end
+has doc|158
 ---
 <!DOCTYPE html><title>t</title><script>
 test(() => { assert_equals(getComputedStyle(document.getElementById("late")).display, "block"); }, "early");
@@ -330,4 +330,86 @@ unread
 let supported;
 test(() => { class A {} ; supported = true; }, "assigns");
 test(() => {}, "the name depends on " + supported);
+</script>
+=== each-script-sees-the-markup-up-to-its-end-tag
+tests 2
+has doc|119
+has doc|207
+---
+<!DOCTYPE html><title>t</title><div id=a></div><script>
+test(() => { document.getElementById("a"); }, "one");
+</script><div id=b></div><script>
+test(() => { document.getElementById("b"); }, "two");
+</script>
+=== the-offset-of-a-prefix-is-in-bytes
+tests 1
+has doc|119
+---
+<!DOCTYPE html><title>t</title><p>éééé</p><script>
+test(() => { document.querySelector("p"); }, "bytes");
+</script>
+=== a-mutation-keeps-the-document-from-being-parsed-again
+tests 3
+outcome 1 unmodeled:script-before-markup-end
+outcome 2 unmodeled:script-before-markup-end
+has doc|146
+---
+<!DOCTYPE html><title>t</title><div id=a></div><script>
+test(() => { document.getElementById("a").setAttribute("x", "1"); }, "mutates");
+</script><div id=b></div><script>
+test(() => { document.getElementById("b"); }, "later");
+test(() => { assert_equals(1, 1); document.querySelector("div"); }, "again");
+</script>
+=== null-is-the-empty-string-for-a-style-value
+tests 1
+has sset|s2|color||
+has sattrset|s2|backgroundRepeat|
+has scsstext|s2|
+---
+<!DOCTYPE html><title>t</title><div id=a></div><script>
+test(() => {
+  var s = document.getElementById("a").style;
+  s.setProperty("color", null);
+  s.backgroundRepeat = null;
+  s.cssText = null;
+}, "null");
+</script>
+=== a-style-assignment-forwards-to-css-text
+tests 1
+has style|s2|e1
+has scsstext|s2|color: red
+---
+<!DOCTYPE html><title>t</title><div id=a></div><script>
+test(() => { document.getElementById("a").style = "color: red"; }, "forwarded");
+</script>
+=== two-lookups-of-an-element-are-compared-by-the-document
+tests 3
+has assert_equals|e:e1|e:e2|
+has cmp|r1|eq|e:e3|e:e4
+has assert_not_equals|e:e5|e:e6|
+---
+<!DOCTYPE html><title>t</title><div id=a></div><div id=b></div><script>
+test(() => { assert_equals(document.getElementById("a"), document.querySelector("#a")); }, "equal");
+test(() => { assert_true(document.getElementById("a") === document.getElementById("a")); }, "identity");
+test(() => { assert_not_equals(document.getElementById("a"), document.getElementById("b")); }, "different");
+</script>
+=== css-supports-and-css-escape-are-calls-of-the-library
+tests 1
+has csssupports|r1|display|grid
+has csssupports|r2|(display: grid)
+has cssescape|r3|a b
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  assert_true(CSS.supports("display", "grid"));
+  assert_true(CSS.supports("(display: grid)"));
+  assert_equals(CSS.escape("a b"), "a\\ b");
+}, "css");
+</script>
+=== minus-zero-is-an-operand-of-its-own
+tests 1
+has assert_equals|r:r1|n:-0|
+---
+<!DOCTYPE html><title>t</title><div id=a></div><script>
+test(() => { assert_equals(getComputedStyle(document.getElementById("a")).zIndex, -0); }, "zero");
 </script>

@@ -349,12 +349,14 @@ def operand(v):
     """The operand field of an op for a value: a constant or a register."""
     if isinstance(v, Rt):
         return 'r:' + v.reg
+    if isinstance(v, HostElem):
+        return 'e:' + v.name
     if isinstance(v, str):
         return 's:' + v
     if isinstance(v, bool):
         return 'b:' + ('true' if v else 'false')
     if isinstance(v, float):
-        return 'n:' + js_num_str(v)
+        return 'n:' + ('-0' if v == 0 and math.copysign(1.0, v) < 0 else js_num_str(v))
     if v is None:
         return 'N:'
     if v is UNDEF:
@@ -410,6 +412,13 @@ class HostTest(Host):
 class HostMath(Host):
     pass
 
+
+class HostCSS(Host):
+    """The CSS namespace object: `supports` and `escape` are calls of the library (registers), the rest is not modeled."""
+
+
+# the ops that change the tree, an attribute, a style attribute or a rule: after one the runner's document is no longer a parse of a prefix of the markup
+MUTATING_OPS = {'setattr', 'rmattr', 'classadd', 'classremove', 'classtoggle', 'sset', 'sattrset', 'scsstext', 'sremove'}
 
 STYLE_METHODS = {'getPropertyValue', 'getPropertyPriority', 'setProperty', 'removeProperty', 'item'}
 STYLE_NON_PROPS = {'length', 'cssText', 'parentRule', 'cssFloat'}
@@ -549,7 +558,7 @@ class PageResult:
 
 
 class Interp:
-    def __init__(self, ids, dom_ready_flags):
+    def __init__(self, ids, dom_ready_flags=None):
         self.ops = []
         self.steps = 0
         self.regs = 0
@@ -561,7 +570,9 @@ class Interp:
         self.ids = set(ids)
         self.glob = Scope(None, True)
         self.funcs = {}            # name -> function body AST (for may_mutate)
-        self.dom_ready = True
+        self.stale = False         # the document of this script is longer than the one the runner holds and the program has changed it: it cannot be parsed again
+        self.extent = None         # the length of the markup the runner's document was parsed from (a prefix of the page), None before the first `doc`
+        self.mutated = False
         self.title = None
         self.default_names = 0
         self.tainted = set()       # page variables a test the evaluator could not run assigns: their value is not known
@@ -571,7 +582,23 @@ class Interp:
     def emit(self, *fields):
         if len(self.ops) > MAX_OPS:
             raise Unmodeled('op-limit')
+        if fields[0] in MUTATING_OPS:
+            self.mutated = True
         self.ops.append(tuple(str(f) for f in fields))
+
+    def enter_script(self, end, visible_ids):
+        """A script is about to run. The document it sees is the markup up to and including its own end tag (the parser has inserted the script element and no more): the runner
+        parses that prefix (``doc``), which is possible while the program has not changed the tree, since a parse of a longer prefix would lose the change."""
+        self.ids = set(visible_ids)
+        self.ops.append(('script', str(end)))
+        if self.extent == end:
+            self.stale = False
+        elif self.mutated and self.extent is not None:
+            self.stale = True
+        else:
+            self.stale = False
+            self.extent = end
+            self.ops.append(('doc', str(end)))
 
     def new_reg(self):
         self.regs += 1
@@ -582,7 +609,7 @@ class Interp:
         return '%s%d' % (prefix, self.nodes)
 
     def need_dom(self):
-        if not self.dom_ready:
+        if self.stale:
             raise Unmodeled('script-before-markup-end')
 
     # ---- scope and globals ----
@@ -598,6 +625,7 @@ class Interp:
         g['NaN'] = math.nan
         g['Infinity'] = math.inf
         g['Math'] = HostMath('Math')
+        g['CSS'] = HostCSS('CSS')
         g['console'] = JObj(log=Native(lambda i, t, a: UNDEF, 'log'), warn=Native(lambda i, t, a: UNDEF), error=Native(lambda i, t, a: UNDEF), info=Native(lambda i, t, a: UNDEF))
         for name in ('test', 'setup', 'assert_equals', 'assert_not_equals', 'assert_true', 'assert_false', 'assert_array_equals', 'assert_approx_equals', 'assert_greater_than',
                      'assert_less_than', 'assert_greater_than_equal', 'assert_less_than_equal', 'assert_in_array', 'assert_unreached', 'assert_regexp_match', 'assert_class_string',
@@ -704,8 +732,8 @@ class Interp:
         msg = self.desc(a, 2)
         if len(a) < 2:
             raise Unmodeled('harness-assert-arity')
-        if isinstance(a[0], Rt) or isinstance(a[1], Rt):
-            if any(not isinstance(x, (Rt, str, float, bool)) and x is not None and x is not UNDEF for x in a[:2]):
+        if isinstance(a[0], Rt) or isinstance(a[1], Rt) or (isinstance(a[0], HostElem) and a[0] is not a[1]) or (isinstance(a[1], HostElem) and a[0] is not a[1]):
+            if any(not isinstance(x, (Rt, str, float, bool, HostElem)) and x is not None and x is not UNDEF for x in a[:2]):
                 raise Unmodeled('computed-value-compared-with-object')
             self.runtime_assert('assert_equals', a[:2], msg)
             return UNDEF
@@ -718,7 +746,9 @@ class Interp:
         msg = self.desc(a, 2)
         if len(a) < 2:
             raise Unmodeled('harness-assert-arity')
-        if isinstance(a[0], Rt) or isinstance(a[1], Rt):
+        if isinstance(a[0], Rt) or isinstance(a[1], Rt) or (isinstance(a[0], HostElem) and a[0] is not a[1]) or (isinstance(a[1], HostElem) and a[0] is not a[1]):
+            if any(not isinstance(x, (Rt, str, float, bool, HostElem)) and x is not None and x is not UNDEF for x in a[:2]):
+                raise Unmodeled('computed-value-compared-with-object')
             self.runtime_assert('assert_not_equals', a[:2], msg)
             return UNDEF
         if strict_eq(a[0], a[1]) or (isinstance(a[0], float) and isinstance(a[1], float) and a[0] != a[0] and a[1] != a[1]):
@@ -1262,6 +1292,13 @@ class Interp:
         op = e[1]
         a = self.eval(e[2], scope)
         b = self.eval(e[3], scope)
+        if op in ('===', '!==', '==', '!=') and (isinstance(a, HostElem) or isinstance(b, HostElem)) and not isinstance(a, Rt) and not isinstance(b, Rt) and a is not b:
+            # whether two lookups found the same element is a fact of the document, not of the page: the runner compares the nodes
+            if not all(isinstance(x, HostElem) or x is None or x is UNDEF for x in (a, b)):
+                raise Unmodeled('host-element-compared-with-value')
+            r = self.new_reg()
+            self.emit('cmp', r, {'===': 'eq', '!==': 'ne', '==': 'leq', '!=': 'lne'}[op], operand(a), operand(b))
+            return Rt(r, 'b')
         if isinstance(a, Rt) or isinstance(b, Rt):
             if op in ('===', '!==', '==', '!='):
                 r = self.new_reg()
@@ -1338,6 +1375,11 @@ class Interp:
                 return to_str(a) in b
             if isinstance(b, JArr):
                 return to_str(a) in [str(i) for i in range(len(b))] or to_str(a) == 'length'
+            if isinstance(b, HostStyle) and not isinstance(a, Rt):
+                # whether the declaration object has the attribute (a property's camel-cased or dashed name): a fact of the library's property table
+                r = self.new_reg()
+                self.emit('shas', r, b.name, to_str(a))
+                return Rt(r, 'b')
             raise Unmodeled('js-in-operator')
         raise Unmodeled('js-operator-' + op)
 
@@ -2081,7 +2123,34 @@ def elem_get(interp, el, key, for_call):
     raise Unmodeled('dom-element-' + key)
 
 
+def css_get(interp, c, key, for_call):
+    if key == 'supports':
+        def f(i, a):
+            if not a:
+                raise Unmodeled('host-CSS-supports-argument')   # a TypeError of the page
+            r = i.new_reg()
+            args = [to_str(x) for x in a[:2]]
+            i.emit('csssupports', r, *args)
+            return Rt(r, 'b')
+        return BoundMethod(f)
+    if key == 'escape':
+        def f(i, a):
+            if not a:
+                raise Unmodeled('host-CSS-escape-argument')
+            r = i.new_reg()
+            i.emit('cssescape', r, to_str(a[0]))
+            return Rt(r, 's')
+        return BoundMethod(f)
+    raise Unmodeled('host-CSS-' + key)
+
+
 def elem_set(interp, el, key, value):
+    if key == 'style':
+        # [PutForwards=cssText]: the assignment is el.style.cssText = value
+        s = interp.new_node('s')
+        interp.emit('style', s, el.name)
+        interp.emit('scsstext', s, null_empty(value))
+        return
     if key in ('id', 'className'):
         interp.emit('setattr', el.name, 'id' if key == 'id' else 'class', to_str(value))
         return
@@ -2135,7 +2204,7 @@ def style_get(interp, st, key, for_call):
         def f(i, a):
             if len(a) < 2 or not isinstance(a[0], str):
                 raise Unmodeled('host-setProperty-argument')
-            i.emit('sset', st.name, a[0], to_str(a[1]), to_str(a[2]) if len(a) > 2 and a[2] is not UNDEF else '')
+            i.emit('sset', st.name, a[0], null_empty(a[1]), null_empty(a[2]) if len(a) > 2 and a[2] is not UNDEF else '')
             return UNDEF
         return BoundMethod(f)
     if key == 'removeProperty':
@@ -2173,17 +2242,22 @@ def style_get(interp, st, key, for_call):
     return Rt(r, 'any')
 
 
+def null_empty(v):
+    """[LegacyNullToEmptyString] CSSOMString: null is the empty string, everything else is converted as any string."""
+    return '' if v is None else to_str(v)
+
+
 def style_set(interp, st, key, value):
     if st.computed:
         # the computed declaration is read-only: the assignment is an error in strict mode, and a no-op otherwise; the runner decides by the library
         pass
     if key == 'cssText':
-        interp.emit('scsstext', st.name, to_str(value))
+        interp.emit('scsstext', st.name, null_empty(value))
         return
-    interp.emit('sattrset', st.name, key, to_str(value))
+    interp.emit('sattrset', st.name, key, null_empty(value))
 
 
-HOST_GET = {HostDoc: doc_get, HostWindow: window_get, HostElem: elem_get, HostStyle: style_get, HostClassList: classlist_get, HostList: list_get, HostTest: test_get, HostMath: math_get}
+HOST_GET = {HostDoc: doc_get, HostWindow: window_get, HostElem: elem_get, HostStyle: style_get, HostClassList: classlist_get, HostList: list_get, HostTest: test_get, HostMath: math_get, HostCSS: css_get}
 HOST_SET = {HostWindow: window_set, HostElem: elem_set, HostStyle: style_set}
 
 
@@ -2206,6 +2280,11 @@ class PageScan(html.parser.HTMLParser):
         self.in_script = False
         self.templates = 0
         self.odd = []
+        self.script_ends = []    # the offset just after each script's end tag (inline or not), in document order
+        self.script_spans = []   # (start, end) of each script's text, in characters
+        self.text_start = 0
+        self.text = ''
+        self.line_starts = [0]
         self.title = None        # the data of the first text node of the first <title>, as testharness.js reads it
         self.in_title = False
         self.title_buf = []
@@ -2220,6 +2299,9 @@ class PageScan(html.parser.HTMLParser):
             self.script_marks.append(self.elements)
             self.cur = (a, [])
             self.in_script = True
+            line, col = self.getpos()
+            gt = self.text.find('>', self.line_starts[line - 1] + col)
+            self.text_start = gt + 1 if gt >= 0 else len(self.text)
             return
         if tag == 'title' and self.title is None:
             self.in_title = True
@@ -2250,6 +2332,11 @@ class PageScan(html.parser.HTMLParser):
         if tag == 'script' and self.in_script:
             self.scripts.append((self.cur[0], ''.join(self.cur[1]), self.script_marks[-1]))
             self.in_script = False
+            line, col = self.getpos()
+            at = self.line_starts[line - 1] + col
+            gt = self.text.find('>', at)
+            self.script_ends.append(gt + 1 if gt >= 0 else len(self.text))
+            self.script_spans.append((self.text_start, at))   # the characters of the script's text, between its start tag and its end tag
 
     def handle_data(self, data):
         if self.in_script:
@@ -2269,6 +2356,9 @@ def evaluate_page(rel, text):
     """The PageResult for an HTML page, or None when the page cannot be read as a whole (see the module comment)."""
     scan = PageScan()
     try:
+        scan.text = text
+        for m in re.finditer('\n', text):
+            scan.line_starts.append(m.end())
         scan.feed(text)
         scan.close()
     except Exception:
@@ -2288,11 +2378,10 @@ def evaluate_page(rel, text):
     res.ids = scan.ids
     res.quirks = not scan.doctype
     res.static_calls = sum(len(CALL_SITE.findall(t)) for _, t, _ in inline)
-    it = Interp(scan.ids, None)
+    it = Interp([])
     it.title = scan.title if scan.title else os.path.basename(rel).split('.')[0]   # testharness.js get_title(): the title's first text node, else the file's name up to its first dot
-    last_id_pos = max([p for _, p in scan.id_positions], default=0)
-    for attrs, source, mark in inline:
-        it.dom_ready = mark >= last_id_pos
+    for (attrs, source, mark), end in [(sc, e) for sc, e in zip(scan.scripts, scan.script_ends) if not sc[0].get('src')]:
+        it.enter_script(len(text[:end].encode('utf-8', 'surrogatepass')), [i for i, pos in scan.id_positions if pos <= mark])
         try:
             prog = J.parse_program(source)
         except Exception:

@@ -1,0 +1,90 @@
+# tools/conformance/CSS_CSSOM_SCRIPT_FIXTURES: programs written by hand for the runner of the scoring interpreter (tools/conformance/css_cssom_script_suite.c), each with the result its tests have to give (`#expect page index PASS|FAIL`). They are run by the CSSOM gate (every run) and by the planted defects of the runner (tools/css/plant-script.py), which is how a defect in the parts of the runner that no page of the suite is sensitive to (the document a script sees, the carrying of elements and declarations over a new parse) is seen to fail. Not pages of the pin.
+P	fixture/prefix-hides-what-follows-the-script	0	2
+H	<!DOCTYPE html><div id=a></div><script></script><div id=b></div><script></script>
+O	script	48
+O	doc	48
+O	test	0	early
+O	elem	e1	byid	b
+O	assert_equals	e:e1	N:	
+O	elem	e2	byid	a
+O	assert_not_equals	e:e2	N:	
+O	cleanup
+O	end
+O	script	81
+O	doc	81
+O	test	1	late
+O	elem	e3	byid	b
+O	assert_not_equals	e:e3	N:	
+O	cleanup
+O	end
+#expect	fixture/prefix-hides-what-follows-the-script	0	PASS
+#expect	fixture/prefix-hides-what-follows-the-script	1	PASS
+P	fixture/elements-and-styles-survive-a-longer-prefix	0	2
+H	<!DOCTYPE html><div id=a style="color: rgb(255, 0, 0)"></div><script></script><p id=c>x</p><script></script>
+O	script	78
+O	doc	78
+O	elem	e1	byid	a
+O	gcs	s1	e1	
+O	test	0	before
+O	sget	r1	s1	color
+O	assert_equals	r:r1	s:rgb(255, 0, 0)	
+O	cleanup
+O	end
+O	script	108
+O	doc	108
+O	test	1	after
+O	sget	r2	s1	color
+O	assert_equals	r:r2	s:rgb(255, 0, 0)	
+O	elem	e2	byid	c
+O	assert_not_equals	e:e2	N:	
+O	cleanup
+O	end
+#expect	fixture/elements-and-styles-survive-a-longer-prefix	0	PASS
+#expect	fixture/elements-and-styles-survive-a-longer-prefix	1	PASS
+P	fixture/element-identity-is-the-nodes	0	2
+H	<!DOCTYPE html><div id=a></div><div id=b></div><script></script>
+O	script	64
+O	doc	64
+O	test	0	same
+O	elem	e1	byid	a
+O	elem	e2	sel	doc	#a
+O	assert_equals	e:e1	e:e2	
+O	cmp	r1	eq	e:e1	e:e2
+O	assert_true	r:r1	
+O	cleanup
+O	end
+O	test	1	different
+O	elem	e3	byid	b
+O	assert_not_equals	e:e1	e:e3	
+O	assert_equals	e:e1	e:e3	must fail
+O	cleanup
+O	end
+#expect	fixture/element-identity-is-the-nodes	0	PASS
+#expect	fixture/element-identity-is-the-nodes	1	FAIL
+P	fixture/css-namespace-and-minus-zero	0	3
+H	<!DOCTYPE html><script></script>
+O	script	32
+O	doc	32
+O	test	0	supports
+O	csssupports	r1	display	grid
+O	assert_true	r:r1	
+O	csssupports	r2	(display: grid)
+O	assert_true	r:r2	
+O	csssupports	r3	display	nonsense
+O	assert_false	r:r3	
+O	cssescape	r4	a b
+O	assert_equals	r:r4	s:a\\ b	
+O	cleanup
+O	end
+O	test	1	minus zero is not zero for assert_equals
+O	assert_equals	n:-0	n:0	
+O	cleanup
+O	end
+O	test	2	but it is for ===
+O	cmp	r5	eq	n:-0	n:0
+O	assert_true	r:r5	
+O	cleanup
+O	end
+#expect	fixture/css-namespace-and-minus-zero	0	PASS
+#expect	fixture/css-namespace-and-minus-zero	1	FAIL
+#expect	fixture/css-namespace-and-minus-zero	2	PASS

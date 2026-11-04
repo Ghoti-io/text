@@ -161,6 +161,8 @@ typedef struct {
   GTEXT_CSSOM_Decl * decl;
   int computed;
   GTEXT_Markup_Node * node;
+  char * elem_name;   /* the element the declaration was made for, and the pseudo-element argument of getComputedStyle: to make it again when the document is parsed again */
+  char * pseudo;
 } style;
 
 typedef struct {
@@ -169,6 +171,7 @@ typedef struct {
   GTEXT_CSSOM_Document * doc;
   GTEXT_Markup_Document * markup;
   GTEXT_CSS_Markup_Adapter * adapter;
+  GTEXT_CSS_Compute_Context * compute;   /* the environment of the runner: the system colors (NULL with CSSOM_RUNNER_UA=none, which also leaves out the user agent sheet) */
   GTEXT_CSS_Selector_Match_Options match_options;
   GTEXT_CSSOM_Markup_Binding * binding;
   GTEXT_CSS_Tree * ua_tree;
@@ -192,6 +195,62 @@ static const char UA_SHEET[] =
     "tbody { display: table-row-group } tfoot { display: table-footer-group } tr { display: table-row } td, th { display: table-cell }\n"
     "[hidden], area, base, basefont, datalist, head, link, meta, noembed, noframes, param, rp, script, style, template, title { display: none }\n"
     "input, button, select, textarea { display: inline-block }\n";
+
+/* The same question asked of a fuller sheet, and of none: a failure whose answer moves with the user agent sheet of this runner is a failure that may be the runner's (the gate lists it
+ * apart from the library's defects). The fuller sheet is typed from the rendering section of the HTML Standard as far as the properties a computed read can see; it is an instrument for
+ * that comparison, not a claim of conformance. Selected by the environment variable CSSOM_RUNNER_UA: `none` (no sheet and no system color palette), `full`; otherwise the sheet above. */
+static const char UA_SHEET_FULL[] =
+    "html, address, blockquote, center, dialog, div, figure, figcaption, footer, form, header, hr, legend, listing, main, p, plaintext, pre, search, xmp, article, aside, h1, h2, "
+    "h3, h4, h5, h6, hgroup, nav, section, dir, dd, dl, dt, menu, ol, ul, details, summary, fieldset, optgroup, option { display: block }\n"
+    "body { display: block; margin: 8px }\n"
+    "li { display: list-item }\n"
+    "table { display: table } caption { display: table-caption } colgroup { display: table-column-group } col { display: table-column } thead { display: table-header-group }\n"
+    "tbody { display: table-row-group } tfoot { display: table-footer-group } tr { display: table-row } td, th { display: table-cell }\n"
+    "[hidden], area, base, basefont, datalist, head, link, meta, noembed, noframes, param, rp, script, style, template, title { display: none }\n"
+    "input, button, select, textarea { display: inline-block }\n"
+    "p, dl, multicol { margin-block: 1em } blockquote, figure { margin-block: 1em; margin-inline: 40px } center { text-align: center } hr { margin-block: 0.5em; margin-inline: auto; border-style: inset; border-width: 1px; color: gray }\n"
+    "h1 { font-size: 2em; margin-block: 0.67em } h2 { font-size: 1.5em; margin-block: 0.83em } h3 { font-size: 1.17em; margin-block: 1em } h4 { margin-block: 1.33em } h5 { font-size: 0.83em; margin-block: 1.67em } h6 { font-size: 0.67em; margin-block: 2.33em }\n"
+    "h1, h2, h3, h4, h5, h6, b, strong, th { font-weight: bold } i, cite, em, var, address, dfn { font-style: italic } dt { } dd { margin-inline-start: 40px }\n"
+    "u, ins { text-decoration: underline } s, strike, del { text-decoration: line-through } a:any-link { text-decoration: underline } abbr[title], acronym[title] { text-decoration: underline dotted }\n"
+    "pre, listing, xmp, plaintext { white-space: pre } textarea { white-space: pre-wrap } code, kbd, samp, tt, pre, listing, xmp, plaintext { font-family: monospace }\n"
+    "small, sub, sup { font-size: smaller } big { font-size: larger } sub { vertical-align: sub } sup { vertical-align: super } mark { background-color: yellow; color: black }\n"
+    "ul, ol, dir, menu { margin-block: 1em; padding-inline-start: 40px } ul, dir, menu { list-style-type: disc } ol { list-style-type: decimal }\n"
+    "table { box-sizing: border-box; border-spacing: 2px; border-collapse: separate } td, th { padding: 1px } th { text-align: center } caption { text-align: center }\n"
+    "fieldset { margin-inline: 2px; padding-block: 0.35em 0.625em; padding-inline: 0.75em; border: 2px groove } img { } svg:not(:root) { overflow: hidden }\n";
+
+/* The system colors are the user's: a computed value keeps the keyword until the consumer's environment says what it is (css_element.h resolve_color). The runner is the consumer here, and
+ * gives the sRGB value both browsers give each (the palette tools/oracle/css_resolved.h has, which the computed-value gate also supplies): CanvasText, FieldText and ButtonText are black
+ * and Canvas, Field and ButtonFace white in the light scheme, and the reverse (white, and 18 for the grounds) in the dark one. Any other name is not answered. */
+static bool runner_resolve_color(void * user, const GTEXT_CSS_Color * color, GTEXT_CSS_Color_Scheme scheme, double rgba[4]) {
+  (void)user;
+  if (!color || color->kind != GTEXT_CSS_COLOR_KEYWORD || (color->keyword != GTEXT_CSS_COLOR_KW_SYSTEM && color->keyword != GTEXT_CSS_COLOR_KW_DEPRECATED)) {
+    return false;
+  }
+  char w[32];
+  if (color->name.length >= sizeof w) {
+    return false;
+  }
+  for (size_t i = 0; i < color->name.length; i++) {
+    w[i] = (char)tolower((unsigned char)color->name.data[i]);
+  }
+  w[color->name.length] = '\0';
+  const bool dark = scheme == GTEXT_CSS_SCHEME_DARK;
+  if (strcmp(w, "canvastext") == 0 || strcmp(w, "fieldtext") == 0 || strcmp(w, "buttontext") == 0) {
+    rgba[0] = rgba[1] = rgba[2] = dark ? 255 : 0;
+    rgba[3] = 1;
+    return true;
+  }
+  if (strcmp(w, "canvas") == 0 || strcmp(w, "field") == 0 || strcmp(w, "buttonface") == 0) {
+    rgba[0] = rgba[1] = rgba[2] = dark ? 18 : 255;
+    rgba[3] = 1;
+    return true;
+  }
+  return false;
+}
+
+static int g_palette = 1;
+static const char * g_ua_sheet = UA_SHEET;
+static size_t g_ua_len = sizeof UA_SHEET - 1;
 
 static int world_open(world * w, const char * html, size_t html_len) {
   memset(w, 0, sizeof *w);
@@ -225,15 +284,29 @@ static int world_open(world * w, const char * html, size_t html_len) {
   c.match_options = &w->match_options;
   c.tree_version = &gtext_cssom_markup_tree_version;
   c.tree_version_user = w->markup;
+  if (g_palette) {
+    GTEXT_CSS_Environment cenv = gtext_css_environment_default();
+    cenv.resolve_color = runner_resolve_color;
+    GTEXT_CSS_Compute_Options cco = gtext_css_compute_options_default();
+    cco.elements = c.element_interface;
+    GTEXT_CSS_Compute_Result cres;
+    memset(&cres, 0, sizeof cres);
+    if (gtext_css_compute_context_new(w->registry, &cenv, &cco, &w->compute, &cres) != GTEXT_CSS_OK) {
+      return 0;
+    }
+    c.compute_context = w->compute;
+  }
   if (gtext_cssom_document_new(&c, &w->doc) != GTEXT_CSS_OK) {
     return 0;
   }
   GTEXT_CSS_Result pr;
   memset(&pr, 0, sizeof pr);
-  if (gtext_css_parse_stylesheet(UA_SHEET, sizeof UA_SHEET - 1, NULL, &w->ua_tree, &pr) != GTEXT_CSS_OK ||
-      gtext_css_sheet_compile(w->ua_tree, w->registry, NULL, &w->ua_sheet, NULL) != GTEXT_CSS_OK ||
-      gtext_cssom_document_register_sheet(w->doc, GTEXT_CSS_ORIGIN_USER_AGENT, w->ua_sheet, NULL) != GTEXT_CSS_OK) {
-    return 0;
+  if (g_ua_len) {
+    if (gtext_css_parse_stylesheet(g_ua_sheet, g_ua_len, NULL, &w->ua_tree, &pr) != GTEXT_CSS_OK ||
+        gtext_css_sheet_compile(w->ua_tree, w->registry, NULL, &w->ua_sheet, NULL) != GTEXT_CSS_OK ||
+        gtext_cssom_document_register_sheet(w->doc, GTEXT_CSS_ORIGIN_USER_AGENT, w->ua_sheet, NULL) != GTEXT_CSS_OK) {
+      return 0;
+    }
   }
   GTEXT_CSSOM_Markup_Options mo = gtext_cssom_markup_options_default();
   if (gtext_cssom_markup_binding_new(w->doc, gtext_cssom_document_scope(w->doc), w->markup, &mo, &w->binding) != GTEXT_CSS_OK ||
@@ -252,6 +325,8 @@ static void world_close(world * w) {
   for (size_t i = 0; i < w->nstyles; i++) {
     gtext_cssom_decl_release(w->styles[i].decl);
     free(w->styles[i].name);
+    free(w->styles[i].elem_name);
+    free(w->styles[i].pseudo);
   }
   for (size_t i = 0; i < w->nelems; i++) {
     free(w->elems[i].name);
@@ -265,6 +340,7 @@ static void world_close(world * w) {
   free(w->regs);
   gtext_cssom_markup_binding_free(w->binding);
   gtext_cssom_document_release(w->doc);
+  gtext_css_compute_context_free(w->compute);
   gtext_css_sheet_free(w->ua_sheet);
   gtext_css_tree_free(w->ua_tree);
   gtext_css_conditions_free(w->conditions);
@@ -305,7 +381,7 @@ static style * find_style(world * w, const char * name) {
   return NULL;
 }
 
-static void put_style(world * w, const char * name, GTEXT_CSSOM_Decl * d, int computed, GTEXT_Markup_Node * node) {
+static void put_style(world * w, const char * name, GTEXT_CSSOM_Decl * d, int computed, GTEXT_Markup_Node * node, const char * elem_name, const char * pseudo) {
   if (w->nstyles == w->capstyles) {
     w->capstyles *= 2;
     w->styles = realloc(w->styles, w->capstyles * sizeof *w->styles);
@@ -315,6 +391,8 @@ static void put_style(world * w, const char * name, GTEXT_CSSOM_Decl * d, int co
   s->decl = d;
   s->computed = computed;
   s->node = node;
+  s->elem_name = dups(elem_name);
+  s->pseudo = dups(pseudo);
 }
 
 static reg * find_reg(world * w, const char * name) {
@@ -357,6 +435,19 @@ static value operand(world * w, const char * f, size_t l, int * ok) {
       return val('N', "", 0);
     case 'u':
       return val('u', "", 0);
+    case 'e': {
+      /* an element: two lookups that found the same node are the same object; a lookup that found nothing is null */
+      elem * e = find_elem(w, f + 2);
+      if (e) {
+        if (!e->node) {
+          return val('N', "", 0);
+        }
+        char id[32];
+        snprintf(id, sizeof id, "%p", (void *)e->node);
+        return val('e', id, strlen(id));
+      }
+      break;
+    }
     case 'r': {
       reg * r = find_reg(w, f + 2);
       if (r) {
@@ -528,24 +619,35 @@ static void fmt_value(const value * v, char * out, size_t cap) {
   case 'u':
     snprintf(out, cap, "undefined");
     break;
+  case 'e':
+    snprintf(out, cap, "object \"[object Element]\"");
+    break;
   default:
     snprintf(out, cap, "%s", v->s);
     break;
   }
 }
 
-static int same(const value * a, const value * b) {
+/* signed: testharness.js's same_value() (assert_equals, assert_not_equals) tells +0 from -0; `===` does not */
+static int same_as(const value * a, const value * b, int signed_zero) {
   if (a->kind != b->kind) {
     return 0;
   }
   if (a->kind == 'n') {
     const double x = strtod(a->s, NULL), y = strtod(b->s, NULL);
+    if (signed_zero && x == 0 && y == 0) {
+      return signbit(x) == signbit(y);
+    }
     return x == y || (x != x && y != y);
   }
   if (a->kind == 'N' || a->kind == 'u') {
     return 1;
   }
   return a->n == b->n && memcmp(a->s, b->s, a->n) == 0;
+}
+
+static int same(const value * a, const value * b) {
+  return same_as(a, b, 0);
 }
 
 static char * mismatch(const char * name, const char * msg, const value * expected, const value * got) {
@@ -681,7 +783,7 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
     if (st != GTEXT_CSS_OK) {
       return status_failure("getComputedStyle", st);
     }
-    put_style(w, o->f[1], d, 1, e->node);
+    put_style(w, o->f[1], d, 1, e->node, o->f[2], o->f[3]);
     return NULL;
   }
   if (strcmp(name, "style") == 0) {
@@ -692,7 +794,7 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
     if (st != GTEXT_CSS_OK) {
       return status_failure("element.style", st);
     }
-    put_style(w, o->f[1], d, 0, e->node);
+    put_style(w, o->f[1], d, 0, e->node, o->f[2], "");
     return NULL;
   }
   if (strcmp(name, "sget") == 0 || strcmp(name, "sprio") == 0 || strcmp(name, "sattr") == 0 || strcmp(name, "sremove") == 0) {
@@ -920,6 +1022,47 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
     }
     return NULL;
   }
+  if (strcmp(name, "shas") == 0) {
+    NEED(4);
+    STYLE(s, 2);
+    const bool has = gtext_cssom_decl_has_attribute(s->decl, o->f[3], o->l[3]);
+    put_reg(w, o->f[1], val('b', has ? "true" : "false", has ? 4 : 5));
+    return NULL;
+  }
+  if (strcmp(name, "script") == 0) {
+    return NULL;   /* where a script ends in the page: the replay of the oracle puts the ops of a script back where the script was */
+  }
+  if (strcmp(name, "csssupports") == 0) {
+    /* CSS.supports(conditionText) with one argument, CSS.supports(property, value) with two (the extra arguments of a call are ignored by the binding) */
+    if (o->n != 3 && o->n != 4) {
+      *program_error = 1;
+      return dups("csssupports has the wrong number of fields");
+    }
+    bool result = false;
+    GTEXT_CSS_Status st;
+    if (o->n == 3) {
+      st = gtext_css_conditions_supports_text(w->conditions, o->f[2], o->l[2], &result);
+    }
+    else {
+      st = gtext_css_conditions_supports(w->conditions, o->f[2], o->f[3], &result);
+    }
+    if (st != GTEXT_CSS_OK) {
+      return status_failure("CSS.supports", st);
+    }
+    put_reg(w, o->f[1], val('b', result ? "true" : "false", result ? 4 : 5));
+    return NULL;
+  }
+  if (strcmp(name, "cssescape") == 0) {
+    NEED(3);
+    char * out = NULL;
+    size_t n = 0;
+    GTEXT_CSS_Status st = gtext_cssom_escape_buffer(o->f[2], o->l[2], GTEXT_CSSOM_TEXT_WTF8, NULL, &out, &n);
+    if (st != GTEXT_CSS_OK) {
+      return status_failure("CSS.escape", st);
+    }
+    put_reg(w, o->f[1], take_string(w, out, n));
+    return NULL;
+  }
   if (strcmp(name, "cmp") == 0) {
     NEED(5);
     value a = operand(w, o->f[3], o->l[3], &ok), b;
@@ -983,12 +1126,12 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
     const char * msg = o->n > 1 ? o->f[o->n - 1] : "";
     char * result = NULL;
     if (strcmp(name, "assert_equals") == 0 && nv == 2) {
-      if (!same(&vals[0], &vals[1])) {
+      if (!same_as(&vals[0], &vals[1], 1)) {
         result = mismatch(name, msg, &vals[1], &vals[0]);
       }
     }
     else if (strcmp(name, "assert_not_equals") == 0 && nv == 2) {
-      if (same(&vals[0], &vals[1])) {
+      if (same_as(&vals[0], &vals[1], 1)) {
         char g[400];
         fmt_value(&vals[0], g, sizeof g);
         result = fmt("assert_not_equals: %sgot disallowed value %s", msg, g);
@@ -1049,6 +1192,8 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
 
 typedef struct {
   char * file;
+  char * html;       /* the page's markup, all of it */
+  size_t html_len;
   world w;
   int open;
   int in_test;
@@ -1057,6 +1202,87 @@ typedef struct {
   testrun t;
   int errors;
 } program;
+
+/* ---- the document as a script sees it -------------------------------------------------------------------------------------------------- */
+
+/* A script runs when the parser reaches its end tag, so it sees the markup up to there (`doc N` gives N, in bytes). The document is parsed again from that prefix; the elements, the
+ * declarations and the registers the program holds are carried over, an element by its place in the tree (the index of each node among its siblings from the root), a declaration by
+ * the element and the pseudo-element it was made for. The evaluator emits `doc` only while the program has changed nothing, so the new tree is the old one grown. */
+static size_t * node_path(const GTEXT_Markup_Node * n, size_t * depth) {
+  size_t cap = 16, d = 0;
+  size_t * path = malloc(cap * sizeof *path);
+  for (const GTEXT_Markup_Node * c = n; c && gtext_markup_node_parent(c); c = gtext_markup_node_parent(c)) {
+    size_t index = 0;
+    for (GTEXT_Markup_Node * sib = gtext_markup_node_previous_sibling(c); sib; sib = gtext_markup_node_previous_sibling(sib)) {
+      index++;
+    }
+    if (d == cap) {
+      cap *= 2;
+      path = realloc(path, cap * sizeof *path);
+    }
+    path[d++] = index;
+  }
+  *depth = d;
+  return path;
+}
+
+static GTEXT_Markup_Node * node_at(GTEXT_Markup_Document * m, const size_t * path, size_t depth) {
+  GTEXT_Markup_Node * n = gtext_markup_document_root(m);
+  while (depth-- > 0 && n) {
+    n = gtext_markup_node_first_child(n);
+    for (size_t i = path[depth]; n && i > 0; i--) {
+      n = gtext_markup_node_next_sibling(n);
+    }
+  }
+  return n;
+}
+
+static int program_open(program * p, size_t extent) {
+  if (extent > p->html_len) {
+    extent = p->html_len;
+  }
+  world nw;
+  if (!world_open(&nw, p->html, extent)) {
+    world_close(&nw);
+    return 0;
+  }
+  if (p->open) {
+    world * ow = &p->w;
+    for (size_t i = 0; i < ow->nelems; i++) {
+      GTEXT_Markup_Node * n = NULL;
+      if (ow->elems[i].node) {
+        size_t depth;
+        size_t * path = node_path(ow->elems[i].node, &depth);
+        n = node_at(nw.markup, path, depth);
+        free(path);
+      }
+      put_elem(&nw, ow->elems[i].name, n);
+    }
+    for (size_t i = 0; i < ow->nregs; i++) {
+      put_reg(&nw, ow->regs[i].name, val(ow->regs[i].v.kind, ow->regs[i].v.s, ow->regs[i].v.n));
+    }
+    g_doc = nw.doc;
+    for (size_t i = 0; i < ow->nstyles; i++) {
+      style * s = &ow->styles[i];
+      elem * e = find_elem(&nw, s->elem_name);
+      GTEXT_CSSOM_Decl * d = NULL;
+      if (e && e->node) {
+        if (s->computed) {
+          gtext_cssom_computed_style(nw.doc, gtext_css_markup_handle(e->node), s->pseudo, strlen(s->pseudo), &d);
+        }
+        else {
+          gtext_cssom_inline_style(nw.doc, e->node, &nw.attr, &d);
+        }
+      }
+      put_style(&nw, s->name, d, s->computed, e ? e->node : NULL, s->elem_name, s->pseudo);
+    }
+    world_close(ow);
+  }
+  p->w = nw;
+  p->open = 1;
+  g_doc = p->w.doc;
+  return 1;
+}
 
 static void print_escaped(const char * s) {
   for (; *s; s++) {
@@ -1105,10 +1331,21 @@ static void end_program(program * p) {
     p->open = 0;
   }
   free(p->file);
+  free(p->html);
   p->file = NULL;
+  p->html = NULL;
 }
 
 int main(void) {
+  const char * ua = getenv("CSSOM_RUNNER_UA");
+  if (ua && strcmp(ua, "none") == 0) {
+    g_ua_len = 0;
+    g_palette = 0;
+  }
+  else if (ua && strcmp(ua, "full") == 0) {
+    g_ua_sheet = UA_SHEET_FULL;
+    g_ua_len = sizeof UA_SHEET_FULL - 1;
+  }
   program p;
   memset(&p, 0, sizeof p);
   char * line = NULL;
@@ -1133,11 +1370,9 @@ int main(void) {
         printf("E\t%s\tbad document line\n", p.file);
         continue;
       }
-      p.open = world_open(&p.w, o.f[0], o.l[0]);
-      g_doc = p.open ? p.w.doc : NULL;
-      if (!p.open) {
-        printf("E\t%s\tcould not open the document\n", p.file);
-      }
+      /* the document is parsed when the first op needs it: a program that says `doc N` first never builds the whole page */
+      p.html = dupn(o.f[0], o.l[0]);
+      p.html_len = o.l[0];
     }
     else if (line[0] == 'O' && line[1] == '\t' && p.file) {
       op o;
@@ -1158,6 +1393,15 @@ int main(void) {
       if (strcmp(o.f[0], "end") == 0 && o.n == 1) {
         end_test(&p);
         continue;
+      }
+      if (strcmp(o.f[0], "doc") == 0 && o.n == 2 && p.html) {
+        if (!program_open(&p, (size_t)strtoull(o.f[1], NULL, 10))) {
+          printf("E\t%s\tcould not open the document\n", p.file);
+        }
+        continue;
+      }
+      if (!p.open && p.html && !program_open(&p, p.html_len)) {
+        printf("E\t%s\tcould not open the document\n", p.file);
       }
       if (!p.open || (p.in_test && p.t.failed && !p.in_cleanup)) {
         if (p.open && (strcmp(o.f[0], "elem") == 0 || strcmp(o.f[0], "gcs") == 0 || strcmp(o.f[0], "sget") == 0 || strcmp(o.f[0], "sattr") == 0)) {
