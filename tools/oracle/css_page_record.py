@@ -35,6 +35,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -59,6 +60,11 @@ def pin():
 
 def read_pages(path):
     return [l.rstrip('\n') for l in open(path, encoding='utf-8') if l.strip()]
+
+
+def normalize(text):
+    """A message that names the loopback server names its port, which is the system's to choose: the record writes PORT."""
+    return None if text is None else re.sub(r'127\.0\.0\.1:\d+', '127.0.0.1:PORT', text)
 
 
 def ask(engine, pages, wpt):
@@ -108,7 +114,7 @@ def record(pages, out, wpt, batch):
                 if 'error' in a:
                     entry[engine] = {'error': a['error']}
                 else:
-                    entry[engine] = {'status': a['status'], 'tests': [[t['name'], t['status'], t['message']] for t in a['tests']]}
+                    entry[engine] = {'status': a['status'], 'tests': [[normalize(t['name']), t['status'], normalize(t['message'])] for t in a['tests']]}
             f.write(json.dumps(entry, sort_keys=True, ensure_ascii=True) + '\n')
     print('css_page_record: wrote %s (%d pages)' % (out, len(pages)))
 
