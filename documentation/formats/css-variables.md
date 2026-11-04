@@ -152,7 +152,7 @@ cycle through the font-relative units of a registered property (`--len: 2em` for
 | `var(--name, fallback)`, `inherit(--name, fallback)` | nothing; `inherit()` reads the parent's computed value | |
 | `env(name index..., fallback)` | `GTEXT_CSS_Environment::env_variable` | the name is unknown: the fallback is used |
 | `attr(name type, fallback)` | the element interface's `attribute` callback (css_element.h) | `GTEXT_CSS_E_UNSUPPORTED` naming `attribute` |
-| `if(cond: value; ... else: value)` | `GTEXT_CSS_Environment::condition` for `media()` and `supports()`; `style(--x: v)` reads the custom properties | `GTEXT_CSS_E_UNSUPPORTED` naming `condition` |
+| `if(cond: value; ... else: value)` | `GTEXT_CSS_Environment::condition` for `media()` and `supports()` (a document's own context has it; `gtext_css_conditions_environment_hook()` makes one for a context of the caller's); `style(--x: v)` reads the custom properties, and `style(--x: initial)`, `inherit` and `unset` compare with the value the keyword gives | `GTEXT_CSS_E_UNSUPPORTED` naming `condition` |
 | `ident(...)`, `random-item(key, a, b ...)` | nothing; `random_base` or `random_seed` of the environment decides the pick | |
 | `random(...)`, `sibling-index()`, `sibling-count()` | `random_base`, and the element interface's `sibling_index` and `sibling_count` | `GTEXT_CSS_E_UNSUPPORTED` naming the callback |
 | `cycle(a, b, c)` | the property's value in the parent: the one after the match, wrapping | |
