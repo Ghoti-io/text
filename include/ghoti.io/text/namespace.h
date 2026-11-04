@@ -415,6 +415,7 @@
 #define gtext_css_wide_keyword_lookup GHOTIIO_TEXT(gtext_css_wide_keyword_lookup)
 #define gtext_css_wide_keyword_name GHOTIIO_TEXT(gtext_css_wide_keyword_name)
 #define gtext_cssom_computed_failure GHOTIIO_TEXT(gtext_cssom_computed_failure)
+#define gtext_cssom_document_container_interface GHOTIIO_TEXT(gtext_cssom_document_container_interface)
 #define gtext_cssom_computed_is_empty GHOTIIO_TEXT(gtext_cssom_computed_is_empty)
 #define gtext_cssom_computed_origin GHOTIIO_TEXT(gtext_cssom_computed_origin)
 #define gtext_cssom_computed_style GHOTIIO_TEXT(gtext_cssom_computed_style)

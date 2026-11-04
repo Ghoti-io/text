@@ -115,6 +115,25 @@ typedef struct {
 /** @brief The last failure of a read of a computed declaration of the document (it is overwritten by the next failure). @return GTEXT_CSS_OK, or GTEXT_CSS_E_INVALID. */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_computed_failure(const GTEXT_CSSOM_Document * document, GTEXT_CSSOM_Computed_Failure * out);
 
+/**
+ * @brief The part of a container interface (css_container.h) that a document can answer: fills `size`, `user` (the document) and `computed_style`, and `compute_context` with the
+ *   one the document computes in: the one it was given (gtext_cssom_document_set_compute_context(), GTEXT_CSSOM_Config::compute_context), else the one it makes for itself. Every other callback is left NULL for the caller to set: a
+ *   container's box, scroll state and anchored fallback are facts about a layout.
+ *
+ * Pass the result as GTEXT_CSS_Conditions_Options::container of the conditions object the document evaluates with, then give the document that object
+ * (gtext_cssom_document_set_conditions()); a `@container` rule, a container query length and `if(style())` are then answered from the styles the document computes. The conditions object
+ * copies the struct, so `compute_context` is the one at the time of the call: make the interface again (and give the document the new conditions object) after replacing the compute context.
+ *
+ * `computed_style` returns **the style the document has already computed** for the element in the state of the tree it is computing, and NULL for one it has not (the library asks
+ * for the ancestors of the element it is styling, which the chain of a read computes first) or no longer holds (the cache is bounded, GTEXT_CSSOM_Config::max_cached_styles).
+ * The pointer is borrowed: it is valid until the read that asked ends.
+ *
+ * @param document The document. Not NULL; it must outlive every conditions object that holds the interface.
+ * @param out Receives the interface. Not NULL.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM (the document could not make its compute context).
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_document_container_interface(GTEXT_CSSOM_Document * document, GTEXT_CSS_Container_Interface * out);
+
 #ifdef __cplusplus
 }
 #endif

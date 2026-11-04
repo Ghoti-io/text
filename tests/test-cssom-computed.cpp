@@ -827,4 +827,60 @@ TEST(CssomComputed, TheArgumentsAreChecked) {
   EXPECT_EQ(gtext_cssom_computed_failure(nullptr, &f), GTEXT_CSS_E_INVALID);
 }
 
+/* A context the document makes answers `if(media())` and `if(supports())` with the conditions object the document evaluates with (Values 5, 8.3: "media( <media-feature> | <media-condition> )"),
+   and follows an environment change that replaces the object: before, such an `if()` was GTEXT_CSS_E_UNSUPPORTED naming `condition`. */
+TEST(CssomComputed, AnIfWithAMediaOrSupportsTestIsAnsweredFromTheDocumentsConditions) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#a{--m: if(media(width >= 1000px): wide; else: narrow); --h: if(media((height: 800px)): tall; else: short); --s: if(supports(display: grid): grid; else: nogrid)}"
+       "</style></head><body><p id=a>x</p></body></html>");
+  EXPECT_EQ(m.value("#a", "--m"), "wide") << "the default environment is 1280 by 800; a feature without its parentheses is a feature";
+  EXPECT_EQ(m.value("#a", "--h"), "tall");
+  EXPECT_EQ(m.value("#a", "--s"), "grid");
+  GTEXT_CSS_Media_Environment env = gtext_css_media_environment_default(nullptr);
+  env.viewport.width = 500;
+  env.viewport.height = 500;
+  GTEXT_CSS_Conditions_Options co = gtext_css_conditions_options_default();
+  co.media = &env;
+  GTEXT_CSS_Conditions * narrow = nullptr;
+  ASSERT_EQ(gtext_css_conditions_new(R(), &co, &narrow), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_cssom_document_set_conditions(m.d(), narrow, nullptr), GTEXT_CSS_OK);
+  gtext_css_conditions_free(narrow);
+  EXPECT_EQ(m.value("#a", "--m"), "narrow") << "the replaced conditions object is the one asked";
+  EXPECT_EQ(m.value("#a", "--h"), "short");
+}
+
+/* gtext_cssom_document_container_interface(): the styles the document has computed are what a query container is read from, so a style query of a `@container` rule is answered
+   by the document that computes the style it is asked of. Without it the read is GTEXT_CSS_E_UNSUPPORTED naming `container.computed_style`. */
+TEST(CssomComputed, TheContainerInterfaceOfADocumentAnswersAStyleQueryFromTheStylesItComputes) {
+  const char * page = "<!DOCTYPE html><html><head><style>"
+                      ".c{--k: 1} @container style(--k: 1) { #a{--hit: yes} } @container style(--k: 2) { #a{--miss: yes} }"
+                      "</style></head><body><div class=c><p id=a>x</p></div></body></html>";
+  Cs m(page);
+  EXPECT_EQ(m.value("#a", "--hit"), "<not supported>");
+  GTEXT_CSSOM_Computed_Failure f;
+  ASSERT_EQ(gtext_cssom_computed_failure(m.d(), &f), GTEXT_CSS_OK);
+  EXPECT_STREQ(f.callback, "container.computed_style");
+  GTEXT_CSS_Container_Interface ci;
+  ASSERT_EQ(gtext_cssom_document_container_interface(m.d(), &ci), GTEXT_CSS_OK);
+  EXPECT_EQ(ci.size, sizeof ci);
+  EXPECT_EQ(ci.user, m.d());
+  ASSERT_NE(ci.computed_style, nullptr);
+  EXPECT_EQ(ci.content_box, nullptr) << "a container's box is the caller's";
+  EXPECT_EQ(ci.computed_style(ci.user, m.handle("#a")), nullptr) << "nothing is computed yet";
+  GTEXT_CSS_Conditions_Options co = gtext_css_conditions_options_default();
+  co.element_interface = gtext_css_markup_interface(m.page->adapter);
+  co.container = &ci;
+  GTEXT_CSS_Conditions * c = nullptr;
+  ASSERT_EQ(gtext_css_conditions_new(R(), &co, &c), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_cssom_document_set_conditions(m.d(), c, nullptr), GTEXT_CSS_OK);
+  gtext_css_conditions_free(c);
+  EXPECT_EQ(m.value("#a", "--hit"), "yes");
+  EXPECT_EQ(m.value("#a", "--miss"), "") << "the container's --k is 1, not 2";
+  EXPECT_NE(ci.computed_style(ci.user, m.handle(".c")), nullptr) << "the container's style was computed on the way and is what the query read";
+  GTEXT_CSSOM_Decl * none = nullptr;
+  EXPECT_EQ(gtext_cssom_document_container_interface(nullptr, &ci), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(gtext_cssom_document_container_interface(m.d(), nullptr), GTEXT_CSS_E_INVALID);
+  (void)none;
+}
+
 }  // namespace

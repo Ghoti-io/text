@@ -458,6 +458,12 @@ GTEXT_CSS_Status gtext_cssom_computed_failure(const GTEXT_CSSOM_Document * docum
 
 /* ---- computing ---------------------------------------------------------------------------------------------------------------------------------------- */
 
+static GTEXT_CSS_Tristate environment_condition(void * user, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text, GTEXT_CSS_Element_Handle element) {
+  (void)element;
+  const css_core * core = user;
+  return gtext_css_conditions_condition(core->conditions, kind, text);
+}
+
 /// The context in use: the caller's, or one the document makes from the registry, the default environment and the element interface.
 static GTEXT_CSS_Status ensure_context(css_core * core, css_cmps * cs) {
   if (cs->ctx) {
@@ -470,9 +476,14 @@ static GTEXT_CSS_Status ensure_context(css_core * core, css_cmps * cs) {
   GTEXT_CSS_Compute_Options co = gtext_css_compute_options_default();
   co.allocator = &core->alloc;
   co.elements = core->config.element_interface;
+  /* the environment of a context the document makes answers `if(media())` and `if(supports())` with the conditions object the document evaluates with, as it is now
+     (the document, not the object, is the `user`, so that an environment change that replaces the object is followed) */
+  GTEXT_CSS_Environment env = gtext_css_environment_default();
+  env.user = core;
+  env.condition = environment_condition;
   GTEXT_CSS_Compute_Result res;
   memset(&res, 0, sizeof res);
-  const GTEXT_CSS_Status st = gtext_css_compute_context_new(core->registry, NULL, &co, &cs->own, &res);
+  const GTEXT_CSS_Status st = gtext_css_compute_context_new(core->registry, &env, &co, &cs->own, &res);
   if (st != GTEXT_CSS_OK) {
     return st;
   }
@@ -985,5 +996,39 @@ GTEXT_CSS_Status gtext_cssom_computed_origin(GTEXT_CSSOM_Decl * decl, const char
     }
   }
   *found = any;
+  return GTEXT_CSS_OK;
+}
+
+/* ---- the container interface --------------------------------------------------------------------------------------------------------------------------- */
+
+static const GTEXT_CSS_Computed_Style * container_computed_style(void * user, GTEXT_CSS_Element_Handle element) {
+  const css_core * core = css_document_core((GTEXT_CSSOM_Document *)user);
+  const css_cmps * cs = core->cs;
+  if (!cs || !element) {
+    return NULL;
+  }
+  const css_rec * r = rec_find(cs, element);
+  return r ? r->style : NULL;
+}
+
+GTEXT_CSS_Status gtext_cssom_document_container_interface(GTEXT_CSSOM_Document * document, GTEXT_CSS_Container_Interface * out) {
+  if (!document || !out) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  memset(out, 0, sizeof *out);
+  out->size = sizeof *out;
+  out->user = document;
+  out->computed_style = container_computed_style;
+  css_core * core = css_document_core(document);
+  css_cmps * cs = css_cmps_get(core);
+  /* the context the document computes in: the caller's, else the one it makes (a style query computes the queried value in the context that made the container's style) */
+  if (cs) {
+    const GTEXT_CSS_Status st = ensure_context(core, cs);
+    if (st != GTEXT_CSS_OK) {
+      memset(out, 0, sizeof *out);
+      return st;
+    }
+    out->compute_context = cs->ctx;
+  }
   return GTEXT_CSS_OK;
 }
