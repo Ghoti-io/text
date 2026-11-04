@@ -252,6 +252,23 @@ static int g_palette = 1;
 static const char * g_ua_sheet = UA_SHEET;
 static size_t g_ua_len = sizeof UA_SHEET - 1;
 
+/* The conditions the environment of the compute context answers `if(media())` with, and the styles a query container is read from, are the world's: the context, the conditions object and
+   the document are made in that order and each needs the next, so the callbacks reach them through the world. */
+static GTEXT_CSS_Tristate runner_condition(void * user, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text, GTEXT_CSS_Element_Handle element) {
+  (void)element;
+  const world * w = user;
+  return gtext_css_conditions_condition(w->conditions, kind, text);
+}
+
+static const GTEXT_CSS_Computed_Style * runner_container_style(void * user, GTEXT_CSS_Element_Handle element) {
+  const world * w = user;
+  GTEXT_CSS_Container_Interface ci;
+  if (!w->doc || gtext_cssom_document_container_interface(w->doc, &ci) != GTEXT_CSS_OK) {
+    return NULL;
+  }
+  return ci.computed_style(ci.user, element);
+}
+
 static int world_open(world * w, const char * html, size_t html_len) {
   memset(w, 0, sizeof *w);
   if (gtext_css_registry_new(NULL, &w->registry) != GTEXT_CSS_OK) {
@@ -262,11 +279,6 @@ static int world_open(world * w, const char * html, size_t html_len) {
   env.viewport.height = 800;
   env.device.width = 1280;
   env.device.height = 800;
-  GTEXT_CSS_Conditions_Options co = gtext_css_conditions_options_default();
-  co.media = &env;
-  if (gtext_css_conditions_new(w->registry, &co, &w->conditions) != GTEXT_CSS_OK) {
-    return 0;
-  }
   GTEXT_HTML_Result hr;
   memset(&hr, 0, sizeof hr);
   if (gtext_html_parse(html, html_len, NULL, &w->markup, &hr) != GTEXT_HTML_OK) {
@@ -279,14 +291,17 @@ static int world_open(world * w, const char * html, size_t html_len) {
   w->match_options = gtext_css_markup_match_options(w->adapter);
   GTEXT_CSSOM_Config c = gtext_cssom_config_default();
   c.registry = w->registry;
-  c.conditions = w->conditions;
   c.element_interface = gtext_css_markup_interface(w->adapter);
   c.match_options = &w->match_options;
   c.tree_version = &gtext_cssom_markup_tree_version;
   c.tree_version_user = w->markup;
-  if (g_palette) {
+  {
     GTEXT_CSS_Environment cenv = gtext_css_environment_default();
-    cenv.resolve_color = runner_resolve_color;
+    cenv.user = w;
+    cenv.condition = runner_condition;
+    if (g_palette) {
+      cenv.resolve_color = runner_resolve_color;
+    }
     GTEXT_CSS_Compute_Options cco = gtext_css_compute_options_default();
     cco.elements = c.element_interface;
     GTEXT_CSS_Compute_Result cres;
@@ -296,6 +311,20 @@ static int world_open(world * w, const char * html, size_t html_len) {
     }
     c.compute_context = w->compute;
   }
+  GTEXT_CSS_Container_Interface container;
+  memset(&container, 0, sizeof container);
+  container.size = sizeof container;
+  container.user = w;
+  container.computed_style = runner_container_style;
+  container.compute_context = w->compute;
+  GTEXT_CSS_Conditions_Options co = gtext_css_conditions_options_default();
+  co.media = &env;
+  co.element_interface = c.element_interface;
+  co.container = &container;
+  if (gtext_css_conditions_new(w->registry, &co, &w->conditions) != GTEXT_CSS_OK) {
+    return 0;
+  }
+  c.conditions = w->conditions;
   if (gtext_cssom_document_new(&c, &w->doc) != GTEXT_CSS_OK) {
     return 0;
   }
@@ -1414,10 +1443,10 @@ int main(void) {
       int program_error = 0;
       char * msg = run_op(&p.w, &o, &p.t, &program_error);
       if (msg && !p.t.layout) {
-        /* a read that failed for want of a font metric or a container's size is a read that needs a layout, whatever the page asserts */
+        /* a read that failed for want of a font metric, a container's size, scroll state or anchored fallback is a read that needs a layout, whatever the page asserts */
         const char * at = strstr(msg, "unsupported, needs ");
         if (at) {
-          static const char * const layout_callbacks[] = {"cq", "ch", "ex", "ic", "cap", "lh", "rlh", "rch", "rex", "ric", "rcap"};
+          static const char * const layout_callbacks[] = {"cq", "ch", "ex", "ic", "cap", "lh", "rlh", "rch", "rex", "ric", "rcap", "container.size", "container.scroll_state", "container.anchored_fallback"};
           at += strlen("unsupported, needs ");
           for (size_t k = 0; k < sizeof layout_callbacks / sizeof *layout_callbacks; k++) {
             const size_t n = strlen(layout_callbacks[k]);

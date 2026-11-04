@@ -7,3 +7,10 @@ non-inherited-property-inherited	css_compute.c	    return m->inherited ? inherit
 layout-bound-property-reported-as-computed	cssom_resolved.c	  if (!asked) {\n    *origin = GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT;	  if (!asked) {\n    *origin = GTEXT_CSSOM_ORIGIN_COMPUTED;	layout
 document-prefix-ignored	runner:	      if (strcmp(o.f[0], "doc") == 0 && o.n == 2 && p.html) {\n        if (!program_open(&p, (size_t)strtoull(o.f[1], NULL, 10))) {	      if (strcmp(o.f[0], "doc") == 0 && o.n == 2 && p.html) {\n        if (!program_open(&p, p.html_len)) {	fail
 elements-not-carried-over-a-new-parse	runner:	      put_elem(&nw, ow->elems[i].name, n);	      put_elem(&nw, ow->elems[i].name, NULL);	fail
+sibling-index-steps-wrong	css_markup.c	    index = a->pindex + 1;	    index = a->pindex + 2;	fail
+bare-media-feature-not-parenthesized	css_conditions.c	    wrapped[0] = '(';	    wrapped[0] = ' ';	fail
+container-style-never-found	cssom_computed.c	  return r ? r->style : NULL;\n}\n\nGTEXT_CSS_Status gtext_cssom_document_container_interface	  return NULL;\n}\n\nGTEXT_CSS_Status gtext_cssom_document_container_interface	fail
+digits-without-integer-stays-bare	css_compute_algo.c	  if (!lone || !kw(word, "digits")) {	  if (1 || !lone || !kw(word, "digits")) {	fail
+style-query-keyword-keeps-its-white-space	css_substitute.c	      while (wl && (*wt == ' ' ||	      while (0 && wl && (*wt == ' ' ||	fail
+computed-background-position-written-from-the-longhands	cssom_decl.c	  else if (p->shorthand && decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED && css_computed_position_text(decl	  else if (p->shorthand && decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED && 0 && css_computed_position_text(decl	fail
+font-shorthand-drops-a-math-weight	css_shorthand.c	               ((v->flags & GTEXT_CSS_VFLAG_MATH) && v->interp == GTEXT_CSS_INTERP_NUMBER)) {	               ((v->flags & GTEXT_CSS_VFLAG_MATH) && v->interp == GTEXT_CSS_INTERP_NUMBER && 0)) {	fail
