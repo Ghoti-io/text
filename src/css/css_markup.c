@@ -56,6 +56,12 @@ struct GTEXT_CSS_Markup_Adapter {
   size_t clen[MAX_CACHED_CLASSES];
   size_t clen_total;
   const char * cvalue;
+  /* the element whose position among its siblings was found last and the position, and the parent whose element children were counted last and their number:
+     the matcher asks for the positions of siblings in document order, so each answer is a step from the last (`sibling_index`, `sibling_count`) */
+  Node * pnode;
+  size_t pindex;
+  Node * cparent;
+  size_t cchildren;
   /* the first submit button of the form asked about last, and the radio group asked about last */
   Node * dform;
   Node * dfirst;
@@ -157,6 +163,8 @@ static void caches_fresh(struct GTEXT_CSS_Markup_Adapter * a) {
     return;
   }
   a->gen = g;
+  a->pnode = NULL;
+  a->cparent = NULL;
   a->cnode = NULL;
   a->ccount = 0;
   a->cvalue = NULL;
@@ -287,6 +295,53 @@ static GTEXT_CSS_Element_Handle cb_previous_sibling(void * user, GTEXT_CSS_Eleme
 static GTEXT_CSS_Element_Handle cb_next_sibling(void * user, GTEXT_CSS_Element_Handle h) {
   (void)user;
   return element_from(gtext_markup_node_next_sibling(h), true);
+}
+
+/// The position of an element among its parent's element children, from 1: one step from the position found last when that was its neighbor, else counted back to the first.
+static size_t cb_sibling_index(void * user, GTEXT_CSS_Element_Handle h) {
+  struct GTEXT_CSS_Markup_Adapter * a = user;
+  caches_fresh(a);
+  size_t index;
+  Node * prev = element_from(gtext_markup_node_previous_sibling(h), false);
+  Node * next = NULL;
+  if (a->pnode == h) {
+    return a->pindex;
+  }
+  if (prev && prev == a->pnode) {
+    index = a->pindex + 1;
+  }
+  else if (a->pnode && a->pindex > 1 && (next = element_from(gtext_markup_node_next_sibling(h), true)) == a->pnode) {
+    index = a->pindex - 1;
+  }
+  else {
+    index = 1;
+    for (Node * q = prev; q; q = element_from(gtext_markup_node_previous_sibling(q), false)) {
+      index++;
+    }
+  }
+  a->pnode = h;
+  a->pindex = index;
+  return index;
+}
+
+/// How many element children the parent has, the element itself included: counted once for each parent in a run of questions about its children. A node with no parent is alone.
+static size_t cb_sibling_count(void * user, GTEXT_CSS_Element_Handle h) {
+  struct GTEXT_CSS_Markup_Adapter * a = user;
+  caches_fresh(a);
+  Node * parent = gtext_markup_node_parent(h);
+  if (!parent) {
+    return 1;
+  }
+  if (a->cparent == parent) {
+    return a->cchildren;
+  }
+  size_t count = 0;
+  for (Node * q = element_from(gtext_markup_node_first_child(parent), true); q; q = element_from(gtext_markup_node_next_sibling(q), true)) {
+    count++;
+  }
+  a->cparent = parent;
+  a->cchildren = count;
+  return count;
 }
 
 static GTEXT_CSS_Element_Handle cb_first_child(void * user, GTEXT_CSS_Element_Handle h) {
@@ -827,6 +882,8 @@ GTEXT_CSS_Status gtext_css_markup_adapter_new(const GTEXT_Markup_Document * docu
   i->attribute = cb_attribute;
   i->previous_sibling = cb_previous_sibling;
   i->next_sibling = cb_next_sibling;
+  i->sibling_index = cb_sibling_index;
+  i->sibling_count = cb_sibling_count;
   i->state = cb_state;
   i->lang = cb_lang;
   i->direction = cb_direction;

@@ -100,3 +100,4 @@ a-webkit-pseudo-element-is-written-by-its-row	css_selector_serialize.c	  if (r->
 a-webkit-pseudo-element-keeps-the-case-it-was-written-in	css_selector_parse.c	sdup_lower(p, nm->data, nm->length) : sdup(p, canon->base	sdup(p, nm->data, nm->length) : sdup(p, canon->base	selector
 webkit-without-a-hyphen-is-a-webkit-pseudo-element	css_selector_parse.c	css_sel_ieq(nm->data, 8, "-webkit-", 8)	css_sel_ieq(nm->data, 7, "-webkit", 7)	selector
 two-webkit-pseudo-elements-are-the-same-one	css_match.c	(sel_rows[a->pseudo].flags & SELF_WEBKIT) && (a->name.length	0 && (sel_rows[a->pseudo].flags & SELF_WEBKIT) && (a->name.length	sheet
+sibling-index-steps-wrong	css_markup.c	    index = a->pindex + 1;	    index = a->pindex + 2;	match

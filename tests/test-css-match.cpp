@@ -26,7 +26,9 @@
  */
 
 #include <chrono>
+#include <functional>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -547,6 +549,75 @@ TEST(CssMatchInterface, TheAdapterSeesAnEditOfTheElementItWasAskedAboutLast) {
   gtext_css_markup_adapter_free(ad);
 }
 
+/* `sibling-index()` and `sibling-count()` (Values 5, 8.2 "Tree Counting Functions") count the element's siblings, itself included: the adapter answers them for the matcher and for
+   the computed layer. They are found by stepping from the last answer, so the test asks in document order, backwards, at random and across an edit, and against a count made here. */
+TEST(CssMatchInterface, TheAdapterCountsTheSiblingsOfAnElementFromOneAndTheirNumberItselfIncluded) {
+  Doc d;
+  ASSERT_TRUE(d.html(kPage));
+  GTEXT_CSS_Markup_Adapter * ad = nullptr;
+  ASSERT_EQ(gtext_css_markup_adapter_new(d.doc, nullptr, &ad), GTEXT_CSS_OK);
+  const GTEXT_CSS_Element_Interface * iface = gtext_css_markup_interface(ad);
+  ASSERT_NE(iface->sibling_index, nullptr);
+  ASSERT_NE(iface->sibling_count, nullptr);
+  auto element_children = [](const GTEXT_Markup_Node * parent) {
+    std::vector<const GTEXT_Markup_Node *> v;
+    for (const GTEXT_Markup_Node * c = gtext_markup_node_first_child(parent); c; c = gtext_markup_node_next_sibling(c)) {
+      if (gtext_markup_node_kind(c) == GTEXT_MARKUP_KIND_ELEMENT) {
+        v.push_back(c);
+      }
+    }
+    return v;
+  };
+  // every element of the page, asked in document order, then backwards, then in a scrambled order, against the count made here
+  std::vector<const GTEXT_Markup_Node *> all_elements;
+  std::function<void(const GTEXT_Markup_Node *)> walk = [&](const GTEXT_Markup_Node * n) {
+    for (const GTEXT_Markup_Node * c : element_children(n)) {
+      all_elements.push_back(c);
+      walk(c);
+    }
+  };
+  walk(gtext_markup_document_root(d.doc));
+  ASSERT_GT(all_elements.size(), 30u);
+  auto check = [&](const GTEXT_Markup_Node * e) {
+    const GTEXT_Markup_Node * parent = gtext_markup_node_parent(e);
+    const std::vector<const GTEXT_Markup_Node *> sibs = element_children(parent);
+    size_t at = 0;
+    while (sibs[at] != e) {
+      at++;
+    }
+    EXPECT_EQ(iface->sibling_index(iface->user, e), at + 1) << gtext_markup_element_local_name(e);
+    EXPECT_EQ(iface->sibling_count(iface->user, e), sibs.size()) << gtext_markup_element_local_name(e);
+  };
+  for (size_t i = 0; i < all_elements.size(); i++) {
+    check(all_elements[i]);
+  }
+  for (size_t i = all_elements.size(); i-- > 0;) {
+    check(all_elements[i]);
+  }
+  for (size_t i = 0, j = 7; i < all_elements.size() * 3; i++, j = (j * 31 + 11) % all_elements.size()) {
+    check(all_elements[j]);
+  }
+  EXPECT_EQ(iface->sibling_index(iface->user, d.at("l3")), 3u);
+  EXPECT_EQ(iface->sibling_count(iface->user, d.at("l3")), 5u);
+  EXPECT_EQ(iface->sibling_index(iface->user, gtext_markup_document_element(d.doc)), 1u) << "the root element is the only element of the document";
+  EXPECT_EQ(iface->sibling_count(iface->user, gtext_markup_document_element(d.doc)), 1u);
+  // an edit is seen by the next question, whichever element was asked about last
+  GTEXT_Markup_Node * ul = const_cast<GTEXT_Markup_Node *>(d.at("ul"));
+  GTEXT_Markup_Node * fresh = nullptr;
+  ASSERT_EQ(gtext_markup_create_element(d.doc, GTEXT_MARKUP_NS_HTML, nullptr, "li", &fresh), GTEXT_MARKUP_OK);
+  EXPECT_EQ(iface->sibling_index(iface->user, d.at("l5")), 5u);
+  EXPECT_EQ(iface->sibling_count(iface->user, d.at("l5")), 5u);
+  EXPECT_EQ(iface->sibling_count(iface->user, fresh), 1u) << "a detached element is alone";
+  ASSERT_EQ(gtext_markup_insert_before(ul, fresh, const_cast<GTEXT_Markup_Node *>(d.at("l1"))), GTEXT_MARKUP_OK);
+  EXPECT_EQ(iface->sibling_index(iface->user, d.at("l5")), 6u);
+  EXPECT_EQ(iface->sibling_count(iface->user, d.at("l5")), 6u);
+  EXPECT_EQ(iface->sibling_index(iface->user, fresh), 1u);
+  ASSERT_EQ(gtext_markup_remove(fresh), GTEXT_MARKUP_OK);
+  EXPECT_EQ(iface->sibling_index(iface->user, d.at("l5")), 5u);
+  EXPECT_EQ(iface->sibling_count(iface->user, d.at("l1")), 5u);
+  gtext_css_markup_adapter_free(ad);
+}
+
 TEST(CssMatchInterface, ACallbackThatIsNeededAndAbsentIsUnsupportedAndNamedNeverWorkedAround) {
   Doc d;
   ASSERT_TRUE(d.html("<!DOCTYPE html><div id=\"a\"><p id=\"b\">x</p></div>"));
@@ -696,15 +767,16 @@ TEST(CssMatchLimits, WorkAndMemoEntriesAreStatusesAndNeverAWrongAnswer) {
   ASSERT_TRUE(d.html(html));
   GTEXT_Markup_Query_Options o = gtext_markup_query_options_default();
   o.max_work = 300;
-  EXPECT_EQ(all(d.root(), "div p.x:nth-child(odd) ~ p", &o), "!" + std::string(gtext_markup_status_string(GTEXT_MARKUP_E_LIMIT)));
+  EXPECT_EQ(all(d.root(), "div p.x:nth-child(odd of .x) ~ p", &o), "!" + std::string(gtext_markup_status_string(GTEXT_MARKUP_E_LIMIT)));
   o = gtext_markup_query_options_default();
   o.max_memo_entries = 20;
-  EXPECT_EQ(all(d.root(), "div p.x:nth-child(odd) ~ p", &o), "!" + std::string(gtext_markup_status_string(GTEXT_MARKUP_E_LIMIT)));
+  // (a plain `:nth-child()` is answered from the adapter's sibling_index and sibling_count and keeps nothing in the memo; `of S` is what does)
+  EXPECT_EQ(all(d.root(), "div p.x:nth-child(odd of .x) ~ p", &o), "!" + std::string(gtext_markup_status_string(GTEXT_MARKUP_E_LIMIT)));
   GTEXT_Markup_Node ** out = nullptr;
   size_t n = 0;
   GTEXT_Markup_Query_Result r;
   std::memset(&r, 0, sizeof r);
-  EXPECT_EQ(gtext_markup_query_selector_all(d.root(), "p:nth-child(odd)", 16, &o, &out, &n, &r), GTEXT_MARKUP_E_LIMIT);
+  EXPECT_EQ(gtext_markup_query_selector_all(d.root(), "p:nth-child(odd of .x)", 22, &o, &out, &n, &r), GTEXT_MARKUP_E_LIMIT);
   EXPECT_EQ(r.css_status, GTEXT_CSS_E_LIMIT_MATCH_MEMO);
   EXPECT_EQ(out, nullptr);
   gtext_markup_query_result_free(&r);
