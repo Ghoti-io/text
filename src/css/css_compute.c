@@ -1031,7 +1031,8 @@ static uint32_t effective(const css_state * st, GTEXT_CSS_Property_Id id, bool *
   return s.kind == SRC_NONE ? 0 : (uint32_t)s.index + 1;
 }
 
-static GTEXT_CSS_Status compute_value(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, bool declared,
+static GTEXT_CSS_Status invalid_at_computed_time(css_state * st, GTEXT_CSS_Property_Id id, GTEXT_CSS_Value_Set ** out);
+static GTEXT_CSS_Status compute_value_of_class(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, bool declared,
     GTEXT_CSS_Value_Set ** out) {
   const css_pmeta * m = &st->cc->meta[id - 1];
   st->work++;
@@ -1052,6 +1053,21 @@ static GTEXT_CSS_Status compute_value(css_state * st, GTEXT_CSS_Property_Id id, 
   default:
     return css_st_fail(st, GTEXT_CSS_E_INTERNAL, m->name, "a property that has no computed value of its own was computed");
   }
+}
+
+static GTEXT_CSS_Status compute_value(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Value_Set * src, bool declared, GTEXT_CSS_Value_Set ** out) {
+  GTEXT_CSS_Status status = compute_value_of_class(st, id, src, declared, out);
+  if (st->range_invalid) {
+    /* a calculation in a slot that rejects instead of clamping (CV_REJECT_RANGE) was out of its range: the declaration is invalid at computed-value time, as if it had been specified as
+       `unset` (the value that was made is dropped; the inherited or initial value is computed after the flag is down) */
+    st->range_invalid = false;
+    if (status == GTEXT_CSS_OK) {
+      gtext_css_value_set_free(*out);
+      *out = NULL;
+      return declared ? invalid_at_computed_time(st, id, out) : css_st_fail(st, GTEXT_CSS_E_INTERNAL, st->cc->meta[id - 1].name, "an initial value is out of its range");
+    }
+  }
+  return status;
 }
 
 static GTEXT_CSS_Status initial_value(css_state * st, GTEXT_CSS_Property_Id id, GTEXT_CSS_Value_Set ** out) {

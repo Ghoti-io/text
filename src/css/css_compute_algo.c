@@ -2508,7 +2508,7 @@ GTEXT_CSS_Status css_algo_compute(css_state * st, GTEXT_CSS_Property_Id id, cons
   case GTEXT_CSS_ALGO_WORD_SPACING: return algo_word_spacing(st, id, src, out);
   case GTEXT_CSS_ALGO_LETTER_SPACING: return algo_letter_spacing(st, id, src, out);
   case GTEXT_CSS_ALGO_CARET_COLOR: return run_build(st, id, src, 0, build_caret_color, m, out);
-  case GTEXT_CSS_ALGO_TEXT_COMBINE: return run_build(st, id, src, 0, build_text_combine, m, out);
+  case GTEXT_CSS_ALGO_TEXT_COMBINE: return run_build(st, id, src, CV_REJECT_RANGE, build_text_combine, m, out);
   case GTEXT_CSS_ALGO_SHAPE: return css_algo_shape(st, id, m, src, out);
   case GTEXT_CSS_ALGO_KEYWORD_ALIAS: return run_build(st, id, src, 0, build_align_keyword, m, out);
   case GTEXT_CSS_ALGO_DASHARRAY: return run_build(st, id, src, CV_NUMBERS_TO_PX, build_dasharray, m, out);

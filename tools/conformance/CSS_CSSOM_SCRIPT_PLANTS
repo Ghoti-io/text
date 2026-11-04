@@ -15,3 +15,4 @@ style-query-keyword-keeps-its-white-space	css_substitute.c	      while (wl && (*
 computed-background-position-written-from-the-longhands	cssom_decl.c	  else if (p->shorthand && decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED && css_computed_position_text(decl	  else if (p->shorthand && decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED && 0 && css_computed_position_text(decl	fail
 font-shorthand-drops-a-math-weight	css_shorthand.c	               ((v->flags & GTEXT_CSS_VFLAG_MATH) && v->interp == GTEXT_CSS_INTERP_NUMBER)) {	               ((v->flags & GTEXT_CSS_VFLAG_MATH) && v->interp == GTEXT_CSS_INTERP_NUMBER && 0)) {	fail
 property-rules-not-given-to-the-context	cssom_computed.c	  co.property_rules = core->props;	  co.property_rules = NULL;	fail
+math-result-outside-the-range-is-clamped-for-text-combine	css_compute_algo.c	run_build(st, id, src, CV_REJECT_RANGE, build_text_combine, m, out)	run_build(st, id, src, 0, build_text_combine, m, out)	fail

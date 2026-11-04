@@ -277,6 +277,7 @@ typedef struct {
   bool probing;                   ///< Making the initial values: reads of the style are not traps.
   bool in_registered;             ///< The value of a registered custom property is being computed: `currentcolor` in it is the element's color, in a mix too (Properties and Values 1).
   bool used_context;              ///< Set when a value was computed from something that varies by element (the initial values' dependence).
+  bool range_invalid;             ///< A calculation of the value being computed was outside the range of a slot that does not clamp (CV_REJECT_RANGE): the value is invalid at computed-value time (compute_value()).
   GTEXT_CSS_Status status;
   size_t work;
 } css_state;
@@ -327,6 +328,7 @@ GTEXT_CSS_Status css_cv_by_type(css_state * st, const GTEXT_CSS_Value_Set * src,
 /// css_cv_by_type() with options.
 #define CV_MATH_NUMBERS_ONLY 0x2u  ///< Only a calculation of numbers or percentages is simplified (the computed value of a property that is "as specified").
 #define CV_NUMBERS_TO_PX 0x1u  ///< A number is a length in px (SVG 2: "numbers converted to absolute lengths first").
+#define CV_REJECT_RANGE 0x4u   ///< A calculation whose result is outside the range of its slot is not clamped: it makes the value invalid at computed-value time (css_state::range_invalid).
 GTEXT_CSS_Status css_cv_by_type_ex(css_state * st, const GTEXT_CSS_Value_Set * src, GTEXT_CSS_Property_Id property, unsigned flags,
     GTEXT_CSS_Value_Set ** out);
 

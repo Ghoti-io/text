@@ -427,6 +427,27 @@ TEST(CssComputedCompletionTextCombine, DigitsWithoutItsIntegerComputesToDigitsTw
   EXPECT_EQ(root_computed("text-combine-upright: digits calc(1 + 1)", "text-combine-upright"), "digits 2");
 }
 
+/* Writing Modes 4, text-combine-upright (served 2026-11-04, the pin of tools/css/DRAFTS_SHA256): "Integers outside the range 2-4 are invalid." A calculation whose result is an integer
+   outside the range is invalid at computed-value time ("as if the property's value had been specified as the unset keyword", Values 5: the initial `none`), where every other property clamps a calculation to the range
+   of its slot (the rule of Values 4, which is not among the pinned drafts). Recorded for web-platform-tests
+   css-writing-modes/text-combine-upright-parsing-invalid-002.html: Chromium 156.0.8078.47 and Firefox 158.0.1 both answer `none` for `digits calc(0 + 1)`, `calc(2 + 3)`,
+   `calc(4 - 3)` and `calc(10 - 3)`, and `none` for any `calc()` here (they do not read one in this property; the library follows Values and keeps a calculation in range). */
+TEST(CssComputedCompletionTextCombine, AMathResultOutsideTwoToFourIsInvalidAtComputedValueTimeWhereOtherPropertiesClamp) {
+  EXPECT_EQ(root_computed("text-combine-upright: digits calc(0 + 1)", "text-combine-upright"), "none");
+  EXPECT_EQ(root_computed("text-combine-upright: digits calc(2 + 3)", "text-combine-upright"), "none");
+  EXPECT_EQ(root_computed("text-combine-upright: digits calc(4 - 3)", "text-combine-upright"), "none");
+  EXPECT_EQ(root_computed("text-combine-upright: digits calc(10 - 3)", "text-combine-upright"), "none");
+  EXPECT_EQ(root_computed("text-combine-upright: digits calc(2 * 1)", "text-combine-upright"), "digits 2");
+  EXPECT_EQ(root_computed("text-combine-upright: digits calc(2 + 2)", "text-combine-upright"), "digits 4");
+  EXPECT_EQ(root_computed("text-combine-upright: digits calc(3)", "text-combine-upright"), "digits 3");
+  /* the edges: 1 and 5 are out, 2 and 4 are in */
+  EXPECT_EQ(root_computed("text-combine-upright: digits calc(1)", "text-combine-upright"), "none");
+  EXPECT_EQ(root_computed("text-combine-upright: digits calc(5)", "text-combine-upright"), "none");
+  /* the other properties are not touched: a calculation outside the range of its slot is the nearest value in the range */
+  EXPECT_EQ(root_computed("column-count: calc(0 + 0)", "column-count"), "1");
+  EXPECT_EQ(root_computed("orphans: calc(-3 + 1)", "orphans"), "1");
+}
+
 /* Values 5, 4.2 (served 2026-10-30): x-start, x-end, y-start and y-end "compute the same as the physical edge keyword corresponding to the start/end side in the y/x
    axis"; Backgrounds 4, 2.6: the grammar of background-position-x is "[ center | [ [ left | right | x-start | x-end ]? <length-percentage>? ]! ]#". */
 TEST(CssComputedCompletionPosition, TheAxisKeywordsAreTheirPhysicalEdges) {

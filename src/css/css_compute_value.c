@@ -65,6 +65,7 @@ typedef struct {
   size_t max_list;
   bool numbers_px;                ///< A number is a length in px (CV_NUMBERS_TO_PX).
   bool math_numbers_only;         ///< Only a calculation of numbers or percentages is computed (CV_MATH_NUMBERS_ONLY): a specified value that is otherwise kept.
+  bool reject_range;              ///< A result outside the range of its slot makes the value invalid at computed-value time instead of being clamped (CV_REJECT_RANGE).
 } cv_walk;
 
 /* ---- helpers ------------------------------------------------------------------------------------------- */
@@ -87,6 +88,22 @@ static bool slot_is_integer(cv_walk * w, const GTEXT_CSS_Value * v) {
 
 static double clamp_range(double v, double lo, double hi) {
   return gtext_css_math_clamp(v, lo, hi);
+}
+
+/// Whether `v` is inside the range of the slot `src` (inside one of its ranges when it has several).
+static bool outside_ok(const GTEXT_CSS_Value * src, double v) {
+  if (v != v) {
+    return false;
+  }
+  if (src->range_set && src->range_set_count) {
+    for (size_t i = 0; i < src->range_set_count; i++) {
+      if (v >= src->range_set[2 * i] && v <= src->range_set[2 * i + 1]) {
+        return true;
+      }
+    }
+    return false;
+  }
+  return v >= src->range_lo && v <= src->range_hi;
 }
 
 bool css_cv_length_px(css_state * st, const GTEXT_CSS_Value * v, double * px) {
@@ -656,6 +673,11 @@ static GTEXT_CSS_Status leaf_math(cv_walk * w, const GTEXT_CSS_Value * src, GTEX
     out->child_count = 0;
     out->range_set = NULL;
     out->range_set_count = 0;
+    if (w->reject_range && !outside_ok(src, root->value)) {
+      /* a slot that is not clamped: "Integers outside the range 2-4 are invalid" (Writing Modes 4, text-combine-upright). The value is invalid at computed-value time, which compute_value()
+         makes of it; what is written here is not used */
+      w->st->range_invalid = true;
+    }
     double v = src->range_set ? (root->value != root->value ? 0.0 : root->value) : clamp_range(root->value, src->range_lo, src->range_hi);
     if (root->op == GTEXT_CSS_MATH_NUMBER) {
       if (slot_is_integer(w, src)) {
@@ -818,6 +840,7 @@ static GTEXT_CSS_Status by_type_impl(css_state * st, const GTEXT_CSS_Value_Set *
   w.max_list = st->cc->options.max_list_items;
   w.numbers_px = (flags & CV_NUMBERS_TO_PX) != 0;
   w.math_numbers_only = (flags & CV_MATH_NUMBERS_ONLY) != 0;
+  w.reject_range = (flags & CV_REJECT_RANGE) != 0;
   GTEXT_Allocator alloc = st->cc->alloc;
   if (!css_vb_begin(&w.vb, &alloc, st->cc->options.max_value_nodes)) {
     return css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL);
