@@ -725,13 +725,57 @@ void gtext_css_media_list_dependencies(const GTEXT_CSS_Media_List * list, GTEXT_
   }
 }
 
+/// The argument of `media()` (Values 5: `media( <media-feature> | <media-condition> )`, the parentheses of `( <media-feature> )` being part of the boolean grammar): a media query
+/// that is valid, else the text as a feature in parentheses (`height <= 600px`, `min-color: 1`), else the invalid query, which never matches.
+static GTEXT_CSS_Status media_argument(const GTEXT_CSS_Conditions * c, const GTEXT_CSS_String * text, bool * matches) {
+  GTEXT_CSS_Media_Options o = gtext_css_media_options_default();
+  o.allocator = &c->alloc;
+  GTEXT_CSS_Media_List * list = NULL;
+  GTEXT_CSS_Status st = gtext_css_media_list_parse(text->data, text->length, &o, &list, NULL);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (text->length && text->length < SIZE_MAX - 2 && gtext_css_media_list_query_count(list) == 1 && gtext_css_media_list_query_replaced(list, 0)) {
+    char * wrapped = gtext_allocator_malloc(&c->alloc, text->length + 2);
+    if (!wrapped) {
+      gtext_css_media_list_free(list);
+      return GTEXT_CSS_E_OOM;
+    }
+    wrapped[0] = '(';
+    memcpy(wrapped + 1, text->data, text->length);
+    wrapped[text->length + 1] = ')';
+    GTEXT_CSS_Media_List * feature = NULL;
+    st = gtext_css_media_list_parse(wrapped, text->length + 2, &o, &feature, NULL);
+    gtext_allocator_free(&c->alloc, wrapped);
+    if (st != GTEXT_CSS_OK) {
+      gtext_css_media_list_free(list);
+      return st;
+    }
+    if (gtext_css_media_list_query_count(feature) == 1 && !gtext_css_media_list_query_replaced(feature, 0)) {
+      gtext_css_media_list_free(list);
+      list = feature;
+    }
+    else {
+      gtext_css_media_list_free(feature);
+    }
+  }
+  st = gtext_css_conditions_matches_list(c, list, NULL, matches);
+  gtext_css_media_list_free(list);
+  return st;
+}
+
 GTEXT_CSS_Tristate gtext_css_conditions_condition(const GTEXT_CSS_Conditions * c, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text) {
   if (!c || !text || (kind != GTEXT_CSS_CONDITION_MEDIA && kind != GTEXT_CSS_CONDITION_SUPPORTS)) {
     return GTEXT_CSS_TRI_UNKNOWN;
   }
   bool m = false;
-  GTEXT_CSS_Status st = kind == GTEXT_CSS_CONDITION_MEDIA ? gtext_css_conditions_matches_media(c, text->data, text->length, NULL, &m)
-                                                          : gtext_css_conditions_supports_text(c, text->data, text->length, &m);
+  GTEXT_CSS_Status st;
+  if (kind == GTEXT_CSS_CONDITION_MEDIA) {
+    st = media_argument(c, text, &m);
+  }
+  else {
+    st = gtext_css_conditions_supports_text(c, text->data, text->length, &m);
+  }
   if (st != GTEXT_CSS_OK) {
     return GTEXT_CSS_TRI_UNKNOWN;
   }

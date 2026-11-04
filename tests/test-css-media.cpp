@@ -1374,6 +1374,26 @@ TEST(CssMediaApi, TheIfConditionHookAnswersMedia) {
   EXPECT_EQ(gtext_css_conditions_condition(c.c, GTEXT_CSS_CONDITION_MEDIA, &t3), GTEXT_CSS_TRI_FALSE);
 }
 
+TEST(CssMediaApi, TheIfConditionHookReadsAFeatureWithoutItsParenthesesAndKeepsEverythingElse) {
+  /* Values 5: `media( <media-feature> | <media-condition> )`, with the parentheses of `( <media-feature> )` in the boolean grammar, so `media(height <= 600px)` and
+     `media(min-color: 1)` are features. */
+  GTEXT_CSS_Media_Environment me = sized(500, 400);
+  Cond c(me);
+  auto ask = [&](const char * text) {
+    GTEXT_CSS_String t{text, strlen(text)};
+    return gtext_css_conditions_condition(c.c, GTEXT_CSS_CONDITION_MEDIA, &t);
+  };
+  EXPECT_EQ(ask("height <= 600px"), GTEXT_CSS_TRI_TRUE);
+  EXPECT_EQ(ask("height <= 300px"), GTEXT_CSS_TRI_FALSE);
+  EXPECT_EQ(ask("width: 500px"), GTEXT_CSS_TRI_TRUE);
+  EXPECT_EQ(ask("(width: 500px)"), GTEXT_CSS_TRI_TRUE) << "a feature with its parentheses is a query as before";
+  EXPECT_EQ(ask("(width: 500px) and (height <= 600px)"), GTEXT_CSS_TRI_TRUE);
+  EXPECT_EQ(ask("not (width: 500px)"), GTEXT_CSS_TRI_FALSE);
+  EXPECT_EQ(ask("height <= 600px)"), GTEXT_CSS_TRI_FALSE) << "text that is neither a query nor a feature is the invalid query, which never matches";
+  EXPECT_EQ(ask("1 + 1"), GTEXT_CSS_TRI_FALSE);
+  EXPECT_EQ(ask(""), GTEXT_CSS_TRI_TRUE) << "the empty query list is true, as before";
+}
+
 namespace {
 
 /// Query `index` of `p` as the browsers write it (`as_read`) or as the canonical text.
