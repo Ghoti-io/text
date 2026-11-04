@@ -195,14 +195,43 @@ def scored_tests(vectors):
     return out
 
 
-def classes(resolved, scored):
-    """{code: (pages, tests)} with ``scored`` for the tests the gate runs."""
+def script_tests(vectors):
+    """{page: tests} of the programs of the scoring interpreter (script.tsv): the tests it turned into ops."""
+    out = {}
+    path = os.path.join(vectors, 'script.tsv')
+    if os.path.exists(path):
+        for line in open(path, 'rb'):
+            if line.startswith(b'P\t'):
+                f = line.decode('utf-8', 'replace').rstrip('\n').split('\t')
+                out[f[1]] = out.get(f[1], 0) + int(f[3])
+    return out
+
+
+def layout_counts(path):
+    """{page: tests} of UNSCORED_LAYOUT (page#index, property, why): the tests of the script programs that read a property whose used value needs a layout."""
+    out = {}
+    for _, f in tsv(path) if path else []:
+        page = f[0].rsplit('#', 1)[0]
+        out[page] = out.get(page, 0) + 1
+    return out
+
+
+def classes(resolved, scored, script=None, layout=None):
+    """{code: (pages, tests)} with ``scored`` for the tests the declaration gate runs, ``scored-script`` for the ones the interpreter scores and ``needs-layout`` for the ones it
+    reads and does not credit."""
     pages, tests = {}, {}
     for page, n, code in resolved:
         pages.setdefault(code, set()).add(page)
         tests[code] = tests.get(code, 0) + n
     pages.setdefault('scored', set()).update(scored)
     tests['scored'] = sum(scored.values())
+    script = script or {}
+    layout = layout or {}
+    scripted = {p: n - layout.get(p, 0) for p, n in script.items() if n - layout.get(p, 0) > 0}
+    pages.setdefault('scored-script', set()).update(scripted)
+    tests['scored-script'] = sum(scripted.values())
+    pages.setdefault('needs-layout', set()).update(p for p in layout if layout[p])
+    tests['needs-layout'] = sum(layout.values())
     return {c: (len(pages[c]), tests[c]) for c in pages}
 
 
@@ -220,7 +249,7 @@ def check_cssom(a):
     src = raw if os.path.exists(raw) else os.path.join(a['vectors'], 'UNEXTRACTED_CSSOM')
     lines = read_lines(src)
     for page, n, code in lines:
-        if code not in codes:
+        if code not in codes and not (a.get('regenerate') and code.startswith('unmodeled:')):   # a new construct of the evaluator is added to the file by --regenerate
             out.append('REASON CODE: %s gives %r, which is not in REASON_CODES' % (page, code))
     census_mod = load_module(os.path.join(CSS_TOOLS, 'census-wpt-script-pages.py'), 'census')
     with tempfile.TemporaryDirectory() as scratch:
@@ -262,14 +291,16 @@ def check_cssom(a):
     if str(sum(1 for v in listed.values() if v[0] != v[1])) != pins.get('calls-differ-pages'):
         out.append('CENSUS: the pages where the census counts other calls are not the %s that the header pins' % pins.get('calls-differ-pages'))
     scored = scored_tests(a['vectors'])
+    scripted = script_tests(a['vectors'])
+    layout = layout_counts(a.get('layout'))
     held = {}
     for page, n, code in resolved:
         held[page] = held.get(page, 0) + n
     bad = 0
-    for page in sorted(set(listed) | set(held) | set(scored)):
+    for page in sorted(set(listed) | set(held) | set(scored) | set(scripted)):
         if page not in listed:
             continue
-        got = held.get(page, 0) + scored.get(page, 0)
+        got = held.get(page, 0) + scored.get(page, 0) + scripted.get(page, 0)
         if got != listed[page][0]:
             bad += 1
             if bad <= 20:
@@ -277,14 +308,15 @@ def check_cssom(a):
     if bad > 20:
         out.append('PARTITION: and %d pages more' % (bad - 20))
     # the pins of the classes
-    now = classes(resolved, scored)
+    now = classes(resolved, scored, scripted, layout)
     moves = []
     for c in sorted(set(now) | {c for c, v in codes.items() if v['cssom'] != (0, 0)}):
         pin = codes.get(c, {}).get('cssom', (0, 0))
         if now.get(c, (0, 0)) != pin:
             moves.append('  %s: %d pages %d tests, pinned %d pages %d tests (%+d tests)' % (c, now.get(c, (0, 0))[0], now.get(c, (0, 0))[1], pin[0], pin[1], now.get(c, (0, 0))[1] - pin[1]))
-    if 'scored' not in codes:
-        out.append('REASON CODE: REASON_CODES has no row for the class "scored"')
+    for needed in ('scored', 'scored-script', 'needs-layout'):
+        if needed not in codes:
+            out.append('REASON CODE: REASON_CODES has no row for the class "%s"' % needed)
     if moves:
         out.append('MOVED: the tests of a class differ from the pins of REASON_CODES (a move is a change of the pin, in the commit that makes it):')
         out.extend(moves)
@@ -302,8 +334,9 @@ def check_cssom(a):
 
 def rewrite_pins(path, codes, key, now):
     """REASON_CODES with the pins of one registry replaced; a code that is used and not in the file is an error."""
-    for c in now:
-        if c not in codes:
+    missing = [c for c in sorted(now) if c not in codes]
+    for c in missing:
+        if not c.startswith('unmodeled:'):
             raise SystemExit('REASON CODE: %s is used and is not in REASON_CODES; add it, with a kind and what it means, first' % c)
     lines = []
     for line in open(path, encoding='utf-8'):
@@ -317,6 +350,12 @@ def rewrite_pins(path, codes, key, now):
         else:
             f[4], f[5] = str(p), str(t)
         lines.append('\t'.join(f) + '\n')
+    # an `unmodeled:` construct the evaluator reports is a row of the to-do list; the row is made here (its meaning is the construct's name), and a reader renames it by hand
+    for c in missing:
+        p, t = now.get(c, (0, 0))
+        row = [c, 'todo', '0', '0', '0', '0', 'the scoring interpreter (tools/css/cssom_eval.py) does not model this construct: %s' % c[len('unmodeled:'):]]
+        row[2 if key == 'cssom' else 4], row[3 if key == 'cssom' else 5] = str(p), str(t)
+        lines.append('\t'.join(row) + '\n')
     open(path, 'w', encoding='utf-8', newline='').write(''.join(lines))
 
 
@@ -383,8 +422,8 @@ def main():
         return 1
     scoredby = sum(v[1] for c, v in now.items() if c.startswith('scored-by:'))
     helper = sum(v[1] for c, v in now.items() if c.startswith('helper:'))
-    print('css-ledger: %d pages, %d tests partitioned (scored here %d, scored by another gate %d, helper not modeled %d); %d classes as pinned' % (
-        len(rows), sum(r[1] for r in rows), now['scored'][1], scoredby, helper, len(now)))
+    print('css-ledger: %d pages, %d tests partitioned (scored here %d, by the interpreter %d, needing a layout %d, scored by another gate %d, helper not modeled %d); %d classes as pinned' % (
+        len(rows), sum(r[1] for r in rows), now['scored'][1], now['scored-script'][1], now['needs-layout'][1], scoredby, helper, len(now)))
     return 0
 
 

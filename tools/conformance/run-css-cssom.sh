@@ -44,6 +44,12 @@ cc -O1 -g -D_GNU_SOURCE -o "$runner" "$root/tools/conformance/css_cssom_suite.c"
 	-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm \
 	-Wl,-rpath,"$PREFIX/lib/ghoti.io"
 
+# the runner of the scoring interpreter's programs (tools/css/cssom_eval.py makes them)
+script_runner=$root/build/css-cssom-script-runner
+cc -O1 -g -D_GNU_SOURCE -o "$script_runner" "$root/tools/conformance/css_cssom_script_suite.c" \
+	-I"$root/include" -I"$generated" $cflags "$archive" $libs -lm \
+	-Wl,-rpath,"$PREFIX/lib/ghoti.io"
+
 vectors=$root/build/css-cssom-vectors
 mkdir -p "$vectors"
 # the rule vectors of the pinned pages (test_valid_rule and kin) are read by the property extractor and scored here, through insertRule
@@ -63,12 +69,30 @@ ledger=$root/tools/conformance/css_ledger.py
 elsewhere=$root/tools/conformance/SCORED_ELSEWHERE_CSSOM
 census=$root/tools/conformance/CENSUS_CSSOM
 codes=$root/tools/conformance/REASON_CODES
+# The scoring interpreter's gate (tools/conformance/css_cssom_script_suite.py): the programs of script.tsv are run by css_cssom_script_suite.c and scored against the page record of the two
+# browsers (tools/oracle/css_page_record.py); CSS_CSSOM_SCRIPT_EXCEPTIONS and UNSCORED_LAYOUT are derived from the run and the record, and the gate fails on any difference.
+script_py=$root/tools/conformance/css_cssom_script_suite.py
+script_exceptions=$root/tools/conformance/CSS_CSSOM_SCRIPT_EXCEPTIONS
+layout=$root/tools/conformance/UNSCORED_LAYOUT
+pagerecord=$root/tools/conformance/css_cssom_pagerecord.jsonl
+script_pages=$root/build/css-cssom-script-pages.txt
+awk -F'\t' '!/^#/ { print $1 }' "$vectors/script-tests.tsv" | sort -u > "$script_pages"
+if [ "$1" = "--script-pages" ]; then
+	cat "$script_pages"
+	exit 0
+fi
+run_script() { # exceptions layout [options]
+	e=$1 l=$2
+	shift 2
+	python3 -I "$script_py" "$vectors" "$script_runner" "$e" "$l" --record "$pagerecord" --wpt "$wpt" "$@"
+}
 run_ledger() { # vectors elsewhere census codes [options]
 	v=$1 e=$2 c=$3 r=$4
 	shift 4
-	python3 -I "$ledger" cssom --wpt "$wpt" --vectors "$v" --rulevec "$rulevec" --elsewhere "$e" --census "$c" --codes "$r" "$@"
+	python3 -I "$ledger" cssom --wpt "$wpt" --vectors "$v" --rulevec "$rulevec" --elsewhere "$e" --census "$c" --codes "$r" --layout "$layout" "$@"
 }
 if [ "$1" = "--regenerate-ledger" ]; then
+	run_script "$script_exceptions" "$layout" --regenerate || exit 1
 	run_ledger "$vectors" "$elsewhere" "$census" "$codes" --regenerate || exit 1
 	run_ledger "$vectors" "$elsewhere" "$census" "$codes" --resolve || exit 1
 	{ head -1 "$unscored"; cat "$vectors/UNEXTRACTED_CSSOM"; } > "$unscored.tmp" && mv "$unscored.tmp" "$unscored"
@@ -88,6 +112,7 @@ fi
 handports=$root/tools/conformance/css_cssom_handports.py
 if [ "$1" != "--controls" ]; then
 	python3 -I "$handports" "$wpt" --vectors "$vectors" || exit 1
+	run_script "$script_exceptions" "$layout" || exit 1
 	python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$unscored"
 	exit $?
 fi
@@ -154,9 +179,9 @@ expect defect-ceiling "defects above the ceiling" env CSS_CSSOM_MAX_DEFECTS=0 py
 # the ledger, seen to fail: each plant edits a copy of one input and the ledger has to say why it refuses
 raw="$vectors/UNEXTRACTED_CSSOM.raw"
 ledger_expect() { # name message vectors elsewhere census codes
-	expect "$1" "$2" python3 -I "$ledger" cssom --wpt "$wpt" --vectors "$3" --rulevec "$rulevec" --elsewhere "$4" --census "$5" --codes "$6"
+	expect "$1" "$2" python3 -I "$ledger" cssom --wpt "$wpt" --vectors "$3" --rulevec "$rulevec" --elsewhere "$4" --census "$5" --codes "$6" --layout "$layout"
 }
-python3 -I "$ledger" cssom --wpt "$wpt" --vectors "$vectors" --rulevec "$rulevec" --elsewhere "$elsewhere" --census "$census" --codes "$codes" >"$log" 2>&1 || {
+python3 -I "$ledger" cssom --wpt "$wpt" --vectors "$vectors" --rulevec "$rulevec" --elsewhere "$elsewhere" --census "$census" --codes "$codes" --layout "$layout" >"$log" 2>&1 || {
 	echo "the ledger does not pass unedited" >&2
 	cat "$log" >&2
 	exit 1
@@ -201,4 +226,98 @@ ledger_expect reason-code-outside-set "REASON CODE" "$vectors" "$elsewhere" "$ce
 # a class that moved: a pin that differs from what the gate finds (a count that shrinks or grows is a move)
 awk -F'\t' 'BEGIN { OFS = "\t" } /^helper:computed-testcommon\t/ { $4 = $4 + 1 } { print }' "$codes" > "$scratch/codes-moved"
 ledger_expect class-moved "MOVED" "$vectors" "$elsewhere" "$census" "$scratch/codes-moved"
+# the scoring interpreter's gate, seen to fail: each plant edits a copy of one input
+script_expect() { # name message vectors exceptions layout record [env assignments are in the environment]
+	expect "$1" "$2" python3 -I "$script_py" "$3" "$script_runner" "$4" "$5" --record "$6" --wpt "$wpt"
+}
+python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --wpt "$wpt" >"$log" 2>&1 || {
+	echo "the script gate does not pass unedited" >&2
+	cat "$log" >&2
+	exit 1
+}
+# the record: a page that changed, a count that differs, a page with no entry, another pin
+python3 - "$pagerecord" "$scratch" <<'PY'
+import json, sys
+src, out = sys.argv[1], sys.argv[2]
+lines = open(src, encoding='utf-8').read().split('\n')
+header, rows = lines[0], [l for l in lines[1:] if l]
+def write(name, hdr, body):
+    open('%s/%s' % (out, name), 'w', encoding='utf-8').write(hdr + '\n' + '\n'.join(body) + '\n')
+e = json.loads(rows[3]); e['sha'] = '0' * 64
+write('record-stale', header, rows[:3] + [json.dumps(e, sort_keys=True)] + rows[4:])
+for i, r in enumerate(rows):
+    e = json.loads(r)
+    if len(e['chromium'].get('tests', [])) > 1:
+        e['chromium']['tests'] = e['chromium']['tests'][:-1]
+        write('record-count', header, rows[:i] + [json.dumps(e, sort_keys=True)] + rows[i + 1:])
+        break
+write('record-missing', header, rows[:3] + rows[4:])
+h = json.loads(header[1:]); h['wpt'] = '0' * 40
+write('record-pin', '#' + json.dumps(h, sort_keys=True), rows)
+h = json.loads(header[1:]); h['harness'] = '0' * 64
+write('record-harness', '#' + json.dumps(h, sort_keys=True), rows)
+h = json.loads(header[1:]); h['driver'] = {'page_driver.mjs': '0' * 64}
+write('record-driver', '#' + json.dumps(h, sort_keys=True), rows)
+PY
+script_expect record-page-changed "changed since it was recorded" "$vectors" "$script_exceptions" "$layout" "$scratch/record-stale"
+script_expect record-count-differs "COUNT:" "$vectors" "$script_exceptions" "$layout" "$scratch/record-count"
+script_expect record-page-missing "has no entry" "$vectors" "$script_exceptions" "$layout" "$scratch/record-missing"
+script_expect record-pin-differs "the record is of the suite" "$vectors" "$script_exceptions" "$layout" "$scratch/record-pin"
+script_expect record-harness-differs "the record was made under testharness.js" "$vectors" "$script_exceptions" "$layout" "$scratch/record-harness"
+script_expect record-driver-differs "the record was made by the page driver" "$vectors" "$script_exceptions" "$layout" "$scratch/record-driver"
+# the exceptions: none, a stale one, a changed class, a changed message
+grep '^#' "$script_exceptions" > "$scratch/exc-empty" || true
+script_expect no-script-exceptions "UNEXPLAINED FAILURES" "$vectors" "$scratch/exc-empty" "$layout" "$pagerecord"
+{ cat "$script_exceptions"; printf 'css/control/planted.html#0\tfails\tdefect\towner: planted\n'; } > "$scratch/exc-stale"
+script_expect stale-script-exception "STALE EXCEPTIONS" "$vectors" "$scratch/exc-stale" "$layout" "$pagerecord"
+awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } !done && $3 == "defect" { $3 = "wpt-wrong"; done = 1 } { print }' "$script_exceptions" > "$scratch/exc-class"
+script_expect script-exception-class-changed "CLASS:" "$vectors" "$scratch/exc-class" "$layout" "$pagerecord"
+awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } !done { $2 = $2 " a lie"; done = 1 } { print }' "$script_exceptions" > "$scratch/exc-message"
+script_expect script-exception-message-changed "STALE EXCEPTIONS" "$vectors" "$scratch/exc-message" "$layout" "$pagerecord"
+# the layout list: a test that reads a layout and is not listed, one listed that does not
+grep '^#' "$layout" > "$scratch/layout-empty" || true
+script_expect layout-unlisted "which needs a layout, and is not listed" "$vectors" "$script_exceptions" "$scratch/layout-empty" "$pagerecord"
+{ cat "$layout"; printf 'css/control/planted.html#0\twidth\tplanted\n'; } > "$scratch/layout-extra"
+script_expect layout-listed-but-does-not-read "no longer reads a layout" "$vectors" "$script_exceptions" "$scratch/layout-extra" "$pagerecord"
+# the program: an expectation made a lie, an op dropped (an assertion removed from a test that fails)
+mkdir -p "$scratch/prog-lie" "$scratch/prog-drop"
+cp "$vectors"/* "$scratch/prog-lie/"
+cp "$vectors"/* "$scratch/prog-drop/"
+python3 - "$scratch/prog-lie/script.tsv" "$scratch/prog-drop/script.tsv" "$script_exceptions" <<'PY'
+import sys
+lie, drop, exc = sys.argv[1:4]
+failing = {l.split('\t')[0].rsplit('#', 1)[0] for l in open(exc, encoding='utf-8', errors='replace').read().split('\n') if l and not l.startswith('#')}
+lines = open(lie, 'rb').read().split(b'\n')
+page = None
+for i, l in enumerate(lines):
+    if l.startswith(b'P\t'):
+        page = l.split(b'\t')[1].decode('utf-8')
+    elif page not in failing and l.startswith(b'O\tassert_equals\tr:') and l.split(b'\t')[3].startswith(b's:'):
+        f = l.split(b'\t')
+        f[3] = f[3] + b' a lie'
+        lines[i] = b'\t'.join(f)
+        break
+open(lie, 'wb').write(b'\n'.join(lines))
+first = open(exc, encoding='utf-8', errors='replace').read().split('\n')
+page = next(l.split('\t')[0].rsplit('#', 1)[0] for l in first if l and not l.startswith('#'))
+lines = open(drop, 'rb').read().split(b'\n')
+out, inpage = [], False
+for l in lines:
+    if l.startswith(b'P\t'):
+        inpage = l.split(b'\t')[1].decode('utf-8') == page
+    if inpage and l.startswith((b'O\tassert_equals\t', b'O\tassert_not_equals\t', b'O\tassert_true\t', b'O\tassert_false\t', b'O\tassert_in_array\t')):
+        continue
+    out.append(l)
+open(drop, 'wb').write(b'\n'.join(out))
+PY
+script_expect script-expectation-lie "UNEXPLAINED FAILURES" "$scratch/prog-lie" "$script_exceptions" "$layout" "$pagerecord"
+script_expect script-op-dropped "STALE EXCEPTIONS" "$scratch/prog-drop" "$script_exceptions" "$layout" "$pagerecord"
+# the floors and the ceilings
+expect script-floor "below the floor" env CSS_CSSOM_SCRIPT_MIN_SCORED=9999999 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --wpt "$wpt"
+expect script-page-floor "below the floor" env CSS_CSSOM_SCRIPT_MIN_PAGES=9999999 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --wpt "$wpt"
+expect script-defect-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_DEFECTS=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --wpt "$wpt"
+expect script-layout-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_LAYOUT=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --wpt "$wpt"
+# the evaluator's own corpus, and the evaluator seen to fail
+python3 -I "$root/tools/css/check-cssom-eval.py" --controls >"$log" 2>&1 || { echo "the evaluator corpus controls failed" >&2; cat "$log" >&2; exit 1; }
+echo "control evaluator-defects: caught"
 echo "css cssom gate: controls done"

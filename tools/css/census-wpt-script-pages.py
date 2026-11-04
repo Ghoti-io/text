@@ -92,6 +92,13 @@ def vectors_by_page(vdir):
             f = line.decode('utf-8', 'replace').rstrip('\n').split('\t')
             page = f[1].replace('?rule-vectors', '')
             scored[page] = scored.get(page, 0) + int(f[3])
+    # the tests of the scoring interpreter's programs (script.tsv) are scored tests of their page too
+    script = os.path.join(vdir, 'script.tsv')
+    if os.path.exists(script):
+        for line in open(script, 'rb'):
+            if line.startswith(b'P\t'):
+                f = line.decode('utf-8', 'replace').rstrip('\n').split('\t')
+                scored[f[1]] = scored.get(f[1], 0) + int(f[3])
     listed = {}
     for line in open(os.path.join(vdir, 'UNEXTRACTED_CSSOM'), encoding='utf-8', errors='replace'):
         f = line.rstrip('\n').split('\t')

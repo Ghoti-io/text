@@ -136,16 +136,23 @@ def main():
     if pages < floor_pages:
         out.append('below the floor: %d pages scored, the floor is %d' % (pages, floor_pages))
     unread = sum(int(v) for v in have.values())
-    fraction = 10000 * scored // (scored + unread) if scored + unread else 0
+    # the tests the scoring interpreter scored (tools/conformance/css_cssom_script_suite.py wrote them) are scored tests of the touched pages too; the ones it read and that need a
+    # layout are accounted for and not scored
+    interp, layout = 0, 0
+    note = os.path.join(vdir, 'SCRIPT_SCORED')
+    if os.path.exists(note):
+        interp, layout = (int(x) for x in open(note).read().split())
+    scored_all = scored + interp
+    fraction = 10000 * scored_all // (scored_all + layout + unread) if scored_all + layout + unread else 0
     floor_fraction = int(os.environ.get('CSS_CSSOM_MIN_FRACTION', '0'))
     if fraction < floor_fraction:
-        out.append('below the floor: %d of %d tests of the touched pages are scored (%d in ten thousand), the floor is %d' % (scored, scored + unread, fraction, floor_fraction))
+        out.append('below the floor: %d of %d tests of the touched pages are scored (%d in ten thousand), the floor is %d' % (scored_all, scored_all + layout + unread, fraction, floor_fraction))
     if out:
         print('\n'.join(out))
         return 1
     touched = len({k[0] for k in have}) + pages
-    print('css-cssom: %d tests of %d pages scored, %d pass, %d are exceptions (%d defects); %d (page, reason) pairs not read; scored fraction %d in ten thousand of %d tests' % (
-        scored, pages, scored - len(failures), len(failures), defects, len(have), fraction, scored + unread))
+    print('css-cssom: %d tests of %d pages scored here, %d pass, %d are exceptions (%d defects); %d more scored by the interpreter; %d (page, reason) pairs not read; scored fraction %d in ten thousand of %d tests' % (
+        scored, pages, scored - len(failures), len(failures), defects, interp, len(have), fraction, scored_all + layout + unread))
     return 0
 
 
