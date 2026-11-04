@@ -406,6 +406,35 @@ TEST(CssCustom, AttrTaintsWhatItMakes) {
   EXPECT_EQ(a.value("--foo: attr(foo); background-image: src(var(--foo))", "background-image"), "none");
 }
 
+TEST(CssCustom, ATaintedNameArgumentTaintsWhatVarHandsOn) {
+  // "The substitution value of an arbitrary substitution function is attr()-tainted as a whole if any attr()-tainted values were involved in creating it" (Values 5):
+  // the name read from an attribute chooses the property, so the value read, and the fallback used when the name is no name, are tainted
+  AttrWorld a({{"n", "--image"}, {"bad", "10px"}});
+  EXPECT_EQ(a.value("--image: url(x.png); background-image: var(attr(n type(*)))", "background-image"), "none");
+  EXPECT_EQ(a.value("--name: attr(n type(*)); --image: url(x.png); background-image: var(var(--name))", "background-image"), "none") << "through another property";
+  EXPECT_EQ(a.value("background-image: var(attr(bad type(*)), url(x.png))", "background-image"), "none") << "the fallback is tainted too";
+  EXPECT_EQ(a.value("--length: 10px; width: var(attr(n type(*)))", "width"), "auto") << "a name that is not --length: the property is not set";
+  AttrWorld l({{"n", "--length"}});
+  EXPECT_EQ(l.value("--length: 10px; width: var(attr(n type(*)))", "width"), "10px") << "taint matters only for a <url>";
+  EXPECT_EQ(l.custom("--image: url(x.png); --result: var(attr(n type(*)))", "--result"), "<gi>");
+  AttrWorld u({{"n", "--image"}});
+  EXPECT_EQ(u.custom("--image: url(x.png); --result: var(attr(n type(*)))", "--result"), "url(x.png)") << "a custom property is no <url> context";
+  EXPECT_EQ(u.value("--image: url(x.png); --name: --image; background-image: var(var(--name))", "background-image"), "url(\"x.png\")") << "an untainted name taints nothing";
+}
+
+TEST(CssCustom, AConditionThatReadATaintedValueTaintsTheIfResult) {
+  AttrWorld a({{"foo", "42"}});
+  EXPECT_EQ(a.value("--n: attr(foo type(*)); background-image: if(style(--n: 42): url(x.png); else: none)", "background-image"), "none");
+  EXPECT_EQ(a.value("--n: attr(foo type(*)); background-image: if(style(--n >= 40): url(x.png); else: none)", "background-image"), "none") << "a range query too";
+  EXPECT_EQ(a.value("--n: 42; background-image: if(style(--n >= 40): url(x.png); else: none)", "background-image"), "url(\"x.png\")");
+}
+
+TEST(CssCustom, AnAttrLengthHasItsUnitInLowerCase) {
+  AttrWorld a({{"bar", "3EM"}, {"baz", "4Px"}});
+  EXPECT_EQ(a.custom("--bar: attr(bar type(<length>))", "--bar"), "3em");
+  EXPECT_EQ(a.custom("--baz: attr(baz type(<length>))", "--baz"), "4px");
+}
+
 /* ---- inherit() -------------------------------------------------------------------------------------------------------------- */
 
 TEST(CssCustom, InheritFunctionReadsTheParentsComputedValue) {
@@ -557,6 +586,170 @@ TEST(CssCustom, IfStyleQueriesReadCustomProperties) {
   EXPECT_EQ(c.custom("--u"), "yes");
   EXPECT_EQ(c.custom("--t"), "no");
   EXPECT_EQ(c.custom("--s"), "yes");
+}
+
+/* ---- style range queries in if() (Conditional 5, "evaluate a <style-range>") ----------------------------------------------------------------------------- */
+
+/// `if(<cond>: a; else: b)` on an element with `decls` (name, value) before it, in a world with the registrations of the Values 5 page.
+std::string range_if(const std::string & cond, const std::vector<std::pair<std::string, std::string>> & decls = {}) {
+  World w;
+  std::vector<Reg> regs = {{"--length", "<length>", "3px", false},   {"--number", "<number>", "3", true},     {"--percentage", "<percentage>", "30%", true},
+                           {"--angle", "<angle>", "3deg", true},     {"--time", "<time>", "3s", true},        {"--resolution", "<resolution>", "3dpi", true}};
+  EXPECT_EQ(w.build(regs), GTEXT_CSS_OK);
+  Computed c;
+  std::vector<std::pair<std::string, std::string>> d = decls;
+  d.emplace_back("--r", "if(" + cond + ": a; else: b)");
+  compute_pairs(w, c, d);
+  EXPECT_EQ(c.status, GTEXT_CSS_OK) << cond << " " << c.result.name << " " << (c.result.detail ? c.result.detail : "");
+  return c.custom("--r");
+}
+
+TEST(CssCustomIfRange, ComparesNumbersAndDimensionsOfOneType) {
+  // "Parse <style-range-value> to <number>, <percentage>, <length>, <angle>, <time>, <frequency> or <resolution>. ... If each <style-range-value> from the range have the
+  // same type, compute each and evaluate the comparison"
+  EXPECT_EQ(range_if("style(5 > 3)"), "a");
+  EXPECT_EQ(range_if("style(3 > 5)"), "b");
+  EXPECT_EQ(range_if("style(5 >= 5)"), "a");
+  EXPECT_EQ(range_if("style(5 <= 5)"), "a");
+  EXPECT_EQ(range_if("style(5 = 5)"), "a");
+  EXPECT_EQ(range_if("style(5 < 5)"), "b");
+  EXPECT_EQ(range_if("style(5.5 > 3.3)"), "a");
+  EXPECT_EQ(range_if("style(7px > 3px)"), "a");
+  EXPECT_EQ(range_if("style(3px > 3px)"), "b");
+  EXPECT_EQ(range_if("style(3% >= 3%)"), "a");
+  EXPECT_EQ(range_if("style(3turn > 3deg)"), "a");
+  EXPECT_EQ(range_if("style(3turn <= 3deg)"), "b");
+  EXPECT_EQ(range_if("style(3s > 3ms)"), "a");
+  EXPECT_EQ(range_if("style(1000ms <= 1s)"), "a");
+  EXPECT_EQ(range_if("style(1kHz > 999Hz)"), "a") << "a frequency";
+  EXPECT_EQ(range_if("style(3dppx > 96dpi)"), "a") << "dpi is converted";
+  EXPECT_EQ(range_if("style(1in = 96px)"), "a");
+}
+
+TEST(CssCustomIfRange, ATypeThatIsNotTheSameIsFalseAndTheNegationOfFalseIsTrue) {
+  // "Otherwise evaluate to false." (the draft says false, not unknown: `not` of it is true)
+  EXPECT_EQ(range_if("style(3px > 3)"), "b");
+  EXPECT_EQ(range_if("style(3em > 3deg)"), "b");
+  EXPECT_EQ(range_if("style(1px >= 1%) or style(1px <= 1%)"), "b");
+  EXPECT_EQ(range_if("not style(3 > 3px)"), "a");
+  EXPECT_EQ(range_if("style(3 > 3px) or style(1 < 2)"), "a");
+  // "a unitless zero must be treated as being a zero-<length> when compared against a <length>"
+  EXPECT_EQ(range_if("style(0 = 0px)"), "a");
+  EXPECT_EQ(range_if("style(0 < 3px)"), "a");
+  EXPECT_EQ(range_if("style(0px = 0)"), "a");
+  EXPECT_EQ(range_if("style(0 = 0%)"), "b") << "a percentage is not a length";
+  EXPECT_EQ(range_if("style(0 = 0deg)"), "b");
+  EXPECT_EQ(range_if("style(1 = 1px)"), "b") << "only a zero";
+  EXPECT_EQ(range_if("style(red > 3)"), "b") << "\"If this cannot be done, evaluate to false.\"";
+  EXPECT_EQ(range_if("not style(red > 3)"), "a");
+}
+
+TEST(CssCustomIfRange, AChainHoldsWhenEveryPairDoesAndItsDirectionsAgree) {
+  // "<style-range> = <style-range-value> <mf-comparison> <style-range-value> | <style-range-value> <mf-lt> <style-range-value> <mf-lt> <style-range-value> | ... <mf-gt> ..."
+  EXPECT_EQ(range_if("style(10px <= 10px < 11px)"), "a");
+  EXPECT_EQ(range_if("style(10px < 10px < 11px)"), "b");
+  EXPECT_EQ(range_if("style(5 > 3 >= 3)"), "a");
+  EXPECT_EQ(range_if("style(5 > 3 > 3)"), "b");
+  EXPECT_EQ(range_if("style(3 < --x <= 5)", {{"--x", "4"}}), "a");
+  EXPECT_EQ(range_if("style(3 < --x <= 5)", {{"--x", "5"}}), "a");
+  EXPECT_EQ(range_if("style(3 < --x <= 5)", {{"--x", "6"}}), "b");
+  EXPECT_EQ(range_if("style(--x >= --y > --z)", {{"--x", "3"}, {"--y", "3"}, {"--z", "3"}}), "b");
+  EXPECT_EQ(range_if("style(--x >= --y > --z)", {{"--x", "3"}, {"--y", "3"}, {"--z", "1"}}), "a");
+  EXPECT_EQ(range_if("style(1px < 2px < 3)"), "b") << "every operand is of one type";
+  // the directions of the two comparators agree, and `=` does not chain: not a <style-range>, so <general-enclosed>: unknown (its negation too)
+  EXPECT_EQ(range_if("style(1 < 2 > 0)"), "b");
+  EXPECT_EQ(range_if("not style(1 < 2 > 0)"), "b");
+  EXPECT_EQ(range_if("style(1 = 1 = 1)"), "b");
+  EXPECT_EQ(range_if("not style(1 = 1 = 1)"), "b");
+  EXPECT_EQ(range_if("style(1 < 2 < 3 < 4)"), "b");
+  EXPECT_EQ(range_if("not style(1 < 2 < 3 < 4)"), "b");
+  EXPECT_EQ(range_if("style(5 > 3 !invalid)"), "b");
+  EXPECT_EQ(range_if("not style(5 > 3 !)"), "b");
+  EXPECT_EQ(range_if("style(> 3)"), "b");
+  EXPECT_EQ(range_if("not style(> 3)"), "b");
+  EXPECT_EQ(range_if("style(5 >)"), "b");
+  EXPECT_EQ(range_if("style(5 > > 3)"), "b");
+  EXPECT_EQ(range_if("style(5 >< 3)"), "b");
+}
+
+TEST(CssCustomIfRange, ACustomPropertyOperandIsSubstitutedAsIfInVar) {
+  // "If <style-range-value> is a <custom-property-name>, it needs to be substituted as if the <custom-property-name> was wrapped inside a var()."
+  EXPECT_EQ(range_if("style(--x <= 3)", {{"--x", "3"}}), "a");
+  EXPECT_EQ(range_if("style(--x >= --y)", {{"--x", "3"}, {"--y", "3"}}), "a");
+  EXPECT_EQ(range_if("style(--x > 3px)", {{"--x", "11px"}}), "a") << "an unregistered property read as a length";
+  EXPECT_EQ(range_if("style(--x > 3%)", {{"--x", "5%"}}), "a");
+  EXPECT_EQ(range_if("style(--x < 1turn)", {{"--x", "1deg"}}), "a");
+  EXPECT_EQ(range_if("style(--x <= 1000ms)", {{"--x", "1s"}}), "a");
+  EXPECT_EQ(range_if("style(3dppx > --x)", {{"--x", "96dpi"}}), "a");
+  EXPECT_EQ(range_if("style(--x >= 3)", {{"--x", "3px"}}), "b") << "a length is not a number";
+  EXPECT_EQ(range_if("style(--x > 3px)", {{"--x", "red"}}), "b") << "not a value of the seven types";
+  EXPECT_EQ(range_if("style(--nope > 3)"), "b") << "an undeclared property is the guaranteed-invalid value";
+  EXPECT_EQ(range_if("not style(--nope > 3)"), "a");
+  EXPECT_EQ(range_if("style(--x > 3)", {{"--x", "5 6"}}), "b") << "two values";
+  // registered properties are the computed values: a `<length>` of 30px, 11 as a `<number>`, 5% as a `<percentage>`
+  EXPECT_EQ(range_if("style(--length > 3px)", {{"--length", "11px"}}), "a");
+  EXPECT_EQ(range_if("style(--length >= 30px)", {{"--length", "30px"}}), "a");
+  EXPECT_EQ(range_if("style(--length >= 3)", {{"--length", "11em"}}), "b");
+  EXPECT_EQ(range_if("style(--number >= 3)", {{"--number", "3"}}), "a");
+  EXPECT_EQ(range_if("style(--number > 3px)", {{"--number", "11"}}), "b");
+  EXPECT_EQ(range_if("style(--percentage > 3%)", {{"--percentage", "5%"}}), "a");
+  EXPECT_EQ(range_if("style(--angle < 1turn)", {{"--angle", "1deg"}}), "a");
+  EXPECT_EQ(range_if("style(--time <= 1000ms)", {{"--time", "1s"}}), "a");
+  EXPECT_EQ(range_if("style(3dppx > --resolution)", {{"--resolution", "96dpi"}}), "a");
+  EXPECT_EQ(range_if("style(--length > initial)", {{"--length", "5px"}}), "b") << "`initial` is no value of the seven types";
+  // an operand that is not one custom property name is not read: `--x + 1` is no number or dimension
+  EXPECT_EQ(range_if("style(--x + 1 >= --y)", {{"--x", "5"}, {"--y", "3"}}), "b");
+  EXPECT_EQ(range_if("style(--x >= --y + 1)", {{"--x", "5"}, {"--y", "3"}}), "b");
+  EXPECT_EQ(range_if("style(calc(--x + 1) >= --y)", {{"--x", "5"}, {"--y", "3"}}), "b");
+  EXPECT_EQ(range_if("style(--x >= calc(--y + 1))", {{"--x", "5"}, {"--y", "3"}}), "b");
+}
+
+TEST(CssCustomIfRange, AFunctionInAnOperandIsSubstitutedAndSimplified) {
+  // "Substitute arbitrary substitution function within <style-range-value>" and a calculation is computed
+  EXPECT_EQ(range_if("style(--x >= calc(3px + 3px))", {{"--x", "7px"}}), "a");
+  EXPECT_EQ(range_if("style(--x >= calc(3px + 3px))", {{"--x", "5px"}}), "b");
+  EXPECT_EQ(range_if("style(calc(var(--x) + 1) >= var(--y))", {{"--x", "5"}, {"--y", "3"}}), "a");
+  EXPECT_EQ(range_if("style(var(--x) >= --x)", {{"--x", "3"}}), "a");
+  EXPECT_EQ(range_if("style(var(--time) <= 1000ms)", {{"--time", "1s"}}), "a");
+  EXPECT_EQ(range_if("style(calc(1 + 1) = 2)"), "a");
+  EXPECT_EQ(range_if("style(calc(2px * 2) = 4px)"), "a");
+  EXPECT_EQ(range_if("style(calc(1px / 1px) = 1)"), "a") << "a calculation of a number type";
+  EXPECT_EQ(range_if("style(calc(1px + 1) = 2px)"), "b") << "an invalid calculation has no value";
+  EXPECT_EQ(range_if("style(var(--nope) > 3)"), "b");
+}
+
+TEST(CssCustomIfRange, AFontRelativeLengthIsComputedWithRespectToTheElement) {
+  // "compute each": 1em is the element's font size
+  EXPECT_EQ(range_if("style(1em > 29px)", {{"font-size", "30px"}}), "a");
+  EXPECT_EQ(range_if("style(1em > 30px)", {{"font-size", "30px"}}), "b");
+  EXPECT_EQ(range_if("style(1em = 30px)", {{"font-size", "30px"}}), "a");
+  EXPECT_EQ(range_if("style(10em > 3px)", {{"font-size", "30px"}}), "a");
+  EXPECT_EQ(range_if("style(1em > 1px)", {{"font-size", "30px"}}), "a");
+  EXPECT_EQ(range_if("style(--x = 60px)", {{"--x", "2em"}, {"font-size", "30px"}}), "a") << "an unregistered property holds the tokens: the length is computed when read";
+  EXPECT_EQ(range_if("style(1rem = 16px)"), "a");
+  EXPECT_EQ(range_if("style(1em = 1rem)", {{"font-size", "10px"}}), "a") << "the root element: rem is its own font size";
+}
+
+TEST(CssCustomIfRange, ARangeIsAFeatureInGroupsAndNegations) {
+  EXPECT_EQ(range_if("style((5 > 3) and (1 < 2))"), "a");
+  EXPECT_EQ(range_if("style((5 > 3) and (1 > 2))"), "b");
+  EXPECT_EQ(range_if("style((5 > 3) or (1 > 2))"), "a");
+  EXPECT_EQ(range_if("style(not (5 > 3))"), "b");
+  EXPECT_EQ(range_if("style(not (1 > 2))"), "a");
+  EXPECT_EQ(range_if("style(5 > 3) and style(--x: 1)", {{"--x", "1"}}), "a");
+  EXPECT_EQ(range_if("style((--x > 3) and (--x: 5))", {{"--x", "5"}}), "a");
+  EXPECT_EQ(range_if("style(--x: 5) and style(--x < 6)", {{"--x", "5"}}), "a");
+}
+
+TEST(CssCustomIfRange, ACycleAndTheGuaranteedInvalidValueAreFalse) {
+  World w;
+  ASSERT_EQ(w.build(), GTEXT_CSS_OK);
+  Computed c;
+  compute_pairs(w, c, {{"--x", "if(style(--x > 3): a; else: b)"}, {"--y", "if(style(--z > 3): a; else: b)"}, {"--z", "if(style(--y > 3): a; else: b)"}});
+  ASSERT_EQ(c.status, GTEXT_CSS_OK);
+  EXPECT_EQ(c.custom("--x"), "b") << "\"that query evaluates to false\" while the property is being computed";
+  EXPECT_EQ(c.custom("--y"), "b");
+  EXPECT_EQ(c.custom("--z"), "b");
 }
 
 TEST(CssCustom, IfStyleQueryWithACssWideKeywordComparesWithTheValueTheKeywordWouldGive) {

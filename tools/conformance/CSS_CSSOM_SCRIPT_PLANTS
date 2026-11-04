@@ -16,3 +16,9 @@ computed-background-position-written-from-the-longhands	cssom_decl.c	  else if (
 font-shorthand-drops-a-math-weight	css_shorthand.c	               ((v->flags & GTEXT_CSS_VFLAG_MATH) && v->interp == GTEXT_CSS_INTERP_NUMBER)) {	               ((v->flags & GTEXT_CSS_VFLAG_MATH) && v->interp == GTEXT_CSS_INTERP_NUMBER && 0)) {	fail
 property-rules-not-given-to-the-context	cssom_computed.c	  co.property_rules = core->props;	  co.property_rules = NULL;	fail
 math-result-outside-the-range-is-clamped-for-text-combine	css_compute_algo.c	run_build(st, id, src, CV_REJECT_RANGE, build_text_combine, m, out)	run_build(st, id, src, 0, build_text_combine, m, out)	fail
+style-range-never-evaluated	css_substitute.c	  if (leaf->is_range) {\n    return range_leaf(sub, fi, leaf);	  if (0 && leaf->is_range) {\n    return range_leaf(sub, fi, leaf);	fail
+style-range-types-not-compared	css_style_range.c	  return zero_a || zero_b;	  return true;	fail
+var-name-taint-ignored	css_substitute.c	  if (found && f->res[0].rope && css_rope_has_taint(f->res[0].rope)) {	  if (0 && found && f->res[0].rope && css_rope_has_taint(f->res[0].rope)) {	fail
+if-condition-taint-ignored	css_substitute.c	f->res[1].rope && f->cond_tainted ?	f->res[1].rope && 0 && f->cond_tainted ?	fail
+env-index-grammar-not-checked	css_property.c	(name_is(v, "env") && !env_name_syntax(v))	(0 && name_is(v, "env") && !env_name_syntax(v))	fail
+attr-unit-not-lowercased	css_substitute.c	text[k] = (char)(text[k] - 'A' + 'a');	text[k] = (char)(text[k] - 'A' + 'A');	fail

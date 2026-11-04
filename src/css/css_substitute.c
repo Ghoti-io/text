@@ -56,6 +56,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "css_style_range.h"
 #include "css_substitute_internal.h"
 
 #define DEFAULT_MAX_TOKENS ((uint64_t)1048576)
@@ -325,6 +326,7 @@ typedef struct {
   fr_kind kind;
   int phase;
   bool cyclic;
+  bool cond_tainted;   ///< if(): the condition read an attr()-tainted value, so the result is tainted.
   bool has_arrived;
   bool early_only;
   bool gi;                                  ///< SEQ: something in it is guaranteed-invalid.
@@ -1338,6 +1340,23 @@ static int lookup_custom(css_sub * sub, size_t fi, int slot, const char * name, 
 
 /* ---- var(), inherit() --------------------------------------------------------------------------------------------- */
 
+/// The value that a var() or inherit() hands on: the rope found (or the fallback), marked tainted as a whole when the name argument was. "The substitution value of an
+/// arbitrary substitution function is attr()-tainted as a whole if any attr()-tainted values were involved in creating it": a name that came from an attr() decides
+/// which property is read, so the value read is not to be trusted either, and neither is the fallback used when the name does not parse. false: out of memory (failed).
+static bool var_result(css_sub * sub, size_t fi, css_rope * found, css_rope ** out) {
+  const frame_t * f = &sub->frames[fi];
+  if (found && f->res[0].rope && css_rope_has_taint(f->res[0].rope)) {
+    *out = css_rope_taint(&sub->alloc, found);
+    if (!*out) {
+      SUB_FAIL(sub, GTEXT_CSS_E_OOM);
+      return false;
+    }
+    return true;
+  }
+  *out = css_rope_retain(found);
+  return true;
+}
+
 static int step_var(css_sub * sub, size_t fi) {
   frame_t * f = &sub->frames[fi];
   int pre = fn_prelude(sub, fi);
@@ -1415,16 +1434,20 @@ static int step_var(css_sub * sub, size_t fi) {
       f->phase = 13;
     }
     else {
-      css_rope * out = css_rope_retain(f->res[1].rope);
-      const bool gi = f->res[1].gi;
-      fn_finish(sub, fi, out, gi);
+      css_rope * out = NULL;
+      if (!var_result(sub, fi, f->res[1].rope, &out)) {
+        return STEP_ERROR;
+      }
+      fn_finish(sub, fi, out, f->res[1].gi);
       return STEP_DONE;
     }
   /* fall through */
   default: {
-    css_rope * out = css_rope_retain(f->res[2].rope);
-    const bool gi = f->res[2].gi;
-    fn_finish(sub, fi, out, gi);
+    css_rope * out = NULL;
+    if (!var_result(sub, fi, f->res[2].rope, &out)) {
+      return STEP_ERROR;
+    }
+    fn_finish(sub, fi, out, f->res[2].gi);
     return STEP_DONE;
   }
   }
@@ -2705,6 +2728,18 @@ static int step_attr(css_sub * sub, size_t fi) {
         css_syn_match m;
         st = css_syntax_match(f->csyn->syntax, f->csyn->compiled, t->values, t->value_count, &mo, &matched, &m);
         gtext_css_value_set_free(m.set);
+        if (st == GTEXT_CSS_OK && matched) {
+          /* a unit is ASCII case-insensitive and a value of the syntax has it in its canonical (lower) case: `3EM` is `3em` */
+          const GTEXT_CSS_Component_Value * one = single(t);
+          if (one && one->kind == GTEXT_CSS_VALUE_TOKEN && one->type == GTEXT_CSS_TOKEN_DIMENSION && one->unit.length <= e - b &&
+              gtext_css_unit_lookup(one->unit.data, one->unit.length) != GTEXT_CSS_UNIT_NONE) {
+            for (size_t k = e - one->unit.length; k < e; k++) {
+              if (text[k] >= 'A' && text[k] <= 'Z') {
+                text[k] = (char)(text[k] - 'A' + 'a');
+              }
+            }
+          }
+        }
         gtext_css_tree_free(t);
       }
     }
@@ -2752,7 +2787,16 @@ typedef struct {
   const GTEXT_CSS_Component_Value * vals;  ///< L_MEDIA, L_SUPPORTS: the contents; L_STYLE: the value after the colon.
   size_t count;
   bool has_value;                          ///< L_STYLE: a colon and a value were written.
-  bool ranged;                             ///< L_STYLE: a comparison operator is written.
+  bool unknown;                            ///< L_STYLE: it is none of the forms of a style feature (<general-enclosed>): unknown.
+  bool is_range;                           ///< L_STYLE: a style range (Conditional 5, <style-range>): the operands below.
+  unsigned nops;                           ///< The operands of the range, 2 or 3.
+  const GTEXT_CSS_Component_Value * opv[3];  ///< Each operand: its values, white space trimmed.
+  size_t opn[3];
+  css_range_cmp cmp[2];                    ///< The comparators between them, as written.
+  css_range_operand val[3];                ///< The operands read so far (`got` of them).
+  unsigned got;
+  bool dead;                               ///< An operand has no value of a type a range compares: "evaluate to false".
+  bool tainted;                            ///< L_STYLE: it read a value that is attr()-tainted.
   tri result;                              ///< Once evaluated.
 } cleaf;
 
@@ -2820,25 +2864,134 @@ typedef struct {
   bool pending_child;   ///< A group was started: its node arrives in `child_node`.
 } pframe;
 
-/// Whether a list of values (in a style query) is a feature: it begins with a name that is not `not`.
+/// The comparators `<`, `<=`, `>`, `>=`, `=` of a range at the top level of a list: `<style-range>` splits there. `*kind`: 0 no comparator is written before a colon (a
+/// plain or boolean feature), 1 a range, 2 comparators written that are no range (`a = b = c`, `a < b > c`, an empty operand, a `!`): <general-enclosed>.
+static void scan_range(const GTEXT_CSS_Component_Value * v, size_t n, cleaf * leaf, int * kind) {
+  *kind = 0;
+  size_t start = 0, nops = 0, ncmp = 0;
+  bool bad = false;
+  size_t i = 0;
+  for (; i <= n; i++) {
+    const bool end = i == n;
+    css_range_cmp op = 0;
+    size_t width = 0;
+    if (!end) {
+      if (is_tok(&v[i], GTEXT_CSS_TOKEN_COLON) && ncmp == 0) {
+        *kind = 0;
+        return; /* a declaration */
+      }
+      if (v[i].kind == GTEXT_CSS_VALUE_TOKEN && v[i].type == GTEXT_CSS_TOKEN_DELIM) {
+        const bool eq_next = i + 1 < n && v[i + 1].kind == GTEXT_CSS_VALUE_TOKEN && v[i + 1].type == GTEXT_CSS_TOKEN_DELIM && v[i + 1].delim == '=';
+        if (v[i].delim == '<') {
+          op = eq_next ? CSR_LE : CSR_LT;
+          width = eq_next ? 2 : 1;
+        }
+        else if (v[i].delim == '>') {
+          op = eq_next ? CSR_GE : CSR_GT;
+          width = eq_next ? 2 : 1;
+        }
+        else if (v[i].delim == '=') {
+          op = CSR_EQ;
+          width = 1;
+        }
+        else if (v[i].delim == '!') {
+          bad = true; /* not a <declaration-value> */
+        }
+      }
+      if (!op) {
+        continue;
+      }
+    }
+    /* an operand ends here: trim its white space */
+    size_t b = start, e = i;
+    while (b < e && is_ws(&v[b])) {
+      b++;
+    }
+    while (e > b && is_ws(&v[e - 1])) {
+      e--;
+    }
+    if (e == b || nops == 3) {
+      bad = true;
+    }
+    else if (nops < 3) {
+      leaf->opv[nops] = &v[b];
+      leaf->opn[nops] = e - b;
+    }
+    nops++;
+    if (end) {
+      break;
+    }
+    if (ncmp < 2) {
+      leaf->cmp[ncmp] = op;
+    }
+    ncmp++;
+    i += width - 1;
+    start = i + 1;
+  }
+  if (ncmp == 0) {
+    *kind = bad ? 2 : 0;
+    return;
+  }
+  if (bad || nops < 2 || nops > 3 || ncmp != nops - 1) {
+    *kind = 2;
+    return;
+  }
+  if (ncmp == 2) {
+    const bool lt0 = leaf->cmp[0] == CSR_LT || leaf->cmp[0] == CSR_LE, lt1 = leaf->cmp[1] == CSR_LT || leaf->cmp[1] == CSR_LE;
+    const bool gt0 = leaf->cmp[0] == CSR_GT || leaf->cmp[0] == CSR_GE, gt1 = leaf->cmp[1] == CSR_GT || leaf->cmp[1] == CSR_GE;
+    if (!((lt0 && lt1) || (gt0 && gt1))) {
+      *kind = 2; /* "<mf-lt> ... <mf-lt>" or "<mf-gt> ... <mf-gt>"; `=` does not chain */
+      return;
+    }
+  }
+  leaf->nops = (unsigned)nops;
+  *kind = 1;
+}
+
+/// Whether a list of values (in a style query) is a feature: it begins with a name that is not `not`, or it is a range.
 static bool looks_like_feature(const GTEXT_CSS_Component_Value * v, size_t n) {
   size_t i = 0;
   while (i < n && is_ws(&v[i])) {
     i++;
   }
-  return i < n && is_tok(&v[i], GTEXT_CSS_TOKEN_IDENT) && !tok_ieq(&v[i].value, "not");
+  if (i < n && is_tok(&v[i], GTEXT_CSS_TOKEN_IDENT) && !tok_ieq(&v[i].value, "not")) {
+    return true;
+  }
+  cleaf scratch;
+  memset(&scratch, 0, sizeof scratch);
+  int kind = 0;
+  scan_range(v, n, &scratch, &kind);
+  return kind != 0;
 }
 
-/// A leaf for a style feature (`--name`, `--name: value`, `--name > value`).
+/// A leaf for a style feature (`--name`, `--name: value`, `--name > value`, `5 > 3`).
 static int make_feature(cond_state * c, const GTEXT_CSS_Component_Value * v, size_t n) {
   cleaf leaf;
   memset(&leaf, 0, sizeof leaf);
   leaf.type = L_STYLE;
+  int kind = 0;
+  scan_range(v, n, &leaf, &kind);
+  if (kind == 1) {
+    leaf.is_range = true;
+    leaf.name = &v[0];
+    return cond_leaf(c, &leaf);
+  }
+  if (kind == 2) {
+    memset(&leaf, 0, sizeof leaf);
+    leaf.type = L_STYLE;
+    leaf.unknown = true;
+    leaf.name = &v[0];
+    return cond_leaf(c, &leaf);
+  }
   size_t i = 0;
   while (i < n && is_ws(&v[i])) {
     i++;
   }
   leaf.name = &v[i];
+  if (i >= n || !is_tok(&v[i], GTEXT_CSS_TOKEN_IDENT)) {
+    leaf.unknown = true;
+    return cond_leaf(c, &leaf);
+  }
   i++;
   while (i < n && is_ws(&v[i])) {
     i++;
@@ -2850,7 +3003,7 @@ static int make_feature(cond_state * c, const GTEXT_CSS_Component_Value * v, siz
     leaf.count = n - i;
   }
   else if (i < n) {
-    leaf.ranged = true; /* `--x > 3`, `--x = 1`: a style range, which this layer does not evaluate */
+    leaf.unknown = true; /* `--x 3`: neither `--x`, `--x: v` nor a range */
   }
   return cond_leaf(c, &leaf);
 }
@@ -3373,11 +3526,157 @@ static GTEXT_CSS_Status same_tokens(css_sub * sub, const char * a, size_t al, co
   return st == GTEXT_CSS_E_OOM ? st : (st == GTEXT_CSS_OK ? st : GTEXT_CSS_OK);
 }
 
+/// The syntax an operand of a style range is computed against: the types that a range compares (Conditional 5, "evaluate a <style-range>", step 3) that a syntax string
+/// can name; a <frequency> is not one, and is read as written (it has no relative unit, and a calculation of frequencies is not simplified).
+#define RANGE_SYNTAX "<number> | <percentage> | <length> | <angle> | <time> | <resolution>"
+
+/// One operand of a style range, made a computed value and read: "If <style-range-value> is a <custom-property-name>, it needs to be substituted as if the
+/// <custom-property-name> was wrapped inside a var(). Substitute arbitrary substitution function within <style-range-value>" (the condition is substituted before it is
+/// read, so the functions are gone from the values here). "Parse <style-range-value> to <number>, <percentage>, <length>, <angle>, <time>, <frequency> or <resolution>. If
+/// this cannot be done, evaluate to false." The value is computed with respect to the element, as a registered custom property of that syntax is, so `calc()` is
+/// simplified and a font-relative length is the element's. STEP_DONE: `leaf->val[i]` is set, or `leaf->dead` says there is no such value. STEP_PUSHED: the custom
+/// property is being computed; ask again.
+static int range_operand(css_sub * sub, size_t fi, cleaf * leaf, unsigned i) {
+  const GTEXT_CSS_Component_Value * v = leaf->opv[i];
+  const size_t n = leaf->opn[i];
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  char * text = NULL;
+  size_t tl = 0;
+  if (n == 1 && is_tok(&v[0], GTEXT_CSS_TOKEN_IDENT) && css_creg_name_ok(v[0].value.data, v[0].value.length)) {
+    bool inprog = false;
+    const int r = lookup_custom(sub, fi, 2, v[0].value.data, v[0].value.length, true, &inprog);
+    if (r < 0) {
+      return STEP_ERROR;
+    }
+    if (r == 1) {
+      return STEP_PUSHED;
+    }
+    const frame_t * f = &sub->frames[fi];
+    if (inprog || f->res[2].gi || !f->res[2].rope) {
+      leaf->dead = true; /* the guaranteed-invalid value, or the property being computed: no value */
+      return STEP_DONE;
+    }
+    leaf->tainted = leaf->tainted || css_rope_has_taint(f->res[2].rope);
+    st = css_rope_flatten(&sub->alloc, f->res[2].rope, sub->max_bytes, &text, &tl, NULL, NULL, &sub->work);
+    if (st == GTEXT_CSS_E_LIMIT_OUTPUT) {
+      leaf->dead = true;
+      return STEP_DONE;
+    }
+  }
+  else {
+    dbuf d;
+    dbuf_init(&d, &sub->alloc);
+    st = group_text(sub, v, n, &d);
+    if (st == GTEXT_CSS_OK && d.failed) {
+      st = GTEXT_CSS_E_OOM;
+    }
+    if (st == GTEXT_CSS_OK) {
+      text = d.data;
+      tl = d.len;
+      d.data = NULL;
+    }
+    dbuf_free(&d);
+  }
+  const css_compiled_syntax * csyn = NULL;
+  bool temporary = false;
+  if (st == GTEXT_CSS_OK) {
+    st = css_ctx_syntax(sub->cc, RANGE_SYNTAX, sizeof RANGE_SYNTAX - 1, &csyn, &temporary);
+  }
+  css_rope * computed = NULL;
+  bool cycle = false;
+  if (st == GTEXT_CSS_OK) {
+    css_creg as_syntax;
+    memset(&as_syntax, 0, sizeof as_syntax);
+    as_syntax.syntax = csyn->syntax;
+    as_syntax.compiled = csyn->compiled;
+    st = compute_typed(sub, &as_syntax, text ? text : "", tl, false, &computed, &cycle);
+  }
+  if (temporary) {
+    css_compiled_syntax_free((css_compiled_syntax *)csyn);
+  }
+  bool read = false;
+  if (st == GTEXT_CSS_OK && !computed && !cycle) {
+    /* not one of the types a syntax names: a frequency is read as it is written */
+    GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+    po.allocator = &sub->alloc;
+    po.count_errors_only = true;
+    GTEXT_CSS_Tree * tree = NULL;
+    st = gtext_css_parse_component_values(text ? text : "", tl, &po, &tree, NULL);
+    if (st == GTEXT_CSS_OK) {
+      const GTEXT_CSS_Component_Value * one = single(tree);
+      read = one && one->kind == GTEXT_CSS_VALUE_TOKEN && one->type == GTEXT_CSS_TOKEN_DIMENSION &&
+          gtext_css_unit_type(gtext_css_unit_lookup(one->unit.data, one->unit.length)) == GTEXT_CSS_UNIT_TYPE_FREQUENCY && css_range_operand_from_token(one, &leaf->val[i]);
+      gtext_css_tree_free(tree);
+    }
+    else if (st != GTEXT_CSS_E_OOM) {
+      st = GTEXT_CSS_OK;
+    }
+  }
+  gtext_allocator_free(&sub->alloc, text);
+  text = NULL;
+  if (st == GTEXT_CSS_OK && computed && !cycle) {
+    st = css_rope_flatten(&sub->alloc, computed, sub->max_bytes, &text, &tl, NULL, NULL, &sub->work);
+    if (st == GTEXT_CSS_OK) {
+      GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+      po.allocator = &sub->alloc;
+      po.count_errors_only = true;
+      GTEXT_CSS_Tree * tree = NULL;
+      st = gtext_css_parse_component_values(text, tl, &po, &tree, NULL);
+      if (st == GTEXT_CSS_OK) {
+        const GTEXT_CSS_Component_Value * one = single(tree);
+        read = one && css_range_operand_from_token(one, &leaf->val[i]);
+        gtext_css_tree_free(tree);
+      }
+      else if (st != GTEXT_CSS_E_OOM) {
+        st = GTEXT_CSS_OK;
+      }
+    }
+    else if (st == GTEXT_CSS_E_LIMIT_OUTPUT) {
+      st = GTEXT_CSS_OK;
+    }
+  }
+  css_rope_release(computed);
+  gtext_allocator_free(&sub->alloc, text);
+  if (st != GTEXT_CSS_OK) {
+    SUB_FAIL(sub, st);
+    return STEP_ERROR;
+  }
+  leaf->dead = !read;
+  return STEP_DONE;
+}
+
+/// A style range: "evaluate a <style-range>" (Conditional 5). Each operand is read in turn (a custom property may need computing first: STEP_PUSHED, and the leaf is
+/// asked again); an operand with no value of the seven types makes the range false, and so do operands of different types. "If each <style-range-value> from the range
+/// have the same type, compute each and evaluate the comparison": a chain holds when every pair holds, left to right.
+static int range_leaf(css_sub * sub, size_t fi, cleaf * leaf) {
+  while (leaf->got < leaf->nops && !leaf->dead) {
+    const int r = range_operand(sub, fi, leaf, leaf->got);
+    if (r != STEP_DONE) {
+      return r;
+    }
+    if (!leaf->dead) {
+      leaf->got++;
+    }
+  }
+  bool holds = !leaf->dead;
+  for (unsigned i = 1; holds && i < leaf->nops; i++) {
+    holds = css_range_comparable(&leaf->val[0], &leaf->val[i]);
+  }
+  for (unsigned i = 0; holds && i + 1 < leaf->nops; i++) {
+    holds = css_range_compare(&leaf->val[i], leaf->cmp[i], &leaf->val[i + 1]);
+  }
+  leaf->result = holds ? T_TRUE : T_FALSE;
+  return STEP_DONE;
+}
+
 /// A style feature of a custom property: `style(--x: value)` is true when the computed value of `--x` is `value`, `style(--x)` when it is not the initial value
 /// (Conditional 5, 6.2). Returns STEP_PUSHED while the property is being computed, STEP_DONE when `leaf->result` is set, STEP_ERROR on failure.
 static int style_leaf(css_sub * sub, size_t fi, cleaf * leaf) {
   const GTEXT_CSS_String * nm = &leaf->name->value;
-  if (leaf->ranged || !css_creg_name_ok(nm->data, nm->length)) {
+  if (leaf->is_range) {
+    return range_leaf(sub, fi, leaf);
+  }
+  if (leaf->unknown || !css_creg_name_ok(nm->data, nm->length)) {
     leaf->result = T_UNKNOWN;
     return STEP_DONE;
   }
@@ -3397,6 +3696,7 @@ static int style_leaf(css_sub * sub, size_t fi, cleaf * leaf) {
   size_t ri = 0;
   const bool reged = sub->cc->nregs && css_ctx_find_reg(sub->cc, nm->data, nm->length, &ri);
   const css_rope * value = f->res[2].gi ? NULL : f->res[2].rope;
+  leaf->tainted = value && css_rope_has_taint(value);
   const GTEXT_CSS_Custom_Value * initial_cv = reged ? sub->cc->regs[ri].initial : NULL;
   const css_rope * initial = initial_cv ? css_cval_rope(initial_cv) : NULL;
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
@@ -3633,6 +3933,7 @@ static int step_if(css_sub * sub, size_t fi) {
         }
       }
       f = &sub->frames[fi];
+      f->cond_tainted = f->cond_tainted || (f->res[0].rope && css_rope_has_taint(f->res[0].rope));
       if (!t) {
         f->branch++;
         f->phase = 11;
@@ -3715,6 +4016,7 @@ static int step_if(css_sub * sub, size_t fi) {
         }
         f = &sub->frames[fi];
         c = f->aux;
+        f->cond_tainted = f->cond_tainted || (c->leaves[c->next_leaf].type == L_STYLE && c->leaves[c->next_leaf].tainted);
         c->next_leaf++;
       }
       /* "If the result of condition is false, continue." (An unknown at the top is false.) */
@@ -3750,7 +4052,12 @@ static int step_if(css_sub * sub, size_t fi) {
       continue;
     }
     default: {
-      css_rope * out = css_rope_retain(f->res[1].rope);
+      /* "attr()-tainted as a whole if any attr()-tainted values were involved in creating it": a condition that read one decided which branch this is */
+      css_rope * out = f->res[1].rope && f->cond_tainted ? css_rope_taint(&sub->alloc, f->res[1].rope) : css_rope_retain(f->res[1].rope);
+      if (f->res[1].rope && !out) {
+        SUB_FAIL(sub, GTEXT_CSS_E_OOM);
+        return STEP_ERROR;
+      }
       const bool gi = f->res[1].gi;
       fn_finish(sub, fi, out, gi);
       return STEP_DONE;

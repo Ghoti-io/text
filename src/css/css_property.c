@@ -391,6 +391,37 @@ static bool random_item_syntax(const GTEXT_CSS_Component_Value * fn) {
 }
 
 /**
+ * The argument grammar of env() (Environment Variables 1): "env( <custom-ident> <integer [0,∞]>* , <declaration-value>? )". The part before the first top-level
+ * comma is a name and then indexes, each a non-negative integer. A name or an index made by a substitution function is not known until the value is substituted, so
+ * a first argument with one in it is not judged here.
+ */
+static bool env_name_syntax(const GTEXT_CSS_Component_Value * fn) {
+  bool seen_name = false;
+  for (size_t k = 0; k < fn->child_count; k++) {
+    const GTEXT_CSS_Component_Value * c = &fn->children[k];
+    if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA) {
+      break;
+    }
+    if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE) {
+      continue;
+    }
+    if (c->kind != GTEXT_CSS_VALUE_TOKEN) {
+      return c->kind == GTEXT_CSS_VALUE_FUNCTION && css_is_substitution_name(&c->value); /* a substitution function: judged when substituted */
+    }
+    if (!seen_name) {
+      if (c->type != GTEXT_CSS_TOKEN_IDENT) {
+        return false;
+      }
+      seen_name = true;
+    }
+    else if (!(c->type == GTEXT_CSS_TOKEN_NUMBER && (c->flags & GTEXT_CSS_FLAG_INTEGER) && c->number >= 0)) {
+      return false;
+    }
+  }
+  return true; /* an empty first argument is refused by the caller */
+}
+
+/**
  * Whether every `var()`, `env()` and `attr()` in the values is syntactically valid. Values 5, on the arbitrary substitution functions:
  * "If a property value contains one or more arbitrary substitution functions, and all of those functions are themselves syntactically
  * valid according to their argument grammars, the entire value's grammar must be assumed to be valid at parse time". The argument
@@ -449,7 +480,7 @@ static GTEXT_CSS_Status substitution_syntax(const GTEXT_CSS_Component_Value * va
             first = true;
           }
         }
-        if (!first) {
+        if (!first || (name_is(v, "env") && !env_name_syntax(v))) {
           *valid = false;
         }
       }

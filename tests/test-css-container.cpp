@@ -317,7 +317,8 @@ TEST(CssContainerStyle, AStyleQueryComparesComputedValues) {
               "@container style(color: blue) { #leaf { padding-bottom: 1px } } @container style(color) { #leaf { padding-left: 1px } } @container style(font-size: 20px) { #leaf { padding-right: 1px } } "
               "@container style(--n > 5) { #leaf { order: 1 } } @container style(--n < 5) { #leaf { flex-grow: 1 } } @container style(3 < --n <= 7) { #leaf { z-index: 1 } } "
               "@container style(font-size: 30px) { #leaf { text-indent: 5px } } @container style(--w: 2em) { #leaf { flex-shrink: 4 } } @container style(--w: 40px) { #leaf { outline-offset: 1px } } "
-              "@container not style(--theme: light) { #leaf { top: 1px } } @container style((--theme: dark) and (color: red)) { #leaf { left: 1px } } @container style(--theme: dark) and style(color: blue) { #leaf { right: 1px } }"};
+              "@container not style(--theme: light) { #leaf { top: 1px } } @container style((--theme: dark) and (color: red)) { #leaf { left: 1px } } @container style(--theme: dark) and style(color: blue) { #leaf { right: 1px } } "
+              "@container style(1em = 20px) { #leaf { column-gap: 3px } } @container style(1em > 20px) { #leaf { row-gap: 3px } } @container style(2em > 39px) { #leaf { flex-basis: 3px } }"};
   d.build();
   ASSERT_EQ(d.status, GTEXT_CSS_OK);
   EXPECT_EQ(d.get(leaf, "margin-top"), "1px");
@@ -337,6 +338,9 @@ TEST(CssContainerStyle, AStyleQueryComparesComputedValues) {
   EXPECT_EQ(d.get(leaf, "top"), "1px");
   EXPECT_EQ(d.get(leaf, "left"), "1px");
   EXPECT_NE(d.get(leaf, "right"), "1px");
+  EXPECT_EQ(d.get(leaf, "column-gap"), "3px") << "a range operand's font-relative length is the query container's: 1em is 20px";
+  EXPECT_NE(d.get(leaf, "row-gap"), "3px");
+  EXPECT_EQ(d.get(leaf, "flex-basis"), "3px");
 }
 
 TEST(CssContainerStyle, ARevertedValueIsFalseAndAWideKeywordIsComputedOnTheContainer) {

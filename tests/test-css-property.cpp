@@ -826,6 +826,17 @@ TEST(CssProperty, ASubstitutionFunctionThatIsNotSyntacticallyValidMakesTheValueI
   EXPECT_EQ(parse(r, "width", "var(--a, 1px)"), "pending:var(--a, 1px)");
   EXPECT_EQ(parse(r, "width", "var(--a,)"), "pending:var(--a,)");
   EXPECT_EQ(parse(r, "width", "env(safe-area-inset-top)"), "pending:env(safe-area-inset-top)");
+  // Environment Variables 1: "env( <custom-ident> <integer [0,∞]>* , <declaration-value>? )": a name, then indexes that are non-negative integers
+  EXPECT_EQ(parse(r, "top", "env(test 0, green)"), "pending:env(test 0, green)");
+  EXPECT_EQ(parse(r, "top", "env(test 0,)"), "pending:env(test 0,)");
+  EXPECT_EQ(parse(r, "top", "env(test 0 1 2 3 4, green)"), "pending:env(test 0 1 2 3 4, green)");
+  EXPECT_EQ(parse(r, "top", "env(test1 test2, green)"), "invalid");
+  EXPECT_EQ(parse(r, "top", "env(test1 10 20 test2, green)"), "invalid");
+  EXPECT_EQ(parse(r, "top", "env(test 0.1, green)"), "invalid");
+  EXPECT_EQ(parse(r, "top", "env(test -1, green)"), "invalid");
+  EXPECT_EQ(parse(r, "top", "env(1px)"), "invalid");
+  EXPECT_EQ(parse(r, "top", "env(test 1px)"), "invalid");
+  EXPECT_EQ(parse(r, "top", "env(var(--n) 0, 1px)"), "pending:env(var(--n) 0, 1px)") << "a name made by a substitution is judged when it is substituted";
   // Cascade 4, on `all`: "It only accepts the CSS-wide keywords." A substitution may yield one, so `all: var(--x)` is pending (a browser takes it) and is
   // invalid at computed-value time unless it does.
   EXPECT_EQ(parse(r, "all", "var(--x)"), "pending:var(--x)");

@@ -43,6 +43,7 @@
 #include <string.h>
 
 #include "css_container_internal.h"
+#include "css_style_range.h"
 
 void css_cq_style_free(struct GTEXT_CSS_Condition_Call_Internal * ci) {
   (void)ci; /* a style query keeps nothing in the call: the compute context is the caller's */
@@ -335,15 +336,8 @@ static GTEXT_CSS_Tristate eval_boolean(css_cq_ctx * cq, const mq_node * n, GTEXT
 
 /* ---- ranges ------------------------------------------------------------------------------------------------------- */
 
-typedef struct {
-  double v;
-  GTEXT_CSS_Unit_Type type;  ///< the unit's type; NONE for a number
-  bool percentage;
-  bool number;
-} operand;
-
 /// The operand's value read as a number, a percentage or a dimension of an absolute unit; false: it cannot be (the comparison is false).
-static GTEXT_CSS_Status read_operand(css_cq_ctx * cq, const char * text, size_t len, operand * op, bool * ok) {
+static GTEXT_CSS_Status read_operand(css_cq_ctx * cq, const char * text, size_t len, css_range_operand * op, bool * ok) {
   *ok = false;
   /* a custom property name is `var(--name)`; any other operand is substituted by being computed as the value of a custom property of the child */
   GTEXT_CSS_Declaration_Block * block = NULL;
@@ -397,29 +391,24 @@ static GTEXT_CSS_Status read_operand(css_cq_ctx * cq, const char * text, size_t 
             sig++;
           }
         }
-        if (sig == 1 && tok->kind == GTEXT_CSS_VALUE_TOKEN) {
-          memset(op, 0, sizeof *op);
-          if (tok->type == GTEXT_CSS_TOKEN_NUMBER) {
-            op->v = tok->number;
-            op->number = true;
-            *ok = true;
-          }
-          else if (tok->type == GTEXT_CSS_TOKEN_PERCENTAGE) {
-            op->v = tok->number;
-            op->percentage = true;
-            *ok = true;
-          }
-          else if (tok->type == GTEXT_CSS_TOKEN_DIMENSION) {
-            const GTEXT_CSS_Unit u = gtext_css_unit_lookup(tok->unit.data, tok->unit.length);
-            double canon = 0;
-            if (u != GTEXT_CSS_UNIT_NONE && gtext_css_unit_to_canonical(u, tok->number, &canon)) {
-              op->v = canon;
-              op->type = gtext_css_unit_type(u);
+        if (sig == 1) {
+          *ok = css_range_operand_from_token(tok, op);
+          if (!*ok && tok->kind == GTEXT_CSS_VALUE_TOKEN && tok->type == GTEXT_CSS_TOKEN_DIMENSION &&
+              gtext_css_unit_lookup(tok->unit.data, tok->unit.length) == GTEXT_CSS_UNIT_EM) {
+            /* "compute each": a length in em is the query container's font size (the other font-relative units need metrics of its font, which are not asked for here:
+               such an operand has no value, and the query is false) */
+            const GTEXT_CSS_Value_Set * fs = NULL;
+            const GTEXT_CSS_Value * fv = NULL;
+            if (gtext_css_computed_get_by_name(cq->style, "font-size", 9, &fs, NULL) == GTEXT_CSS_OK && (fv = gtext_css_value_set_root(fs)) &&
+                fv->kind == GTEXT_CSS_VAL_DIMENSION) {
+              memset(op, 0, sizeof *op);
+              op->v = tok->number * fv->number;
+              op->type = GTEXT_CSS_UNIT_TYPE_LENGTH;
               *ok = true;
             }
           }
         }
-              gtext_css_tree_free(tree);
+        gtext_css_tree_free(tree);
       }
     }
     gtext_css_serialize_buffer_free(&so, t);
@@ -429,21 +418,11 @@ static GTEXT_CSS_Status read_operand(css_cq_ctx * cq, const char * text, size_t 
   return st;
 }
 
-static bool compare_op(double a, unsigned op, double b) {
-  switch (op) {
-  case MQOP_LT: return a < b;
-  case MQOP_LE: return a <= b;
-  case MQOP_GT: return a > b;
-  case MQOP_GE: return a >= b;
-  default: return a == b;
-  }
-}
-
 static GTEXT_CSS_Tristate eval_range(css_cq_ctx * cq, const mq_node * n, GTEXT_CSS_Status * status, const char ** detail) {
   const char * txt[3] = {n->text, n->name ? n->name : n->value, n->name ? n->value : NULL};
   const size_t len[3] = {n->text_length, n->name ? n->name_length : n->value_length, n->name ? n->value_length : 0};
   const size_t cnt = n->name ? 3 : 2;
-  operand ops[3];
+  css_range_operand ops[3];
   for (size_t i = 0; i < cnt; i++) {
     bool ok = false;
     const GTEXT_CSS_Status st = read_operand(cq, txt[i], len[i], &ops[i], &ok);
@@ -458,17 +437,13 @@ static GTEXT_CSS_Tristate eval_range(css_cq_ctx * cq, const mq_node * n, GTEXT_C
   }
   /* "If each <style-range-value> from the range have the same type ... a unitless zero must be treated as being a zero-<length> when compared against a <length>. Otherwise evaluate to false." */
   for (size_t i = 1; i < cnt; i++) {
-    if (ops[i].number != ops[0].number || ops[i].percentage != ops[0].percentage || ops[i].type != ops[0].type) {
-      const bool zero_a = ops[0].number && ops[0].v == 0 && ops[i].type == GTEXT_CSS_UNIT_TYPE_LENGTH;
-      const bool zero_b = ops[i].number && ops[i].v == 0 && ops[0].type == GTEXT_CSS_UNIT_TYPE_LENGTH;
-      if (!zero_a && !zero_b) {
-        return GTEXT_CSS_TRI_FALSE;
-      }
+    if (!css_range_comparable(&ops[0], &ops[i])) {
+      return GTEXT_CSS_TRI_FALSE;
     }
   }
-  bool r = compare_op(ops[0].v, n->op1, ops[1].v);
+  bool r = css_range_compare(&ops[0], (css_range_cmp)n->op1, &ops[1]);
   if (cnt == 3) {
-    r = r && compare_op(ops[1].v, n->op2, ops[2].v);
+    r = r && css_range_compare(&ops[1], (css_range_cmp)n->op2, &ops[2]);
   }
   return tri(r);
 }
