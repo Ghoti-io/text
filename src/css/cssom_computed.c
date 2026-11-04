@@ -285,6 +285,7 @@ void css_computed_forget(GTEXT_CSSOM_Decl * d) {
   }
   gtext_css_selector_list_free(c->pseudo);
   gtext_allocator_free(&core->alloc, c->origins);
+  gtext_allocator_free(&core->alloc, c->position);
   gtext_allocator_free(&core->alloc, c);
   d->comp = NULL;
 }
@@ -718,6 +719,34 @@ static GTEXT_CSS_Status is_rendered(css_core * core, const css_comp * c, bool * 
 
 /* ---- the refresh -------------------------------------------------------------------------------------------------------------------------------------- */
 
+/// The computed `background-position` as the computed layer writes it: "a list, each item a pair of offsets (horizontal and vertical) from the top left origin" (Backgrounds 4, 2.7),
+/// which is what both browsers answer for the shorthand (`5px 9px`, `0% 0%`, `calc(100% - 10px) 50%`). The declarations of the block are the longhands', which keep the origin keyword (2.6),
+/// so the shorthand written from them (`left 5px top 9px`) is not the computed value. NULL where the style has no such property (a registry without it).
+static GTEXT_CSS_Status position_text(css_core * core, const GTEXT_CSS_Computed_Style * style, char ** out, size_t * out_length) {
+  *out = NULL;
+  *out_length = 0;
+  const GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(core->registry, "background-position", 19);
+  if (!id || !style) {
+    return GTEXT_CSS_OK;
+  }
+  char * text = NULL;
+  size_t n = 0;
+  const GTEXT_CSS_Status st = gtext_css_computed_shorthand_text(style, id, &text, &n, NULL);
+  if (st == GTEXT_CSS_E_UNSUPPORTED) {
+    return GTEXT_CSS_OK;   /* a longhand the engine cannot compute: the block's own shorthand stands */
+  }
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  *out = css_core_dup(core, text, n);
+  gtext_css_serialize_buffer_free(NULL, text);
+  if (!*out) {
+    return GTEXT_CSS_E_OOM;
+  }
+  *out_length = n;
+  return GTEXT_CSS_OK;
+}
+
 static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
   css_comp * c = d->comp;
   css_core * core = d->obj.core;
@@ -737,6 +766,8 @@ static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
   GTEXT_CSS_Computed_Style * style = NULL;
   uint8_t * origins = NULL;
   size_t norigins = 0;
+  char * position = NULL;
+  size_t position_length = 0;
   bool empty = c->null_obj;
   core->in_callback++;   /* a mutation attempted from a callback of the caller's tree or layout is refused */
   if (!empty) {
@@ -779,6 +810,9 @@ static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
         css_resolve_in in = {core, cs, c->element, c->pseudo, index, c->pseudo ? of_element : NULL};
         st = css_resolved_build(&in, style, &block, &origins, &norigins);
       }
+      if (st == GTEXT_CSS_OK) {
+        st = position_text(core, style, &position, &position_length);
+      }
       if (c->pseudo) {
         gtext_css_computed_free(of_element);
       }
@@ -789,8 +823,12 @@ static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
     gtext_css_computed_free(style);
     gtext_css_block_free(block);
     gtext_allocator_free(&core->alloc, origins);
+    gtext_allocator_free(&core->alloc, position);
     return st;
   }
+  gtext_allocator_free(&core->alloc, c->position);
+  c->position = position;
+  c->position_length = position_length;
   gtext_css_block_free(d->block);
   d->block = block;
   gtext_allocator_free(&core->alloc, c->origins);
@@ -1031,4 +1069,13 @@ GTEXT_CSS_Status gtext_cssom_document_container_interface(GTEXT_CSSOM_Document *
     out->compute_context = cs->ctx;
   }
   return GTEXT_CSS_OK;
+}
+
+bool css_computed_position_text(const GTEXT_CSSOM_Decl * d, const char ** text, size_t * length) {
+  if (!d || !d->comp || !d->comp->position) {
+    return false;
+  }
+  *text = d->comp->position;
+  *length = d->comp->position_length;
+  return true;
 }

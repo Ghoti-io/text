@@ -99,6 +99,8 @@ typedef struct css_comp {
   uint64_t gen, tree, epoch, cepoch;  ///< The pair (and the epochs) the declarations were made for.
   uint8_t * origins;                  ///< GTEXT_CSSOM_Origin by property id (`norigins` entries).
   size_t norigins;
+  char * position;                    ///< The computed `background-position` as the computed layer writes it (two offsets from the top left), made with the declarations; NULL where there is none (the declarations are the longhands').
+  size_t position_length;
   struct GTEXT_CSSOM_Decl * rec_prev, * rec_next;   ///< The declarations of one element.
   struct GTEXT_CSSOM_Decl * all_prev, * all_next;   ///< Every computed declaration of the document.
   css_rec * rec;                      ///< The record of the element (while the declaration is linked in it).
@@ -127,6 +129,9 @@ typedef struct css_cmps {
 
 /// The session, made on first use; NULL on memory.
 css_cmps * css_cmps_get(css_core * core);
+
+/// The computed `background-position` of a computed declaration, as the computed layer writes it (valid until the declaration is refreshed); false where the declaration has none.
+bool css_computed_position_text(const struct GTEXT_CSSOM_Decl * decl, const char ** text, size_t * length);
 
 /// The first read or a later one found the pair moved: make the declarations again. A no-op for a declaration whose state is current.
 GTEXT_CSS_Status css_computed_refresh(struct GTEXT_CSSOM_Decl * decl);

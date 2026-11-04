@@ -279,8 +279,20 @@ static GTEXT_CSS_Status value_of(GTEXT_CSSOM_Decl * decl, const pref * p, char *
   css_core * core = decl->obj.core;
   GTEXT_CSS_Status st;
   size_t n = 0;
+  const char * pos = NULL;
+  size_t pos_length = 0;
   if (!p->known) {
     st = empty_string(core, out, &n);
+  }
+  else if (p->shorthand && decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED && css_computed_position_text(decl, &pos, &pos_length) &&
+           gtext_css_registry_resolve_alias(core->registry, p->id) == gtext_css_registry_find_property(core->registry, "background-position", 19)) {
+    /* the computed `background-position` is a pair of offsets from the top left, not the longhands' origin keywords written as a shorthand */
+    char * buf = css_core_dup(core, pos, pos_length);
+    st = buf ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+    n = pos_length;
+    if (st == GTEXT_CSS_OK) {
+      *out = buf;
+    }
   }
   else if (p->shorthand) {
     char * buf = NULL;

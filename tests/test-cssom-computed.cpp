@@ -883,4 +883,18 @@ TEST(CssomComputed, TheContainerInterfaceOfADocumentAnswersAStyleQueryFromTheSty
   (void)none;
 }
 
+/* Backgrounds 4, 2.7 (the computed value of `background-position` is "a list, each item a pair of offsets (horizontal and vertical) from the top left origin"): the shorthand of a computed
+   declaration is that pair, not the origin keywords of the longhands written as a shorthand (both pinned browsers: `5px 9px`, `0% 0%`; web-platform-tests css-values/calc-background-position-002.html). */
+TEST(CssomComputed, TheComputedBackgroundPositionIsAPairOfOffsetsFromTheTopLeft) {
+  Cs m("<!DOCTYPE html><html><body><div id=a style=\"background-position: 5px 9px\"></div><div id=b></div><div id=c style=\"background-position: right 10px bottom 3px\"></div>"
+       "<div id=d style=\"background-position: 5px 9px, center\"></div><div id=e style=\"background-position: calc(10px + 1px) top\"></div></body></html>");
+  EXPECT_EQ(m.value("#a", "background-position"), "5px 9px");
+  EXPECT_EQ(m.value("#b", "background-position"), "0% 0%") << "the initial value";
+  EXPECT_EQ(m.value("#c", "background-position"), "calc(100% - 10px) calc(100% - 3px)");
+  EXPECT_EQ(m.value("#d", "background-position"), "5px 9px, 50% 50%");
+  EXPECT_EQ(m.value("#e", "background-position"), "11px 0%");
+  EXPECT_EQ(m.value("#a", "background-position-x"), "left 5px") << "the longhands keep the origin keyword";
+  EXPECT_EQ(m.value("#a", "background-position-y"), "top 9px");
+}
+
 }  // namespace

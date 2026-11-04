@@ -368,3 +368,4 @@ typed-rule-gets-no-source-text	cssom_rule_serialize.c	  if (rule->source && rule
 a-sheet-of-another-document-is-adoptable	cssom_scope.c	  return sheet && sheet->constructed && sheet->obj.core == scope_core(scope);	  return sheet && sheet->constructed;	multidoc
 container-style-never-found	cssom_computed.c	  return r ? r->style : NULL;\n}\n\nGTEXT_CSS_Status gtext_cssom_document_container_interface	  return NULL;\n}\n\nGTEXT_CSS_Status gtext_cssom_document_container_interface	computed
 document-environment-has-no-condition	cssom_computed.c	  env.condition = environment_condition;	  env.condition = NULL;	computed
+computed-background-position-written-from-the-longhands	cssom_decl.c	  else if (p->shorthand && decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED && css_computed_position_text(decl	  else if (p->shorthand && decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED && 0 && css_computed_position_text(decl	computed
