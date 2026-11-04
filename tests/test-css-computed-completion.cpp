@@ -415,6 +415,18 @@ TEST(CssComputedCompletionLinkParameters, AnEmptySecondArgumentNeedsItsCommaAndA
   EXPECT_EQ(root_computed("animation-timing-function: steps(2,)", "animation-timing-function"), "ease");
 }
 
+/* Writing Modes 4, text-combine-upright (served 2026-11-04): `none | all | [ digits <integer [2,4]>? ]`; "If the integer is omitted, it computes to 2." (web-platform-tests css-writing-modes/
+   text-combine-upright-parsing-digits-001.html: both pinned browsers write `digits 2`.) */
+TEST(CssComputedCompletionTextCombine, DigitsWithoutItsIntegerComputesToDigitsTwo) {
+  EXPECT_EQ(root_computed("text-combine-upright: digits", "text-combine-upright"), "digits 2");
+  EXPECT_EQ(root_computed("text-combine-upright: digits 3", "text-combine-upright"), "digits 3");
+  EXPECT_EQ(root_computed("text-combine-upright: digits 4", "text-combine-upright"), "digits 4");
+  EXPECT_EQ(root_computed("text-combine-upright: all", "text-combine-upright"), "all");
+  EXPECT_EQ(root_computed("text-combine-upright: none", "text-combine-upright"), "none");
+  EXPECT_EQ(root_computed("", "text-combine-upright"), "none");
+  EXPECT_EQ(root_computed("text-combine-upright: digits calc(1 + 1)", "text-combine-upright"), "digits 2");
+}
+
 /* Values 5, 4.2 (served 2026-10-30): x-start, x-end, y-start and y-end "compute the same as the physical edge keyword corresponding to the start/end side in the y/x
    axis"; Backgrounds 4, 2.6: the grammar of background-position-x is "[ center | [ [ left | right | x-start | x-end ]? <length-percentage>? ]! ]#". */
 TEST(CssComputedCompletionPosition, TheAxisKeywordsAreTheirPhysicalEdges) {

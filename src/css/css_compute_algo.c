@@ -2166,6 +2166,33 @@ static GTEXT_CSS_Status build_hyphenate(css_state * st, ab * a, const GTEXT_CSS_
   return a->vb.status;
 }
 
+/* Writing Modes 4, text-combine-upright: `none | all | [ digits <integer [2,4]>? ]`; "If the integer is omitted, it computes to 2." The computed value is "specified keyword, plus
+   integer if digits". */
+static GTEXT_CSS_Status build_text_combine(css_state * st, ab * a, const GTEXT_CSS_Value_Set * bt, const GTEXT_CSS_Value * root, const css_pmeta * m,
+    GTEXT_CSS_Value ** out_root) {
+  (void)st;
+  (void)bt;
+  (void)m;
+  if (!root) {
+    return GTEXT_CSS_OK;
+  }
+  const bool lone = root->kind == GTEXT_CSS_VAL_KEYWORD || (root->kind == GTEXT_CSS_VAL_LIST && root->child_count == 1);
+  const GTEXT_CSS_Value * word = root->kind == GTEXT_CSS_VAL_LIST && root->child_count == 1 ? &root->children[0] : root;
+  if (!lone || !kw(word, "digits")) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Value * kids = css_vb_values(&a->vb, 2);
+  GTEXT_CSS_Value * list = css_vb_value(&a->vb);
+  if (!kids || !list) {
+    return a->vb.status;
+  }
+  kids[0] = *word;
+  css_v_integer(&kids[1], 2.0);
+  css_v_list(list, kids, 2, GTEXT_CSS_SEP_SPACE);
+  *out_root = list;
+  return a->vb.status;
+}
+
 static GTEXT_CSS_Status build_image_orientation(css_state * st, ab * a, const GTEXT_CSS_Value_Set * bt, const GTEXT_CSS_Value * root,
     const css_pmeta * m, GTEXT_CSS_Value ** out_root) {
   (void)bt;
@@ -2481,6 +2508,7 @@ GTEXT_CSS_Status css_algo_compute(css_state * st, GTEXT_CSS_Property_Id id, cons
   case GTEXT_CSS_ALGO_WORD_SPACING: return algo_word_spacing(st, id, src, out);
   case GTEXT_CSS_ALGO_LETTER_SPACING: return algo_letter_spacing(st, id, src, out);
   case GTEXT_CSS_ALGO_CARET_COLOR: return run_build(st, id, src, 0, build_caret_color, m, out);
+  case GTEXT_CSS_ALGO_TEXT_COMBINE: return run_build(st, id, src, 0, build_text_combine, m, out);
   case GTEXT_CSS_ALGO_SHAPE: return css_algo_shape(st, id, m, src, out);
   case GTEXT_CSS_ALGO_KEYWORD_ALIAS: return run_build(st, id, src, 0, build_align_keyword, m, out);
   case GTEXT_CSS_ALGO_DASHARRAY: return run_build(st, id, src, CV_NUMBERS_TO_PX, build_dasharray, m, out);
