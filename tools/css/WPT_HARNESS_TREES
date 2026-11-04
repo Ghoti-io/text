@@ -1,0 +1,5 @@
+# The harness of web-platform-tests that the scoring interpreter's page record runs pages under (tools/oracle/css_page_record.py), at the commit of WPT_COMMIT: the git tree object of
+# resources/ (testharness.js and the helpers pages load from /resources/) and of common/. tools/css/fetch.sh puts both directories in the sparse checkout beside css/ and dom/nodes,
+# checks that the checkout's trees are these, and that nothing in them is modified (git status); the check needs no network. Raising WPT_COMMIT changes these in the same commit.
+resources	b3f157a6aabece76f473af1417a9e8fd1477de0f
+common	d5aea1294b62b85c02b07e2dff40c958f3fa5fc2

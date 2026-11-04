@@ -23,7 +23,8 @@
 #                       behavior that tinycss2 and rust-cssparser are scored
 #                       against, pinned by commit in
 #                       tools/css/CSS_PARSING_TESTS_COMMIT.
-#   wpt/                web-platform-tests, sparse: the css/ directory (56,344 files, 246 MB on disk when checked out; the
+#   wpt/                web-platform-tests, sparse: resources/ and common/ (the harness the scoring interpreter's page record runs pages under; tools/css/WPT_HARNESS_TREES pins
+#                       their trees at the same commit and the fetch checks them, offline too) and the css/ directory (56,344 files, 246 MB on disk when checked out; the
 #                       css-syntax tables that tools/css/extract-wpt.py turns into vectors, the value tests of the math, color
 #                       and function types that tools/css/extract-wpt-values.py reads, and every property parsing, computed
 #                       value and serialization test that tools/css/extract-wpt-props.py reads as data, and the custom property pages of css-variables and
@@ -85,26 +86,41 @@ fi
 
 # ---- web-platform-tests, css/ ----------------------------------------------
 wpt="$dest/wpt"
+# resources/ and common/ are checked against the trees WPT_HARNESS_TREES pins (the commit holds them, so this needs no network) and must be unmodified.
+wpt_harness_ok() {
+	[ -f "$1/resources/testharness.js" ] || return 1
+	[ -z "$(git -C "$1" status --porcelain -- resources common 2>/dev/null)" ] || return 1
+	while read -r dir tree; do
+		case "$dir" in '#'*|'') continue ;; esac
+		[ "$(git -C "$1" rev-parse "HEAD:$dir" 2>/dev/null)" = "$tree" ] || return 1
+	done < "$root/tools/css/WPT_HARNESS_TREES"
+}
 if [ -d "$wpt/.git" ] && [ "$(git -C "$wpt" rev-parse HEAD 2>/dev/null)" = "$want_wpt" ]; then
-	# (a checkout made before the property tests were scored has only some directories of css/: add what it lacks, at the same commit)
-	if [ ! -d "$wpt/css/support" ] || [ ! -d "$wpt/css/css-grid/parsing" ] || [ ! -d "$wpt/css/css-values" ] || [ ! -f "$wpt/dom/nodes/selectors.js" ]; then
-		git -C "$wpt" sparse-checkout set css dom/nodes
+	# (a checkout made before the property tests were scored has only some directories of css/: add what it lacks, at the same commit; one made before the page record has no harness)
+	if [ ! -d "$wpt/css/support" ] || [ ! -d "$wpt/css/css-grid/parsing" ] || [ ! -d "$wpt/css/css-values" ] || [ ! -f "$wpt/dom/nodes/selectors.js" ] || [ ! -f "$wpt/resources/testharness.js" ]; then
+		git -C "$wpt" sparse-checkout set css dom/nodes resources common
 	fi
+	wpt_harness_ok "$wpt" || { printf 'wpt: resources/ or common/ is not the pinned tree (tools/css/WPT_HARNESS_TREES)\n' >&2; exit 1; }
 	printf 'have    wpt @ %s\n' "$want_wpt"
 else
-	printf 'fetch   wpt (css/, dom/nodes) @ %s\n' "$want_wpt"
+	printf 'fetch   wpt (css/, dom/nodes, resources/, common/) @ %s\n' "$want_wpt"
 	rm -rf "$wpt.partial"
 	mkdir -p "$wpt.partial"
 	git -C "$wpt.partial" init --quiet
 	git -C "$wpt.partial" remote add origin https://github.com/web-platform-tests/wpt.git
 	git -C "$wpt.partial" sparse-checkout init --cone
-	git -C "$wpt.partial" sparse-checkout set css dom/nodes
+	git -C "$wpt.partial" sparse-checkout set css dom/nodes resources common
 	git -C "$wpt.partial" fetch --quiet --depth 1 --filter=blob:none origin "$want_wpt"
 	git -C "$wpt.partial" checkout --quiet --detach FETCH_HEAD
 	got=$(git -C "$wpt.partial" rev-parse HEAD)
 	if [ "$got" != "$want_wpt" ]; then
 		rm -rf "$wpt.partial"
 		printf 'wpt: checked out %s, pinned %s\n' "$got" "$want_wpt" >&2
+		exit 1
+	fi
+	if ! wpt_harness_ok "$wpt.partial"; then
+		rm -rf "$wpt.partial"
+		printf 'wpt: resources/ or common/ is not the pinned tree (tools/css/WPT_HARNESS_TREES). Nothing was kept.\n' >&2
 		exit 1
 	fi
 	rm -rf "$wpt"
