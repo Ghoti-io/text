@@ -75,16 +75,25 @@ script_py=$root/tools/conformance/css_cssom_script_suite.py
 script_exceptions=$root/tools/conformance/CSS_CSSOM_SCRIPT_EXCEPTIONS
 layout=$root/tools/conformance/UNSCORED_LAYOUT
 pagerecord=$root/tools/conformance/css_cssom_pagerecord.jsonl
+# the replay of the programs in the browsers (tools/css/replay_gen.py, tools/oracle/css_page_record.py --replay), which the gate holds equal to the page's own run, and the one hand-written
+# list: the failures the served text decides (CSS_CSSOM_SCRIPT_SERVED, each with a quoted sentence and both browsers' answers)
+fixtures=$root/tools/conformance/CSS_CSSOM_SCRIPT_FIXTURES
+replayrecord=$root/tools/conformance/css_cssom_replayrecord.jsonl
+served=$root/tools/conformance/CSS_CSSOM_SCRIPT_SERVED
 script_pages=$root/build/css-cssom-script-pages.txt
 awk -F'\t' '!/^#/ { print $1 }' "$vectors/script-tests.tsv" | sort -u > "$script_pages"
 if [ "$1" = "--script-pages" ]; then
 	cat "$script_pages"
 	exit 0
 fi
+if [ "$1" = "--script-programs" ]; then
+	cat "$vectors/script.tsv"
+	exit 0
+fi
 run_script() { # exceptions layout [options]
 	e=$1 l=$2
 	shift 2
-	python3 -I "$script_py" "$vectors" "$script_runner" "$e" "$l" --record "$pagerecord" --wpt "$wpt" "$@"
+	python3 -I "$script_py" "$vectors" "$script_runner" "$e" "$l" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt" "$@"
 }
 run_ledger() { # vectors elsewhere census codes [options]
 	v=$1 e=$2 c=$3 r=$4
@@ -228,9 +237,9 @@ awk -F'\t' 'BEGIN { OFS = "\t" } /^helper:computed-testcommon\t/ { $4 = $4 + 1 }
 ledger_expect class-moved "MOVED" "$vectors" "$elsewhere" "$census" "$scratch/codes-moved"
 # the scoring interpreter's gate, seen to fail: each plant edits a copy of one input
 script_expect() { # name message vectors exceptions layout record [env assignments are in the environment]
-	expect "$1" "$2" python3 -I "$script_py" "$3" "$script_runner" "$4" "$5" --record "$6" --wpt "$wpt"
+	expect "$1" "$2" python3 -I "$script_py" "$3" "$script_runner" "$4" "$5" --record "$6" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
 }
-python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --wpt "$wpt" >"$log" 2>&1 || {
+python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt" >"$log" 2>&1 || {
 	echo "the script gate does not pass unedited" >&2
 	cat "$log" >&2
 	exit 1
@@ -313,10 +322,77 @@ PY
 script_expect script-expectation-lie "UNEXPLAINED FAILURES" "$scratch/prog-lie" "$script_exceptions" "$layout" "$pagerecord"
 script_expect script-op-dropped "STALE EXCEPTIONS" "$scratch/prog-drop" "$script_exceptions" "$layout" "$pagerecord"
 # the floors and the ceilings
-expect script-floor "below the floor" env CSS_CSSOM_SCRIPT_MIN_SCORED=9999999 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --wpt "$wpt"
-expect script-page-floor "below the floor" env CSS_CSSOM_SCRIPT_MIN_PAGES=9999999 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --wpt "$wpt"
-expect script-defect-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_DEFECTS=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --wpt "$wpt"
-expect script-layout-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_LAYOUT=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --wpt "$wpt"
+expect script-floor "below the floor" env CSS_CSSOM_SCRIPT_MIN_SCORED=9999999 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
+expect script-page-floor "below the floor" env CSS_CSSOM_SCRIPT_MIN_PAGES=9999999 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
+expect script-defect-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_DEFECTS=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
+expect script-layout-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_LAYOUT=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
+# the replay of the programs in the browsers: another program, a replayed test that is not the page's, a program with no replay, another generator, no record
+mkdir -p "$scratch/replay-vec"
+cp "$vectors"/* "$scratch/replay-vec/"
+python3 - "$replayrecord" "$scratch" "$scratch/replay-vec/script.tsv" <<'PY'
+import json, sys
+src, out, prog = sys.argv[1:4]
+lines = open(src, encoding='utf-8').read().split('\n')
+header, rows = lines[0], [l for l in lines[1:] if l]
+def write(name, hdr, body):
+    open('%s/%s' % (out, name), 'w', encoding='utf-8').write(hdr + '\n' + '\n'.join(body) + '\n')
+# a replayed test whose status is not the page's (the first test of the first page that passes in the replay)
+for i, r in enumerate(rows):
+    e = json.loads(r)
+    ok = [t for t in e['chromium'].get('tests', []) if t[1] == 0]
+    if ok:
+        ok[0][1] = 1
+        write('replay-status', header, rows[:i] + [json.dumps(e, sort_keys=True)] + rows[i + 1:])
+        break
+# an answer that is not the page's (a failing replayed test with a message that has an answer)
+for i, r in enumerate(rows):
+    e = json.loads(r)
+    bad = [t for t in e['firefox'].get('tests', []) if t[1] == 1 and t[2] and ' but got ' in t[2]]
+    if bad:
+        bad[0][2] = bad[0][2] + 'X'
+        write('replay-answer', header, rows[:i] + [json.dumps(e, sort_keys=True)] + rows[i + 1:])
+        break
+write('replay-missing', header, rows[1:])
+h = json.loads(header[1:]); h['generator'] = '0' * 64
+write('replay-generator', '#' + json.dumps(h, sort_keys=True), rows)
+h = json.loads(header[1:]); h['driver'] = {'page_driver.mjs': '0' * 64}
+write('replay-driver', '#' + json.dumps(h, sort_keys=True), rows)
+# a program changed after it was replayed: an assertion of the first modeled page made a lie
+data = open(prog, 'rb').read().split(b'\n')
+for i, l in enumerate(data):
+    if l.startswith(b'O\tassert_equals\tr:') and l.split(b'\t')[3].startswith(b's:'):
+        f = l.split(b'\t')
+        f[3] += b'!'
+        data[i] = b'\t'.join(f)
+        break
+open(prog, 'wb').write(b'\n'.join(data))
+PY
+replay_expect() { # name message replay-record vectors
+	expect "$1" "$2" python3 -I "$script_py" "$4" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$3" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
+}
+replay_expect replay-status-differs "the program is not the page" "$scratch/replay-status" "$vectors"
+replay_expect replay-answer-differs "the program is not the page" "$scratch/replay-answer" "$vectors"
+replay_expect replay-program-missing "has a program and no replay" "$scratch/replay-missing" "$vectors"
+replay_expect replay-generator-differs "was made by replay_gen.py" "$scratch/replay-generator" "$vectors"
+replay_expect replay-driver-differs "was made by the page driver" "$scratch/replay-driver" "$vectors"
+replay_expect replay-program-changed "changed since it was replayed" "$replayrecord" "$scratch/replay-vec"
+expect no-replay-record "no replay record was given" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
+# the fixtures of the runner: an expectation made a lie
+sed '0,/^#expect.*PASS$/s//&X/' "$fixtures" > "$scratch/fixtures-lie"
+expect fixture-expectation-lie "FIXTURE" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$scratch/fixtures-lie" --wpt "$wpt"
+# the served-text list: a line for a test that does not fail, one without a quoted sentence, one without both answers
+first=$(awk -F'\t' '!/^#/ && $3 == "defect" { print $1 "\t" $2; exit }' "$script_exceptions")
+if [ -n "$first" ]; then
+	id=$(printf '%s' "$first" | cut -f1)
+	msg=$(printf '%s' "$first" | cut -f2)
+	printf 'css/control/planted.html#0\tfails\tserved-text\tplanted "a sentence of the served draft that is long enough"; chromium passes, firefox passes\n' > "$scratch/served-stale"
+	expect served-line-for-a-test-that-does-not-fail "does not fail" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-stale" --fixtures "$fixtures" --wpt "$wpt"
+	printf '%s\t%s\tserved-text\tno sentence here; chromium passes, firefox passes\n' "$id" "$msg" > "$scratch/served-noquote"
+	expect served-line-without-a-quoted-sentence "quotes a sentence of the served draft" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-noquote" --fixtures "$fixtures" --wpt "$wpt"
+	printf '%s\t%s\tserved-text\tplanted "a sentence of the served draft that is long enough" and no answers\n' "$id" "$msg" > "$scratch/served-noanswers"
+	expect served-line-without-the-answers "must give the recorded answer" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-noanswers" --fixtures "$fixtures" --wpt "$wpt"
+fi
+[ "$(grep -c '	ua-default	' "$script_exceptions")" = 0 ] || expect script-ua-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_UA=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
 # the evaluator's own corpus, and the evaluator seen to fail
 python3 -I "$root/tools/css/check-cssom-eval.py" --controls >"$log" 2>&1 || { echo "the evaluator corpus controls failed" >&2; cat "$log" >&2; exit 1; }
 echo "control evaluator-defects: caught"

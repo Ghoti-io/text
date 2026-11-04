@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """Score the pages that the scoring interpreter reads (tools/css/cssom_eval.py makes the programs, css_cssom_script_suite.c runs them).
 
-    css_cssom_script_suite.py <vectors dir> <runner> <exceptions> <layout> [--record FILE] [--wpt DIR] [--regenerate]
+    css_cssom_script_suite.py <vectors dir> <runner> <exceptions> <layout> [--record FILE] [--replay FILE] [--served FILE] [--fixtures FILE] [--wpt DIR] [--regenerate]
 
 ``script.tsv`` is the flat program of each page the evaluator read, ``script-tests.tsv`` the name of every test of those pages and either ``model`` (it has ops) or the code of the
 reason it has none. The runner gives each modeled test PASS, FAIL (with the first failed assertion's message) or LAYOUT (it read a property whose used value needs a layout: never
@@ -35,7 +35,20 @@ differ and ours is one of their answers: ``browsers-differ``; both engines fail 
 the sentence. The exceptions file CSS_CSSOM_SCRIPT_EXCEPTIONS is exactly the derived list (test, our message, class, reason): a difference fails ("UNEXPLAINED FAILURES", "STALE EXCEPTIONS",
 "CLASS"); ``--regenerate`` writes it.
 
-Floors and ceilings (environment; they only move the right way): CSS_CSSOM_SCRIPT_MIN_SCORED, CSS_CSSOM_SCRIPT_MIN_PAGES, CSS_CSSOM_SCRIPT_MAX_DEFECTS, CSS_CSSOM_SCRIPT_MAX_LAYOUT.
+**The replay** (--replay, tools/css/replay_gen.py, tools/oracle/css_page_record.py --replay): the flat program of each page, translated back to JavaScript on a real DOM and run by the
+browsers in the place of the page's scripts. For every test the evaluator turned into ops the replay has to report what the page reports, in both engines ("REPLAY"); the record of
+the replay is refused when it is of another program, harness, driver or generator.
+
+**The user agent sheet.** The library has no user agent sheet; the runner supplies a small one (display, the body's margin). A failure whose first failed assertion changes when the same
+program is run with no sheet, or with a fuller one (the runner's CSSOM_RUNNER_UA), may be the runner's and not the library's: it is class ``ua-default`` and not ``defect``, with both
+answers in the reason. The class is derived, never written, and has a ceiling of its own.
+
+**Served text** (--served, CSS_CSSOM_SCRIPT_SERVED): the one hand-written file. A line (test, our message, ``served-text`` or ``wpt-wrong``, reason) replaces what the record derives for
+that failure, and the reason has to quote a sentence of the served draft and give the recorded answer of each engine; the gate refuses a line whose test does not fail, whose message is
+not ours, or whose reason does not carry both answers.
+
+Floors and ceilings (environment; they only move the right way): CSS_CSSOM_SCRIPT_MIN_SCORED, CSS_CSSOM_SCRIPT_MIN_PAGES, CSS_CSSOM_SCRIPT_MAX_DEFECTS, CSS_CSSOM_SCRIPT_MAX_LAYOUT,
+CSS_CSSOM_SCRIPT_MAX_UA.
 """
 import json
 import os
@@ -47,7 +60,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'tools', 'oracle'))
 sys.stdout.reconfigure(errors='backslashreplace')
 
-CLASSES = ('served-text', 'wpt-wrong', 'browsers-differ', 'wpt-tentative', 'defect')
+CLASSES = ('served-text', 'wpt-wrong', 'browsers-differ', 'wpt-tentative', 'ua-default', 'defect')
 
 # The owner of a defect: the part of the library (or of the harness around it) in which it is fixed. First match wins; a defect that matches none fails the gate.
 OWNERS = [
@@ -139,14 +152,17 @@ def main():
     opt = {}
     argv = sys.argv[1:]
     for i, a in enumerate(argv):
-        if a in ('--record', '--wpt', '--served'):
+        if a in ('--record', '--wpt', '--served', '--replay', '--fixtures'):
             opt[a[2:]] = argv[i + 1]
     regenerate = '--regenerate' in sys.argv
     vdir, runner, exc_path, layout_path = args[0], args[1], args[2], args[3]
     wpt = opt.get('wpt') or os.environ.get('CSS_PROPERTY_WPT')
     record_path = opt.get('record')
     served_path = opt.get('served')
+    replay_path = opt.get('replay')
+    fixtures_path = opt.get('fixtures')
     out = []
+    replay_note = 'replay: no replay record was given'
 
     tests = {}   # (page, index) -> (name, state)
     for _, f in tsv_lines(os.path.join(vdir, 'script-tests.tsv')):
@@ -154,22 +170,53 @@ def main():
     pages = sorted({p for p, _ in tests})
     modeled = {k for k, v in tests.items() if v[1] == 'model'}
     program = open(os.path.join(vdir, 'script.tsv'), 'rb').read()
-    proc = subprocess.run([runner], input=program, stdout=subprocess.PIPE, check=False)
-    if proc.returncode != 0:
-        print('SUITE PROBLEMS: the runner exited %d' % proc.returncode)
+    def run_all(ua=None):
+        env = dict(os.environ)
+        env.pop('CSSOM_RUNNER_UA', None)
+        if ua:
+            env['CSSOM_RUNNER_UA'] = ua
+        proc = subprocess.run([runner], input=program, stdout=subprocess.PIPE, check=False, env=env)
+        if proc.returncode != 0:
+            return None, None
+        res, errs = {}, []
+        for line in proc.stdout.decode('utf-8', 'surrogateescape').split('\n')[:-1]:
+            f = line.split('\t')
+            if f[0] == 'R':
+                res[(f[1], int(f[2]))] = (f[3], unesc(f[4]) if len(f) > 4 else '')
+            elif f[0] == 'E':
+                errs.append(line)
+        return res, errs
+    results, errors = run_all()
+    if results is None:
+        print('SUITE PROBLEMS: the runner exited with a failure')
         return 1
-    results, errors = {}, []
-    for line in proc.stdout.decode('utf-8', 'surrogateescape').split('\n')[:-1]:
-        f = line.split('\t')
-        if f[0] == 'R':
-            results[(f[1], int(f[2]))] = (f[3], unesc(f[4]) if len(f) > 4 else '')
-        elif f[0] == 'E':
-            errors.append(line)
     if errors:
         out.append('SUITE PROBLEMS: a program could not be run as the page ran it (%d):' % len(errors))
         out.extend('  ' + e[:300] for e in errors[:20])
     if set(results) != modeled:
         out.append('SUITE PROBLEMS: %d results for %d modeled tests (%s)' % (len(results), len(modeled), ', '.join('%s#%d' % k for k in sorted(modeled ^ set(results))[:6])))
+
+    # the runner's own fixtures: programs written by hand, each with the result its tests have to give
+    if fixtures_path:
+        fx = open(fixtures_path, 'rb').read()
+        expect = {}
+        for raw in fx.split(b'\n'):
+            f = raw.decode('utf-8', 'surrogatepass').split('\t')
+            if f[0] == '#expect' and len(f) == 4:
+                expect[(f[1], int(f[2]))] = f[3]
+        proc = subprocess.run([runner], input=fx, stdout=subprocess.PIPE, check=False)
+        got = {}
+        for line in proc.stdout.decode('utf-8', 'surrogateescape').split('\n')[:-1]:
+            f = line.split('\t')
+            if f[0] == 'R':
+                got[(f[1], int(f[2]))] = f[3]
+            elif f[0] == 'E':
+                out.append('FIXTURE: %s' % line[:200])
+        for k in sorted(set(expect) | set(got)):
+            if got.get(k) != expect.get(k):
+                out.append('FIXTURE: %s#%d is %s, the fixture says %s' % (k[0], k[1], got.get(k), expect.get(k)))
+    else:
+        out.append('FIXTURE: no fixtures were given')
 
     # the record, and the evaluator held to it
     ch, ff = {}, {}
@@ -195,8 +242,25 @@ def main():
                         if want and want != name:
                             out.append('COUNT: %s#%d is named %r by the evaluator and %r by %s' % (page, i, want, name, engine))
                         store[(page, i)] = (status, message)
+            if replay_path:
+                sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'tools', 'css'))
+                import replay_gen as G
+                progs = G.split_programs(program)
+                rheader, rentries = R.load(replay_path)
+                rprobs = R.replay_problems(rheader, rentries, {p: v[0] for p, v in progs.items()}, wpt)
+                out.extend(rprobs)
+                if not rprobs:
+                    replayed = 0
+                    for page in sorted(progs):
+                        idx = {i for (pg, i) in modeled if pg == page}
+                        diffs = R.replay_differences(page, entries[page], rentries[page], idx)
+                        out.extend(diffs)
+                        replayed += len(idx) if not diffs else 0
+                    replay_note = 'replay: %d tests of %d pages equal the page in both engines' % (replayed, len(progs))
     else:
         out.append('RECORD: no page record was given')
+    if not replay_path:
+        out.append('REPLAY: no replay record was given')
 
     # the tests that read a layout
     layout = {k: v[1] for k, v in results.items() if v[0] == 'LAYOUT'}
@@ -229,6 +293,30 @@ def main():
                 own = 'owner: ?'
             reason = own + '; ' + reason
         derived[k] = (msg, cls, reason)
+    # a defect whose answer moves with the runner's user agent sheet may be the runner's, not the library's
+    if any(v[1] == 'defect' for v in derived.values()):
+        by_ua = {}
+        for ua in ('none', 'full'):
+            by_ua[ua], _ = run_all(ua)
+            if by_ua[ua] is None:
+                out.append('SUITE PROBLEMS: the runner exited with a failure with CSSOM_RUNNER_UA=%s' % ua)
+                by_ua[ua] = {}
+
+        def say(r):
+            if r is None:
+                return 'is not run'
+            if r[0] == 'PASS':
+                return 'passes'
+            if r[0] == 'LAYOUT':
+                return 'needs a layout'
+            return 'answers %s' % (answer(r[1]) or r[1])
+        for k, (msg, cls, reason) in sorted(derived.items()):
+            if cls != 'defect':
+                continue
+            base = results.get(k)
+            if any(by_ua[ua].get(k) not in (None, base) for ua in by_ua):
+                derived[k] = (msg, 'ua-default', "owner: the user agent sheet of the runner (the library has none; the runner's is css_cssom_script_suite.c UA_SHEET), not shown to be the library's: the first failed assertion "
+                              "moves with it (no sheet: %s; the runner's sheet: %s; a fuller sheet: %s); %s" % (say(by_ua['none'].get(k)), say(base), say(by_ua['full'].get(k)), reason.split('; ', 1)[-1]))
     served = {}
     for n, f in tsv_lines(served_path):
         if len(f) != 4 or f[2] not in ('served-text', 'wpt-wrong'):
@@ -241,8 +329,15 @@ def main():
     for k, v in served.items():
         if k not in derived:
             out.append('STALE EXCEPTIONS: %s#%d is in the served-text list and does not fail' % k)
-        else:
-            derived[k] = v
+            continue
+        if derived[k][0] != v[0]:
+            out.append('STALE EXCEPTIONS: %s#%d fails with "%s", not "%s"' % (k[0], k[1], derived[k][0][:100], v[0][:100]))
+            continue
+        for engine, (st, msg) in (('chromium', ch.get(k, (None, None))), ('firefox', ff.get(k, (None, None)))):
+            need = 'passes' if st == 0 else answer(msg)
+            if engine not in v[2] or not need or need not in v[2]:
+                out.append('SUITE PROBLEMS: the %s line of %s#%d must give the recorded answer of %s (%s)' % (v[1], k[0], k[1], engine, need))
+        derived[k] = v
     if unowned:
         out.append('UNOWNED DEFECTS (%d): a defect needs an owner (OWNERS in css_cssom_script_suite.py): %s' % (len(unowned), ', '.join(unowned[:10])))
 
@@ -297,16 +392,17 @@ def main():
     n_scored = len(scored)
     n_pass = sum(1 for v in scored.values() if v[0] == 'PASS')
     defects = sum(1 for v in derived.values() if v[1] == 'defect')
+    uas = sum(1 for v in derived.values() if v[1] == 'ua-default')
     scored_pages = len({k[0] for k in scored})
     for name, value, kind in (('CSS_CSSOM_SCRIPT_MIN_SCORED', n_scored, 'min'), ('CSS_CSSOM_SCRIPT_MIN_PAGES', scored_pages, 'min'), ('CSS_CSSOM_SCRIPT_MAX_DEFECTS', defects, 'max'),
-                              ('CSS_CSSOM_SCRIPT_MAX_LAYOUT', len(layout), 'max')):
+                              ('CSS_CSSOM_SCRIPT_MAX_LAYOUT', len(layout), 'max'), ('CSS_CSSOM_SCRIPT_MAX_UA', uas, 'max')):
         limit = os.environ.get(name)
         if limit is None:
             continue
         if kind == 'min' and value < int(limit):
             out.append('below the floor: %d %s, the floor is %s' % (value, name.split('_')[-1].lower(), limit))
         if kind == 'max' and value > int(limit):
-            out.append('above the ceiling: %d %s, the ceiling is %s' % (value, 'defects' if 'DEFECTS' in name else 'layout tests', limit))
+            out.append('above the ceiling: %d %s, the ceiling is %s' % (value, 'defects' if 'DEFECTS' in name else 'ua-default tests' if name.endswith('_UA') else 'layout tests', limit))
     if out:
         print('\n'.join(out))
         return 1
@@ -317,6 +413,7 @@ def main():
         classes[v[1]] = classes.get(v[1], 0) + 1
     print('css-cssom-script: %d tests of %d pages scored (%d pass, %d exceptions: %s); %d need a layout and are not credited; %d unmodeled (%d pages read)' % (
         n_scored, scored_pages, n_pass, len(derived), ', '.join('%d %s' % (v, k) for k, v in sorted(classes.items())) or 'none', len(layout), len(tests) - len(modeled), len(pages)))
+    print('css-cssom-script: ' + replay_note)
     print('css-cssom-script: passes where both engines fail the page: %d%s' % (len(report), (' (' + ', '.join(report[:6]) + (', ...' if len(report) > 6 else '') + ')') if report else ''))
     return 0
 

@@ -2,9 +2,9 @@
 # tests the extractor gives each, the test calls the census counts on its own, the markers of the page and the helper scripts it loads. See the script for the columns.
 # pin	2f17dec1f36194d1c236120fd38b3556be466072
 # pages	5398
-# tests	23751
+# tests	23753
 # calls	14008
-# calls-differ-pages	1151
+# calls-differ-pages	1150
 css/CSS2/abspos/adjacent-to-relpos-inline-in-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/adjacent-to-relpos-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/remove-block-between-inline-and-abspos.html	1	1	layout-geometry,reftest	
@@ -783,7 +783,7 @@ css/css-cascade/scope-overlapping-has.html	1	1	computed,function
 css/css-cascade/scope-proximity.html	6	1	computed,function,loop	
 css/css-cascade/scope-rule-attr-with-colons.html	1	1	function,sheets	
 css/css-cascade/scope-shadow.html	9	9	computed,function,shadow,sheets	
-css/css-cascade/scope-specificity.html	11	1	computed,function	
+css/css-cascade/scope-specificity.html	12	1	computed,function	
 css/css-cascade/scope-starting-style.html	1	1	computed,function	
 css/css-cascade/scope-style-sharing-001.html	13	13	computed,function	
 css/css-cascade/scope-style-sharing-002.html	17	17	computed,function	
@@ -2269,7 +2269,7 @@ css/css-overflow/column-updates-computed-style.html	1	1	computed,function
 css/css-overflow/content-change-then-scroll-into-view.html	1	1	function,reftest	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-overflow/dynamic-visible-to-clip-001.html	1	1	function,layout-geometry,reftest,timing	
 css/css-overflow/dynamic-visible-to-clip-002.html	1	1	function,layout-geometry,reftest,timing	
-css/css-overflow/hit-test-stacking-context-parent-border-radius.html	9	3	function,layout-geometry	
+css/css-overflow/hit-test-stacking-context-parent-border-radius.html	13	3	function,layout-geometry	
 css/css-overflow/line-clamp/block-ellipsis-repaint-001.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-overflow/line-clamp/block-ellipsis-repaint-002.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-overflow/line-clamp/block-ellipsis-repaint-003.html	1	1	function,reftest,timing	/common/reftest-wait.js
@@ -3360,7 +3360,7 @@ css/css-transitions/KeyframeEffect-getKeyframes.tentative.html	5	5	computed,func
 css/css-transitions/KeyframeEffect-setKeyframes.tentative.html	9	6	computed,function,timing	support/helper.js
 css/css-transitions/KeyframeEffect-target.tentative.html	3	3	computed,function,timing	support/helper.js
 css/css-transitions/after-change-style-inherited-try-fallback.html	1	1	computed,function,layout-geometry	
-css/css-transitions/after-change-style-inherited.html	9	6	computed,function,layout-geometry	
+css/css-transitions/after-change-style-inherited.html	6	6	computed,function,layout-geometry	
 css/css-transitions/all-interpolates-same-as-explicit-property.html	1	1	computed,function,loop,timing	./support/helper.js
 css/css-transitions/animations/animate-with-color-mix.html	1	6	computed,function,loop,timing	/css/support/color-testcommon.js,/web-animations/testcommon.js
 css/css-transitions/animations/change-duration-during-transition.html	1	1	computed,function,timing	/css/css-transitions/support/helper.js

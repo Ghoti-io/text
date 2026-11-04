@@ -303,7 +303,6 @@ css/css-anchor-position/anchor-display-none-crash.html	1	no-assertion
 css/css-anchor-position/anchor-fallback-scroll-axis.html	1	timing
 css/css-anchor-position/anchor-function-zero-fallback.html	2	unmodeled:generated-tests
 css/css-anchor-position/anchor-function-zero-fallback.html	6	unmodeled:statement-form
-css/css-anchor-position/anchor-getComputedStyle-001.html	2	unmodeled:incremental-document
 css/css-anchor-position/anchor-getComputedStyle-002.html	1	unmodeled:computed-read
 css/css-anchor-position/anchor-getComputedStyle-002.html	1	unmodeled:generated-tests
 css/css-anchor-position/anchor-invalid-fallback.html	39	unmodeled:dom-document-createElement
@@ -537,8 +536,6 @@ css/css-animations/parsing/animation-name-computed.html	27	scored-by:css-compute
 css/css-animations/parsing/animation-play-state-computed.html	1	scored-by:css-computed
 css/css-animations/parsing/keyframe-selectors.html	14	unmodeled:dom-element-sheet
 css/css-animations/responsive/fill-forwards-viewport-units.html	1	helper:testcommon
-css/css-animations/revert-rule-keyframes-dynamic.html	2	unmodeled:host-global-CSS
-css/css-animations/revert-rule-keyframes.html	2	unmodeled:host-global-CSS
 css/css-animations/sample-on-last-keyframe.html	1	helper:testcommon
 css/css-animations/stability/animation-event-destroy-renderer.html	1	timing
 css/css-animations/style-animation-parsing.html	5	unmodeled:computed-value-expression
@@ -751,13 +748,7 @@ css/css-cascade/layer-vs-inline-style.html	1	unmodeled:statement-form
 css/css-cascade/parsing/layer-import-parsing.html	13	unmodeled:dom-document-createElement
 css/css-cascade/parsing/supports-import-parsing.html	24	unmodeled:dom-document-createElement
 css/css-cascade/revert-layer-008.html	1	unmodeled:computed-read
-css/css-cascade/revert-rule-basic.html	4	unmodeled:host-global-CSS
-css/css-cascade/revert-rule-custom-property.html	1	unmodeled:host-global-CSS
 css/css-cascade/revert-rule-cycle.tentative.html	2	unmodeled:computed-value-expression
-css/css-cascade/revert-rule-important.html	1	unmodeled:host-global-CSS
-css/css-cascade/revert-rule-important.html	1	unmodeled:incremental-document
-css/css-cascade/revert-rule-layer.html	2	unmodeled:host-global-CSS
-css/css-cascade/revert-rule-revert-layer.html	5	unmodeled:host-global-CSS
 css/css-cascade/revert-rule-shadow.html	12	unmodeled:computed-read
 css/css-cascade/revert-rule-shadow.html	12	unmodeled:dom-or-layout
 css/css-cascade/revert-val-007.html	1	unmodeled:dom-iterate-nodelist
@@ -796,7 +787,8 @@ css/css-cascade/scope-proximity.html	5	unmodeled:computed-read
 css/css-cascade/scope-proximity.html	1	unmodeled:generated-tests
 css/css-cascade/scope-rule-attr-with-colons.html	1	unmodeled:js-destructure
 css/css-cascade/scope-shadow.html	9	unmodeled:computed-read
-css/css-cascade/scope-specificity.html	11	unmodeled:dom-element-assign-textContent
+css/css-cascade/scope-specificity.html	1	unmodeled:generated-tests
+css/css-cascade/scope-specificity.html	11	unmodeled:statement-form
 css/css-cascade/scope-style-sharing-001.html	13	unmodeled:computed-read
 css/css-cascade/scope-style-sharing-002.html	17	unmodeled:computed-read
 css/css-cascade/scope-visited-cssom.html	16	unmodeled:computed-read
@@ -1084,8 +1076,6 @@ css/css-conditional/container-queries/whitespace-update-after-removal.html	1	ref
 css/css-conditional/container-rule-malformed-prelude.html	1	unmodeled:js-destructure
 css/css-conditional/idlharness.html	1	unmodeled:sheet-script
 css/css-conditional/js/001.html	4	unmodeled:sheet-script
-css/css-conditional/js/CSS-supports-CSSStyleDeclaration.html	1367	unmodeled:host-global-CSS
-css/css-conditional/js/CSS-supports-CSSStyleDeclaration.html	128	unmodeled:js-in-operator
 css/css-conditional/js/conditional-CSSGroupingRule.html	17	unmodeled:generated-tests
 css/css-conditional/js/supports-conditionText.html	15	unmodeled:dom-element-assign-textContent
 css/css-conditional/match-container-change-event.tentative.html	17	timing
@@ -1112,7 +1102,6 @@ css/css-contain/contain-style-dynamic-002.html	1	reftest
 css/css-contain/contain-style-remove-element-crash.html	1	no-assertion
 css/css-contain/container-iframe-resize-events.html	1	reftest
 css/css-contain/content-visibility/animation-display-lock.html	1	helper:testcommon
-css/css-contain/content-visibility/content-visibility-026.html	2	unmodeled:dom-element-assign-style
 css/css-contain/content-visibility/content-visibility-028.html	1	reftest
 css/css-contain/content-visibility/content-visibility-031.html	1	timing
 css/css-contain/content-visibility/content-visibility-034.html	1	reftest
@@ -1248,7 +1237,6 @@ css/css-easing/linear-timing-functions-syntax.html	13	scored-by:css-computed
 css/css-easing/linear-timing-functions-syntax.html	22	scored-by:css-property
 css/css-easing/step-timing-functions-output.html	1	helper:testcommon
 css/css-easing/timing-functions-syntax-computed.html	21	scored-by:css-computed
-css/css-env/env-revert-rule.html	1	unmodeled:host-global-CSS
 css/css-env/syntax.tentative.html	18	unmodeled:dom-document-createElement
 css/css-flexbox/abspos/abspos-descendent-001.html	1	timing
 css/css-flexbox/abspos/dynamic-align-self-001.html	1	reftest
@@ -1380,9 +1368,8 @@ css/css-fonts/font-size-computed-keyword.html	2	unmodeled:computed-value-express
 css/css-fonts/font-size-computed-keyword.html	5	unmodeled:shared-state
 css/css-fonts/font-size-computed-no-child.html	3	unmodeled:dom-document-createElement
 css/css-fonts/font-size-computed.html	8	unmodeled:computed-value-expression
-css/css-fonts/font-size-computed.html	4	unmodeled:dom-element-assign-style
 css/css-fonts/font-size-computed.html	2	unmodeled:host-window-innerWidth
-css/css-fonts/font-size-computed.html	10	unmodeled:shared-state
+css/css-fonts/font-size-computed.html	14	unmodeled:shared-state
 css/css-fonts/font-size-relative-across-calc-ff-bug-001.html	1	unmodeled:dom-iterate-nodelist
 css/css-fonts/font-style-angle.html	1	unmodeled:generated-tests
 css/css-fonts/font-synthesis-08.html	1	reftest
@@ -1462,12 +1449,9 @@ css/css-fonts/variations/at-font-face-descriptors.html	3	unmodeled:loop
 css/css-fonts/variations/at-font-face-font-matching.html	2	timing
 css/css-fonts/variations/at-font-face-font-matching.html	1	unmodeled:generated-tests
 css/css-fonts/variations/at-font-face-font-matching.html	4	unmodeled:statement-form
-css/css-fonts/variations/font-shorthand.html	22	unmodeled:host-window-CSS
 css/css-fonts/variations/font-stretch.html	3	unmodeled:dom-element-children
-css/css-fonts/variations/font-stretch.html	29	unmodeled:host-window-CSS
 css/css-fonts/variations/font-style-interpolation.html	2	unmodeled:computed-read
-css/css-fonts/variations/font-style-parsing.html	16	unmodeled:dom-element-assign-style
-css/css-fonts/variations/font-style-parsing.html	27	unmodeled:host-window-CSS
+css/css-fonts/variations/font-style-parsing.html	16	unmodeled:host-global-RegExp
 css/css-fonts/variations/font-variation-settings-inherit.html	3	unmodeled:js-regexp
 css/css-fonts/variations/font-weight-interpolation.html	2	unmodeled:computed-read
 css/css-fonts/variations/font-weight-lighter-bolder.html	1	unmodeled:generated-tests
@@ -1477,7 +1461,6 @@ css/css-fonts/variations/font-weight-matching-installed-fonts.html	1	unmodeled:g
 css/css-fonts/variations/font-weight-matching.html	2	timing
 css/css-fonts/variations/font-weight-matching.html	2	unmodeled:dom-or-layout
 css/css-fonts/variations/font-weight-matching.html	2	unmodeled:statement-form
-css/css-fonts/variations/font-weight-parsing.html	17	unmodeled:host-window-CSS
 css/css-forced-color-adjust/parsing/forced-color-adjust-computed.html	3	scored-by:css-computed
 css/css-forms/appearance-base-cursor.html	23	unmodeled:dom-document-createElement
 css/css-forms/checkbox-checkmark-animation.html	1	unmodeled:computed-read
@@ -1840,7 +1823,7 @@ css/css-grid/table-grid-item-dynamic-003.html	1	reftest
 css/css-grid/table-grid-item-dynamic-004.html	1	reftest
 css/css-grid/whitespace-reattach.html	1	reftest
 css/css-highlight-api/HighlightRegistry-highlightsFromPoint.html	1	unmodeled:dom-document-createElement
-css/css-highlight-api/HighlightRegistry-highlightsFromPoint.html	5	unmodeled:host-global-CSS
+css/css-highlight-api/HighlightRegistry-highlightsFromPoint.html	5	unmodeled:host-CSS-highlights
 css/css-highlight-api/HighlightRegistry-highlightsFromPoint.html	1	unmodeled:host-global-TypeError
 css/css-highlight-api/HighlightRegistry-highlightsFromPoint.html	1	unmodeled:js-new-Range
 css/css-highlight-api/custom-highlight-universal-parsing-and-computed-style.tentative.html	8	scored-by:css-selectors
@@ -2002,20 +1985,12 @@ css/css-mixins/functions/function-invalidation.html	4	unmodeled:dom-element-text
 css/css-mixins/functions/function-media-dynamic.html	1	unmodeled:computed-read
 css/css-mixins/functions/function-shadow-animations.html	3	unmodeled:computed-read
 css/css-mixins/functions/function-shadow-cache.html	1	unmodeled:computed-read
-css/css-mixins/mixins/apply-nested-declarations.html	1	unmodeled:incremental-document
-css/css-mixins/mixins/contents-nested-declarations-fallback.html	1	unmodeled:incremental-document
-css/css-mixins/mixins/contents-nested-declarations.html	1	unmodeled:incremental-document
-css/css-mixins/mixins/contents-rule.html	7	unmodeled:incremental-document
 css/css-mixins/mixins/important.html	3	unmodeled:js-new-CSSStyleSheet
-css/css-mixins/mixins/mixin-conditionals.html	6	unmodeled:incremental-document
 css/css-mixins/mixins/mixin-cssom.tentative.html	3	unmodeled:shared-state
 css/css-mixins/mixins/mixin-cssom.tentative.html	1	unmodeled:sheet-script
 css/css-mixins/mixins/mixin-invalidation.tentative.html	3	unmodeled:dom-document-styleSheets
-css/css-mixins/mixins/mixin-layers.html	3	unmodeled:incremental-document
-css/css-mixins/mixins/mixin-locals.html	7	unmodeled:incremental-document
 css/css-mixins/mixins/mixin-media-query-invalidation-2.html	1	unmodeled:computed-read
 css/css-mixins/mixins/mixin-media-query-invalidation.html	1	unmodeled:computed-read
-css/css-mixins/mixins/mixin-parameters.html	23	unmodeled:incremental-document
 css/css-mixins/mixins/mixin-parsing.html	29	unmodeled:js-new-CSSStyleSheet
 css/css-mixins/mixins/mixin-shadow-dom.html	9	unmodeled:computed-read
 css/css-mixins/mixins/mixin-shadow-dom.html	6	unmodeled:statement-form
@@ -2148,10 +2123,8 @@ css/css-nesting/invalidation-004.html	1	unmodeled:dom-document-styleSheets
 css/css-nesting/nested-declarations-cssom-whitespace.html	2	unmodeled:js-new-CSSStyleSheet
 css/css-nesting/nested-declarations-cssom.html	12	unmodeled:js-new-CSSStyleSheet
 css/css-nesting/nested-declarations-matching.html	1	unmodeled:dom-element-sheet
-css/css-nesting/nested-declarations-matching.html	10	unmodeled:incremental-document
 css/css-nesting/nested-rule-cssom-invalidation.html	1	unmodeled:dom-element-sheet
 css/css-nesting/nesting-braces-in-strings.html	8	unmodeled:dom-document-createElement
-css/css-nesting/nesting-revert-rule.html	4	unmodeled:host-global-CSS
 css/css-nesting/parsing.html	2	unmodeled:generated-tests
 css/css-nesting/parsing.html	1	unmodeled:sheet-script
 css/css-nesting/parsing.html	32	unmodeled:statement-form
@@ -2167,9 +2140,8 @@ css/css-overflow/clipped-scroller-add-content.html	1	reftest
 css/css-overflow/content-change-then-scroll-into-view.html	1	reftest
 css/css-overflow/dynamic-visible-to-clip-001.html	1	reftest
 css/css-overflow/dynamic-visible-to-clip-002.html	1	reftest
-css/css-overflow/hit-test-stacking-context-parent-border-radius.html	1	unmodeled:dom-or-layout
-css/css-overflow/hit-test-stacking-context-parent-border-radius.html	2	unmodeled:generated-tests
-css/css-overflow/hit-test-stacking-context-parent-border-radius.html	6	unmodeled:statement-form
+css/css-overflow/hit-test-stacking-context-parent-border-radius.html	12	layout-geometry
+css/css-overflow/hit-test-stacking-context-parent-border-radius.html	1	unmodeled:dom-document-createElement
 css/css-overflow/line-clamp/block-ellipsis-repaint-001.html	1	reftest
 css/css-overflow/line-clamp/block-ellipsis-repaint-002.html	1	reftest
 css/css-overflow/line-clamp/block-ellipsis-repaint-003.html	1	reftest
@@ -2483,15 +2455,13 @@ css/css-position/sticky/position-sticky-change-top.html	1	reftest
 css/css-position/sticky/position-sticky-continuation-crash.html	1	no-assertion
 css/css-position/sticky/position-sticky-details-crash.html	1	no-assertion
 css/css-position/sticky/position-sticky-fixed-ancestor-002.html	1	reftest
-css/css-position/sticky/position-sticky-get-bounding-client-rect.html	1	layout-geometry
-css/css-position/sticky/position-sticky-get-bounding-client-rect.html	2	unmodeled:incremental-document
+css/css-position/sticky/position-sticky-get-bounding-client-rect.html	3	layout-geometry
 css/css-position/sticky/position-sticky-ib-split-crash.html	1	no-assertion
 css/css-position/sticky/position-sticky-left-004.html	1	reftest
 css/css-position/sticky/position-sticky-left-005.html	1	reftest
 css/css-position/sticky/position-sticky-left-006.html	1	reftest
 css/css-position/sticky/position-sticky-margins.html	3	unmodeled:dom-or-layout
-css/css-position/sticky/position-sticky-offset-top-left.html	1	layout-geometry
-css/css-position/sticky/position-sticky-offset-top-left.html	1	unmodeled:incremental-document
+css/css-position/sticky/position-sticky-offset-top-left.html	2	layout-geometry
 css/css-position/sticky/position-sticky-overflow-hidden.html	2	unmodeled:dom-or-layout
 css/css-position/sticky/position-sticky-overflow-padding.html	3	unmodeled:dom-or-layout
 css/css-position/sticky/position-sticky-parsing.html	1	unmodeled:dom-document-createElement
@@ -2549,7 +2519,6 @@ css/css-properties-values-api/get-computed-style-enumeration.html	1	unmodeled:co
 css/css-properties-values-api/get-computed-style-enumeration.html	1	unmodeled:loop
 css/css-properties-values-api/get-computed-style-enumeration.html	6	unmodeled:statement-form
 css/css-properties-values-api/invalid-at-computed-value-time.html	5	unmodeled:computed-read
-css/css-properties-values-api/non-computed-unit-cycles.html	8	unmodeled:dom-element-assign-style
 css/css-properties-values-api/property-cascade.html	2	unmodeled:computed-read
 css/css-properties-values-api/register-property.html	1	unmodeled:computed-read
 css/css-properties-values-api/register-property.html	1	unmodeled:loop
@@ -2560,7 +2529,6 @@ css/css-properties-values-api/registered-property-computation.html	4	unmodeled:d
 css/css-properties-values-api/registered-property-computation.html	1	unmodeled:generated-tests
 css/css-properties-values-api/registered-property-computation.html	71	unmodeled:statement-form
 css/css-properties-values-api/registered-property-cssom.html	8	unmodeled:statement-form
-css/css-properties-values-api/registered-property-ident-function.html	1	unmodeled:dom-element-assign-style
 css/css-properties-values-api/registered-property-initial.html	2	unmodeled:generated-tests
 css/css-properties-values-api/registered-property-initial.html	29	unmodeled:statement-form
 css/css-properties-values-api/registered-property-revert.html	4	unmodeled:computed-read
@@ -3153,7 +3121,6 @@ css/css-text-decor/text-decoration-color-recalc-002.html	1	reftest
 css/css-text-decor/text-decoration-color-recalc.html	1	reftest
 css/css-text-decor/text-decoration-line-recalc.html	1	reftest
 css/css-text-decor/text-decoration-lines-001.html	1	reftest
-css/css-text-decor/text-decoration-skip-ink.html	1	unmodeled:host-global-CSS
 css/css-text-decor/text-decoration-style-recalc.html	1	reftest
 css/css-text-decor/text-shadow/dynamic-blur.html	1	reftest
 css/css-text-decor/text-shadow/parsing/text-shadow-computed.html	6	helper:computed-testcommon
@@ -3520,7 +3487,6 @@ css/css-text/parsing/text-wrap-mode-computed.html	2	scored-by:css-computed
 css/css-text/parsing/text-wrap-style-computed.html	3	scored-by:css-computed
 css/css-text/parsing/white-space-collapse-computed.html	4	scored-by:css-computed
 css/css-text/parsing/white-space-computed.html	6	scored-by:css-computed
-css/css-text/parsing/white-space-shorthand-text-wrap.html	5	unmodeled:incremental-document
 css/css-text/parsing/word-break-computed.html	5	scored-by:css-computed
 css/css-text/parsing/word-space-transform-computed.html	5	scored-by:css-computed
 css/css-text/parsing/word-spacing-computed.html	9	scored-by:css-computed
@@ -3586,7 +3552,6 @@ css/css-transforms/change-transform-origin-property.html	1	reftest
 css/css-transforms/crashtests/large-scale3d-001.html	1	no-assertion
 css/css-transforms/crashtests/locked-display-transform-crash.html	1	no-assertion
 css/css-transforms/crashtests/transformed-scroller-snapping.html	1	no-assertion
-css/css-transforms/css-transform-property-existence.html	6	unmodeled:js-in-operator
 css/css-transforms/css-transform-style-evaluation-validation.html	11	unmodeled:statement-form
 css/css-transforms/css-transforms-transformlist.html	1	reftest
 css/css-transforms/dynamic-fixed-pos-cb-change.html	1	reftest
@@ -3634,7 +3599,6 @@ css/css-transforms/transform-percent-009.html	4	unmodeled:computed-read
 css/css-transforms/transform-percent-010.html	1	reftest
 css/css-transforms/transform-scroll-child-tweak-crash.html	1	no-assertion
 css/css-transforms/transform-translate-background-002.html	1	reftest
-css/css-transforms/transforms-support-calc.html	7	unmodeled:dom-element-assign-style
 css/css-transitions/AnimationEffect-getComputedTiming.tentative.html	1	helper:helper+testcommon
 css/css-transitions/CSSTransition-canceling.tentative.html	11	unmodeled:computed-read
 css/css-transitions/CSSTransition-currentTime.tentative.html	5	unmodeled:computed-read
@@ -3656,8 +3620,9 @@ css/css-transitions/KeyframeEffect-setKeyframes.tentative.html	1	unmodeled:gener
 css/css-transitions/KeyframeEffect-setKeyframes.tentative.html	3	unmodeled:statement-form
 css/css-transitions/KeyframeEffect-target.tentative.html	3	unmodeled:computed-read
 css/css-transitions/after-change-style-inherited-try-fallback.html	1	layout-geometry
-css/css-transitions/after-change-style-inherited.html	6	unmodeled:computed-read
-css/css-transitions/after-change-style-inherited.html	3	unmodeled:dom-or-layout
+css/css-transitions/after-change-style-inherited.html	2	layout-geometry
+css/css-transitions/after-change-style-inherited.html	2	unmodeled:incremental-document
+css/css-transitions/after-change-style-inherited.html	2	unmodeled:shared-state
 css/css-transitions/all-interpolates-same-as-explicit-property.html	1	unmodeled:generated-tests
 css/css-transitions/animations/animate-with-color-mix.html	1	helper:color-testcommon+testcommon
 css/css-transitions/animations/change-duration-during-transition.html	1	unmodeled:computed-read
@@ -4629,9 +4594,6 @@ css/css-ui/resize-018.html	1	unmodeled:generated-tests
 css/css-ui/resize-change-margin.html	1	reftest
 css/css-ui/resize-iframe-3d-transform.tentative.html	1	timing
 css/css-ui/resize-interactive.html	1	unmodeled:generated-tests
-css/css-ui/tentative/moz-user-modify-03.html	1	unmodeled:host-global-CSS
-css/css-ui/tentative/user-modify-03.html	1	unmodeled:host-global-CSS
-css/css-ui/tentative/webkit-user-modify-03.html	1	unmodeled:host-global-CSS
 css/css-ui/transparent-accent-color-001.html	1	reftest
 css/css-ui/transparent-accent-color-002.html	1	reftest
 css/css-ui/webkit-appearance-parsing.html	1	unmodeled:sheet-script
@@ -4657,7 +4619,6 @@ css/css-values/attr-pseudo-elem-invalidation-2.html	1	unmodeled:loop
 css/css-values/attr-pseudo-elem-invalidation-2.html	2	unmodeled:statement-form
 css/css-values/attr-pseudo-element-originating.html	6	unmodeled:computed-read
 css/css-values/attr-pseudo-element-originating.html	3	unmodeled:dom-or-layout
-css/css-values/attr-revert-rule.html	1	unmodeled:host-global-CSS
 css/css-values/attr-security-animation.html	6	unmodeled:computed-read
 css/css-values/attr-security-if.html	14	unmodeled:computed-value-expression
 css/css-values/attr-security-transition-2.html	1	layout-geometry
@@ -4713,7 +4674,6 @@ css/css-values/crashtests/chrome-bug-493952652.html	1	no-assertion
 css/css-values/crashtests/chrome-bug-508472243.html	1	no-assertion
 css/css-values/crashtests/viewport-unit-inline-style-crash.html	1	no-assertion
 css/css-values/dynamic-viewport-units-rule-cache.html	1	timing
-css/css-values/if-function-revert-rule.html	2	unmodeled:host-global-CSS
 css/css-values/if-invalidation.html	2	unmodeled:computed-read
 css/css-values/if-invalidation.html	4	unmodeled:statement-form
 css/css-values/if-media-invalidation.html	1	unmodeled:computed-read
@@ -4763,9 +4723,9 @@ css/css-values/tree-counting/sibling-function-container-query-invalidation.html	
 css/css-values/tree-counting/sibling-function-descriptors.tentative.html	2	unmodeled:statement-form
 css/css-values/tree-counting/sibling-function-if-style-query.html	1	unmodeled:dom-or-layout
 css/css-values/tree-counting/sibling-function-if-style-query.html	4	unmodeled:statement-form
-css/css-values/tree-counting/sibling-function-invalidation.html	1	unmodeled:dom-element-remove
-css/css-values/tree-counting/sibling-function-invalidation.html	10	unmodeled:incremental-document
-css/css-values/tree-counting/sibling-function-invalidation.html	1	unmodeled:shared-state
+css/css-values/tree-counting/sibling-function-invalidation.html	2	layout-geometry
+css/css-values/tree-counting/sibling-function-invalidation.html	6	unmodeled:dom-element-remove
+css/css-values/tree-counting/sibling-function-invalidation.html	4	unmodeled:shared-state
 css/css-values/tree-counting/sibling-index-keyframe-font-style-dynamic.html	1	unmodeled:dom-element-remove
 css/css-values/tree-counting/sibling-index-keyframe-font-variation-settings-dynamic.html	1	unmodeled:dom-element-remove
 css/css-values/tree-counting/sibling-index-keyframe-font-weight-dynamic.html	1	unmodeled:dom-element-remove
@@ -4817,8 +4777,6 @@ css/css-values/viewport-units-scrollbars-crash.html	1	no-assertion
 css/css-values/viewport-units-scrollbars-dynamic-001.html	1	reftest
 css/css-values/viewport-units-writing-mode.html	1	unmodeled:generated-tests
 css/css-values/viewport-units-writing-mode.html	8	unmodeled:statement-form
-css/css-variables/revert-rule-in-fallback.html	4	unmodeled:host-global-CSS
-css/css-variables/revert-rule-to-var.html	1	unmodeled:host-global-CSS
 css/css-variables/test_variable_legal_values.html	2	unmodeled:generated-tests
 css/css-variables/transition-with-attribute-taint.html	1	helper:testcommon
 css/css-variables/var-ident-function.html	1	helper:computed-testcommon
@@ -4847,7 +4805,7 @@ css/css-variables/variable-created-document.html	1	unmodeled:statement-form
 css/css-variables/variable-created-element.html	2	unmodeled:computed-read
 css/css-variables/variable-created-element.html	2	unmodeled:dom-or-layout
 css/css-variables/variable-created-element.html	2	unmodeled:statement-form
-css/css-variables/variable-css-wide-keywords-after-substitution.html	5	unmodeled:host-global-CSS
+css/css-variables/variable-css-wide-keywords-after-substitution.html	5	unmodeled:computed-value-expression
 css/css-variables/variable-css-wide-keywords.html	1	unmodeled:computed-read
 css/css-variables/variable-cycles.html	11	unmodeled:dom-document-createElement
 css/css-variables/variable-definition-keywords.html	4	unmodeled:computed-value-expression
@@ -4873,6 +4831,7 @@ css/css-variables/variable-substitution-basic.html	13	unmodeled:dom-document-cre
 css/css-variables/variable-substitution-replaced-size.html	2	unmodeled:computed-read
 css/css-variables/variable-substitution-replaced-size.html	1	unmodeled:dom-or-layout
 css/css-variables/variable-substitution-replaced-size.html	1	unmodeled:loop
+css/css-variables/variable-substitution-shorthands.html	51	unmodeled:incremental-document
 css/css-variables/variable-transitions-transition-property-all-before-value.html	4	unmodeled:computed-read
 css/css-variables/variable-transitions-transition-property-all-before-value.html	2	unmodeled:dom-or-layout
 css/css-variables/variable-transitions-transition-property-all-before-value.html	1	unmodeled:statement-form
@@ -5046,8 +5005,6 @@ css/css-writing-modes/forms/checkbox-switch-input-computed-style.tentative.html	
 css/css-writing-modes/forms/color-input-appearance-native-computed-style.html	3	unmodeled:computed-value-expression
 css/css-writing-modes/forms/date-input-appearance-native-computed-style.html	2	unmodeled:generated-tests
 css/css-writing-modes/forms/file-input-computed-style.html	2	unmodeled:generated-tests
-css/css-writing-modes/forms/input-range-block-size.html	5	unmodeled:dom-element-assign-style
-css/css-writing-modes/forms/input-range-inline-size.html	5	unmodeled:dom-element-assign-style
 css/css-writing-modes/forms/meter-appearance-native-computed-style.optional.html	3	unmodeled:computed-value-expression
 css/css-writing-modes/forms/progress-appearance-native-computed-style.optional.html	3	unmodeled:computed-value-expression
 css/css-writing-modes/forms/select-appearance-native-computed-style.html	3	unmodeled:computed-value-expression
@@ -5235,8 +5192,8 @@ css/cssom-view/scrollingElement.html	1	unmodeled:loop
 css/cssom-view/smooth-scroll-in-load-event.html	1	timing
 css/cssom-view/subpixel-sizes-and-offsets.tentative.html	12	layout-geometry
 css/cssom-view/subpixel-sizes-and-offsets.tentative.html	3	unmodeled:dom-element-scrollTo
-css/cssom/CSS-escape-numeric-id.html	1	unmodeled:host-global-CSS
-css/cssom/CSS-supports.html	10	unmodeled:host-global-CSS
+css/cssom/CSS-escape-numeric-id.html	1	unmodeled:computed-value-expression
+css/cssom/CSS-escape-numeric-id.html	1	unmodeled:harness-assert_throws_dom
 css/cssom/CSS-supports.html	1	unmodeled:host-global-TypeError
 css/cssom/CSSConditionRule-conditionText.html	1	unmodeled:dom-document-styleSheets
 css/cssom/CSSContainerRule.tentative.html	1	unmodeled:generated-tests
@@ -5422,7 +5379,6 @@ css/cssom/font-family-serialization-001.html	23	unmodeled:statement-form
 css/cssom/font-variant-shorthand-serialization.html	2	unmodeled:dom-or-layout
 css/cssom/font-variant-shorthand-serialization.html	4	unmodeled:loop
 css/cssom/font-variant-shorthand-serialization.html	2	unmodeled:statement-form
-css/cssom/functional-values-comma.html	7	unmodeled:dom-element-assign-style
 css/cssom/getComputedStyle-animations-replaced-into-ib-split.html	1	layout-geometry
 css/cssom/getComputedStyle-basic.html	2	unmodeled:harness-assert_throws_dom
 css/cssom/getComputedStyle-calc.html	1	unmodeled:generated-tests
@@ -5438,7 +5394,6 @@ css/cssom/getComputedStyle-getter-v-properties.tentative.html	1	unmodeled:comput
 css/cssom/getComputedStyle-getter-v-properties.tentative.html	2	unmodeled:generated-tests
 css/cssom/getComputedStyle-insets-absolute-crash.html	1	no-assertion
 css/cssom/getComputedStyle-insets-absolute-logical-crash.html	1	no-assertion
-css/cssom/getComputedStyle-insets-absolute-roundtrip.html	3	unmodeled:incremental-document
 css/cssom/getComputedStyle-insets-absolute.html	1	unmodeled:computed-read
 css/cssom/getComputedStyle-insets-absolute.html	1	unmodeled:statement-form
 css/cssom/getComputedStyle-insets-fixed.html	1	unmodeled:computed-read
@@ -5462,7 +5417,6 @@ css/cssom/getComputedStyle-layout-dependent-removed-ib-sibling.html	1	unmodeled:
 css/cssom/getComputedStyle-layout-dependent-replaced-into-ib-split.html	1	layout-geometry
 css/cssom/getComputedStyle-line-height.html	1	unmodeled:generated-tests
 css/cssom/getComputedStyle-logical-enumeration.html	1	unmodeled:js-iterate-nonarray
-css/cssom/getComputedStyle-margins-roundtrip.html	3	unmodeled:incremental-document
 css/cssom/getComputedStyle-math-function-percentage.html	1	unmodeled:computed-value-expression
 css/cssom/getComputedStyle-mutations.html	1	unmodeled:dom-document-createAttribute
 css/cssom/getComputedStyle-mutations.html	2	unmodeled:dom-document-createElement
@@ -5487,7 +5441,7 @@ css/cssom/getComputedStyle-style-element-updates.html	1	unmodeled:dom-element-re
 css/cssom/getComputedStyle-style-element-updates.html	1	unmodeled:state-of-an-unmodeled-test
 css/cssom/getComputedStyle-width-scroll.tentative.html	1	unmodeled:computed-value-expression
 css/cssom/grouping-rule-no-nested-declarations.html	5	unmodeled:dom-document-createElement
-css/cssom/historical.html	20	unmodeled:js-in-operator
+css/cssom/historical.html	17	unmodeled:js-in-operator
 css/cssom/idlharness.html	1	timing
 css/cssom/idlharness.html	1	unmodeled:computed-read
 css/cssom/import-namespace-invalid-prelude.html	1	unmodeled:loop
@@ -5681,7 +5635,6 @@ css/mediaqueries/update-media-feature.html	7	unmodeled:statement-form
 css/motion/change-offset-path.html	1	reftest
 css/motion/offset-rotate-004.html	1	reftest
 css/motion/offset-rotate-005.html	1	reftest
-css/motion/offset-supports-calc.html	5	unmodeled:dom-element-assign-style
 css/motion/parsing/offset-anchor-computed.html	14	scored-by:css-computed
 css/motion/parsing/offset-distance-computed.html	6	scored-by:css-computed
 css/motion/parsing/offset-path-computed.html	65	scored-by:css-computed

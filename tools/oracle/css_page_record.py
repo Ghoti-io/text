@@ -29,6 +29,12 @@ harness that ran), the engines and the image (tools/oracle/containers/IMAGES), a
 The default gate never needs a browser: it reads the record and refuses it (``--check``) when the pin, the harness or the driver differ from the repository's, when a page of the
 program has no entry, or when a page's hash differs from the one recorded (the page changed: the record is stale). The container gate records again and compares.
 
+**The replay** (tools/css/replay_gen.py) is the same question asked of the flat program instead of the page: the program of each page, translated back into JavaScript on the real DOM, is
+put where the page's scripts were and run by the same driver under the same harness. ``--replay`` records it (tools/conformance/css_cssom_replayrecord.jsonl: for each page the sha-256
+of its program and, for each engine, the tests the replay reported), and the CSSOM gate requires, for every test the evaluator turned into ops, that the replay's status (and, for a
+failure, its actual value) is the page's in both engines: when it is not, the evaluator's reading of the page is not the page. ``--replay-controls`` mistranslates pages on purpose and
+requires the comparison to refuse each.
+
 Pages are a file of paths, one a line (build/.../script-pages.txt, written by the gate); the browsers see them at /<path> of a loopback server over the checkout.
 """
 import argparse
@@ -45,6 +51,9 @@ sys.path.insert(0, HERE)
 
 DRIVER = os.path.join(HERE, 'containers', 'cssprop', 'page_driver.mjs')
 RECORD = os.path.join(ROOT, 'tools', 'conformance', 'css_cssom_pagerecord.jsonl')
+REPLAY_RECORD = os.path.join(ROOT, 'tools', 'conformance', 'css_cssom_replayrecord.jsonl')
+GENERATOR = os.path.join(ROOT, 'tools', 'css', 'replay_gen.py')
+REPLAY_ROOT = os.path.join(ROOT, 'build', 'css-replay-root')
 WPT = os.environ.get('CSS_PROPERTY_WPT') or os.path.join(ROOT, 'third_party', 'css', 'wpt')
 ENGINES = ('chromium', 'firefox')
 
@@ -172,9 +181,174 @@ def problems(header, entries, pages, wpt, driver=DRIVER):
     return out
 
 
+# ---- the replay -------------------------------------------------------------------------------------------------------------------------------
+
+def answer_of(message):
+    """The actual value of a failed assertion, as testharness.js writes it (text after the last ' but got '), or None."""
+    if message is None:
+        return None
+    m = re.search(r' but got (.*)$', message, re.S)
+    return m.group(1).strip() if m else None
+
+
+def replay_index(name):
+    m = re.match(r'(\d+)\|', name)
+    return int(m.group(1)) if m else None
+
+
+def replay_tests(entry, engine):
+    """{test index: (status, message)} of a replay entry, or None when the engine did not finish."""
+    a = entry.get(engine, {})
+    if 'error' in a or 'tests' not in a:
+        return None
+    return {replay_index(n): (st, msg) for n, st, msg in a['tests'] if replay_index(n) is not None}
+
+
+def replay_differences(page, page_entry, replay_entry, modeled):
+    """The lines that say where the replay of a page is not the page: `modeled` is the indexes of the tests the evaluator turned into ops."""
+    out = []
+    for engine in ENGINES:
+        mine = replay_tests(replay_entry, engine)
+        if mine is None:
+            out.append('REPLAY: %s did not finish in %s: %s' % (page, engine, replay_entry.get(engine, {}).get('error', 'no tests')))
+            continue
+        theirs = page_entry[engine]
+        if 'error' in theirs:
+            continue
+        run = {i: (st, msg) for i, (_n, st, msg) in enumerate(theirs['tests'])}
+        for i in sorted(modeled):
+            if i not in mine:
+                out.append('REPLAY: %s#%d has no result in the replay in %s' % (page, i, engine))
+                continue
+            if i not in run:
+                continue
+            (ps, pm), (rs, rm) = run[i], mine[i]
+            if ps != rs:
+                out.append('REPLAY: %s#%d is status %d in %s and %d in its replay: the program is not the page' % (page, i, ps, engine, rs))
+            elif ps == 1 and answer_of(pm) is not None and answer_of(rm) is not None and answer_of(pm) != answer_of(rm):
+                out.append('REPLAY: %s#%d answers %s in %s and %s in its replay: the program is not the page' % (page, i, answer_of(pm), engine, answer_of(rm)))
+    return out
+
+
+def record_replay(programs_path, out, batch, plants=None, pages=None):
+    """Replay the programs in the browsers: the overlay of build/css-replay-root is served in place of the checkout."""
+    import oracle_env
+    import shutil
+    sys.path.insert(0, os.path.join(ROOT, 'tools', 'css'))
+    import replay_gen as G
+    shutil.rmtree(REPLAY_ROOT, ignore_errors=True)
+    os.makedirs(os.path.dirname(REPLAY_ROOT), exist_ok=True)
+    done = G.generate(programs_path, WPT, REPLAY_ROOT, pages, plants)
+    names = sorted(done)
+    answers = {e: {} for e in ENGINES}
+    headers = {}
+    for engine in ENGINES:
+        for i in range(0, len(names), batch):
+            part = names[i:i + batch]
+            header, rows = ask(engine, part, REPLAY_ROOT)
+            headers[engine] = {'browser': header['browser'], 'image': header['image']}
+            for r in rows:
+                answers[engine][r['page']] = r
+            print('css_page_record: replay %s %d of %d pages' % (engine, min(i + batch, len(names)), len(names)), file=sys.stderr)
+    head = {
+        'wpt': pin(),
+        'harness': sha256_file(os.path.join(WPT, 'resources', 'testharness.js')),
+        'driver': oracle_env.mounted_driver(DRIVER),
+        'generator': sha256_file(GENERATOR),
+        'engines': headers,
+    }
+    lines = ['#' + json.dumps(head, sort_keys=True)]
+    for page in names:
+        entry = {'page': page, 'program': done[page]}
+        for engine in ENGINES:
+            a = answers[engine][page]
+            if 'error' in a:
+                entry[engine] = {'error': a['error']}
+            else:
+                entry[engine] = {'status': a['status'], 'tests': [[normalize(t['name']), t['status'], normalize(t['message'])] for t in a['tests']]}
+        lines.append(json.dumps(entry, sort_keys=True, ensure_ascii=True))
+    if out:
+        with open(out, 'w', encoding='utf-8', newline='\n') as f:
+            f.write('\n'.join(lines) + '\n')
+        print('css_page_record: wrote %s (%d pages replayed)' % (out, len(names)))
+    return lines
+
+
+def replay_problems(header, entries, program_shas, wpt, driver=DRIVER, generator=GENERATOR):
+    """The refusals for a replay record: another pin, harness, driver or generator, a program with no replay, a program that changed since it was replayed."""
+    out = []
+    if header is None:
+        return ['REPLAY: the replay record has no header line']
+    if header.get('wpt') != pin():
+        out.append('REPLAY: the replay record is of the suite at %s, the pin is %s; replay again' % (header.get('wpt'), pin()))
+    harness = os.path.join(wpt, 'resources', 'testharness.js')
+    if os.path.exists(harness) and header.get('harness') != sha256_file(harness):
+        out.append('REPLAY: the replay record was made under testharness.js %s, the checkout has %s' % (str(header.get('harness'))[:12], sha256_file(harness)[:12]))
+    want = {os.path.basename(driver): sha256_file(driver)}
+    if header.get('driver') != want:
+        out.append('REPLAY: the replay record was made by the page driver %s, the repository has %s; replay again' % (json.dumps(header.get('driver')), json.dumps(want)))
+    if header.get('generator') != sha256_file(generator):
+        out.append('REPLAY: the replay record was made by replay_gen.py %s, the repository has %s; replay again' % (str(header.get('generator'))[:12], sha256_file(generator)[:12]))
+    missing = [p for p in sorted(program_shas) if p not in entries]
+    for p in missing[:20]:
+        out.append('REPLAY: %s has a program and no replay; replay again' % p)
+    if len(missing) > 20:
+        out.append('REPLAY: and %d programs more have no replay' % (len(missing) - 20))
+    stale = [p for p in sorted(program_shas) if p in entries and entries[p]['program'] != program_shas[p]]
+    for p in stale[:20]:
+        out.append('REPLAY: the program of %s changed since it was replayed; replay again' % p)
+    if len(stale) > 20:
+        out.append('REPLAY: and %d programs more changed' % (len(stale) - 20))
+    for p in sorted(set(entries) - set(program_shas))[:20]:
+        out.append('REPLAY: %s was replayed and has no program' % p)
+    return out
+
+
+def plant_candidates(progs, record):
+    """For each plant of replay_gen.py, two small pages on which the plant touches a test whose verdict it must change: a test that passes in both engines (a failing assertion planted in it),
+    or, for drop-assert, a test that fails in both engines on its only assertion (the assertion removed)."""
+    import replay_gen as G
+    found = {k: [] for k in G.PLANTS}
+    taken = set()
+    for page in sorted(progs):
+        e = record.get(page)
+        if e is None or 'error' in e['chromium'] or 'error' in e['firefox']:
+            continue
+        sha, html, ops = progs[page]
+        if len(html) > 8000:
+            continue
+        test_of, cur = [], None
+        for op in ops:
+            if op[0] == 'test':
+                cur = int(op[1])
+            test_of.append(cur)
+            if op[0] == 'end':
+                cur = None
+        for plant in G.PLANTS:
+            if len(found[plant]) >= 2 or page in taken:
+                continue
+            at = G.plant_index(ops, plant)
+            if at is None or test_of[at] is None:
+                continue
+            idx = test_of[at]
+            ch, ff = e['chromium']['tests'][idx][1], e['firefox']['tests'][idx][1]
+            if ch != ff:
+                continue
+            if plant == 'drop-assert':
+                n = sum(1 for o, t in zip(ops, test_of) if t == idx and o[0].startswith('assert_'))
+                if ch != 1 or n != 1:
+                    continue
+            elif ch != 0:
+                continue
+            found[plant].append((page, idx))
+            taken.add(page)
+    return found
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--record', action='store_true')
+    ap.add_argument('--update', action='store_true', help='with --record: ask only for the pages the record at --out does not have or has stale, and keep the rest')
     ap.add_argument('--check', action='store_true')
     ap.add_argument('--pages')
     ap.add_argument('--out', default=RECORD)
@@ -182,7 +356,61 @@ def main():
     ap.add_argument('--batch', type=int, default=150)
     ap.add_argument('--compare', nargs=2, metavar=('COMMITTED', 'NEW'))
     ap.add_argument('--wpt', default=WPT)
+    ap.add_argument('--replay', action='store_true', help='record the replay of the programs in the browsers')
+    ap.add_argument('--programs', help='script.tsv of the programs to replay')
+    ap.add_argument('--replay-compare', nargs=2, metavar=('COMMITTED', 'NEW'))
+    ap.add_argument('--replay-controls', action='store_true')
     a = ap.parse_args()
+    if a.replay_compare:
+        h1, e1 = load(a.replay_compare[0])
+        h2, e2 = load(a.replay_compare[1])
+        out = []
+        for key in ('wpt', 'harness', 'driver', 'generator', 'engines'):
+            if h1.get(key) != h2.get(key):
+                out.append('REPLAY: the header differs in %s: %s against %s' % (key, json.dumps(h1.get(key))[:200], json.dumps(h2.get(key))[:200]))
+        for pg in sorted(set(e1) | set(e2)):
+            if e1.get(pg) != e2.get(pg):
+                out.append('REPLAY: %s is not what the browsers answer now' % pg)
+        if out:
+            print('\n'.join(out[:60]))
+            return 1
+        print('replay record: %d pages, the browsers answer as recorded' % len(e1))
+        return 0
+    if a.replay_controls:
+        # mistranslate pages on purpose, replay them in the browsers, and require the comparison with the page's record to refuse every one
+        sys.path.insert(0, os.path.join(ROOT, 'tools', 'css'))
+        import replay_gen as G
+        progs = G.split_programs(open(a.programs, 'rb').read())
+        header, page_rec = load(a.record_file)
+        found = plant_candidates(progs, page_rec)
+        plants = {}
+        for plant, items in found.items():
+            if not items:
+                print('replay control %s: no page to plant it on' % plant, file=sys.stderr)
+                return 1
+            for page, idx in items:
+                plants[page] = plant
+        lines = record_replay(a.programs, None, a.batch, plants, sorted(plants))
+        replay = {json.loads(l)['page']: json.loads(l) for l in lines[1:]}
+        bad = 0
+        for plant, items in found.items():
+            for page, idx in items:
+                diffs = replay_differences(page, page_rec[page], replay[page], {idx})
+                if not diffs:
+                    print('replay control %s: the mistranslation of %s#%d was not noticed' % (plant, page, idx), file=sys.stderr)
+                    bad += 1
+                else:
+                    print('control replay-%s: caught (%s#%d: %s)' % (plant, page, idx, diffs[0][:100]))
+        # and the unplanted translation of the same pages agrees with the page
+        clean = record_replay(a.programs, None, a.batch, {}, sorted(plants))
+        replay = {json.loads(l)['page']: json.loads(l) for l in clean[1:]}
+        for plant, items in found.items():
+            for page, idx in items:
+                diffs = replay_differences(page, page_rec[page], replay[page], {idx})
+                if diffs:
+                    print('replay control %s: the faithful translation of %s#%d differs from the page: %s' % (plant, page, idx, diffs[0]), file=sys.stderr)
+                    bad += 1
+        return 1 if bad else 0
     if a.compare:
         h1, e1 = load(a.compare[0])
         h2, e2 = load(a.compare[1])
@@ -198,8 +426,57 @@ def main():
             return 1
         print('page record: %d pages, the browsers answer as recorded' % len(e1))
         return 0
+    if a.replay:
+        if a.update and os.path.exists(a.out):
+            # ask again only for the programs whose replay is not the record's; the rest of the record stays
+            sys.path.insert(0, os.path.join(ROOT, 'tools', 'css'))
+            import replay_gen as G
+            progs = G.split_programs(open(a.programs, 'rb').read())
+            header, entries = load(a.out)
+            if header.get('generator') != sha256_file(GENERATOR):
+                print('css_page_record: the replay generator changed; replay every program')
+                record_replay(a.programs, a.out, a.batch)
+                return 0
+            want = [pg for pg in sorted(progs) if pg not in entries or entries[pg]['program'] != progs[pg][0]]
+            tmp = a.out + '.new'
+            if want:
+                record_replay(a.programs, tmp, a.batch, None, want)
+                h2, e2 = load(tmp)
+                os.unlink(tmp)
+                if any(h2.get(k) != header.get(k) for k in ('wpt', 'harness', 'driver', 'generator', 'engines')):
+                    print('css_page_record: the new answers were made under another pin, harness, driver or engine than the record; replay every program')
+                    return 1
+                entries.update(e2)
+            keep = [pg for pg in sorted(entries) if pg in progs]
+            with open(a.out, 'w', encoding='utf-8', newline='\n') as f:
+                f.write('#' + json.dumps(header, sort_keys=True) + '\n')
+                for pg in keep:
+                    f.write(json.dumps(entries[pg], sort_keys=True, ensure_ascii=True) + '\n')
+            print('css_page_record: %d programs replayed again, %d in the record' % (len(want), len(keep)))
+            return 0
+        record_replay(a.programs, a.out, a.batch)
+        return 0
     pages = read_pages(a.pages)
     if a.record:
+        if a.update and os.path.exists(a.out):
+            header, entries = load(a.out)
+            want = [p for p in pages if p not in entries or entries[p]['sha'] != sha256_file(os.path.join(a.wpt, p))]
+            if want:
+                tmp = a.out + '.new'
+                record(want, tmp, a.wpt, a.batch)
+                h2, e2 = load(tmp)
+                os.unlink(tmp)
+                if any(h2.get(k) != header.get(k) for k in ('wpt', 'harness', 'driver', 'engines')):
+                    print('css_page_record: the new answers were made under another pin, harness, driver or engine than the record; record every page again')
+                    return 1
+                entries.update(e2)
+            keep = [pg for pg in sorted(entries) if pg in set(pages)]
+            with open(a.out, 'w', encoding='utf-8', newline='\n') as f:
+                f.write('#' + json.dumps(header, sort_keys=True) + '\n')
+                for pg in keep:
+                    f.write(json.dumps(entries[pg], sort_keys=True, ensure_ascii=True) + '\n')
+            print('css_page_record: %d pages recorded again, %d in the record' % (len(want), len(keep)))
+            return 0
         record(pages, a.out, a.wpt, a.batch)
         return 0
     header, entries = load(a.record_file)
