@@ -63,7 +63,8 @@ unscored=$root/tools/conformance/UNSCORED_ATRULES
 # the pages that are not read as data are listed, one line a page with its calls and the reason (the extractor writes them as `# unscored` lines)
 grep '^# unscored	' "$vectors" | cut -f2- > "$root/build/css-atrules-unscored.tsv"
 if [ "$1" = "--regenerate" ]; then
-	{ printf '%s\n' "# tools/css/extract-wpt-atrules.py: the pages of the at-rule directories of css/ that are not read as data: page, number of test calls (1 for a reftest), reason."; cat "$root/build/css-atrules-unscored.tsv"; } > "$unscored"
+	{ printf '%s\n' "# tools/css/extract-wpt-atrules.py: the pages of the at-rule directories of css/ that are not read as data: page, number of test calls (1 for a reftest), reason (a code of REASON_CODES)."; cat "$root/build/css-atrules-unscored.tsv"; } > "$unscored"
+	python3 -I "$root/tools/conformance/css_ledger.py" atrules --unscored "$unscored" --codes "$root/tools/conformance/REASON_CODES" --regenerate
 	echo "wrote $(grep -vc '^#' "$unscored") lines to $unscored"
 	exit 0
 fi
@@ -72,5 +73,16 @@ grep -v '^#' "$unscored" | diff - "$root/build/css-atrules-unscored.tsv" > "$roo
 	head -20 "$root/build/css-atrules-unscored.diff" >&2
 	exit 1
 }
+# the reasons are codes of REASON_CODES and each class has the pages and calls the file pins; the check is seen to fail
+ledger=$root/tools/conformance/css_ledger.py
+codes=$root/tools/conformance/REASON_CODES
+python3 -I "$ledger" atrules --unscored "$unscored" --codes "$codes" || exit 1
+grep -v '^unmodeled:script-test	' "$codes" > "$scratch/codes-short"
+if python3 -I "$ledger" atrules --unscored "$unscored" --codes "$scratch/codes-short" >/dev/null 2>&1; then echo "control atrules-reason-code-outside-set: NOT CAUGHT" >&2; exit 1; fi
+awk -F'\t' 'BEGIN { OFS = "\t" } /^reftest\t/ { $5 = $5 + 1 } { print }' "$codes" > "$scratch/codes-moved"
+if python3 -I "$ledger" atrules --unscored "$unscored" --codes "$scratch/codes-moved" >/dev/null 2>&1; then echo "control atrules-class-moved: NOT CAUGHT" >&2; exit 1; fi
+{ cat "$unscored"; printf 'css-page/planted.html\t1\ta reftest: the answer is the rendering\n'; } > "$scratch/unscored-free"
+if python3 -I "$ledger" atrules --unscored "$scratch/unscored-free" --codes "$codes" >/dev/null 2>&1; then echo "control atrules-free-text-reason: NOT CAUGHT" >&2; exit 1; fi
+echo "control atrules ledger (code outside the set, class moved, free text): caught"
 echo "css-atrules: $(grep -vc '^#' "$unscored") pages unscored (the file says why, a line a page), $(grep -c '^# page' "$vectors") pages read"
 "$runner" "$vectors" "$root/tools/conformance/CSS_ATRULES_EXCEPTIONS"

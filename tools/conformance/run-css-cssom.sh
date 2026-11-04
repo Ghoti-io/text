@@ -51,10 +51,30 @@ rulevec=$root/build/css-cssom-rule-vectors
 mkdir -p "$rulevec"
 python3 -I "$root/tools/css/extract-wpt-props.py" "$wpt" "$rulevec" --unextracted "$rulevec/UNEXTRACTED" >/dev/null
 python3 -I "$root/tools/css/extract-wpt-cssom.py" "$wpt" "$vectors" "$rulevec/rule.json" >/dev/null
+rm -f "$vectors/UNEXTRACTED_CSSOM.raw"
 
 suite_py=$root/tools/conformance/css_cssom_suite.py
 exceptions=$root/tools/conformance/CSS_CSSOM_EXCEPTIONS
 unscored=$root/tools/conformance/UNSCORED_CSSOM
+# The ledger (tools/conformance/css_ledger.py): the reasons are codes of REASON_CODES, the census (CENSUS_CSSOM) is the set of pages and tests the extractor accounts for,
+# every test is in one class, and a page claimed as scored by another gate is derived from that gate's own vectors (SCORED_ELSEWHERE_CSSOM). With --resolve it writes the
+# attribution into $vectors/UNEXTRACTED_CSSOM, which is what the suite compares with UNSCORED_CSSOM.
+ledger=$root/tools/conformance/css_ledger.py
+elsewhere=$root/tools/conformance/SCORED_ELSEWHERE_CSSOM
+census=$root/tools/conformance/CENSUS_CSSOM
+codes=$root/tools/conformance/REASON_CODES
+run_ledger() { # vectors elsewhere census codes [options]
+	v=$1 e=$2 c=$3 r=$4
+	shift 4
+	python3 -I "$ledger" cssom --wpt "$wpt" --vectors "$v" --rulevec "$rulevec" --elsewhere "$e" --census "$c" --codes "$r" "$@"
+}
+if [ "$1" = "--regenerate-ledger" ]; then
+	run_ledger "$vectors" "$elsewhere" "$census" "$codes" --regenerate || exit 1
+	run_ledger "$vectors" "$elsewhere" "$census" "$codes" --resolve || exit 1
+	{ head -1 "$unscored"; cat "$vectors/UNEXTRACTED_CSSOM"; } > "$unscored.tmp" && mv "$unscored.tmp" "$unscored"
+	exit 0
+fi
+run_ledger "$vectors" "$elsewhere" "$census" "$codes" --resolve || exit 1
 
 if [ "$1" = "--regenerate" ]; then
 	python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$unscored" --regenerate
@@ -131,4 +151,54 @@ expect page-floor "below the floor" env CSS_CSSOM_MIN_PAGES=999999 python3 -I "$
 expect fraction-floor "of the touched pages are scored" env CSS_CSSOM_MIN_FRACTION=10000 python3 -I "$suite_py" "$vectors" "$runner" "$exceptions" "$unscored"
 { cat "$exceptions"; printf 'css/control/defect.html#0\tfails\tdefect\towner: planted\n'; } > "$scratch/defect"
 expect defect-ceiling "defects above the ceiling" env CSS_CSSOM_MAX_DEFECTS=0 python3 -I "$suite_py" "$vectors" "$runner" "$scratch/defect" "$unscored"
+# the ledger, seen to fail: each plant edits a copy of one input and the ledger has to say why it refuses
+raw="$vectors/UNEXTRACTED_CSSOM.raw"
+ledger_expect() { # name message vectors elsewhere census codes
+	expect "$1" "$2" python3 -I "$ledger" cssom --wpt "$wpt" --vectors "$3" --rulevec "$rulevec" --elsewhere "$4" --census "$5" --codes "$6"
+}
+python3 -I "$ledger" cssom --wpt "$wpt" --vectors "$vectors" --rulevec "$rulevec" --elsewhere "$elsewhere" --census "$census" --codes "$codes" >"$log" 2>&1 || {
+	echo "the ledger does not pass unedited" >&2
+	cat "$log" >&2
+	exit 1
+}
+mkdir -p "$scratch/led"
+cp "$vectors"/* "$scratch/led/"
+# a page deleted from the census
+sed '100d' "$census" > "$scratch/census-missing"
+ledger_expect census-page-deleted "is touched and not in the census" "$vectors" "$elsewhere" "$scratch/census-missing" "$codes"
+# a page in the census that the extractor does not touch
+{ cat "$census"; printf 'css/control/planted.html\t1\t1\t\t\n'; } > "$scratch/census-extra"
+ledger_expect census-page-extra "is in the census and not touched" "$vectors" "$elsewhere" "$scratch/census-extra" "$codes"
+# a changed test total (the pin did not change)
+sed 's/^# tests	.*/# tests	20293/' "$census" > "$scratch/census-total"
+ledger_expect census-test-total "header pins" "$vectors" "$elsewhere" "$scratch/census-total" "$codes"
+# a page counted in two classes: one of its lines twice, with another code
+mkdir -p "$scratch/led-two"
+cp "$vectors"/* "$scratch/led-two/"
+first=$(head -1 "$raw" | cut -f1)
+{ cat "$raw"; printf '%s\t1\ttiming\n' "$first"; } > "$scratch/led-two/UNEXTRACTED_CSSOM.raw"
+ledger_expect page-in-two-classes "PARTITION: $first" "$scratch/led-two" "$elsewhere" "$census" "$codes"
+# a page in no class: a line of the extractor's list dropped
+mkdir -p "$scratch/led-none"
+cp "$vectors"/* "$scratch/led-none/"
+sed '5d' "$raw" > "$scratch/led-none/UNEXTRACTED_CSSOM.raw"
+ledger_expect page-in-no-class "PARTITION:" "$scratch/led-none" "$elsewhere" "$census" "$codes"
+# a scored-by entry with no program in the gate it names
+{ cat "$elsewhere"; printf 'css/css-conditional/at-supports-001.html\tcss-conditions\t3\tplanted\n'; } > "$scratch/else-noprog"
+ledger_expect scored-by-without-program "has no program in css-conditions" "$vectors" "$scratch/else-noprog" "$census" "$codes"
+# a gate the ledger does not know
+{ cat "$elsewhere"; printf 'css/css-conditional/at-supports-001.html\tcss-nowhere\t3\tplanted\n'; } > "$scratch/else-gate"
+ledger_expect scored-by-unknown-gate "which is not one of" "$vectors" "$scratch/else-gate" "$census" "$codes"
+# a claim that is larger than the vectors the gate has
+awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } !done { $3 = $3 + 5; done = 1 } { print }' "$elsewhere" > "$scratch/else-over"
+ledger_expect scored-by-overclaim "derived" "$vectors" "$scratch/else-over" "$census" "$codes"
+# a claim dropped (the page falls back to its helper, silently, if nothing checked)
+sed '2d' "$elsewhere" > "$scratch/else-dropped"
+ledger_expect scored-by-dropped "derived" "$vectors" "$scratch/else-dropped" "$census" "$codes"
+# a reason code outside the set
+grep -v '^unmodeled:loop	' "$codes" > "$scratch/codes-short"
+ledger_expect reason-code-outside-set "REASON CODE" "$vectors" "$elsewhere" "$census" "$scratch/codes-short"
+# a class that moved: a pin that differs from what the gate finds (a count that shrinks or grows is a move)
+awk -F'\t' 'BEGIN { OFS = "\t" } /^helper:computed-testcommon\t/ { $4 = $4 + 1 } { print }' "$codes" > "$scratch/codes-moved"
+ledger_expect class-moved "MOVED" "$vectors" "$elsewhere" "$census" "$scratch/codes-moved"
 echo "css cssom gate: controls done"

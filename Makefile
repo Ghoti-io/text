@@ -2642,7 +2642,8 @@ conformance-css-selectors: $(CONFORMANCE_LIB)
 conformance-css-cssom: ## Score the declaration object against the pinned WPT pages that touch the CSSOM IDL, list the pages not read, and show the gate fails
 # tools/conformance/run-css-cssom.sh: every page of web-platform-tests' css/ that touches the CSSOM IDL (tools/css/extract-wpt-cssom.py) is read: the tests whose every statement is a
 # recognized call become a program for the op interpreter (tools/conformance/css_cssom_suite.c) and are scored by tools/conformance/css_cssom_suite.py; every other page or test is a
-# line of UNSCORED_CSSOM with its number of tests and its reason. Every failure is a line of CSS_CSSOM_EXCEPTIONS with a class and a reason; --controls makes the gate fail.
+# line of UNSCORED_CSSOM with its number of tests and its reason, a code of REASON_CODES; tools/conformance/css_ledger.py checks the codes, the census (CENSUS_CSSOM), the partition of
+# every test into one class and the pages that SCORED_ELSEWHERE_CSSOM says another gate scores. Every failure is a line of CSS_CSSOM_EXCEPTIONS with a class and a reason; --controls makes the gate fail.
 conformance-css-cssom: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/cssom,tools/css/fetch.sh)
 	@$(CONFORMANCE_ENV) $(CSS_CSSOM_FLOOR) tools/conformance/run-css-cssom.sh && \

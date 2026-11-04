@@ -17,7 +17,7 @@ Writes a tab separated file: kind, page, input, expectation (`valid` or `invalid
 
 Every other page of the directories the at-rules live in (css-fonts palette, font-face and feature-value pages, css-counter-styles, css-page, css-view-transitions, css-anchor-position
 @position-try pages, css-namespaces, css-color @color-profile pages) is written as a line ``# unscored TAB page TAB count TAB reason``: the number of its test calls (1 for a reftest) and why
-it is not read as data. tools/conformance/UNSCORED_ATRULES must say the same, or the gate fails. A page that tools/conformance/SCORED_ELSEWHERE names (another gate scores it) is not listed.
+it is not read as data (a code of the closed set of tools/conformance/REASON_CODES). tools/conformance/UNSCORED_ATRULES must say the same, or the gate fails. A page that tools/conformance/SCORED_ELSEWHERE names (another gate scores it) is not listed.
 
 Calls this reader does not match are counted on stderr (the pages it reads are listed in the output's header lines starting with ``#``); nothing is dropped without a count.
 
@@ -78,13 +78,13 @@ def list_unscored(wpt, read_pages, elsewhere=frozenset()):
             text = open(os.path.join(base, rel), encoding="utf-8", errors="replace").read()
             calls = len(re.findall(r"\b(?:test|promise_test|async_test)\(", text))
             if re.search(r'rel=["\']?(?:match|mismatch)', text):
-                out.append((rel, 1, "a reftest: the answer is the rendering"))
+                out.append((rel, 1, "reftest"))
             elif "crashtest" in rel or "reftest-wait" in text and calls == 0:
-                out.append((rel, max(calls, 1), "a crash or rendering test"))
+                out.append((rel, max(calls, 1), "crash-or-visual"))
             elif calls:
-                out.append((rel, calls, "a script test that reads a style sheet, an animation or a layout, not a table of calls"))
+                out.append((rel, calls, "unmodeled:script-test"))
             else:
-                out.append((rel, 1, "no test call: a manual or rendering page"))
+                out.append((rel, 1, "no-assertion"))
     return out
 
 
