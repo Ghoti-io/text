@@ -45,7 +45,10 @@ answers in the reason. The class is derived, never written, and has a ceiling of
 
 **Served text** (--served, CSS_CSSOM_SCRIPT_SERVED): the one hand-written file. A line (test, our message, ``served-text`` or ``wpt-wrong``, reason) replaces what the record derives for
 that failure, and the reason has to quote a sentence of the served draft and give the recorded answer of each engine; the gate refuses a line whose test does not fail, whose message is
-not ours, or whose reason does not carry both answers.
+not ours, or whose reason does not carry both answers. A quotation is written ``css-mixins-1: "the sentence"``: the draft's name (a file of tools/css/DRAFTS_SHA256), a colon and the
+sentence in double quotation marks (four words or twenty characters at least). The gate hashes the drafts in third_party/css/drafts (``--drafts DIR``, ``--drafts-manifest FILE``;
+tools/css/fetch.sh puts them there), reads their text (tags dropped, entities decoded, white space collapsed, typographic quotation marks and dashes made plain) and refuses a
+sentence that does not occur in the draft it names ("QUOTE"), a draft that does not hash as pinned, or a draft it was not given.
 
 Floors and ceilings (environment; they only move the right way): CSS_CSSOM_SCRIPT_MIN_SCORED, CSS_CSSOM_SCRIPT_MIN_PAGES, CSS_CSSOM_SCRIPT_MAX_DEFECTS, CSS_CSSOM_SCRIPT_MAX_LAYOUT,
 CSS_CSSOM_SCRIPT_MAX_UA.
@@ -101,6 +104,39 @@ def harness_name(s):
     return re.sub('[\ud800-\udfff]', lambda m: 'U+%04x' % ord(m.group(0)), s)
 
 
+def draft_text(path):
+    """The text of an Editors' Draft as one line: tags dropped (script and style with them), entities decoded, runs of white space one space, typographic quotation marks and dashes plain."""
+    from html.parser import HTMLParser
+    chunks = []
+
+    class P(HTMLParser):
+        skip = 0
+
+        def handle_starttag(self, tag, attrs):
+            if tag in ('script', 'style'):
+                self.skip += 1
+
+        def handle_endtag(self, tag):
+            if tag in ('script', 'style'):
+                self.skip -= 1
+
+        def handle_data(self, data):
+            if not self.skip:
+                chunks.append(data)
+    p = P(convert_charrefs=True)
+    p.feed(open(path, 'rb').read().decode('utf-8'))
+    p.close()
+    return plain_text(''.join(chunks))
+
+
+def plain_text(s):
+    s = s.translate({0x2018: "'", 0x2019: "'", 0x201c: "'", 0x201d: "'", 0x2013: '-', 0x2014: '-', 0x2212: '-', 0xa0: ' '}).replace('"', "'")
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+QUOTE = re.compile(r'(css-[a-z0-9-]+): "([^"]*)"')
+
+
 def answer(msg):
     """The actual value of a failed assertion, as testharness writes it: the text after the last ' but got ', else the message itself without its description."""
     if msg is None:
@@ -152,13 +188,15 @@ def main():
     opt = {}
     argv = sys.argv[1:]
     for i, a in enumerate(argv):
-        if a in ('--record', '--wpt', '--served', '--replay', '--fixtures'):
+        if a in ('--record', '--wpt', '--served', '--replay', '--fixtures', '--drafts', '--drafts-manifest'):
             opt[a[2:]] = argv[i + 1]
     regenerate = '--regenerate' in sys.argv
     vdir, runner, exc_path, layout_path = args[0], args[1], args[2], args[3]
     wpt = opt.get('wpt') or os.environ.get('CSS_PROPERTY_WPT')
     record_path = opt.get('record')
     served_path = opt.get('served')
+    drafts_dir = opt.get('drafts') or (os.path.join(os.path.dirname(wpt), 'drafts') if wpt else None)
+    drafts_manifest = opt.get('drafts-manifest') or os.path.join(os.path.dirname(HERE), 'css', 'DRAFTS_SHA256')
     replay_path = opt.get('replay')
     fixtures_path = opt.get('fixtures')
     out = []
@@ -318,12 +356,34 @@ def main():
                 derived[k] = (msg, 'ua-default', "owner: the user agent sheet of the runner (the library has none; the runner's is css_cssom_script_suite.c UA_SHEET), not shown to be the library's: the first failed assertion "
                               "moves with it (no sheet: %s; the runner's sheet: %s; a fuller sheet: %s); %s" % (say(by_ua['none'].get(k)), say(base), say(by_ua['full'].get(k)), reason.split('; ', 1)[-1]))
     served = {}
+    drafts = {}   # draft name -> its text, for the drafts a served line names (each hashed against DRAFTS_SHA256 first)
+    pins = {f[1][:-5]: (f[0], f[1]) for _, f in tsv_lines(drafts_manifest) if len(f) >= 2 and f[1].endswith('.html')}
+    used = {d for _, f in tsv_lines(served_path) if len(f) == 4 for d, _ in QUOTE.findall(f[3])}
+    for d in sorted(used):
+        if d not in pins:
+            continue
+        path = os.path.join(drafts_dir or '', pins[d][1])
+        if not os.path.exists(path):
+            out.append('SUITE PROBLEMS: the draft %s is not fetched (run tools/css/fetch.sh)' % d)
+            continue
+        import hashlib
+        if hashlib.sha256(open(path, 'rb').read()).hexdigest() != pins[d][0]:
+            out.append('SUITE PROBLEMS: %s does not hash as pinned in DRAFTS_SHA256 (run tools/css/fetch.sh, which keeps nothing that differs)' % path)
+            continue
+        drafts[d] = draft_text(path)
     for n, f in tsv_lines(served_path):
         if len(f) != 4 or f[2] not in ('served-text', 'wpt-wrong'):
             out.append('SUITE PROBLEMS: %s:%d is not (test, our message, served-text or wpt-wrong, reason)' % (os.path.basename(served_path or '?'), n))
             continue
-        if not any(len(q) >= 20 and len(q.split()) >= 4 for q in re.findall(r'"([^"]*)"', f[3])):
-            out.append('SUITE PROBLEMS: %s:%d: a %s reason quotes a sentence of the served draft' % (os.path.basename(served_path), n, f[2]))
+        quotes = [(d, q) for d, q in QUOTE.findall(f[3]) if len(q) >= 20 or len(q.split()) >= 4]
+        if not quotes:
+            out.append('SUITE PROBLEMS: %s:%d: a %s reason quotes a sentence of the served draft (as css-NAME-N: "the sentence")' % (os.path.basename(served_path), n, f[2]))
+        for d, q in quotes:
+            text = drafts.get(d)
+            if text is None:
+                out.append('QUOTE: %s:%d names the draft %s, which is not in DRAFTS_SHA256 or is not fetched (tools/css/fetch.sh)' % (os.path.basename(served_path), n, d))
+            elif plain_text(q) not in text:
+                out.append('QUOTE: %s:%d quotes "%s" and %s does not say it' % (os.path.basename(served_path), n, q[:80], d))
         k = f[0].rsplit('#', 1)
         served[(k[0], int(k[1]))] = (unesc(f[1]), f[2], f[3])
     for k, v in served.items():

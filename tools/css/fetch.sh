@@ -39,6 +39,11 @@
 #                       tools/css/WEBREF_SHA256 (the manifest tools/css/gen-css-tables.py also checks). The tables of
 #                       src/css/tables/ are generated from it.
 #
+#   drafts/             Six full Editors' Drafts of CSS modules that the served-text class of the scoring interpreter quotes (css-values-5, css-fonts-4,
+#                       css-mixins-1, css-grid-3, css-writing-modes-4, css-forms-1), as served by https://drafts.csswg.org/<name>/. A draft is a moving
+#                       target, so the pin is the SHA-256 of the bytes served on the date in tools/css/DRAFTS_SHA256, and the fetch fails, naming the fix, when
+#                       the server answers anything else. A file already fetched is checked offline.
+#
 # None is committed: all are reproducible from a pin and a URL. Each
 # checkout is verified to be exactly its commit, and a mismatch leaves
 # nothing behind. Raising a pin is a deliberate edit to its file, in a commit
@@ -152,6 +157,47 @@ else
 	fi
 	rm -rf "$webref"
 	mv "$webref.partial" "$webref"
+fi
+
+# ---- the Editors' Drafts that the served-text class quotes ---------------------------------------------------------
+# tools/css/DRAFTS_SHA256: sha256, file name, URL, date the bytes were served. The drafts move: a server that answers anything else than the pinned bytes is a
+# changed draft, not a broken download, so nothing is kept and the fix is named (re-read every quote of CSS_CSSOM_SCRIPT_SERVED against the new text, then raise the pin).
+drafts_manifest="$root/tools/css/DRAFTS_SHA256"
+drafts="$dest/drafts"
+drafts_verify() { # dir: every manifest file present and hashing as pinned, and nothing else in it
+	bad=0
+	while read -r sum file url date; do
+		case "$sum" in '#'*|'') continue ;; esac
+		if [ ! -f "$1/$file" ]; then
+			bad=1
+		elif [ "$(sha256sum "$1/$file" | cut -d' ' -f1)" != "$sum" ]; then
+			printf 'drafts: %s does not hash as pinned (%s)\n' "$file" "$sum" >&2
+			bad=1
+		fi
+	done < "$drafts_manifest"
+	for f in "$1"/*; do
+		[ -e "$f" ] || continue
+		grep -q "^[0-9a-f]*[[:space:]]$(basename "$f")[[:space:]]" "$drafts_manifest" || { printf 'drafts: %s is not in tools/css/DRAFTS_SHA256\n' "$(basename "$f")" >&2; bad=1; }
+	done
+	return $bad
+}
+if [ -d "$drafts" ] && drafts_verify "$drafts"; then
+	printf 'have    drafts (tools/css/DRAFTS_SHA256)\n'
+else
+	printf 'fetch   drafts (tools/css/DRAFTS_SHA256)\n'
+	rm -rf "$drafts.partial"
+	mkdir -p "$drafts.partial"
+	while read -r sum file url date; do
+		case "$sum" in '#'*|'') continue ;; esac
+		curl --fail --silent --show-error --location -o "$drafts.partial/$file" "$url"
+	done < "$drafts_manifest"
+	if ! drafts_verify "$drafts.partial"; then
+		rm -rf "$drafts.partial"
+		printf 'drafts: the server answered other bytes than the pinned ones, so a draft has changed since the pin was taken. Nothing was kept. To raise the pin: fetch the files, read every quoted sentence of tools/conformance/CSS_CSSOM_SCRIPT_SERVED against the new text, and edit tools/css/DRAFTS_SHA256 in one commit with them.\n' >&2
+		exit 1
+	fi
+	rm -rf "$drafts"
+	mv "$drafts.partial" "$drafts"
 fi
 
 # ---- the @webref/css package, the second reading of the same data -------------------------------------------------

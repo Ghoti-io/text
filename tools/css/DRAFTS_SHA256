@@ -1,0 +1,9 @@
+# The Editors' Drafts that tools/css/fetch.sh puts in third_party/css/drafts/ and that tools/conformance/css_cssom_script_suite.py checks every quoted sentence of
+# CSS_CSSOM_SCRIPT_SERVED against. Columns (tab separated): SHA-256 of the served bytes, file name, URL, date the bytes were served. A draft changes over time, so the hash is the pin:
+# a server that answers anything else makes the fetch fail and keep nothing. Raising a pin is a deliberate edit in a commit that carries the re-read quotes.
+7886bd425f56398a5923e2b77619ef621a0279390962c7b294e859102e200d88	css-values-5.html	https://drafts.csswg.org/css-values-5/	2026-11-04
+e40b5a62cc5b5266188b4b217df366aae3b56fa511c472a53b77c58b5e5a4145	css-fonts-4.html	https://drafts.csswg.org/css-fonts-4/	2026-11-04
+95eaa3bbb0cb42a7a3884460e77d77e91dbab27fe0b20685da326d44a1d27ae8	css-mixins-1.html	https://drafts.csswg.org/css-mixins-1/	2026-11-04
+0527d6c2a1d615b250a18a179c2035faf7037ab97fe881284a2cb11c0c21e721	css-grid-3.html	https://drafts.csswg.org/css-grid-3/	2026-11-04
+9b8d5e00f74c1a410f7916546385ec926fea48b613ab40080563485e9c6b7159	css-writing-modes-4.html	https://drafts.csswg.org/css-writing-modes-4/	2026-11-04
+f19de2c020f79f2f71139292082cc9324ad0946b3d9e5f8aa4d05525f28cabd2	css-forms-1.html	https://drafts.csswg.org/css-forms-1/	2026-11-04

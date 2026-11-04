@@ -385,12 +385,24 @@ first=$(awk -F'\t' '!/^#/ && $3 == "defect" { print $1 "\t" $2; exit }' "$script
 if [ -n "$first" ]; then
 	id=$(printf '%s' "$first" | cut -f1)
 	msg=$(printf '%s' "$first" | cut -f2)
-	printf 'css/control/planted.html#0\tfails\tserved-text\tplanted "a sentence of the served draft that is long enough"; chromium passes, firefox passes\n' > "$scratch/served-stale"
+	printf 'css/control/planted.html#0\tfails\tserved-text\tplanted css-forms-1: "a sentence of the served draft that is long enough"; chromium passes, firefox passes\n' > "$scratch/served-stale"
 	expect served-line-for-a-test-that-does-not-fail "does not fail" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-stale" --fixtures "$fixtures" --wpt "$wpt"
 	printf '%s\t%s\tserved-text\tno sentence here; chromium passes, firefox passes\n' "$id" "$msg" > "$scratch/served-noquote"
 	expect served-line-without-a-quoted-sentence "quotes a sentence of the served draft" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-noquote" --fixtures "$fixtures" --wpt "$wpt"
-	printf '%s\t%s\tserved-text\tplanted "a sentence of the served draft that is long enough" and no answers\n' "$id" "$msg" > "$scratch/served-noanswers"
+	printf '%s\t%s\tserved-text\tplanted css-forms-1: "base puts that control in the basic appearance state" and no answers\n' "$id" "$msg" > "$scratch/served-noanswers"
 	expect served-line-without-the-answers "must give the recorded answer" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-noanswers" --fixtures "$fixtures" --wpt "$wpt"
+	# a genuine sentence of a pinned draft is accepted (the line is still refused for its missing answers, but not for its quote)
+	! grep -q 'QUOTE' "$log" || { echo "control served-genuine-quote: a sentence of css-forms-1 was refused" >&2; cat "$log" >&2; exit 1; }
+	echo "control served-genuine-quote: accepted"
+	# a sentence the named draft does not say, a sentence of another draft, a draft that is not pinned, and a draft that does not hash as pinned
+	printf '%s\t%s\tserved-text\tplanted css-forms-1: "base puts that control in the invented appearance state"; chromium passes, firefox passes\n' "$id" "$msg" > "$scratch/served-invented"
+	expect served-sentence-the-draft-does-not-say "QUOTE.*does not say it" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-invented" --fixtures "$fixtures" --wpt "$wpt"
+	printf '%s\t%s\tserved-text\tplanted css-values-5: "base puts that control in the basic appearance state"; chromium passes, firefox passes\n' "$id" "$msg" > "$scratch/served-otherdraft"
+	expect served-sentence-of-another-draft "QUOTE.*does not say it" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-otherdraft" --fixtures "$fixtures" --wpt "$wpt"
+	printf '%s\t%s\tserved-text\tplanted css-nothing-9: "base puts that control in the basic appearance state"; chromium passes, firefox passes\n' "$id" "$msg" > "$scratch/served-nodraft"
+	expect served-draft-not-pinned "QUOTE.*not in DRAFTS_SHA256" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-nodraft" --fixtures "$fixtures" --wpt "$wpt"
+	sed 's/^[0-9a-f]\([0-9a-f]\{63\}\)\(\tcss-forms-1\.html\)/0\1\2/' "$root/tools/css/DRAFTS_SHA256" > "$scratch/drafts-bad"
+	expect served-draft-hash-differs "does not hash as pinned" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-noanswers" --drafts-manifest "$scratch/drafts-bad" --fixtures "$fixtures" --wpt "$wpt"
 fi
 [ "$(grep -c '	ua-default	' "$script_exceptions")" = 0 ] || expect script-ua-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_UA=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
 # the evaluator's own corpus, and the evaluator seen to fail
