@@ -1556,7 +1556,7 @@ static GTEXT_CSS_Status split_font(xctx * x, GTEXT_CSS_Property_Id sh, const GTE
         tbuf b;
         tb_init(&b, &x->alloc);
         tb_puts(&b, "oblique");
-        if (i + 1 < l.n && l.v[i + 1]->kind == GTEXT_CSS_VAL_DIMENSION) {
+        if (i + 1 < l.n && (l.v[i + 1]->kind == GTEXT_CSS_VAL_DIMENSION || ((l.v[i + 1]->flags & GTEXT_CSS_VFLAG_MATH) && l.v[i + 1]->interp == GTEXT_CSS_INTERP_ANGLE))) {
           tb_puts(&b, " ");
           css_exact_text(&b, l.v[++i]);
         }
@@ -1565,7 +1565,9 @@ static GTEXT_CSS_Status split_font(xctx * x, GTEXT_CSS_Property_Id sh, const GTE
       else if (kw_is(v, "small-caps")) {
         variant = dup_text(x, "small-caps");
       }
-      else if (kw_is(v, "bold") || kw_is(v, "bolder") || kw_is(v, "lighter") || v->kind == GTEXT_CSS_VAL_NUMBER || v->kind == GTEXT_CSS_VAL_INTEGER) {
+      else if (kw_is(v, "bold") || kw_is(v, "bolder") || kw_is(v, "lighter") || v->kind == GTEXT_CSS_VAL_NUMBER || v->kind == GTEXT_CSS_VAL_INTEGER ||
+               ((v->flags & GTEXT_CSS_VFLAG_MATH) && v->interp == GTEXT_CSS_INTERP_NUMBER)) {
+        /* Fonts 4: `font-weight` is `<number [1,1000]>`, which a math function may be ("calc(900.7 - 200.1 * 2)") */
         weight = text_of(x, v);
       }
       else if (v->kind == GTEXT_CSS_VAL_KEYWORD) {

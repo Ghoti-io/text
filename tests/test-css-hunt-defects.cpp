@@ -451,4 +451,15 @@ TEST(CssHuntFont, TheLineHeightFollowsTheSizeAfterASpacedSlash) {
   EXPECT_EQ(B("font", "12px/normal serif"), "valid:12px serif");
 }
 
+/* Fonts 4: `font-weight` is `<number [1,1000]>`, a math function is one, and the `font` shorthand takes it where it takes a number (web-platform-tests' css-fonts/variations/font-shorthand.html:
+   `calc(900.7 - 200.1 * 2) calc(12px + 12px) Arial` is weight 500.5; both pinned browsers write it so). The weight was dropped from the shorthand's longhands (the computed weight was 400) before, and a specified value keeps its math function; an `oblique` angle may be
+   a math function as well. */
+TEST(CssHuntFont, AMathFunctionIsTheWeightOfTheShorthandAndMayBeTheObliqueAngle) {
+  EXPECT_EQ(B("font", "calc(500.5) 12px serif"), "valid:calc(500.5) 12px serif");
+  EXPECT_EQ(B("font", "calc(900.7 - 200.1 * 2) calc(12px + 12px) serif"), "valid:calc(500.5) calc(24px) serif");
+  EXPECT_EQ(B("font", "oblique calc(200 + 300) 12px serif"), "valid:oblique calc(500) 12px serif");
+  EXPECT_EQ(B("font", "oblique 30deg calc(200 + 300) 12px serif"), "valid:oblique 30deg calc(500) 12px serif");
+  EXPECT_EQ(B("font", "calc(200 + 300) oblique calc(10deg) 12px serif"), "valid:oblique calc(10deg) calc(500) 12px serif");
+}
+
 } // namespace
