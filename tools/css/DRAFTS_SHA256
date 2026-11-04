@@ -1,9 +1,12 @@
 # The Editors' Drafts that tools/css/fetch.sh puts in third_party/css/drafts/ and that tools/conformance/css_cssom_script_suite.py checks every quoted sentence of
-# CSS_CSSOM_SCRIPT_SERVED against. Columns (tab separated): SHA-256 of the served bytes, file name, URL, date the bytes were served. A draft changes over time, so the hash is the pin:
-# a server that answers anything else makes the fetch fail and keep nothing. Raising a pin is a deliberate edit in a commit that carries the re-read quotes.
-7886bd425f56398a5923e2b77619ef621a0279390962c7b294e859102e200d88	css-values-5.html	https://drafts.csswg.org/css-values-5/	2026-11-04
-e40b5a62cc5b5266188b4b217df366aae3b56fa511c472a53b77c58b5e5a4145	css-fonts-4.html	https://drafts.csswg.org/css-fonts-4/	2026-11-04
-95eaa3bbb0cb42a7a3884460e77d77e91dbab27fe0b20685da326d44a1d27ae8	css-mixins-1.html	https://drafts.csswg.org/css-mixins-1/	2026-11-04
-0527d6c2a1d615b250a18a179c2035faf7037ab97fe881284a2cb11c0c21e721	css-grid-3.html	https://drafts.csswg.org/css-grid-3/	2026-11-04
-9b8d5e00f74c1a410f7916546385ec926fea48b613ab40080563485e9c6b7159	css-writing-modes-4.html	https://drafts.csswg.org/css-writing-modes-4/	2026-11-04
-f19de2c020f79f2f71139292082cc9324ad0946b3d9e5f8aa4d05525f28cabd2	css-forms-1.html	https://drafts.csswg.org/css-forms-1/	2026-11-04
+# tools/conformance/CSS_CSSOM_SCRIPT_SERVED against. They are the Bikeshed sources (Overview.bs) of the w3c/csswg-drafts repository at the commit in
+# tools/css/DRAFTS_COMMIT: a commit never changes, which the rendered pages at drafts.csswg.org do (the server renders the newest commit and its bytes differed from a
+# pin a day old). Columns (tab separated): SHA-256 of the source, the file name it is kept under, its path in the repository. The fetch checks the commit and every
+# hash and keeps nothing that differs; an existing copy is checked offline. Raising the pin is a deliberate edit of DRAFTS_COMMIT and this file in one commit that
+# carries the re-read quotes (a quoted sentence is looked up in the source's plain text; see draft_text in the gate).
+81b979e7ac517bc1c76cab13f2bdef4c0378178b103b67f9bdd081c2699c505c	css-values-5.bs	css-values-5/Overview.bs
+2b5785c3565e058f24d44b2dc5afbbee044ef1daf8c22eb344b8fa8c9084910b	css-fonts-4.bs	css-fonts-4/Overview.bs
+f8f12a419551ba02670300b73652b114d04ea39473777244dc0dff28377f1ff2	css-mixins-1.bs	css-mixins-1/Overview.bs
+27fbcd44e8f7670e6e34f1f91b9670cf946016fd6dbfd14e5779a5e7d090500e	css-grid-3.bs	css-grid-3/Overview.bs
+b7346127107657e86868e201cdbe3c476776d094ca4df87096932768efa5cd87	css-writing-modes-4.bs	css-writing-modes-4/Overview.bs
+ed3a60ba70098447ca25b0bd3bdd05eb61e5e2915e30831a338547fd65ab0b6b	css-forms-1.bs	css-forms-1/Overview.bs

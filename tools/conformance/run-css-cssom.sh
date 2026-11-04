@@ -401,7 +401,7 @@ if [ -n "$first" ]; then
 	expect served-sentence-of-another-draft "QUOTE.*does not say it" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-otherdraft" --fixtures "$fixtures" --wpt "$wpt"
 	printf '%s\t%s\tserved-text\tplanted css-nothing-9: "base puts that control in the basic appearance state"; chromium passes, firefox passes\n' "$id" "$msg" > "$scratch/served-nodraft"
 	expect served-draft-not-pinned "QUOTE.*not in DRAFTS_SHA256" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-nodraft" --fixtures "$fixtures" --wpt "$wpt"
-	sed 's/^[0-9a-f]\([0-9a-f]\{63\}\)\(\tcss-forms-1\.html\)/0\1\2/' "$root/tools/css/DRAFTS_SHA256" > "$scratch/drafts-bad"
+	sed 's/^[0-9a-f]\([0-9a-f]\{63\}\)\(\tcss-forms-1\.bs\)/0\1\2/' "$root/tools/css/DRAFTS_SHA256" > "$scratch/drafts-bad"
 	expect served-draft-hash-differs "does not hash as pinned" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$scratch/served-noanswers" --drafts-manifest "$scratch/drafts-bad" --fixtures "$fixtures" --wpt "$wpt"
 fi
 [ "$(grep -c '	ua-default	' "$script_exceptions")" = 0 ] || expect script-ua-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_UA=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"

@@ -47,7 +47,8 @@ answers in the reason. The class is derived, never written, and has a ceiling of
 that failure, and the reason has to quote a sentence of the served draft and give the recorded answer of each engine; the gate refuses a line whose test does not fail, whose message is
 not ours, or whose reason does not carry both answers. A quotation is written ``css-mixins-1: "the sentence"``: the draft's name (a file of tools/css/DRAFTS_SHA256), a colon and the
 sentence in double quotation marks (four words or twenty characters at least). The gate hashes the drafts in third_party/css/drafts (``--drafts DIR``, ``--drafts-manifest FILE``;
-tools/css/fetch.sh puts them there), reads their text (tags dropped, entities decoded, white space collapsed, typographic quotation marks and dashes made plain) and refuses a
+tools/css/fetch.sh puts them there: the Bikeshed sources of a pinned csswg-drafts commit), reads their text (draft_text: the markup read as the page shows it, white space collapsed,
+typographic quotation marks and dashes made plain; a quotation does not run through a cross-reference) and refuses a
 sentence that does not occur in the draft it names ("QUOTE"), a draft that does not hash as pinned, or a draft it was not given.
 
 Floors and ceilings (environment; they only move the right way): CSS_CSSOM_SCRIPT_MIN_SCORED, CSS_CSSOM_SCRIPT_MIN_PAGES, CSS_CSSOM_SCRIPT_MAX_DEFECTS, CSS_CSSOM_SCRIPT_MAX_LAYOUT,
@@ -105,28 +106,26 @@ def harness_name(s):
 
 
 def draft_text(path):
-    """The text of an Editors' Draft as one line: tags dropped (script and style with them), entities decoded, runs of white space one space, typographic quotation marks and dashes plain."""
-    from html.parser import HTMLParser
-    chunks = []
-
-    class P(HTMLParser):
-        skip = 0
-
-        def handle_starttag(self, tag, attrs):
-            if tag in ('script', 'style'):
-                self.skip += 1
-
-        def handle_endtag(self, tag):
-            if tag in ('script', 'style'):
-                self.skip -= 1
-
-        def handle_data(self, data):
-            if not self.skip:
-                chunks.append(data)
-    p = P(convert_charrefs=True)
-    p.feed(open(path, 'rb').read().decode('utf-8'))
-    p.close()
-    return plain_text(''.join(chunks))
+    """The plain text of an Editors' Draft from its Bikeshed source, as one line. Bikeshed markup is read as the page shows it: tags dropped, ``[=term=]`` and ``[=term|text=]`` as
+    the term or the text, ``{{idl}}`` as idl, ``<<type>>`` as <type>, ``''value''`` and a ``'property'`` as the bare word, emphasis marks and backticks dropped, a cross-reference
+    (``[[#id]]``, ``[[SPEC]]``) dropped (a quoted sentence cannot run through one, since the page fills it in from elsewhere), entities decoded, runs of white space one space,
+    typographic quotation marks and dashes plain."""
+    import html
+    s = open(path, 'rb').read().decode('utf-8')
+    lt, gt = '\ue000', '\ue001'
+    s = re.sub(r'<<([^<>\n]*)>>', lambda m: lt + m.group(1) + gt, s)
+    s = re.sub(r'\[\[[!?]?[^\[\]\n]*\]\]', '', s)
+    s = re.sub(r'\[=([^\]=|]*)\|([^\]=]*)=\]', r'\2', s)
+    s = re.sub(r'\[=([^\]=]*)=\]', r'\1', s)
+    s = re.sub(r'\{\{([^{}\n|]*)(?:\|[^{}\n]*)?\}\}', r'\1', s)
+    s = re.sub(r"''([^'\n]*)''", r'\1', s)
+    s = re.sub(r"(?<![\w'])'([A-Za-z@:][\w/@:-]*)'(?![\w'])", r'\1', s)
+    s = re.sub(r'<(script|style)\b.*?</\1>', ' ', s, flags=re.S)
+    s = re.sub(r'<!--.*?-->', ' ', s, flags=re.S)
+    s = re.sub(r'</?[A-Za-z][^<>]*>', '', s)
+    s = s.replace('*', '').replace('`', '')
+    s = html.unescape(s).replace(lt, '<').replace(gt, '>')
+    return plain_text(s)
 
 
 def plain_text(s):
@@ -357,7 +356,7 @@ def main():
                               "moves with it (no sheet: %s; the runner's sheet: %s; a fuller sheet: %s); %s" % (say(by_ua['none'].get(k)), say(base), say(by_ua['full'].get(k)), reason.split('; ', 1)[-1]))
     served = {}
     drafts = {}   # draft name -> its text, for the drafts a served line names (each hashed against DRAFTS_SHA256 first)
-    pins = {f[1][:-5]: (f[0], f[1]) for _, f in tsv_lines(drafts_manifest) if len(f) >= 2 and f[1].endswith('.html')}
+    pins = {f[1][:-3]: (f[0], f[1]) for _, f in tsv_lines(drafts_manifest) if len(f) >= 2 and f[1].endswith('.bs')}
     used = {d for _, f in tsv_lines(served_path) if len(f) == 4 for d, _ in QUOTE.findall(f[3])}
     for d in sorted(used):
         if d not in pins:

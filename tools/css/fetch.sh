@@ -39,10 +39,10 @@
 #                       tools/css/WEBREF_SHA256 (the manifest tools/css/gen-css-tables.py also checks). The tables of
 #                       src/css/tables/ are generated from it.
 #
-#   drafts/             Six full Editors' Drafts of CSS modules that the served-text class of the scoring interpreter quotes (css-values-5, css-fonts-4,
-#                       css-mixins-1, css-grid-3, css-writing-modes-4, css-forms-1), as served by https://drafts.csswg.org/<name>/. A draft is a moving
-#                       target, so the pin is the SHA-256 of the bytes served on the date in tools/css/DRAFTS_SHA256, and the fetch fails, naming the fix, when
-#                       the server answers anything else. A file already fetched is checked offline.
+#   drafts/             Six Editors' Drafts of CSS modules that the served-text class of the scoring interpreter quotes (css-values-5, css-fonts-4,
+#                       css-mixins-1, css-grid-3, css-writing-modes-4, css-forms-1), as the Bikeshed sources (Overview.bs) of w3c/csswg-drafts at the commit
+#                       in tools/css/DRAFTS_COMMIT, each pinned by SHA-256 in tools/css/DRAFTS_SHA256. A commit does not move; the rendered pages at drafts.csswg.org do.
+#                       A file already fetched is checked offline.
 #
 # None is committed: all are reproducible from a pin and a URL. Each
 # checkout is verified to be exactly its commit, and a mismatch leaves
@@ -160,13 +160,15 @@ else
 fi
 
 # ---- the Editors' Drafts that the served-text class quotes ---------------------------------------------------------
-# tools/css/DRAFTS_SHA256: sha256, file name, URL, date the bytes were served. The drafts move: a server that answers anything else than the pinned bytes is a
-# changed draft, not a broken download, so nothing is kept and the fix is named (re-read every quote of CSS_CSSOM_SCRIPT_SERVED against the new text, then raise the pin).
+# tools/css/DRAFTS_COMMIT is a commit of w3c/csswg-drafts and tools/css/DRAFTS_SHA256 lists, for each draft, the SHA-256 of its Bikeshed source (Overview.bs), the name it
+# is kept under and its path in the repository. A commit does not change, so a stranger fetches the same bytes on any day (the rendered pages at drafts.csswg.org follow
+# the newest commit and do not). Nothing is kept unless HEAD is the pinned commit and every file hashes as pinned.
 drafts_manifest="$root/tools/css/DRAFTS_SHA256"
+want_drafts=$(cat "$root/tools/css/DRAFTS_COMMIT")
 drafts="$dest/drafts"
 drafts_verify() { # dir: every manifest file present and hashing as pinned, and nothing else in it
 	bad=0
-	while read -r sum file url date; do
+	while read -r sum file path; do
 		case "$sum" in '#'*|'') continue ;; esac
 		if [ ! -f "$1/$file" ]; then
 			bad=1
@@ -182,18 +184,32 @@ drafts_verify() { # dir: every manifest file present and hashing as pinned, and 
 	return $bad
 }
 if [ -d "$drafts" ] && drafts_verify "$drafts"; then
-	printf 'have    drafts (tools/css/DRAFTS_SHA256)\n'
+	printf 'have    drafts @ %s (tools/css/DRAFTS_SHA256)\n' "$want_drafts"
 else
-	printf 'fetch   drafts (tools/css/DRAFTS_SHA256)\n'
-	rm -rf "$drafts.partial"
-	mkdir -p "$drafts.partial"
-	while read -r sum file url date; do
+	printf 'fetch   drafts (csswg-drafts, the sources of tools/css/DRAFTS_SHA256) @ %s\n' "$want_drafts"
+	rm -rf "$drafts.src" "$drafts.partial"
+	mkdir -p "$drafts.src" "$drafts.partial"
+	git -C "$drafts.src" init --quiet
+	git -C "$drafts.src" remote add origin https://github.com/w3c/csswg-drafts.git
+	git -C "$drafts.src" sparse-checkout init --no-cone
+	# shellcheck disable=SC2046
+	git -C "$drafts.src" sparse-checkout set $(grep -v '^#' "$drafts_manifest" | awk 'NF { print "/" $3 }')
+	git -C "$drafts.src" fetch --quiet --depth 1 --filter=blob:none origin "$want_drafts"
+	git -C "$drafts.src" checkout --quiet --detach FETCH_HEAD
+	got=$(git -C "$drafts.src" rev-parse HEAD)
+	if [ "$got" != "$want_drafts" ]; then
+		rm -rf "$drafts.src" "$drafts.partial"
+		printf 'drafts: checked out %s, pinned %s. Nothing was kept.\n' "$got" "$want_drafts" >&2
+		exit 1
+	fi
+	while read -r sum file path; do
 		case "$sum" in '#'*|'') continue ;; esac
-		curl --fail --silent --show-error --location -o "$drafts.partial/$file" "$url"
+		cp "$drafts.src/$path" "$drafts.partial/$file"
 	done < "$drafts_manifest"
+	rm -rf "$drafts.src"
 	if ! drafts_verify "$drafts.partial"; then
 		rm -rf "$drafts.partial"
-		printf 'drafts: the server answered other bytes than the pinned ones, so a draft has changed since the pin was taken. Nothing was kept. To raise the pin: fetch the files, read every quoted sentence of tools/conformance/CSS_CSSOM_SCRIPT_SERVED against the new text, and edit tools/css/DRAFTS_SHA256 in one commit with them.\n' >&2
+		printf 'drafts: a source does not hash as pinned. Nothing was kept. Raising the pin is a deliberate edit of tools/css/DRAFTS_COMMIT and DRAFTS_SHA256, in one commit with the quoted sentences of tools/conformance/CSS_CSSOM_SCRIPT_SERVED re-read against the new text.\n' >&2
 		exit 1
 	fi
 	rm -rf "$drafts"
