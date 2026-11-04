@@ -101,6 +101,8 @@ typedef struct {
   size_t max_properties;              ///< Most registrations the set holds. Default 4,096; at most 2^24. One more is GTEXT_CSS_E_LIMIT_REGISTRY.
   size_t max_diagnostics;             ///< Most diagnostics kept (the rest are counted). Default 1,024; at most 2^20.
   size_t max_rule_depth;              ///< Deepest nesting of rules read. Default 4,096; at most 1,048,576. One more is GTEXT_CSS_E_LIMIT_DEPTH.
+  /** As `active`, but a failure is the reader's: a status other than GTEXT_CSS_OK stops the reading and is the call's (gtext_css_conditions_active_rule_status()). Used in place of `active` when given. */
+  GTEXT_CSS_Status (*active_status)(void * user, const GTEXT_CSS_Rule * rule, bool * applies);
 } GTEXT_CSS_At_Property_Options;
 
 /** @brief The defaults, spelled out. */
@@ -145,6 +147,20 @@ GTEXT_API void gtext_css_at_property_set_free(GTEXT_CSS_At_Property_Set * set);
  *   GTEXT_CSS_E_OOM. What the rules before a failure registered stays.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_at_property_collect(GTEXT_CSS_At_Property_Set * set, const GTEXT_CSS_Tree * tree, GTEXT_CSS_At_Property_Result * result);
+
+/**
+ * @brief Read the `@property` rules among top-level rules that are not in one array, as one stylesheet: the rules of a sheet whose rules each keep their own tree.
+ *
+ * The same reading as gtext_css_at_property_collect() over the rules given, in order, counted as one sheet (the `sheet` of a diagnostic is the same for all of them).
+ *
+ * @param set The set. Not NULL.
+ * @param rules The top-level rules of the sheet, in order; none is NULL. NULL with a `count` of 0 is an empty sheet.
+ * @param count How many.
+ * @param result NULL, or filled; on a failure its `span` is the rule concerned.
+ * @return As gtext_css_at_property_collect(); GTEXT_CSS_E_INVALID for a NULL rule. What the rules before a failure registered stays.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_at_property_collect_rules(GTEXT_CSS_At_Property_Set * set, const GTEXT_CSS_Rule * const * rules, size_t count,
+    GTEXT_CSS_At_Property_Result * result);
 
 /** @brief How many custom properties the rules registered. NULL is 0. */
 GTEXT_API size_t gtext_css_at_property_count(const GTEXT_CSS_At_Property_Set * set);

@@ -144,6 +144,7 @@ static void config_fill(GTEXT_CSSOM_Config * out, const GTEXT_CSSOM_Config * in)
     out->compute_context = NULL;
     out->max_cached_styles = 0;
     out->computed_trust_tree_changed = false;
+    out->environment = NULL;
   }
   if (!out->max_cached_styles) out->max_cached_styles = d.max_cached_styles;
 }
@@ -198,6 +199,12 @@ GTEXT_CSS_Status gtext_cssom_document_new(const GTEXT_CSSOM_Config * config, GTE
   cfg.conditions = core->conditions;
   cfg.match_options = core->has_match ? &core->match : NULL;
   core->config = cfg;
+  if (cfg.environment) {
+    memcpy(&core->env, cfg.environment, cfg.environment->size < sizeof core->env ? cfg.environment->size : sizeof core->env);
+    core->env.size = sizeof core->env;
+    core->has_env = true;
+    core->config.environment = &core->env;
+  }
   if (st == GTEXT_CSS_OK) {
     css_scope * scope = NULL;
     st = css_scope_create_document(core, &scope);
@@ -216,6 +223,8 @@ void css_core_release(css_core * core) {
   }
   css_inline_map_free(core);
   css_computed_free(core);
+  gtext_css_at_property_set_free(core->props);   /* after the contexts that borrow it */
+  core->props = NULL;
   css_index_teardown(core);
   gtext_css_conditions_free(core->conditions);
   GTEXT_Allocator a = core->alloc;
@@ -260,6 +269,9 @@ GTEXT_CSS_Status gtext_cssom_document_counters(const GTEXT_CSSOM_Document * docu
   *out = document->core->counters;
   out->live_scopes = document->core->nscopes;
   out->cached_styles = css_computed_cached_styles(document->core);
+  out->property_registrations = gtext_css_at_property_count(document->core->props);
+  out->property_diagnostics = gtext_css_at_property_diagnostic_total(document->core->props);
+  out->property_unapplied = document->core->config.compute_context ? out->property_registrations : 0;
   return GTEXT_CSS_OK;
 }
 

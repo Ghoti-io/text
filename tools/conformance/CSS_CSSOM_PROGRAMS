@@ -5,3 +5,4 @@ wptcomputed	test-cssom-wpt-computed.cpp
 match	test-css-match.cpp
 container	test-css-container.cpp
 all	test-cssom-all.cpp
+atproperty	test-cssom-at-property.cpp

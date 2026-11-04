@@ -357,6 +357,85 @@ static GTEXT_CSS_Status build_sources(snap_ctx * c, css_sheet * sheet) {
   return GTEXT_CSS_OK;
 }
 
+/* ---- the @property rules -------------------------------------------------------------------------------------------------------------------- */
+
+/// Whether a rule of the sheet matters to the reader of `@property` rules (css_at_property.h): the rule itself, a group rule it enters, and an `@layer` rule of either form (a statement
+/// puts layers in their order, which orders the rules).
+static bool can_hold_property(const css_rule * r) {
+  switch (r->kind) {
+    case GTEXT_CSSOM_RULE_PROPERTY:
+    case GTEXT_CSSOM_RULE_LAYER:
+    case GTEXT_CSSOM_RULE_MEDIA:
+    case GTEXT_CSSOM_RULE_SUPPORTS:
+    case GTEXT_CSSOM_RULE_CONTAINER:
+    case GTEXT_CSSOM_RULE_SCOPE:
+    case GTEXT_CSSOM_RULE_STARTING_STYLE:
+    case GTEXT_CSSOM_RULE_WHEN:
+    case GTEXT_CSSOM_RULE_ELSE:
+      return true;
+    default:
+      return false;
+  }
+}
+
+GTEXT_CSS_Status css_sheet_collect_properties(css_core * core, css_sheet * sheet, GTEXT_CSS_At_Property_Set ** set) {
+  GTEXT_Allocator a = core->alloc;
+  snap_ctx c;
+  memset(&c, 0, sizeof c);
+  c.core = core;
+  const GTEXT_CSS_Rule ** nodes = NULL;
+  size_t n = 0, cap = 0;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  for (css_rule * r = css_rule_list_first(&sheet->rules); r && st == GTEXT_CSS_OK; r = css_rule_list_next(r)) {
+    if (!can_hold_property(r)) {
+      continue;
+    }
+    if (n == cap) {
+      const size_t grown = cap ? cap * 2 : 8;
+      const GTEXT_CSS_Rule ** bigger = gtext_allocator_realloc(&a, (void *)nodes, grown * sizeof *nodes);
+      if (!bigger) {
+        st = GTEXT_CSS_E_OOM;
+        break;
+      }
+      nodes = bigger;
+      cap = grown;
+    }
+    if (!r->mod && r->node && r->source && r->source->tree) {
+      nodes[n++] = r->node;   /* not changed since it was read: its node is what it is */
+      continue;
+    }
+    if (!c.trees) {
+      c.trees = gtext_allocator_calloc(&a, sheet->rules.count, sizeof *c.trees);
+      if (!c.trees) {
+        st = GTEXT_CSS_E_OOM;
+        break;
+      }
+    }
+    GTEXT_CSS_Rule_Source src;
+    memset(&src, 0, sizeof src);
+    st = reparse(&c, r, &src);
+    if (st == GTEXT_CSS_OK) {
+      nodes[n++] = src.rule;
+    }
+  }
+  if (st == GTEXT_CSS_OK && n > 0) {
+    if (!*set) {
+      GTEXT_CSS_At_Property_Options o = gtext_css_at_property_options_default();
+      o.allocator = &a;
+      o.user = core->conditions;
+      o.active_status = gtext_css_conditions_active_rule_status;
+      st = gtext_css_at_property_set_new(core->registry, &o, set);
+    }
+    if (st == GTEXT_CSS_OK) {
+      GTEXT_CSS_At_Property_Result res;
+      st = gtext_css_at_property_collect_rules(*set, nodes, n, &res);
+    }
+  }
+  gtext_allocator_free(&a, (void *)nodes);
+  ctx_free(&c);
+  return st;
+}
+
 /* ---- the compile ---------------------------------------------------------------------------------------------------------------------------------- */
 
 static GTEXT_CSS_Status snapshot(css_sheet * sheet, size_t levels, GTEXT_CSS_Sheet ** out);

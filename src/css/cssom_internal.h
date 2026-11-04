@@ -37,6 +37,7 @@
 #define GHOTI_IO_GTEXT_SRC_CSS_CSSOM_INTERNAL_H
 
 #include <ghoti.io/text/css.h>
+#include <ghoti.io/text/css/css_at_property.h>
 #include <ghoti.io/text/css/css_cssom.h>
 #include <ghoti.io/text/macros.h>
 
@@ -106,6 +107,8 @@ struct css_core {
   GTEXT_Allocator alloc;
   const GTEXT_CSS_Registry * registry;
   GTEXT_CSSOM_Config config;           ///< The limits, with the defaults filled in.
+  GTEXT_CSS_Environment env;           ///< A copy of the caller's environment (`has_env`); `config.environment` points at it.
+  bool has_env;
   uint64_t generation;
   uint64_t next_id;
   uint64_t stamp_counter;              ///< The stamps of sheets' changes (css_sheet_bump()): monotonic, never reused, independent of the generation.
@@ -153,6 +156,7 @@ struct css_core {
   struct GTEXT_CSSOM_Media_Query_List * mql_head, * mql_tail;   ///< The live media query lists in creation order (weak).
   size_t nmql;
   unsigned import_depth;               ///< Import callbacks running above this point.
+  GTEXT_CSS_At_Property_Set * props;   ///< The registrations that the `@property` rules of the sheets in `index` make (cssom_index.c), or NULL when no sheet has a rule that can hold one. Owned; a compute context the document made borrows it.
   /* getComputedStyle() (cssom_computed.c) */
   struct css_cmps * cs;                  ///< The session, made on first use.
   GTEXT_CSSOM_Layout_Interface layout; ///< The caller's layout interface, copied (`has_layout`).

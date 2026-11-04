@@ -28,6 +28,7 @@
 
 #include <ghoti.io/text/css.h>
 #include <ghoti.io/text/css/css_at_property.h>
+#include <ghoti.io/text/css/css_layer.h>
 
 #include <string.h>
 
@@ -63,6 +64,8 @@ struct GTEXT_CSS_At_Property_Set {
   size_t total;
   size_t sheets;
   size_t work;
+  GTEXT_CSS_Layer_Registry * layers;   ///< The layers the rules read are in, in the order they were first declared (made on the first walk).
+  size_t layer_work;                   ///< `layers`' own count of work, as the last walk left it.
 };
 
 GTEXT_CSS_At_Property_Options gtext_css_at_property_options_default(void) {
@@ -113,6 +116,7 @@ void gtext_css_at_property_set_free(GTEXT_CSS_At_Property_Set * s) {
   }
   gtext_allocator_free(&a, s->diags);
   css_creg_store_free(&s->store);
+  gtext_css_layer_registry_free(s->layers);
   gtext_allocator_free(&a, s);
 }
 
@@ -386,7 +390,54 @@ static int rule_valid(const descriptors * d) {
   return -1;
 }
 
-static GTEXT_CSS_Status handle_property(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Rule * rule) {
+/// Which of two layers of a set's registry the cascade sorts later: -1, 0 or 1. The unlayered rules come last; a layer's sub-layers before its own rules; siblings in the order they were
+/// first declared (which is the order of their ids). The order of two layers that exist does not change when another is declared, so it can be asked as the rules are read.
+static int layer_compare(const GTEXT_CSS_At_Property_Set * s, GTEXT_CSS_Layer_Id a, GTEXT_CSS_Layer_Id b) {
+  if (a == b) {
+    return 0;
+  }
+  if (a == GTEXT_CSS_LAYER_NONE) {
+    return 1;
+  }
+  if (b == GTEXT_CSS_LAYER_NONE) {
+    return -1;
+  }
+  enum { MAX = 257 };
+  GTEXT_CSS_Layer_Id ca[MAX], cb[MAX];
+  size_t na = 0, nb = 0;
+  for (int side = 0; side < 2; side++) {
+    GTEXT_CSS_Layer_Id * chain = side ? cb : ca;
+    size_t n = 0;
+    for (GTEXT_CSS_Layer_Id id = side ? b : a; id != GTEXT_CSS_LAYER_NONE && n < MAX;) {
+      GTEXT_CSS_Layer_Info info;
+      if (!gtext_css_layer_info(s->layers, id, &info)) {
+        break;
+      }
+      chain[n++] = id;
+      id = info.parent;
+    }
+    if (side) {
+      nb = n;
+    }
+    else {
+      na = n;
+    }
+  }
+  /* the chains run from the layer up to the top: compare from the top down */
+  size_t i = 0;
+  while (i < na && i < nb && ca[na - 1 - i] == cb[nb - 1 - i]) {
+    i++;
+  }
+  if (i == na) {
+    return 1;   /* `a` holds `b`: a layer's own rules come after its sub-layers */
+  }
+  if (i == nb) {
+    return -1;
+  }
+  return ca[na - 1 - i] < cb[nb - 1 - i] ? -1 : 1;
+}
+
+static GTEXT_CSS_Status handle_property(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Rule * rule, GTEXT_CSS_Layer_Id layer) {
   s->work++;
   enum { NAME_CAP = 64 };
   GTEXT_CSS_String names[NAME_CAP];
@@ -480,6 +531,15 @@ static GTEXT_CSS_Status handle_property(GTEXT_CSS_At_Property_Set * s, const GTE
       st = GTEXT_CSS_E_LIMIT_REGISTRY;
       break;
     }
+    c->layer = layer;
+    const css_creg * held = css_creg_store_find(&s->store, nm->data, nm->length, NULL);
+    if (held && layer_compare(s, layer, held->layer) < 0) {
+      /* "the last one in stylesheet order wins" is the cascade's order: a rule in an earlier layer than the registration there is does not replace it */
+      css_creg_free(c);
+      st = diagnose(s, GTEXT_CSS_AT_PROP_SUPERSEDED, nm->data, nm->length, rule, &rule->span,
+          "A later rule in an earlier cascade layer does not replace the registration of a rule in a later layer (Cascade 5, 6.4.3: \"Unlayered rules are sorted later than any layered rules\").");
+      continue;
+    }
     bool replaced = false;
     st = css_creg_store_put(&s->store, c, &replaced);
     if (st != GTEXT_CSS_OK) {
@@ -504,7 +564,7 @@ GTEXT_CSS_Status css_at_property_rule_validity(const GTEXT_CSS_Registry * regist
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  st = handle_property(s, rule);
+  st = handle_property(s, rule, GTEXT_CSS_LAYER_NONE);
   if (st == GTEXT_CSS_OK) {
     /* registered, or refused only because the caller registered the name itself (the rule is valid; that registration wins) */
     bool wins = false;
@@ -523,141 +583,150 @@ GTEXT_CSS_Status css_at_property_rule_validity(const GTEXT_CSS_Registry * regist
 
 /* ---- the walk ------------------------------------------------------------------------------------------- */
 
+/// What the reader of css_layer.h hands back to this one while it walks a tree.
 typedef struct {
-  const GTEXT_CSS_Rule * rules;
-  size_t rule_count;
-  const GTEXT_CSS_Block_Item * items;
-  size_t item_count;
-  size_t pos;
-  bool unresolved;  ///< Inside a conditional rule nobody has said applies.
-} frame;
+  GTEXT_CSS_At_Property_Set * set;
+  const GTEXT_CSS_Rule * failing;
+  const char * detail;
+  GTEXT_CSS_Status active_failure;   ///< The first failure of `active_status`: the walk went on as if the rule did not apply, and the call reports it.
+} walk_state;
 
-static bool conditional_name(const GTEXT_CSS_String * name) {
-  return ieq(name, "media") || ieq(name, "supports") || ieq(name, "container") || ieq(name, "document") || ieq(name, "-moz-document");
+static bool walk_active(void * user, const GTEXT_CSS_Rule * rule) {
+  walk_state * w = user;
+  if (w->set->opt.active_status) {
+    bool applies = false;
+    const GTEXT_CSS_Status st = w->set->opt.active_status(w->set->opt.user, rule, &applies);
+    if (st != GTEXT_CSS_OK) {
+      if (w->active_failure == GTEXT_CSS_OK) {
+        w->active_failure = st;
+        w->failing = rule;
+      }
+      return false;
+    }
+    return applies;
+  }
+  return w->set->opt.active(w->set->opt.user, rule);
 }
 
-GTEXT_CSS_Status gtext_css_at_property_collect(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Tree * tree, GTEXT_CSS_At_Property_Result * result) {
-  if (result) {
-    memset(result, 0, sizeof *result);
-    result->status = GTEXT_CSS_OK;
-    result->message = gtext_css_status_string(GTEXT_CSS_OK);
+/// An at-rule the layers' reader reached and did not handle: an `@property` is registered with the layer it is in.
+static GTEXT_CSS_Status walk_rule(void * user, const GTEXT_CSS_Rule * rule, const GTEXT_CSS_Layer_Rule_Context * ctx) {
+  walk_state * w = user;
+  if (!ieq(&rule->name, "property")) {
+    return GTEXT_CSS_OK;
   }
-  if (!s || !tree) {
-    if (result) {
-      result->status = GTEXT_CSS_E_INVALID;
-      result->message = gtext_css_status_string(GTEXT_CSS_E_INVALID);
-    }
-    return GTEXT_CSS_E_INVALID;
+  w->set->work++;
+  if (ctx->in_style) {
+    return GTEXT_CSS_OK;   /* not valid inside a style rule */
   }
-  s->sheets++;
-  const size_t work_before = s->work;
+  if (ctx->unresolved) {
+    w->failing = rule;
+    w->detail = "an @property is inside a conditional rule and no active callback was given";
+    return GTEXT_CSS_E_UNSUPPORTED;
+  }
+  const GTEXT_CSS_Status st = handle_property(w->set, rule, ctx->layer);
+  if (st != GTEXT_CSS_OK) {
+    w->failing = rule;
+  }
+  return st;
+}
+
+/// Read one tree of rules. The tree is read by the reader of css_layer.h, the one place that knows what an `@layer` rule is: `@layer` blocks and statements put the rules in their layers,
+/// the conditional rules whose condition holds and `@scope` and `@starting-style` are entered, and an `@property` is registered where it stands (Cascade 5 orders it by layer, then by place).
+static GTEXT_CSS_Status walk_tree(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Tree * tree, GTEXT_CSS_At_Property_Result * result) {
   GTEXT_CSS_Status status = GTEXT_CSS_OK;
-  frame * stack = NULL;
-  size_t sp = 0, cap = 0;
-  const GTEXT_CSS_Rule * failing = NULL;
-  const char * detail = NULL;
-  /* push the sheet */
-  cap = 16;
-  stack = gtext_allocator_malloc(&s->alloc, cap * sizeof *stack);
-  if (!stack) {
-    status = GTEXT_CSS_E_OOM;
+  if (!s->layers) {
+    GTEXT_CSS_Layer_Options lo = gtext_css_layer_options_default();
+    lo.allocator = &s->alloc;
+    status = gtext_css_layer_registry_new(&lo, &s->layers);
   }
-  else {
-    memset(&stack[0], 0, sizeof stack[0]);
-    if (tree->kind == GTEXT_CSS_TREE_BLOCK_CONTENTS) {
-      stack[0].items = tree->items;
-      stack[0].item_count = tree->item_count;
+  walk_state w;
+  memset(&w, 0, sizeof w);
+  w.set = s;
+  GTEXT_CSS_Layer_Result lr;
+  memset(&lr, 0, sizeof lr);
+  if (status == GTEXT_CSS_OK) {
+    GTEXT_CSS_Layer_Collect_Options o;
+    memset(&o, 0, sizeof o);
+    o.user = &w;
+    o.active = s->opt.active || s->opt.active_status ? walk_active : NULL;
+    o.max_rule_depth = s->opt.max_rule_depth;
+    o.on_rule = walk_rule;
+    status = gtext_css_cascade_collect_layers(s->layers, GTEXT_CSS_ORIGIN_AUTHOR, GTEXT_CSS_LAYER_NONE, tree, &o, &lr);
+    if (status == GTEXT_CSS_OK && w.active_failure != GTEXT_CSS_OK) {
+      status = w.active_failure;
     }
-    else {
-      stack[0].rules = tree->rules;
-      stack[0].rule_count = tree->rule_count;
-    }
-    sp = 1;
   }
-  while (status == GTEXT_CSS_OK && sp > 0) {
-    frame * top = &stack[sp - 1];
-    const GTEXT_CSS_Rule * rule = NULL;
-    if (top->rules) {
-      if (top->pos < top->rule_count) {
-        rule = &top->rules[top->pos++];
-      }
-    }
-    else {
-      while (top->pos < top->item_count) {
-        const GTEXT_CSS_Block_Item * it = &top->items[top->pos++];
-        if (it->kind == GTEXT_CSS_ITEM_RULE) {
-          rule = it->rule;
-          break;
-        }
-      }
-    }
-    if (!rule) {
-      sp--;
-      continue;
-    }
-    s->work++;
-    if (rule->kind != GTEXT_CSS_RULE_AT) {
-      continue;
-    }
-    if (ieq(&rule->name, "property")) {
-      if (top->unresolved) {
-        failing = rule;
-        detail = "an @property is inside a conditional rule and no active callback was given";
-        status = GTEXT_CSS_E_UNSUPPORTED;
-        break;
-      }
-      status = handle_property(s, rule);
-      if (status != GTEXT_CSS_OK) {
-        failing = rule;
-      }
-      continue;
-    }
-    const bool layer = ieq(&rule->name, "layer");
-    const bool cond = conditional_name(&rule->name);
-    if ((!layer && !cond) || !rule->has_block || rule->content_count == 0) {
-      continue;
-    }
-    bool unresolved = top->unresolved;
-    if (cond) {
-      if (s->opt.active) {
-        if (!s->opt.active(s->opt.user, rule)) {
-          continue;
-        }
-      }
-      else {
-        unresolved = true;
-      }
-    }
-    if (sp >= s->opt.max_rule_depth) {
-      failing = rule;
-      detail = "rules nested deeper than max_rule_depth";
-      status = GTEXT_CSS_E_LIMIT_DEPTH;
-      break;
-    }
-    if (sp == cap) {
-      frame * g = gtext_allocator_realloc(&s->alloc, stack, cap * 2 * sizeof *g);
-      if (!g) {
-        status = GTEXT_CSS_E_OOM;
-        break;
-      }
-      stack = g;
-      cap *= 2;
-    }
-    memset(&stack[sp], 0, sizeof stack[sp]);
-    stack[sp].items = rule->contents;
-    stack[sp].item_count = rule->content_count;
-    stack[sp].unresolved = unresolved;
-    sp++;
-  }
-  gtext_allocator_free(&s->alloc, stack);
   if (result) {
     result->status = status;
     result->message = gtext_css_status_string(status);
-    result->detail = detail;
-    if (failing) {
-      result->span = failing->span;
+    result->detail = w.detail ? w.detail : lr.detail;
+    if (w.failing) {
+      result->span = w.failing->span;
     }
-    result->work = s->work - work_before;
+    else if (status != GTEXT_CSS_OK) {
+      result->span = lr.span;
+    }
+    result->work = lr.work >= s->layer_work ? lr.work - s->layer_work : 0;
+  }
+  if (s->layers && status != GTEXT_CSS_E_OOM) {
+    s->layer_work = lr.work ? lr.work : s->layer_work;
   }
   return status;
+}
+
+/// Fill a result from a status.
+static void fill_result(GTEXT_CSS_At_Property_Result * result, GTEXT_CSS_Status status) {
+  if (result) {
+    memset(result, 0, sizeof *result);
+    result->status = status;
+    result->message = gtext_css_status_string(status);
+  }
+}
+
+GTEXT_CSS_Status gtext_css_at_property_collect(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Tree * tree, GTEXT_CSS_At_Property_Result * result) {
+  fill_result(result, GTEXT_CSS_OK);
+  if (!s || !tree) {
+    fill_result(result, GTEXT_CSS_E_INVALID);
+    return GTEXT_CSS_E_INVALID;
+  }
+  s->sheets++;
+  return walk_tree(s, tree, result);
+}
+
+GTEXT_CSS_Status gtext_css_at_property_collect_rules(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Rule * const * rules, size_t count, GTEXT_CSS_At_Property_Result * result) {
+  fill_result(result, GTEXT_CSS_OK);
+  if (!s || (count && !rules)) {
+    fill_result(result, GTEXT_CSS_E_INVALID);
+    return GTEXT_CSS_E_INVALID;
+  }
+  for (size_t i = 0; i < count; i++) {
+    if (!rules[i]) {
+      fill_result(result, GTEXT_CSS_E_INVALID);
+      return GTEXT_CSS_E_INVALID;
+    }
+  }
+  s->sheets++;
+  size_t work = 0;
+  for (size_t i = 0; i < count; i++) {
+    /* a tree of the one rule: the reader looks at nothing else of a tree, so the rules of a sheet that keep their own trees are read as the one sheet they are */
+    GTEXT_CSS_Tree one;
+    memset(&one, 0, sizeof one);
+    one.kind = GTEXT_CSS_TREE_STYLESHEET;
+    one.rules = rules[i];
+    one.rule_count = 1;
+    GTEXT_CSS_At_Property_Result r;
+    const GTEXT_CSS_Status st = walk_tree(s, &one, &r);
+    work += r.work;
+    if (st != GTEXT_CSS_OK) {
+      if (result) {
+        *result = r;
+        result->work = work;
+      }
+      return st;
+    }
+  }
+  if (result) {
+    result->work = work;
+  }
+  return GTEXT_CSS_OK;
 }

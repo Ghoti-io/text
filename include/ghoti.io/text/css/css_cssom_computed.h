@@ -134,6 +134,35 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_computed_failure(const GTEXT_CSSOM_Docume
  */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_document_container_interface(GTEXT_CSSOM_Document * document, GTEXT_CSS_Container_Interface * out);
 
+/**
+ * @brief The registrations that the `@property` rules of the document's style sheets make.
+ *
+ * "If multiple valid @property rules are defined for the same name, the last one wins" (CSS Properties and Values API 1): the rules of the sheets that take part (not disabled, their
+ * media true for the conditions), in the order the cascade reads the sheets, entering `@layer` blocks and the `@media`, `@supports` and `@container` rules whose condition holds. A rule
+ * that is not valid is not in the sheet at all (the parse of a sheet drops it, as the browsers do) and registers nothing; the diagnostics the set reports are of the valid rules that another
+ * replaced or a caller's registration overrode (css_at_property.h). A name the registry has from a caller's registration is not registered by a rule (the same
+ * sentence: "A custom property registration from CSS.registerProperty() further wins over any @property rules").
+ *
+ * **What it is applied to.** The compute context the document makes for itself is made with this set, so `getComputedStyle()` reads a registered property as its computed value (a
+ * `calc()` resolved, a font-relative length absolute, an unset non-inherited property as its initial value) and `if(style())` compares computed values. It is rebuilt when the set
+ * changes, which happens when a sheet with such a rule is inserted, removed, disabled or has its rules edited, or the conditions change what a conditional rule holds; a document
+ * with no `@property` rule does nothing for them. A compute context the caller supplies (GTEXT_CSSOM_Config::compute_context) keeps its own registrations: the rules are reported here
+ * and `*applied` is false (the counter `property_unapplied` says how many registrations were not applied).
+ *
+ * **Not read.** The sheets registered for the user-agent and user origins (gtext_cssom_document_register_sheet()) are compiled sheets and have no rules to read; the sheets an `@import`
+ * rule loaded are not entered; and the order of the layers is not applied to the order of the rules (the rules are in the order of the sheet).
+ *
+ * **Lifetime.** The set is the document's: valid until the next call that makes the index current (a read of a computed declaration, gtext_cssom_document_index()) after the sheets changed. A
+ * conditions object given the result of gtext_cssom_document_container_interface() holds the compute context at that time, which stays valid, with its registrations, until the
+ * document goes; make the interface again after the set changes to see the new ones.
+ *
+ * @param document The document. Not NULL.
+ * @param set Receives the set, or NULL when the rules make no registration and raise no diagnostic (a sheet of style rules alone is not even read). Not NULL.
+ * @param applied Receives whether the document's computed styles use it; NULL if not wanted.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM; the limits of css_at_property.h (GTEXT_CSS_E_LIMIT_REGISTRY ...) when the rules are more than it holds, and the statuses of building the index.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_document_property_rules(GTEXT_CSSOM_Document * document, const GTEXT_CSS_At_Property_Set ** set, bool * applied);
+
 #ifdef __cplusplus
 }
 #endif

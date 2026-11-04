@@ -108,7 +108,10 @@ typedef struct css_comp {
 
 /// The document's session for `getComputedStyle()`.
 typedef struct css_cmps {
-  GTEXT_CSS_Compute_Context * own;    ///< The context the document made for itself.
+  GTEXT_CSS_Compute_Context * own;    ///< The context the document made for itself (with the registrations of `core->props` at the time).
+  bool own_exported;                  ///< gtext_cssom_document_container_interface() handed `own` out: a conditions object may hold it, so a replacement keeps it (`retired`) until the document goes.
+  struct css_retired * retired;       ///< Contexts replaced after they were handed out, with the sets they borrow, oldest first.
+  size_t nretired, retired_cap;
   const GTEXT_CSS_Compute_Context * ctx;   ///< The context in use: the caller's, or `own`.
   GTEXT_CSS_Selector_Match_Context * match;
   GTEXT_CSS_Condition_Call call;
@@ -126,6 +129,12 @@ typedef struct css_cmps {
   bool released_lost;                 ///< One of them could not be written down: the whole computed state goes when the read ends.
   GTEXT_CSSOM_Computed_Failure failure;
 } css_cmps;
+
+/// A compute context that a registration change replaced after the document had handed it out, and the registrations it borrows.
+typedef struct css_retired {
+  GTEXT_CSS_Compute_Context * ctx;
+  GTEXT_CSS_At_Property_Set * props;
+} css_retired;
 
 /// The session, made on first use; NULL on memory.
 css_cmps * css_cmps_get(css_core * core);
@@ -146,6 +155,10 @@ void css_computed_element_released(css_core * core, const void * element);
 void css_computed_teardown(css_core * core);
 /// The document handle is gone: tear the computed state down now, or when the read that is running (one of whose callbacks released the handle) ends.
 void css_computed_teardown_soon(css_core * core);
+
+/// The registrations of the `@property` rules of the sheets changed (cssom_index.c, when it builds an index): `props` (taken; NULL for none) replaces `core->props`. The compute context the
+/// document made with the old ones, the styles of the cache and the computed declarations read before are dropped; a caller's compute context keeps its own registrations.
+void css_computed_properties_changed(css_core * core, GTEXT_CSS_At_Property_Set * props);
 
 /// The session's memory (at the last release of the core).
 void css_computed_free(css_core * core);

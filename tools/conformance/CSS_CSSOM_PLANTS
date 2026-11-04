@@ -371,3 +371,8 @@ document-environment-has-no-condition	cssom_computed.c	  env.condition = environ
 computed-background-position-written-from-the-longhands	cssom_decl.c	  else if (p->shorthand && decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED && css_computed_position_text(decl	  else if (p->shorthand && decl->owner_kind == GTEXT_CSSOM_DECL_COMPUTED && 0 && css_computed_position_text(decl	computed
 a-pending-longhand-left-out-stops-a-shorthand	css_shorthand_serialize.c	!= (uint32_t)(i + 1) || left_out(c, it)) {	!= (uint32_t)(i + 1)) {	decl,seeds
 every-pending-longhand-counts-as-left-out	css_shorthand_serialize.c	  return c->pending_state[it->shorthand] == 2;	  return true;	decl
+property-rules-not-given-to-the-context	cssom_computed.c	  co.property_rules = core->props;	  co.property_rules = NULL;	atproperty
+registrations-never-seen-to-change	cssom_index.c	  if (same_properties(core->props, props)) {	  if (1) {	atproperty
+disabled-sheet-registers	cssom_index.c	  (void)implicit_root;\n  bool yes = false;\n  const GTEXT_CSS_Status st = takes_part(core, sheet, &yes);\n  if (st != GTEXT_CSS_OK || !yes) {	  (void)implicit_root;\n  bool yes = false;\n  const GTEXT_CSS_Status st = takes_part(core, sheet, &yes);\n  if (st != GTEXT_CSS_OK) {	atproperty
+layer-order-ignored-by-property-rules	css_at_property.c	    if (held && layer_compare(s, layer, held->layer) < 0) {	    if (held && 0) {	atproperty
+registered-set-leaks-when-the-index-fails	cssom_index.c	  if (st != GTEXT_CSS_OK) {\n    gtext_css_rule_index_free(fresh);\n    return st;\n  }\n  core->counters.property_collects	  if (st != GTEXT_CSS_OK) {\n    return st;\n  }\n  core->counters.property_collects	atproperty

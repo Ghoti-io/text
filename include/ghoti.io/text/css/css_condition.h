@@ -322,6 +322,12 @@ GTEXT_API bool gtext_css_container_environment_size(const GTEXT_CSS_Conditions *
 GTEXT_API bool gtext_css_conditions_active_rule(void * conditions, const GTEXT_CSS_Rule * rule);
 
 /**
+ * @brief gtext_css_conditions_active_rule() that does not hide a failure: `*applies` is the answer, and the status is GTEXT_CSS_E_OOM when memory ran out evaluating (a rule that cannot be
+ *   read, or whose condition cannot be judged, is GTEXT_CSS_OK with `*applies` false). For a reader that has to fail rather than leave a rule out.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_conditions_active_rule_status(void * conditions, const GTEXT_CSS_Rule * rule, bool * applies);
+
+/**
  * @brief `CSS.supports(property, value)`: whether the registry knows the property and the value is valid for it (by the parser the cascade uses, quirks off), and the policy
  *   does not narrow the property out. A custom property is supported with any value that is a `<declaration-value>` (the empty one included); the name `--` alone is none.
  */

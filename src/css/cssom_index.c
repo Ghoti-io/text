@@ -185,6 +185,59 @@ static GTEXT_CSS_Status add_live(css_core * core, GTEXT_CSS_Rule_Index * index, 
   return st;
 }
 
+/// What is done with each live sheet that is listed, in the document's cascade order.
+typedef GTEXT_CSS_Status (*live_fn)(css_core * core, void * user, css_sheet * sheet, const css_scope * scope, const void * implicit_root);
+
+/// Every live sheet that takes part in the document, in the order the cascade reads them: the scopes by context, the sheets each scope owns in its list, then its adopted sheets (a sheet
+/// listed more than once takes part once, at its last position). Disabled sheets and ones whose media is false are the callback's to refuse (takes_part()).
+static GTEXT_CSS_Status walk_live(css_core * core, live_fn fn, void * user) {
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  size_t nscopes = 0;
+  css_scope ** scopes = css_scopes_by_context(core, &nscopes);
+  css_sheet ** take = NULL;
+  if (!scopes) {
+    return GTEXT_CSS_E_OOM;
+  }
+  for (size_t s = 0; st == GTEXT_CSS_OK && s < nscopes; s++) {
+    css_scope * scope = scopes[s];
+    for (size_t i = 0; st == GTEXT_CSS_OK && i < scope->nsheets; i++) {
+      if (css_scope_owns(scope, scope->sheets[i])) {
+        st = fn(core, user, scope->sheets[i], scope, scope->sheets[i]->implicit_root);
+      }
+    }
+    if (st != GTEXT_CSS_OK || scope->nadopted == 0) {
+      continue;
+    }
+    /* a sheet listed more than once takes part once, at its last position: walk from the end and keep the first sight of each */
+    take = gtext_allocator_malloc(&core->alloc, scope->nadopted * sizeof *take);
+    if (!take) {
+      st = GTEXT_CSS_E_OOM;
+      break;
+    }
+    const uint64_t mark = ++core->stamp_counter;   /* a number no sheet has been marked with */
+    size_t n = 0;
+    for (size_t i = scope->nadopted; i-- > 0;) {
+      css_sheet * sh = scope->adopted[i];
+      if (sh->adopt_mark != mark && css_scope_owns(scope, sh)) {
+        sh->adopt_mark = mark;
+        take[n++] = sh;
+      }
+    }
+    for (size_t i = n; i-- > 0 && st == GTEXT_CSS_OK;) {
+      st = fn(core, user, take[i], scope, scope->implicit_root);
+    }
+    gtext_allocator_free(&core->alloc, take);
+    take = NULL;
+  }
+  gtext_allocator_free(&core->alloc, take);
+  gtext_allocator_free(&core->alloc, scopes);
+  return st;
+}
+
+static GTEXT_CSS_Status add_live_fn(css_core * core, void * user, css_sheet * sheet, const css_scope * scope, const void * implicit_root) {
+  return add_live(core, (GTEXT_CSS_Rule_Index *)user, sheet, scope, implicit_root);
+}
+
 static GTEXT_CSS_Status build(css_core * core, GTEXT_CSS_Rule_Index ** out) {
   GTEXT_CSS_Rule_Index_Options io = gtext_css_rule_index_options_default();
   io.allocator = &core->alloc;
@@ -208,48 +261,9 @@ static GTEXT_CSS_Status build(css_core * core, GTEXT_CSS_Rule_Index ** out) {
       st = gtext_css_rule_index_add_sheet(index, core->regs[i].sheet, &reg, &res);
     }
   }
-  size_t nscopes = 0;
-  css_scope ** scopes = NULL;
-  css_sheet ** take = NULL;
   if (st == GTEXT_CSS_OK) {
-    scopes = css_scopes_by_context(core, &nscopes);
-    if (!scopes) {
-      st = GTEXT_CSS_E_OOM;
-    }
+    st = walk_live(core, add_live_fn, index);
   }
-  for (size_t s = 0; st == GTEXT_CSS_OK && s < nscopes; s++) {
-    css_scope * scope = scopes[s];
-    for (size_t i = 0; st == GTEXT_CSS_OK && i < scope->nsheets; i++) {
-      if (css_scope_owns(scope, scope->sheets[i])) {
-        st = add_live(core, index, scope->sheets[i], scope, scope->sheets[i]->implicit_root);
-      }
-    }
-    if (st != GTEXT_CSS_OK || scope->nadopted == 0) {
-      continue;
-    }
-    /* a sheet listed more than once takes part once, at its last position: walk from the end and keep the first sight of each */
-    take = gtext_allocator_malloc(&core->alloc, scope->nadopted * sizeof *take);
-    if (!take) {
-      st = GTEXT_CSS_E_OOM;
-      break;
-    }
-    const uint64_t mark = ++core->stamp_counter;   /* a number no sheet has been marked with */
-    size_t n = 0;
-    for (size_t i = scope->nadopted; i-- > 0;) {
-      css_sheet * sh = scope->adopted[i];
-      if (sh->adopt_mark != mark && css_scope_owns(scope, sh)) {
-        sh->adopt_mark = mark;
-        take[n++] = sh;
-      }
-    }
-    for (size_t i = n; i-- > 0 && st == GTEXT_CSS_OK;) {
-      st = add_live(core, index, take[i], scope, scope->implicit_root);
-    }
-    gtext_allocator_free(&core->alloc, take);
-    take = NULL;
-  }
-  gtext_allocator_free(&core->alloc, take);
-  gtext_allocator_free(&core->alloc, scopes);
   if (st == GTEXT_CSS_OK) {
     st = gtext_css_rule_index_freeze(index, &res);
   }
@@ -259,6 +273,70 @@ static GTEXT_CSS_Status build(css_core * core, GTEXT_CSS_Rule_Index ** out) {
   }
   *out = index;
   return GTEXT_CSS_OK;
+}
+
+/* ---- the registrations of the @property rules ------------------------------------------------------------------------------------------------- */
+
+static GTEXT_CSS_Status collect_live_fn(css_core * core, void * user, css_sheet * sheet, const css_scope * scope, const void * implicit_root) {
+  (void)scope;
+  (void)implicit_root;
+  bool yes = false;
+  const GTEXT_CSS_Status st = takes_part(core, sheet, &yes);
+  if (st != GTEXT_CSS_OK || !yes) {
+    return st;
+  }
+  return css_sheet_collect_properties(core, sheet, (GTEXT_CSS_At_Property_Set **)user);
+}
+
+/// The registrations the rules of the sheets that take part make, in cascade order ("if multiple valid @property rules are defined for the same name, the last one wins"): the sheets
+/// of the user-agent and user origins are compiled sheets without their rules, so they register nothing. NULL when no sheet has a rule that can hold one.
+static GTEXT_CSS_Status build_properties(css_core * core, GTEXT_CSS_At_Property_Set ** out) {
+  GTEXT_CSS_At_Property_Set * set = NULL;
+  const GTEXT_CSS_Status st = walk_live(core, collect_live_fn, &set);
+  if (st != GTEXT_CSS_OK) {
+    gtext_css_at_property_set_free(set);
+    return st;
+  }
+  *out = set;
+  return GTEXT_CSS_OK;
+}
+
+static bool same_text(const char * a, size_t an, const char * b, size_t bn) {
+  return an == bn && (an == 0 || memcmp(a, b, an) == 0);
+}
+
+/// Whether two sets make the same registrations and report the same diagnostics (a NULL set has neither).
+static bool same_properties(const GTEXT_CSS_At_Property_Set * x, const GTEXT_CSS_At_Property_Set * y) {
+  if (x == y) {
+    return true;
+  }
+  if (gtext_css_at_property_count(x) != gtext_css_at_property_count(y) || gtext_css_at_property_diagnostic_total(x) != gtext_css_at_property_diagnostic_total(y)) {
+    return false;
+  }
+  for (size_t i = 0; i < gtext_css_at_property_count(x); i++) {
+    GTEXT_CSS_Custom_Info a, b;
+    if (!gtext_css_at_property_at(x, i, &a) || !gtext_css_at_property_at(y, i, &b)) {
+      return false;
+    }
+    if (!same_text(a.name, a.name_length, b.name, b.name_length) || !same_text(a.syntax, a.syntax_length, b.syntax, b.syntax_length) || a.inherits != b.inherits ||
+        a.has_initial != b.has_initial || !same_text(a.initial_value, a.initial_length, b.initial_value, b.initial_length)) {
+      return false;
+    }
+  }
+  for (size_t i = 0;; i++) {
+    GTEXT_CSS_At_Property_Diagnostic a, b;
+    const bool ha = gtext_css_at_property_diagnostic(x, i, &a);
+    const bool hb = gtext_css_at_property_diagnostic(y, i, &b);
+    if (ha != hb) {
+      return false;
+    }
+    if (!ha) {
+      return true;
+    }
+    if (a.reason != b.reason || a.sheet != b.sheet || a.span.offset != b.span.offset || a.span.end != b.span.end || !same_text(a.name.data, a.name.length, b.name.data, b.name.length)) {
+      return false;
+    }
+  }
 }
 
 static GTEXT_CSS_Status current(css_core * core, const GTEXT_CSS_Rule_Index ** out) {
@@ -277,6 +355,20 @@ static GTEXT_CSS_Status current(css_core * core, const GTEXT_CSS_Rule_Index ** o
   st = build(core, &fresh);
   if (st != GTEXT_CSS_OK) {
     return st;
+  }
+  /* the registrations are of the same sheets as the index and change with it: made before anything is replaced, so that a failure leaves both as they were */
+  GTEXT_CSS_At_Property_Set * props = NULL;
+  st = build_properties(core, &props);
+  if (st != GTEXT_CSS_OK) {
+    gtext_css_rule_index_free(fresh);
+    return st;
+  }
+  core->counters.property_collects += props != NULL;
+  if (same_properties(core->props, props)) {
+    gtext_css_at_property_set_free(props);   /* nothing a compute context was made with has changed */
+  }
+  else {
+    css_computed_properties_changed(core, props);
   }
   GTEXT_CSS_Rule_Index * old = core->index;
   core->index = fresh;

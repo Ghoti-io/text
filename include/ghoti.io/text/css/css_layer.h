@@ -248,6 +248,19 @@ typedef bool (*GTEXT_CSS_Layer_Active_Fn)(void * user, const GTEXT_CSS_Rule * ru
 /** @brief Called for each `@layer` block and each `@import` with a layer, with the layer its contents or its sheet belong in. */
 typedef void (*GTEXT_CSS_Layer_Rule_Fn)(void * user, const GTEXT_CSS_Rule * rule, GTEXT_CSS_Layer_Id layer);
 
+/** @brief Where the walk of gtext_css_cascade_collect_layers() is when it reaches a rule it hands to GTEXT_CSS_Layer_Collect_Options::on_rule. */
+typedef struct {
+  GTEXT_CSS_Layer_Id layer;   ///< The layer the rule is in (GTEXT_CSS_LAYER_NONE: unlayered).
+  bool in_style;              ///< The rule is inside a style rule (a nested rule): an at-rule that cascades by name is not valid there.
+  bool unresolved;            ///< The rule is inside a conditional rule that the caller has no `active` callback to evaluate.
+} GTEXT_CSS_Layer_Rule_Context;
+
+/**
+ * @brief Called for each at-rule the walk reads that is none of the ones it handles itself (`@layer`, `@import`, a conditional or a grouping rule), in the order they are read, with its
+ *   place. A rule inside a conditional rule that does not apply, or inside an invalid `@layer`, is not read, so it is not called for. A failure status stops the walk and is the call's.
+ */
+typedef GTEXT_CSS_Status (*GTEXT_CSS_Layer_Other_Fn)(void * user, const GTEXT_CSS_Rule * rule, const GTEXT_CSS_Layer_Rule_Context * context);
+
 /** @brief What reading the layers of a sheet may ask of the caller. A zeroed struct is the default. */
 typedef struct {
   void * user;                          ///< Passed to both callbacks.
@@ -258,6 +271,7 @@ typedef struct {
    *  a layer first named in a rule that does not apply is declared by the next rule that names it and does. NULL: none. */
   GTEXT_CSS_Layer_Rule_Fn on_declare;
   size_t max_rule_depth;                ///< Deepest nesting of rules read. Default 4,096; at most 1,048,576. One more is GTEXT_CSS_E_LIMIT_DEPTH.
+  GTEXT_CSS_Layer_Other_Fn on_rule;     ///< Called for the other at-rules the walk reads, with the layer each is in (a reader of at-rules that cascade by name, such as `@property`, goes through the same walk). NULL: none.
 } GTEXT_CSS_Layer_Collect_Options;
 
 /**

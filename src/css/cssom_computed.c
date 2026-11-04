@@ -376,6 +376,7 @@ void css_computed_teardown(css_core * core) {
   session_free_contexts(cs);
   gtext_css_compute_context_free(cs->own);
   cs->own = NULL;
+  cs->own_exported = false;
   cs->ctx = NULL;
 }
 
@@ -394,6 +395,11 @@ void css_computed_free(css_core * core) {
     return;
   }
   css_computed_teardown(core);
+  for (size_t i = 0; i < cs->nretired; i++) {
+    gtext_css_compute_context_free(cs->retired[i].ctx);
+    gtext_css_at_property_set_free(cs->retired[i].props);
+  }
+  gtext_allocator_free(&core->alloc, cs->retired);
   gtext_allocator_free(&core->alloc, (void *)cs->released);
   gtext_allocator_free(&core->alloc, cs->buckets);
   gtext_allocator_free(&core->alloc, cs);
@@ -421,9 +427,46 @@ GTEXT_CSS_Status gtext_cssom_document_set_compute_context(GTEXT_CSSOM_Document *
   session_free_contexts(cs);
   gtext_css_compute_context_free(cs->own);
   cs->own = NULL;
+  cs->own_exported = false;
   cs->ctx = NULL;
   cs->cepoch++;
   return GTEXT_CSS_OK;
+}
+
+void css_computed_properties_changed(css_core * core, GTEXT_CSS_At_Property_Set * props) {
+  GTEXT_CSS_At_Property_Set * old = core->props;
+  core->props = props;
+  css_cmps * cs = core->cs;
+  if (!cs || core->config.compute_context) {
+    /* no context of the document's own has been made, or the caller's is in use and keeps its own registrations: nothing was computed with the old set */
+    gtext_css_at_property_set_free(old);
+    return;
+  }
+  /* every cached style belongs to the context that made it, and a computed declaration read before holds values computed with the old registrations */
+  cache_clear(core, cs);
+  for (GTEXT_CSSOM_Decl * d = cs->all_head; d; d = d->comp->all_next) {
+    d->comp->valid = false;
+  }
+  session_free_contexts(cs);
+  if (cs->own) {
+    core->counters.property_context_rebuilds++;
+    if (cs->own_exported && cs->nretired < cs->retired_cap) {
+      /* a conditions object may hold the context (gtext_cssom_document_container_interface()): it stays valid, with the registrations it borrows, until the document goes; the room was
+         reserved when it was handed out */
+      cs->retired[cs->nretired].ctx = cs->own;
+      cs->retired[cs->nretired].props = old;
+      cs->nretired++;
+      old = NULL;
+    }
+    else {
+      gtext_css_compute_context_free(cs->own);
+    }
+  }
+  gtext_css_at_property_set_free(old);
+  cs->own = NULL;
+  cs->own_exported = false;
+  cs->ctx = NULL;
+  cs->cepoch++;
 }
 
 /* ---- the failure note ------------------------------------------------------------------------------------------------------------------------------ */
@@ -477,11 +520,18 @@ static GTEXT_CSS_Status ensure_context(css_core * core, css_cmps * cs) {
   GTEXT_CSS_Compute_Options co = gtext_css_compute_options_default();
   co.allocator = &core->alloc;
   co.elements = core->config.element_interface;
+  /* the registrations of the document's `@property` rules (cssom_index.c keeps them current with the index; a read makes the index current before it asks for the context) */
+  co.property_rules = core->props;
   /* the environment of a context the document makes answers `if(media())` and `if(supports())` with the conditions object the document evaluates with, as it is now
      (the document, not the object, is the `user`, so that an environment change that replaces the object is followed) */
   GTEXT_CSS_Environment env = gtext_css_environment_default();
-  env.user = core;
-  env.condition = environment_condition;
+  if (core->has_env) {
+    env = core->env;   /* the consumer's: its callbacks are its own; the document answers the conditions only where it left none */
+  }
+  if (!env.condition && !env.user) {
+    env.user = core;
+    env.condition = environment_condition;
+  }
   GTEXT_CSS_Compute_Result res;
   memset(&res, 0, sizeof res);
   const GTEXT_CSS_Status st = gtext_css_compute_context_new(core->registry, &env, &co, &cs->own, &res);
@@ -788,9 +838,10 @@ static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
   }
   else {
     const GTEXT_CSS_Rule_Index * index = NULL;
-    st = ensure_context(core, cs);
+    /* the index first: building it can replace the context the document made (the registrations of its `@property` rules changed) */
+    st = css_index_current(core, &index);
     if (st == GTEXT_CSS_OK) {
-      st = css_index_current(core, &index);
+      st = ensure_context(core, cs);
     }
     if (st == GTEXT_CSS_OK) {
       core->in_callback++;
@@ -1061,12 +1112,48 @@ GTEXT_CSS_Status gtext_cssom_document_container_interface(GTEXT_CSSOM_Document *
   css_cmps * cs = css_cmps_get(core);
   /* the context the document computes in: the caller's, else the one it makes (a style query computes the queried value in the context that made the container's style) */
   if (cs) {
-    const GTEXT_CSS_Status st = ensure_context(core, cs);
+    const GTEXT_CSS_Rule_Index * index = NULL;
+    GTEXT_CSS_Status st = css_index_current(core, &index);   /* the registrations of the `@property` rules are current with it */
+    if (st == GTEXT_CSS_OK) {
+      st = ensure_context(core, cs);
+    }
+    if (st == GTEXT_CSS_OK && cs->own && cs->ctx == cs->own && !cs->own_exported) {
+      /* the context is handed out: a later replacement keeps it, and the room for that is reserved now so that it cannot fail then */
+      if (cs->nretired == cs->retired_cap) {
+        const size_t grown = cs->retired_cap ? cs->retired_cap * 2 : 4;
+        css_retired * bigger = gtext_allocator_realloc(&core->alloc, cs->retired, grown * sizeof *bigger);
+        if (!bigger) {
+          st = GTEXT_CSS_E_OOM;
+        }
+        else {
+          cs->retired = bigger;
+          cs->retired_cap = grown;
+        }
+      }
+      cs->own_exported = st == GTEXT_CSS_OK;
+    }
     if (st != GTEXT_CSS_OK) {
       memset(out, 0, sizeof *out);
       return st;
     }
     out->compute_context = cs->ctx;
+  }
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_cssom_document_property_rules(GTEXT_CSSOM_Document * document, const GTEXT_CSS_At_Property_Set ** set, bool * applied) {
+  if (!document || !set) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  css_core * core = css_document_core(document);
+  const GTEXT_CSS_Rule_Index * index = NULL;
+  const GTEXT_CSS_Status st = css_index_current(core, &index);   /* the set is current with the index */
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  *set = core->props;
+  if (applied) {
+    *applied = core->config.compute_context == NULL;
   }
   return GTEXT_CSS_OK;
 }

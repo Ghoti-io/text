@@ -541,6 +541,27 @@ TEST(CssSheetConditions, TheActiveRuleFilterFeedsTheWalkersThatStayFilters) {
   gtext_css_layer_registry_free(reg);
 }
 
+/* gtext_css_conditions_active_rule_status() gives the answer of gtext_css_conditions_active_rule() with the status that function has no way to give (memory that ran out while the condition was
+   evaluated is GTEXT_CSS_E_OOM, where the boolean can only say "does not apply"). */
+TEST(CssSheetConditions, TheStatusFormOfTheActiveFilterAnswersAsTheBooleanOneDoes) {
+  css_test::Parsed p;
+  css_test::parse_into(p, gtext_css_parse_stylesheet, "@media print { } @media screen { } @container (width > 1px) { } @supports (display: nonesuch) { } @supports (display: block) { } @font-face { } p { }");
+  Conds screen;
+  const bool want[] = {false, true, true, false, true, true};
+  for (size_t i = 0; i < 6; i++) {
+    bool applies = !want[i];
+    EXPECT_EQ(gtext_css_conditions_active_rule_status(screen.c, &p.tree->rules[i], &applies), GTEXT_CSS_OK) << i;
+    EXPECT_EQ(applies, want[i]) << i;
+    EXPECT_EQ(gtext_css_conditions_active_rule(screen.c, &p.tree->rules[i]), want[i]) << i;
+  }
+  bool applies = true;
+  EXPECT_EQ(gtext_css_conditions_active_rule_status(screen.c, &p.tree->rules[6], &applies), GTEXT_CSS_OK) << "a style rule is not a condition";
+  EXPECT_FALSE(applies);
+  applies = true;
+  EXPECT_EQ(gtext_css_conditions_active_rule_status(nullptr, &p.tree->rules[0], &applies), GTEXT_CSS_OK);
+  EXPECT_FALSE(applies);
+}
+
 TEST(CssSheetConditions, TheOrderSheetsAreAddedInDecidesNothingButTheOrderOfAppearance) {
   /* The winners depend on the order of appearance the sheets were added in and on nothing else: a condition does not reorder. */
   Compiled a("@media (min-width: 600px) { p { color: red } } p { background-color: blue }");

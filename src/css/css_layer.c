@@ -1122,6 +1122,19 @@ static GTEXT_CSS_Status visit(walker * w, const GTEXT_CSS_Rule * rule) {
     }
   }
   else if (!grouping_name(&rule->name)) {
+    if (w->opt && w->opt->on_rule) {
+      GTEXT_CSS_Layer_Rule_Context ctx;
+      ctx.layer = (GTEXT_CSS_Layer_Id)cur->layer;
+      ctx.in_style = cur->in_style;
+      ctx.unresolved = cur->unresolved;
+      const GTEXT_CSS_Status st = w->opt->on_rule(w->opt->user, rule, &ctx);
+      if (st != GTEXT_CSS_OK) {
+        if (w->result) {
+          w->result->span = rule->span;
+        }
+        return result_done(w->result, st);
+      }
+    }
     return GTEXT_CSS_OK;
   }
   if (!rule->has_block || rule->content_count == 0) {

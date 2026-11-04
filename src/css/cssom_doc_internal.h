@@ -89,6 +89,10 @@ css_scope ** css_scopes_by_context(css_core * core, size_t * count);
 /// Let go of the index and the sheets registered for the user-agent and user origins.
 void css_index_teardown(css_core * core);
 
+/// Read the `@property` rules of a live sheet into `*set` (made on the first rule that can hold one; NULL stays NULL for a sheet that has none), in the document's cascade order
+/// when called for each sheet in turn (cssom_snapshot.c). The sheets it imports are not read.
+GTEXT_CSS_Status css_sheet_collect_properties(css_core * core, css_sheet * sheet, GTEXT_CSS_At_Property_Set ** set);
+
 /* ---- imports (cssom_snapshot.c, cssom_sheet.c, cssom_insert.c) -------------------------------------------------------------------------- */
 
 /// Ask the document's import callback for the sheet of the `@import` rule `rule`, which is for `sheet`: `*made` is the new sheet (one reference, the callback's) or NULL, with `*pending` true when

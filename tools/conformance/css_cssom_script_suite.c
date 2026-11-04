@@ -171,7 +171,6 @@ typedef struct {
   GTEXT_CSSOM_Document * doc;
   GTEXT_Markup_Document * markup;
   GTEXT_CSS_Markup_Adapter * adapter;
-  GTEXT_CSS_Compute_Context * compute;   /* the environment of the runner: the system colors (NULL with CSSOM_RUNNER_UA=none, which also leaves out the user agent sheet) */
   GTEXT_CSS_Selector_Match_Options match_options;
   GTEXT_CSSOM_Markup_Binding * binding;
   GTEXT_CSS_Tree * ua_tree;
@@ -295,38 +294,32 @@ static int world_open(world * w, const char * html, size_t html_len) {
   c.match_options = &w->match_options;
   c.tree_version = &gtext_cssom_markup_tree_version;
   c.tree_version_user = w->markup;
-  {
-    GTEXT_CSS_Environment cenv = gtext_css_environment_default();
-    cenv.user = w;
-    cenv.condition = runner_condition;
-    if (g_palette) {
-      cenv.resolve_color = runner_resolve_color;
-    }
-    GTEXT_CSS_Compute_Options cco = gtext_css_compute_options_default();
-    cco.elements = c.element_interface;
-    GTEXT_CSS_Compute_Result cres;
-    memset(&cres, 0, sizeof cres);
-    if (gtext_css_compute_context_new(w->registry, &cenv, &cco, &w->compute, &cres) != GTEXT_CSS_OK) {
-      return 0;
-    }
-    c.compute_context = w->compute;
+  /* the runner is a consumer with an environment of its own (the palette, and conditions that are the world's); the document makes the compute context with it and with the registrations of the
+     `@property` rules of its sheets, and the conditions object that reads a query container's style is given to the document once it exists */
+  GTEXT_CSS_Environment cenv = gtext_css_environment_default();
+  cenv.user = w;
+  cenv.condition = runner_condition;
+  if (g_palette) {
+    cenv.resolve_color = runner_resolve_color;
   }
-  GTEXT_CSS_Container_Interface container;
-  memset(&container, 0, sizeof container);
-  container.size = sizeof container;
-  container.user = w;
-  container.computed_style = runner_container_style;
-  container.compute_context = w->compute;
-  GTEXT_CSS_Conditions_Options co = gtext_css_conditions_options_default();
-  co.media = &env;
-  co.element_interface = c.element_interface;
-  co.container = &container;
-  if (gtext_css_conditions_new(w->registry, &co, &w->conditions) != GTEXT_CSS_OK) {
-    return 0;
-  }
-  c.conditions = w->conditions;
+  c.environment = &cenv;
   if (gtext_cssom_document_new(&c, &w->doc) != GTEXT_CSS_OK) {
     return 0;
+  }
+  {
+    GTEXT_CSS_Container_Interface container;
+    if (gtext_cssom_document_container_interface(w->doc, &container) != GTEXT_CSS_OK) {
+      return 0;
+    }
+    container.user = w;
+    container.computed_style = runner_container_style;
+    GTEXT_CSS_Conditions_Options co = gtext_css_conditions_options_default();
+    co.media = &env;
+    co.element_interface = c.element_interface;
+    co.container = &container;
+    if (gtext_css_conditions_new(w->registry, &co, &w->conditions) != GTEXT_CSS_OK || gtext_cssom_document_set_conditions(w->doc, w->conditions, NULL) != GTEXT_CSS_OK) {
+      return 0;
+    }
   }
   GTEXT_CSS_Result pr;
   memset(&pr, 0, sizeof pr);
@@ -369,7 +362,6 @@ static void world_close(world * w) {
   free(w->regs);
   gtext_cssom_markup_binding_free(w->binding);
   gtext_cssom_document_release(w->doc);
-  gtext_css_compute_context_free(w->compute);
   gtext_css_sheet_free(w->ua_sheet);
   gtext_css_tree_free(w->ua_tree);
   gtext_css_conditions_free(w->conditions);

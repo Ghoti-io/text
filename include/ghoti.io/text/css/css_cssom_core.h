@@ -260,6 +260,11 @@ typedef struct {
   size_t max_cached_styles;             ///< Most computed styles the document's style cache holds. Default 65,536. The oldest entry goes first; the answer never depends on the cache.
   bool computed_trust_tree_changed;     ///< The caller calls gtext_cssom_document_tree_changed() on every change of its tree (it has no `tree_version`), and styles are cached from the first read; without this and without a
                                         ///< hook, nothing is cached across reads until the first call of gtext_cssom_document_tree_changed().
+  /** The environment of the compute context the document makes for itself (copied at gtext_cssom_document_new(); what it points to, such as its `user`, must outlive the document): a
+   *  consumer's viewport, fonts, palette. The context is made with it **and with the registrations of the `@property` rules of the document's sheets** (gtext_cssom_document_property_rules()),
+   *  which a context the caller makes cannot have, since the rules change with the sheets. Its `condition` callback is the caller's; when it is NULL (and so is `user`) the document answers
+   *  `if(media())` and `if(supports())` from the conditions object it evaluates with. NULL: gtext_css_environment_default() with that answer. Ignored when `compute_context` is given. */
+  const GTEXT_CSS_Environment * environment;
 } GTEXT_CSSOM_Config;
 
 /** @brief The defaults, spelled out: `size` set, the registry and allocator NULL, the counters at 0 and 1, the limits as documented. */
@@ -308,6 +313,11 @@ typedef struct {
   uint64_t computed_refreshes;      ///< Computed declarations whose declarations were made again (a first read, or a read after the document or the tree moved).
   uint64_t computed_layout_calls;   ///< Calls of the layout interface's `used_value`.
   size_t cached_styles;             ///< Styles in the cache now.
+  uint64_t property_collects;       ///< Index builds that read the `@property` rules of the sheets (those of a document with no rule that can hold one read none and count none).
+  uint64_t property_context_rebuilds; ///< Compute contexts the document made and dropped because the registrations of its `@property` rules changed (a sheet with a rule inserted, removed, disabled, or its rules edited). A document with no `@property` rule counts none.
+  size_t property_registrations;    ///< Custom properties the `@property` rules of the sheets register now (as of the last index build).
+  size_t property_diagnostics;      ///< Rules and descriptors of those sheets that were ignored or replaced, as css_at_property.h reports them (as of the last index build).
+  size_t property_unapplied;        ///< Of `property_registrations`, the ones not applied because GTEXT_CSSOM_Config::compute_context (or gtext_cssom_document_set_compute_context()) supplies the context: the caller's keeps its own registrations.
 } GTEXT_CSSOM_Counters;
 
 /**

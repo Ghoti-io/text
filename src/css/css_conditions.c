@@ -825,46 +825,65 @@ void gtext_css_conditions_environment_hook(const GTEXT_CSS_Conditions * conditio
   env->user = (void *)conditions;
 }
 
-bool gtext_css_conditions_active_rule(void * user, const GTEXT_CSS_Rule * rule) {
+GTEXT_CSS_Status gtext_css_conditions_active_rule_status(void * user, const GTEXT_CSS_Rule * rule, bool * applies) {
   const GTEXT_CSS_Conditions * c = user;
+  *applies = false;
   if (!c || !rule || rule->kind != GTEXT_CSS_RULE_AT) {
-    return false;
+    return GTEXT_CSS_OK;
   }
   const GTEXT_CSS_String * nm = &rule->name;
   GTEXT_CSS_Media_Options o = gtext_css_media_options_default();
   o.allocator = &c->alloc;
-  bool result = false;
   if (ident_is(nm, "media")) {
     GTEXT_CSS_Media_List * list = NULL;
-    if (gtext_css_media_list_parse_values(rule->prelude, rule->prelude_count, &o, &list, NULL) != GTEXT_CSS_OK) {
-      return false;
+    GTEXT_CSS_Status st = gtext_css_media_list_parse_values(rule->prelude, rule->prelude_count, &o, &list, NULL);
+    if (st == GTEXT_CSS_E_OOM) {
+      return st;
     }
-    if (gtext_css_conditions_matches_list(c, list, NULL, &result) != GTEXT_CSS_OK) {
-      result = false;
+    if (st != GTEXT_CSS_OK) {
+      return GTEXT_CSS_OK;   /* a prelude that is not a media query list does not apply */
     }
+    bool result = false;
+    st = gtext_css_conditions_matches_list(c, list, NULL, &result);
     gtext_css_media_list_free(list);
-    return result;
+    if (st == GTEXT_CSS_E_OOM) {
+      return st;
+    }
+    *applies = st == GTEXT_CSS_OK && result;
+    return GTEXT_CSS_OK;
   }
   if (ident_is(nm, "supports") || ident_is(nm, "when") || ident_is(nm, "else")) {
     const bool is_supports = ident_is(nm, "supports");
     if (ident_is(nm, "else") && rule->prelude_count == 0) {
-      return true;
+      *applies = true;
+      return GTEXT_CSS_OK;
     }
     GTEXT_CSS_Media_List * cond = NULL;
-    const GTEXT_CSS_Status st = is_supports ? gtext_css_supports_parse_values(rule->prelude, rule->prelude_count, false, &o, &cond, NULL)
-                                             : gtext_css_when_parse_values(rule->prelude, rule->prelude_count, &o, &cond, NULL);
+    GTEXT_CSS_Status st = is_supports ? gtext_css_supports_parse_values(rule->prelude, rule->prelude_count, false, &o, &cond, NULL)
+                                      : gtext_css_when_parse_values(rule->prelude, rule->prelude_count, &o, &cond, NULL);
+    if (st == GTEXT_CSS_E_OOM) {
+      return st;
+    }
     if (st != GTEXT_CSS_OK) {
-      return false;
+      return GTEXT_CSS_OK;
     }
     GTEXT_CSS_Tristate t = GTEXT_CSS_TRI_UNKNOWN;
-    if (gtext_css_conditions_evaluate_query(c, cond, 0, NULL, &t) == GTEXT_CSS_OK) {
-      result = t == GTEXT_CSS_TRI_TRUE;
-    }
+    st = gtext_css_conditions_evaluate_query(c, cond, 0, NULL, &t);
     gtext_css_media_list_free(cond);
-    return result;
+    if (st == GTEXT_CSS_E_OOM) {
+      return st;
+    }
+    *applies = st == GTEXT_CSS_OK && t == GTEXT_CSS_TRI_TRUE;
+    return GTEXT_CSS_OK;
   }
   if (ident_is(nm, "document") || ident_is(nm, "-moz-document")) {
-    return false;
+    return GTEXT_CSS_OK;
   }
-  return true; /* @container and @starting-style depend on the element; the rest is not a condition */
+  *applies = true;   /* @container and @starting-style depend on the element; the rest is not a condition */
+  return GTEXT_CSS_OK;
+}
+
+bool gtext_css_conditions_active_rule(void * user, const GTEXT_CSS_Rule * rule) {
+  bool applies = false;
+  return gtext_css_conditions_active_rule_status(user, rule, &applies) == GTEXT_CSS_OK && applies;
 }

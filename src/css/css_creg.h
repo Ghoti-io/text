@@ -70,6 +70,7 @@ typedef struct css_creg {
   bool has_initial;                ///< An initial value was given (else it is the guaranteed-invalid value).
   char * initial;                  ///< Its text, white space trimmed (NUL-terminated; empty for an empty value).
   size_t initial_len;
+  uint32_t layer;                  ///< For a registration made by an `@property` rule: the cascade layer the rule is in (GTEXT_CSS_Layer_Id; 0 is unlayered). 0 for any other.
 } css_creg;
 
 /// A syntax string compiled for matching, outside any registration (the `type()` of an `attr()`).
