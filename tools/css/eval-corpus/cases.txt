@@ -1,0 +1,333 @@
+# The evaluator's own corpus (tools/css/check-cssom-eval.py): pages written for it, not taken from the pin, each with a hand-checked outcome. Every assertion of a case that is meant to hold
+# is also true in a JavaScript engine (the check can run the cases under node: `check-cssom-eval.py --node`). A case is `=== name`, then lines `tests N` and `outcome K ok|fail|unmodeled:<code>` for
+# each test (K from 0; a test that is not named is `ok`), then `---`, then the page. `ok` means the test has ops and none of them is a `fail` op: the constants held.
+=== loop-for-unrolls-three
+tests 3
+---
+<!DOCTYPE html><title>t</title><script>
+for (let i = 0; i < 3; i++) { test(() => { assert_equals(i * 2, i + i); }, "n" + i); }
+</script>
+=== loop-for-closure-per-iteration
+tests 3
+---
+<!DOCTYPE html><title>t</title><script>
+const fs = [];
+for (let i = 0; i < 3; i++) { fs.push(() => i); }
+for (let k = 0; k < 3; k++) { test(() => { assert_equals(fs[k](), k); }, "c" + k); }
+</script>
+=== loop-var-closure-shares-the-variable
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+var fs = [];
+for (var i = 0; i < 3; i++) { fs.push(function () { return i; }); }
+test(() => { assert_equals(fs[0](), 3); assert_equals(fs[2](), 3); }, "v");
+</script>
+=== loop-for-of-and-foreach-count
+tests 5
+---
+<!DOCTYPE html><title>t</title><script>
+for (const x of [1, 2, 3]) { test(() => { assert_true(x > 0); }, "of" + x); }
+[10, 20].forEach((v, i) => test(() => { assert_equals(v / 10, i + 1); }, "fe" + v));
+</script>
+=== loop-while-and-break-continue
+tests 2
+---
+<!DOCTYPE html><title>t</title><script>
+let n = 0;
+while (true) { n++; if (n === 2) continue; if (n > 3) break; if (n % 2 === 1) test(() => { assert_equals(n % 2, 1); }, "w" + n); }
+</script>
+=== plus-number-and-string
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  assert_equals(1 + 2, 3);
+  assert_equals("1" + 2, "12");
+  assert_equals(1 + "2", "12");
+  assert_equals(1 + 2 + "3", "33");
+  assert_equals("1" + 2 + 3, "123");
+  assert_equals(1 + null, 1);
+  assert_equals("a" + undefined, "aundefined");
+  assert_equals([1, 2] + "", "1,2");
+  assert_equals(1 - "1", 0);
+  assert_equals("3" * "4", 12);
+}, "plus");
+</script>
+=== number-to-string
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  assert_equals(String(0.5), "0.5");
+  assert_equals(String(100), "100");
+  assert_equals(String(1e21), "1e+21");
+  assert_equals(String(1e-7), "1e-7");
+  assert_equals(String(123456789012345680000), "123456789012345680000");
+  assert_equals(String(0.000001), "0.000001");
+  assert_equals(String(-1.5), "-1.5");
+  assert_equals(`${1/3}`, "0.3333333333333333");
+  assert_equals(String(NaN), "NaN");
+  assert_equals(String(-Infinity), "-Infinity");
+  assert_equals((1.005).toFixed(2), "1.00");
+  assert_equals((2.5).toFixed(0), "3");
+}, "numbers");
+</script>
+=== negative-zero
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  assert_equals(String(-0), "0");
+  assert_equals(`${-0}`, "0");
+  assert_equals(0 * -1, -0);
+  assert_equals(-0 === 0, true);
+  assert_equals(1 / -0, -Infinity);
+}, "zero");
+</script>
+=== negative-zero-differs-in-assert-equals
+tests 1
+outcome 0 fail
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { assert_equals(0 * -1, 0); }, "zero differs from minus zero");
+</script>
+=== template-escapes
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  assert_equals(`\u{1F600}`.length, 2);
+  assert_equals("A\x42\u{43}", "ABC");
+  assert_equals(`a\nb`.split("\n").length, 2);
+  assert_equals(`x${"y" + `z${1 + 1}`}w`, "xyz2w");
+  assert_equals(`\``, "`");
+}, "escapes");
+</script>
+=== function-scope-is-the-definition-scope
+tests 2
+---
+<!DOCTYPE html><title>t</title><script>
+let x = "outer";
+function show() { return x; }
+function caller() { let x = "inner"; return show(); }
+test(() => { assert_equals(caller(), "outer"); }, "lexical");
+test(() => { var x = "test"; assert_equals(show(), "outer"); }, "lexical again");
+</script>
+=== function-declarations-hoist-and-default-params
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  assert_equals(early(), "e");
+  function early() { return "e"; }
+  const f = (a, b = a + 1, ...rest) => [a, b, rest.length];
+  assert_array_equals(f(1), [1, 2, 0]);
+  assert_array_equals(f(1, 5, 7, 8), [1, 5, 2]);
+}, "hoist");
+</script>
+=== destructuring-spread-objects
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const [a, , b = 9, ...c] = [1, 2, undefined, 4, 5];
+  assert_equals(a + "" + b + c.length, "1" + "9" + "2");
+  const { p, q: { r = 7 } = {}, ...rest } = { p: 1, s: 2, t: 3 };
+  assert_equals(p, 1); assert_equals(r, 7); assert_equals(Object.keys(rest).join(), "s,t");
+  const o = { ...{ a: 1, b: 2 }, b: 3 };
+  assert_equals(o.a + o.b, 4);
+  assert_array_equals([...[1, 2], ...[3]], [1, 2, 3]);
+}, "destructuring");
+</script>
+=== logical-and-optional-chaining
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const o = { a: { b: 1 } };
+  assert_equals(o?.a?.b, 1);
+  assert_equals(o.x?.y, undefined);
+  assert_equals(o.f?.(), undefined);
+  assert_equals(null ?? "d", "d");
+  assert_equals(0 ?? "d", 0);
+  assert_equals(0 || "d", "d");
+  assert_equals("" && "x", "");
+  let c = null; c ??= 5; assert_equals(c, 5);
+  assert_equals(typeof undefinedName, "undefined");
+  assert_equals(typeof null, "object");
+}, "logical");
+</script>
+=== string-and-array-methods
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  assert_equals("Hello".toUpperCase().slice(1, 3), "EL");
+  assert_equals("a-b-c".split("-").reverse().join("+"), "c+b+a");
+  assert_equals("abc".padStart(5, "xy"), "xyabc");
+  assert_equals(" t ".trim(), "t");
+  assert_equals("abcabc".replace("b", "X"), "aXcabc");
+  assert_equals("abcabc".replaceAll("b", "X"), "aXcaXc");
+  assert_equals("abc".indexOf("c"), 2);
+  assert_equals([3, 1, 2].sort().join(), "1,2,3");
+  assert_equals([1, 2, 3].map(x => x * 2).filter(x => x > 2).reduce((s, x) => s + x, 0), 10);
+  assert_equals([1, [2, 3]].flat().length, 3);
+  assert_equals(Array.from({ length: 3 }, (_, i) => i * i).join(), "0,1,4");
+  assert_equals(["a", "b"].includes("b"), true);
+  assert_equals(Math.max(1, 5, 3) + Math.floor(2.7), 7);
+}, "methods");
+</script>
+=== assert-not-equals-is-not-equals
+tests 2
+outcome 0 fail
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { assert_not_equals(1, 1); }, "equal values fail");
+test(() => { assert_not_equals("1", 1); }, "different types hold");
+</script>
+=== first-failed-assertion-ends-the-test
+tests 1
+outcome 0 fail
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { assert_equals(1, 2); assert_equals(1, 1); }, "the first fails");
+</script>
+=== the-second-assertion-of-a-test-is-checked
+tests 1
+outcome 0 fail
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { assert_equals(1, 1); assert_equals(1, 2); }, "the second fails");
+</script>
+=== assert-in-array-true-false-array-equals
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  assert_in_array(2, [1, 2, 3]);
+  assert_true(true); assert_false(false);
+  assert_array_equals([1, "2"], [1, "2"]);
+  assert_approx_equals(1.0005, 1, 0.001);
+  assert_greater_than(2, 1); assert_less_than(1, 2);
+}, "assertions");
+</script>
+=== assert-array-equals-fails-on-type
+tests 1
+outcome 0 fail
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { assert_array_equals([1], ["1"]); }, "types differ");
+</script>
+=== cleanup-runs-after-a-failure
+tests 1
+outcome 0 fail
+---
+<!DOCTYPE html><title>t</title><script>
+test(t => { t.add_cleanup(() => { document.body.removeAttribute("class"); }); document.body.setAttribute("class", "x"); assert_equals(1, 2); }, "cleanup");
+</script>
+=== default-names-come-from-the-title
+tests 3
+name 0 The title
+name 1 The title 1
+name 2 named
+---
+<!DOCTYPE html><title>The title</title><script>
+test(() => {});
+test(() => {});
+test(() => {}, "named");
+</script>
+=== state-persists-across-tests
+tests 2
+---
+<!DOCTYPE html><title>t</title><script>
+let n = 0;
+test(() => { n++; assert_equals(n, 1); }, "one");
+test(() => { n++; assert_equals(n, 2); }, "two");
+</script>
+=== a-construct-outside-the-subset-is-unmodeled-and-poisons-the-next
+tests 3
+outcome 0 unmodeled:js-class
+outcome 1 unmodeled:shared-state
+outcome 2 unmodeled:shared-state
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { class A {} ; new A(); document.body.setAttribute("x", "1"); }, "class");
+test(() => { assert_equals(1, 1); }, "next");
+test(() => { assert_equals(2, 2); }, "next again");
+</script>
+=== a-read-only-unmodeled-test-does-not-poison
+tests 2
+outcome 0 unmodeled:js-class
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { class A {} ; assert_equals(1, 1); }, "class");
+test(() => { assert_equals(1, 1); }, "next");
+</script>
+=== a-top-level-statement-outside-the-subset-leaves-the-page-unread
+unread
+---
+<!DOCTYPE html><title>t</title><script>
+class A {}
+test(() => {}, "x");
+</script>
+=== a-runaway-loop-is-a-construct
+tests 1
+outcome 0 unmodeled:step-limit
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { while (true) { } }, "loop");
+</script>
+=== computed-values-are-registers
+tests 1
+---
+<!DOCTYPE html><title>t</title><style>#a { color: red }</style><div id=a></div><script>
+test(() => { const cs = getComputedStyle(document.getElementById("a")); assert_equals(cs.color, "rgb(255, 0, 0)"); assert_equals(cs.getPropertyValue("color") === "x", false); }, "reads");
+</script>
+=== a-register-cannot-be-computed-with
+tests 1
+outcome 0 unmodeled:computed-value-expression
+---
+<!DOCTYPE html><title>t</title><div id=a></div><script>
+test(() => { const cs = getComputedStyle(a); assert_equals(parseFloat(cs.width) + 1, 2); }, "arithmetic");
+</script>
+=== named-access-to-elements-by-id
+tests 1
+---
+<!DOCTYPE html><title>t</title><div id=target></div><script>
+test(() => { assert_equals(getComputedStyle(target).display, "block"); }, "named");
+</script>
+=== a-script-before-the-markup-is-incremental
+tests 1
+outcome 0 unmodeled:script-before-markup-end
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { assert_equals(getComputedStyle(document.getElementById("late")).display, "block"); }, "early");
+</script><div id=late></div>
+=== an-unmodeled-test-that-assigns-a-page-variable-poisons-the-next
+tests 2
+outcome 0 unmodeled:js-class
+outcome 1 unmodeled:state-of-an-unmodeled-test
+---
+<!DOCTYPE html><title>t</title><script>
+let supported;
+test(() => { class A {} ; supported = true; }, "assigns");
+test(() => { assert_equals(supported, true); }, "reads");
+</script>
+=== a-test-without-a-title-is-named-by-its-file
+tests 2
+name 0 a-test-without-a-title-is-named-by-its-file
+name 1 a-test-without-a-title-is-named-by-its-file 1
+---
+<!DOCTYPE html><script>
+test(() => {});
+test(() => {});
+</script>
+=== a-top-level-read-of-a-variable-an-unmodeled-test-assigned-leaves-the-page-unread
+unread
+---
+<!DOCTYPE html><title>t</title><script>
+let supported;
+test(() => { class A {} ; supported = true; }, "assigns");
+test(() => {}, "the name depends on " + supported);
+</script>
