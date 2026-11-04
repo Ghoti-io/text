@@ -1270,44 +1270,49 @@ static int program_open(program * p, size_t extent) {
   if (extent > p->html_len) {
     extent = p->html_len;
   }
-  world nw;
-  if (!world_open(&nw, p->html, extent)) {
-    world_close(&nw);
+  /* The world is opened where it stays: the callbacks of its compute context and of its conditions hold its address (`cenv.user`, `container.user`) and so do its match options, so a
+     world opened in a local and copied into the program would leave them pointing at a frame that has returned. The old world is moved aside first; its data is read, never its
+     callbacks. */
+  world old = p->w;
+  const int had = p->open;
+  world * nw = &p->w;
+  if (!world_open(nw, p->html, extent)) {
+    world_close(nw);
+    p->w = old;
     return 0;
   }
-  if (p->open) {
-    world * ow = &p->w;
+  if (had) {
+    world * ow = &old;
     for (size_t i = 0; i < ow->nelems; i++) {
       GTEXT_Markup_Node * n = NULL;
       if (ow->elems[i].node) {
         size_t depth;
         size_t * path = node_path(ow->elems[i].node, &depth);
-        n = node_at(nw.markup, path, depth);
+        n = node_at(nw->markup, path, depth);
         free(path);
       }
-      put_elem(&nw, ow->elems[i].name, n);
+      put_elem(nw, ow->elems[i].name, n);
     }
     for (size_t i = 0; i < ow->nregs; i++) {
-      put_reg(&nw, ow->regs[i].name, val(ow->regs[i].v.kind, ow->regs[i].v.s, ow->regs[i].v.n));
+      put_reg(nw, ow->regs[i].name, val(ow->regs[i].v.kind, ow->regs[i].v.s, ow->regs[i].v.n));
     }
-    g_doc = nw.doc;
+    g_doc = nw->doc;
     for (size_t i = 0; i < ow->nstyles; i++) {
       style * s = &ow->styles[i];
-      elem * e = find_elem(&nw, s->elem_name);
+      elem * e = find_elem(nw, s->elem_name);
       GTEXT_CSSOM_Decl * d = NULL;
       if (e && e->node) {
         if (s->computed) {
-          gtext_cssom_computed_style(nw.doc, gtext_css_markup_handle(e->node), s->pseudo, strlen(s->pseudo), &d);
+          gtext_cssom_computed_style(nw->doc, gtext_css_markup_handle(e->node), s->pseudo, strlen(s->pseudo), &d);
         }
         else {
-          gtext_cssom_inline_style(nw.doc, e->node, &nw.attr, &d);
+          gtext_cssom_inline_style(nw->doc, e->node, &nw->attr, &d);
         }
       }
-      put_style(&nw, s->name, d, s->computed, e ? e->node : NULL, s->elem_name, s->pseudo);
+      put_style(nw, s->name, d, s->computed, e ? e->node : NULL, s->elem_name, s->pseudo);
     }
     world_close(ow);
   }
-  p->w = nw;
   p->open = 1;
   g_doc = p->w.doc;
   return 1;

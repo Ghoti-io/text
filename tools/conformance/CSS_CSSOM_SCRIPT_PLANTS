@@ -6,7 +6,7 @@ custom-property-cycle-not-marked	css_substitute.c	    sub->frames[i].cyclic = tr
 non-inherited-property-inherited	css_compute.c	    return m->inherited ? inherit_value(st, id, out) : initial_value(st, id, out);\n  }\n  GTEXT_CSS_Declaration_Item it;	    return inherit_value(st, id, out);\n  }\n  GTEXT_CSS_Declaration_Item it;	fail
 layout-bound-property-reported-as-computed	cssom_resolved.c	  if (!asked) {\n    *origin = GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT;	  if (!asked) {\n    *origin = GTEXT_CSSOM_ORIGIN_COMPUTED;	layout
 document-prefix-ignored	runner:	      if (strcmp(o.f[0], "doc") == 0 && o.n == 2 && p.html) {\n        if (!program_open(&p, (size_t)strtoull(o.f[1], NULL, 10))) {	      if (strcmp(o.f[0], "doc") == 0 && o.n == 2 && p.html) {\n        if (!program_open(&p, p.html_len)) {	fail
-elements-not-carried-over-a-new-parse	runner:	      put_elem(&nw, ow->elems[i].name, n);	      put_elem(&nw, ow->elems[i].name, NULL);	fail
+elements-not-carried-over-a-new-parse	runner:	      put_elem(nw, ow->elems[i].name, n);	      put_elem(nw, ow->elems[i].name, NULL);	fail
 sibling-index-steps-wrong	css_markup.c	    index = a->pindex + 1;	    index = a->pindex + 2;	fail
 bare-media-feature-not-parenthesized	css_conditions.c	    wrapped[0] = '(';	    wrapped[0] = ' ';	fail
 container-style-never-found	cssom_computed.c	  return r ? r->style : NULL;\n}\n\nGTEXT_CSS_Status gtext_cssom_document_container_interface	  return NULL;\n}\n\nGTEXT_CSS_Status gtext_cssom_document_container_interface	fail
