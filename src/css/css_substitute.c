@@ -3433,13 +3433,21 @@ static int style_leaf(css_sub * sub, size_t fi, cleaf * leaf) {
       result = !same;
     }
   }
-  else if (value) {
+  else {
     dbuf want;
     dbuf_init(&want, &sub->alloc);
     st = group_text(sub, leaf->vals, leaf->count, &want);
     if (st == GTEXT_CSS_OK && !want.failed) {
       const char * wt = want.data ? want.data : "";
       size_t wl = want.len;
+      /* the text of the group carries the white space around its tokens; a CSS-wide keyword is the keyword alone */
+      while (wl && (*wt == ' ' || *wt == '\t' || *wt == '\n' || *wt == '\r' || *wt == '\f')) {
+        wt++;
+        wl--;
+      }
+      while (wl && (wt[wl - 1] == ' ' || wt[wl - 1] == '\t' || wt[wl - 1] == '\n' || wt[wl - 1] == '\r' || wt[wl - 1] == '\f')) {
+        wl--;
+      }
       /* the CSS-wide keywords, "computed with respect to the query container" */
       const GTEXT_CSS_Wide_Keyword wide = gtext_css_wide_keyword_lookup(wt, wl);
       if (wide == GTEXT_CSS_WIDE_REVERT || wide == GTEXT_CSS_WIDE_REVERT_LAYER || wide == GTEXT_CSS_WIDE_REVERT_RULE) {
@@ -3455,6 +3463,10 @@ static int style_leaf(css_sub * sub, size_t fi, cleaf * leaf) {
           other = parent_value(sub, nm->data, nm->length, reged ? (long)ri : -1);
         }
         if (!other) {
+          /* the other value is the guaranteed-invalid value: the query is true exactly when the property's computed value is too */
+          result = value == NULL;
+        }
+        else if (!value) {
           result = false;
         }
         else {
@@ -3468,6 +3480,9 @@ static int style_leaf(css_sub * sub, size_t fi, cleaf * leaf) {
           }
           gtext_allocator_free(&sub->alloc, ot);
         }
+      }
+      else if (!value) {
+        result = false;   /* the guaranteed-invalid value is no value a query can name */
       }
       else if (reged && !sub->cc->regs[ri].creg->syntax->universal) {
         /* the value is read against the syntax and computed as the property's own values are */

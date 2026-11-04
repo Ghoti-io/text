@@ -296,6 +296,8 @@ PLANTS += [
     ("property-the-pending-grammar-is-compiled-per-call", "css_registry.c", "  const GTEXT_CSS_Status st = compile_lazy(r, &((GTEXT_CSS_Registry *)r)->pending, text, sizeof text - 1, 0, &s, compiled, NULL);",
      "  const GTEXT_CSS_Status st = compile_lazy(r, &((GTEXT_CSS_Registry *)r)->pending, \"<nosuch-type>\", 13, 0, &s, compiled, NULL);", ["property"]),
     # custom properties, substitution and @property (tests/test-css-custom.cpp, test-css-property-rule.cpp): each undoes a rule of the served drafts
+    ("custom-style-query-keyword-keeps-its-white-space", "css_substitute.c", "      while (wl && (*wt == ' ' ||", "      while (0 && wl && (*wt == ' ' ||", ["custom"]),
+    ("custom-style-query-of-an-invalid-value-is-never-true", "css_substitute.c", "          result = value == NULL;", "          result = false;", ["custom"]),
     ("custom-var-ignores-its-fallback", "css_substitute.c", "    if (f->res[1].gi && f->has_comma) {\n      /* \"If result contains", "    if (0 && f->res[1].gi && f->has_comma) {\n      /* \"If result contains", ["custom"]),
     ("custom-tokens-merge", "css_rope.c", "bool css_tokclass_needs_comment(css_tokclass last, css_tokclass first) {\n",
      "bool css_tokclass_needs_comment(css_tokclass last, css_tokclass first) {\n  if (1) {\n    return false;\n  }\n", ["custom"]),

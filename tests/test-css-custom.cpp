@@ -559,6 +559,43 @@ TEST(CssCustom, IfStyleQueriesReadCustomProperties) {
   EXPECT_EQ(c.custom("--s"), "yes");
 }
 
+TEST(CssCustom, IfStyleQueryWithACssWideKeywordComparesWithTheValueTheKeywordWouldGive) {
+  // "Cascade-dependent keywords, such as revert and revert-layer, are invalid as values in a style feature": the other CSS-wide keywords are "computed with respect to the query
+  // container", so `initial` is the initial value (the guaranteed-invalid value of an unregistered property), `inherit` the parent's value and `unset` the one of the two the property has.
+  World w;
+  ASSERT_EQ(w.build(), GTEXT_CSS_OK);
+  Computed parent;
+  compute_pairs(w, parent, {{"--inh", "outer"}, {"--x", "11"}});
+  ASSERT_EQ(parent.status, GTEXT_CSS_OK);
+  const std::vector<std::pair<std::string, std::string>> queries = {
+      {"--i1", "if(style(--nope: initial): yes; else: no)"}, {"--i2", "if(style(--x: initial): yes; else: no)"}, {"--i3", "if(style(--x: inherit): yes; else: no)"},
+      {"--i4", "if(style(--inh: inherit): yes; else: no)"}, {"--i5", "if(style(--inh: unset): yes; else: no)"}, {"--i6", "if(style(--x: unset): yes; else: no)"},
+      {"--i7", "if(style(--nope: inherit): yes; else: no)"}, {"--i8", "if(style(--x: revert): yes; else: no)"}, {"--i9", "if(style(--inh:    inherit  ): yes; else: no)"}};
+  Computed same;
+  std::vector<std::pair<std::string, std::string>> d = queries;
+  d.push_back({"--inh", "outer"});
+  d.push_back({"--x", "11"});
+  compute_pairs(w, same, d, &parent);
+  ASSERT_EQ(same.status, GTEXT_CSS_OK);
+  EXPECT_EQ(same.custom("--i1"), "yes") << "neither has a value";
+  EXPECT_EQ(same.custom("--i2"), "no") << "11 is not the guaranteed-invalid value";
+  EXPECT_EQ(same.custom("--i3"), "yes") << "the parent's --x is 11 too";
+  EXPECT_EQ(same.custom("--i4"), "yes");
+  EXPECT_EQ(same.custom("--i5"), "yes") << "a custom property is inherited, so unset is inherit";
+  EXPECT_EQ(same.custom("--i6"), "yes");
+  EXPECT_EQ(same.custom("--i7"), "yes") << "neither has a value";
+  EXPECT_EQ(same.custom("--i8"), "no");
+  EXPECT_EQ(same.custom("--i9"), "yes") << "the white space around the keyword is not part of it";
+  Computed other;
+  d = queries;
+  d.push_back({"--inh", "inner"});
+  d.push_back({"--x", ""});
+  compute_pairs(w, other, d, &parent);
+  ASSERT_EQ(other.status, GTEXT_CSS_OK);
+  EXPECT_EQ(other.custom("--i4"), "no") << "inner is not the parent's outer";
+  EXPECT_EQ(other.custom("--i5"), "no");
+}
+
 TEST(CssCustom, IfStyleQueryOfThePropertyBeingComputedIsFalse) {
   // "For example, in --foo: if(style(--foo: bar): baz); the style() query is automatically false, since property replacement has already established a
   // «"property", "--foo"» substitution context."
