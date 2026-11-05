@@ -38,6 +38,7 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
 PROGRAMS = {
     "space": "test-css-color-space.cpp", "mix": "test-css-color-mix.cpp", "relative": "test-css-color-relative.cpp", "vectors": "test-css-color-vectors.cpp",
+    "style": "test-css-style.cpp", "math": "test-css-math.cpp", "fixes": "test-css-compute-fixes.cpp",
 }
 EXTRA_PROGRAMS = os.path.join(ROOT, "tools", "conformance", "CSS_COLOR_PROGRAMS")
 

@@ -291,6 +291,12 @@ static bool color_unit_cb(void * user, GTEXT_CSS_Unit unit, double * canonical) 
   return css_st_unit_px(st, unit, canonical);
 }
 
+/// `sibling-index()` and `sibling-count()` in a channel's calculation: the element tree's answer. A tree that cannot answer fails the computation naming the callback, as it does
+/// in every other property (css_st_sibling() records the failure in the state, which is the computation's status).
+static bool color_tree_cb(void * user, bool index, double * value) {
+  return css_st_sibling(user, index, value) == GTEXT_CSS_OK;
+}
+
 /// A color only the caller can resolve (a system color, `device-cmyk()`, a custom color space): its callback's answer.
 static bool color_resolve_cb(void * user, const GTEXT_CSS_Color * c, double rgba[4]) {
   css_state * st = user;
@@ -356,6 +362,7 @@ static GTEXT_CSS_Status leaf_color(cv_walk * w, const GTEXT_CSS_Value * src, GTE
     cx.scheme = scheme;
     cx.unit_size = color_unit_cb;
     cx.resolve = color_resolve_cb;
+    cx.tree_count = color_tree_cb;
     cx.user = st;
     cx.current_anywhere = st->in_registered || st->current == st->cc->pid[CSS_P_COLOR];   /* Color 4, 15.5: in `color` it is "the resolved inherited value" */
     GTEXT_CSS_Status cs = current_color(st, &cx, &cx.has_current);

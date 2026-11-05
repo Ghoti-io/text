@@ -137,6 +137,11 @@ static bool env_unit(void * user, GTEXT_CSS_Unit unit, double * canonical) {
   return m->ctx->unit_size ? m->ctx->unit_size(m->ctx->user, unit, canonical) : false;
 }
 
+static bool env_tree_count(void * user, bool index, double * value) {
+  menv * m = user;
+  return m->ctx->tree_count ? m->ctx->tree_count(m->ctx->user, index, value) : false;
+}
+
 static bool symbol_index(const symenv * se, const char * name, size_t * idx) {
   if (!se || !se->origin) {
     return false;
@@ -219,6 +224,7 @@ static GTEXT_CSS_Status comp_value(walk * w, const comp_t * k, double ref, const
     memset(&me, 0, sizeof me);
     me.unit_size = env_unit;
     me.symbol = env_symbol;
+    me.tree_count = env_tree_count;
     me.user = &m;
     me.has_percent_basis = true;
     me.percent_basis = ref;

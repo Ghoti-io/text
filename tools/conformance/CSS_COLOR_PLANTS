@@ -13,3 +13,6 @@ space-rec2020-piecewise	css_color_space.c	static double rec2020_decode(double v)
 space-powerless-hue-kept	css_color_space.c	  if (dest_powerless) {	  if (0) {	space,vectors
 space-hwb-hue-turned	css_color_space.c	  out[1] = mn * 100.0;	  out[1] = mn * 100.0;\n  out[0] = out[0] > 180.0 ? out[0] - 180.0 : out[0] + 180.0;	space,vectors
 space-matrix-row-swapped	css_color_tables.c	  {0x1.9ed81a61e643ap+1, -0x1.8991f1a515886p+0, -0x1.fe93d1b3918e5p-2},\n  {-0x1.f040b3af5d706p-1	  {-0x1.8991f1a515886p+0, 0x1.9ed81a61e643ap+1, -0x1.fe93d1b3918e5p-2},\n  {-0x1.f040b3af5d706p-1	space,vectors
+tree-count-not-wired-into-the-color	css_compute_value.c	    cx.tree_count = color_tree_cb;	    cx.tree_count = NULL;	style,fixes
+tree-count-index-and-count-swapped	css_math.c	env->tree_count(env->user, index, &v)	env->tree_count(env->user, !index, &v)	math,style
+tree-count-always-answers-index	css_compute_value.c	  return css_st_sibling(user, index, value) == GTEXT_CSS_OK;	  return css_st_sibling(user, true, value) == GTEXT_CSS_OK;	style

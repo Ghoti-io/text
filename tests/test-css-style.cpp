@@ -1130,6 +1130,58 @@ TEST(CssStyleComputedCompletion, ATreeCountingFunctionIsTheCountOfSteps) {
   EXPECT_EQ(d.value("c", "grid-row-start"), "span 1");
 }
 
+/* Values 5, 6.1: sibling-index() and sibling-count() are <integer>s, so a channel of a color function may be a calculation of them (Color 4, 4.2: a channel is a <number>, and a
+   math function that resolves to one stands in it). The color is then computed for the element: the third child of three is index 3, count 3. Both browsers answer the same
+   (rgb(0, 0, 150) for the third child's `rgb(0 0 calc(sibling-index() * 50))`), and a color kept as written would not be a computed value. */
+TEST(CssStyleComputedCompletion, ATreeCountingFunctionInAColorChannelIsTheElementsCount) {
+  Doc d("<div id=\"a\" style=\"color: rgb(0 0 calc(sibling-index() * 50)); background-color: rgb(calc(sibling-count() * 10) 0 0)\"></div>"
+        "<div id=\"b\" style=\"color: rgb(0 0 calc(sibling-index() * 50)); border-top-color: hsl(calc(sibling-index() * 60) 100% 50%)\"></div>"
+        "<div id=\"c\" style=\"color: rgb(0 0 calc(sibling-index() * 50)); background-color: rgb(from red r g calc(sibling-index() * 50)); "
+        "border-left-color: color-mix(in srgb, rgb(0 0 calc(sibling-index() * 50)), white 50%)\"></div>", true);
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  EXPECT_EQ(d.value("a", "color"), "rgb(0, 0, 50)");
+  EXPECT_EQ(d.value("a", "background-color"), "rgb(30, 0, 0)");
+  EXPECT_EQ(d.value("b", "color"), "rgb(0, 0, 100)");
+  EXPECT_EQ(d.value("b", "border-top-color"), "rgb(0, 255, 0)");
+  EXPECT_EQ(d.value("c", "color"), "rgb(0, 0, 150)");
+  EXPECT_EQ(d.value("c", "background-color"), "color(srgb 1 0 0.588235)");
+  EXPECT_EQ(d.value("c", "border-left-color"), "color(srgb 0.5 0.5 0.794118)");
+}
+
+/* The cases `sibling-color.1` to `.6` of the browsers' record (tools/conformance/css_browser_answers.jsonl, read in the place they were asked: the 31st to the 36th of 120
+   siblings): Chromium 156.0.8078.47 and Firefox 158.0.1 give exactly these answers, except that for the color-mix() one Firefox ends in ...628 where Chromium (and this
+   library) end in ...627. */
+TEST(CssStyleComputedCompletion, TheTreeCountingColorsAreWhatBothRecordedBrowsersAnswer) {
+  const char * const style[] = {"color: rgb(0 0 calc(sibling-index() * 1))", "background-color: rgb(calc(sibling-count() * 1) 0 0)",
+      "border-top-color: hsl(calc(sibling-index() * 1) 100% 50%)", "background-image: linear-gradient(rgb(1 2 3), rgb(0 0 calc(sibling-index() * 1)))",
+      "border-left-color: color-mix(in srgb, rgb(0 0 calc(sibling-index() * 1)), white 50%)", "background-color: rgb(from red r g calc(sibling-index()))"};
+  const char * const prop[] = {"color", "background-color", "border-top-color", "background-image", "border-left-color", "background-color"};
+  const char * const want[] = {"rgb(0, 0, 31)", "rgb(120, 0, 0)", "rgb(255, 140, 0)", "linear-gradient(rgb(1, 2, 3), rgb(0, 0, 34))", "color(srgb 0.5 0.5 0.568627)",
+      "color(srgb 1 0 0.141176)"};
+  std::string html;
+  for (int i = 1; i <= 120; i++) {
+    html += "<div id=\"n" + std::to_string(i) + "\"";
+    if (i >= 31 && i <= 36) {
+      html += std::string(" style=\"") + style[i - 31] + "\"";
+    }
+    html += "></div>";
+  }
+  Doc d(html.c_str(), true);
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  for (int i = 0; i < 6; i++) {
+    EXPECT_EQ(d.value(("n" + std::to_string(31 + i)).c_str(), prop[i]), want[i]) << style[i];
+  }
+}
+
+/* The colors inside an image are computed as the property `color` computes them (Images 3, 3.1.3: the stops are <color>s), so a gradient's stop is the element's number too. */
+TEST(CssStyleComputedCompletion, ATreeCountingFunctionInAGradientStopIsTheElementsCount) {
+  Doc d("<div id=\"a\" style=\"background-image: linear-gradient(rgb(1 2 3), rgb(0 0 calc(200 * sibling-index())))\"></div>"
+        "<div id=\"b\" style=\"background-image: linear-gradient(rgb(1 2 3), rgb(0 0 calc(10 * sibling-index())))\"></div>", true);
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  EXPECT_EQ(d.value("a", "background-image"), "linear-gradient(rgb(1, 2, 3), rgb(0, 0, 200))");
+  EXPECT_EQ(d.value("b", "background-image"), "linear-gradient(rgb(1, 2, 3), rgb(0, 0, 20))");
+}
+
 TEST(CssStyleDump, ItIsVersionedSortedByTheBytesOfTheNamesAndOneLineAProperty) {
   Doc d(svg("<rect id=\"r\" style=\"--b: 1; --a: 2; -x-unknown: 1; fill: red\"/>"));
   ASSERT_EQ(d.status, GTEXT_CSS_OK);

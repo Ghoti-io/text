@@ -65,6 +65,9 @@ typedef struct {
   bool (*unit_size)(void * user, GTEXT_CSS_Unit unit, double * canonical);
   /// A color the library cannot compute (a system color, `device-cmyk()`, `color()` with a custom space): its sRGB value (0 to 255, alpha 0 to 1), or false.
   bool (*resolve)(void * user, const GTEXT_CSS_Color * color, double rgba[4]);
+  /// The value of `sibling-index()` (`index`) or `sibling-count()` in a channel's calculation for the element being computed, or false: this environment cannot count the tree
+  /// (the color then stays as written). NULL counts nothing.
+  bool (*tree_count)(void * user, bool index, double * value);
   void * user;
   size_t work;                       ///< Units of work done (a counter for the cost tests).
 } css_color_ctx;

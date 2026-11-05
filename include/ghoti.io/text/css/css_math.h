@@ -316,6 +316,10 @@ typedef struct {
   void * user;               ///< Passed to the callbacks.
   bool has_percent_basis;    ///< The percentage resolves against `percent_basis`.
   double percent_basis;      ///< In the canonical unit of the calculation's type.
+  /** The value of `sibling-index()` (`index` true) or `sibling-count()` for the element the calculation belongs to
+   *  (Values 5, 6.1: "an <integer>"), or false when this environment has no element or no table that counts the tree.
+   *  NULL knows neither: such a calculation is not resolved. */
+  bool (*tree_count)(void * user, bool index, double * value);
 } GTEXT_CSS_Math_Env;
 
 /**

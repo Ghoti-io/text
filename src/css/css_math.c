@@ -1466,9 +1466,19 @@ GTEXT_CSS_Status gtext_css_math_resolve(const GTEXT_CSS_Math * math, const GTEXT
       nf--;
       continue;
     }
-    case GTEXT_CSS_MATH_UNRESOLVED:
-      ok = false;
-      break;
+    case GTEXT_CSS_MATH_UNRESOLVED: {
+      /* the tree-counting functions are numbers the element tree answers (unresolved_leaf() writes their text as the lower-case name and `()`) */
+      const bool index = n->text.length == 15 && memcmp(n->text.data, "sibling-index()", 15) == 0;
+      const bool count = n->text.length == 15 && memcmp(n->text.data, "sibling-count()", 15) == 0;
+      double v;
+      if (!(index || count) || !env || !env->tree_count || !env->tree_count(env->user, index, &v)) {
+        ok = false;
+        break;
+      }
+      PUSHV(v);
+      nf--;
+      continue;
+    }
     default:
       break;
     }

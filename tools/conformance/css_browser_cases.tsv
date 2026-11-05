@@ -1470,3 +1470,9 @@ negint.6			counter-reset: a -99999999999	counter-reset
 negint.7			counter-increment: a -99999999999	counter-increment
 negint.8			counter-set: a -99999999999	counter-set
 negint.9			grid-row-start: -99999999999	grid-row-start
+sibling-color.1			color: rgb(0 0 calc(sibling-index() * 1))	color
+sibling-color.2			background-color: rgb(calc(sibling-count() * 1) 0 0)	background-color
+sibling-color.3			border-top-color: hsl(calc(sibling-index() * 1) 100% 50%)	border-top-color
+sibling-color.4			background-image: linear-gradient(rgb(1 2 3), rgb(0 0 calc(sibling-index() * 1)))	background-image
+sibling-color.5			border-left-color: color-mix(in srgb, rgb(0 0 calc(sibling-index() * 1)), white 50%)	border-left-color
+sibling-color.6			background-color: rgb(from red r g calc(sibling-index()))	background-color

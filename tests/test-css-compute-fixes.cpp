@@ -326,6 +326,8 @@ TEST(CssComputeEdges, ASiblingFunctionNamesTheCallbackThatAnswersItAndAVarNamesN
   };
   for (const Case & c : {Case{"width: calc(sibling-index() * 1px)", GTEXT_CSS_E_UNSUPPORTED, "sibling_index"},
            Case{"width: calc(1px * SIBLING-COUNT())", GTEXT_CSS_E_UNSUPPORTED, "sibling_count"}, Case{"z-index: sibling-index()", GTEXT_CSS_E_UNSUPPORTED, "sibling_index"},
+           Case{"color: rgb(0 0 calc(sibling-index() * 50))", GTEXT_CSS_E_UNSUPPORTED, "sibling_index"},
+           Case{"color: lab(50 calc(sibling-count() + 1) 0)", GTEXT_CSS_E_UNSUPPORTED, "sibling_count"},
            Case{"width: var(--w)", GTEXT_CSS_OK, ""},
            Case{"content: \"sibling-index()\" var(--x)", GTEXT_CSS_OK, ""}}) {
     Block b(R(), c.decl);

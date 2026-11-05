@@ -208,14 +208,15 @@ def ask_accept(engine, ids, cases):
 def compare(binary, answers, cases, prefix, metrics):
     """This library against the record: one line a (case, property): `=` when all three agree, `O` when only this library differs, `B` when the browsers differ."""
     import css_style_diff
-    order = [cid for cid in sorted(cases) if cid.startswith(prefix)]
     record = {}
     with open(answers, encoding="utf-8") as f:
         for line in f:
             if not line.startswith("#"):
                 r = json.loads(line)
                 record[r["id"]] = r
-    order = [c for c in order if c in record]
+    # the documents are made as the record made them: the cases in the order they were asked, PER_DOCUMENT to a document, whatever `prefix` selects. A case that counts its
+    # siblings (sibling-index(), sibling-count()) is a different question in a different place, so it is read in the place the browsers read it.
+    order = [c for c in cases if c in record]
     batches = [order[i:i + PER_DOCUMENT] for i in range(0, len(order), PER_DOCUMENT)]
     docs = [document(b, cases) for b in batches]
     ours = css_style_diff.run_ours(binary, docs, metrics, "light")
@@ -223,6 +224,8 @@ def compare(binary, answers, cases, prefix, metrics):
     for b, lines in zip(batches, ours):
         for eid, prop, kind, value in lines:
             cid = b[int(eid[1:])]
+            if not cid.startswith(prefix):
+                continue
             c = record[cid]["engines"]["chromium"]["computed"].get(prop)
             ff = record[cid]["engines"]["firefox"]["computed"].get(prop)
             mine = value if kind == "OK" else kind

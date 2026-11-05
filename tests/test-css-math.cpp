@@ -913,3 +913,42 @@ TEST(CssMathPublishedValues, ExactValuesAndEdgeCasesOfTheDraft) {
   ASSERT_TRUE(css_math_apply(GTEXT_CSS_MATH_POW, GTEXT_CSS_MATH_ROUND_NEAREST, a, 2, &r));
   EXPECT_EQ(r, 1024.0);
 }
+
+// Values 5, 6.1: the tree-counting functions are numbers the environment's `tree_count` answers; with none (or when it says no) the calculation is not resolved.
+namespace {
+bool tree_count(void * user, bool index, double * v) {
+  const int * const where = static_cast<const int *>(user);
+  if (*where < 0) {
+    return false;
+  }
+  *v = index ? *where : 10 * *where;
+  return true;
+}
+}  // namespace
+
+TEST(CssMathResolve, ATreeCountingFunctionIsResolvedByTheEnvironmentsCallbackOnly) {
+  Calc c;
+  read(c, "calc(sibling-index() * 2 + sibling-count())");
+  ASSERT_TRUE(c.valid);
+  GTEXT_CSS_Math_Env env;
+  std::memset(&env, 0, sizeof env);
+  double v = -1;
+  bool resolved = true;
+  ASSERT_EQ(gtext_css_math_resolve(c.math, &env, nullptr, &v, &resolved), GTEXT_CSS_OK);
+  EXPECT_FALSE(resolved) << "no callback: not resolved";
+  int where = -1;
+  env.tree_count = tree_count;
+  env.user = &where;
+  ASSERT_EQ(gtext_css_math_resolve(c.math, &env, nullptr, &v, &resolved), GTEXT_CSS_OK);
+  EXPECT_FALSE(resolved) << "the callback says no: not resolved";
+  where = 3;
+  ASSERT_EQ(gtext_css_math_resolve(c.math, &env, nullptr, &v, &resolved), GTEXT_CSS_OK);
+  EXPECT_TRUE(resolved);
+  EXPECT_EQ(v, 3 * 2 + 30.0);
+  Calc other;
+  read(other, "calc(sibling-index() * 1px + var(--x))");
+  if (other.valid) {
+    ASSERT_EQ(gtext_css_math_resolve(other.math, &env, nullptr, &v, &resolved), GTEXT_CSS_OK);
+    EXPECT_FALSE(resolved) << "anything else unresolved stays so";
+  }
+}
