@@ -530,21 +530,6 @@ static GTEXT_CSS_Status put_sheet(GTEXT_CSSOM_Markup_Binding * b, mentry * e, co
   return GTEXT_CSS_OK;
 }
 
-/// Remember `s` (n bytes) in `*slot`, or NULL if `present` is false. False on a failed allocation, with the slot as it was.
-static bool remember(GTEXT_CSSOM_Markup_Binding * b, char ** slot, size_t * slot_length, bool present, const char * s, size_t n) {
-  char * copy = NULL;
-  if (present) {
-    copy = dup_n(b, s, n);
-    if (!copy) {
-      return false;
-    }
-  }
-  gtext_allocator_free(&b->alloc, *slot);
-  *slot = copy;
-  *slot_length = present ? n : 0;
-  return true;
-}
-
 /// Read the element for its entry and (re)make its sheet at the place the entries say. `at` is the entry's position in `order`; `hint` is where the previous sheet should be.
 static GTEXT_CSS_Status build_entry(GTEXT_CSSOM_Markup_Binding * b, mentry * e, size_t at, size_t hint, GTEXT_CSSOM_Outcome * outcome) {
   const char * v;

@@ -400,11 +400,6 @@ static bool zero_of_init(const char * init, const char * t) {
   return u != GTEXT_CSS_UNIT_NONE && gtext_css_unit_type(u) == want && (want != GTEXT_CSS_UNIT_TYPE_LENGTH || gtext_css_unit_is_absolute(u));
 }
 
-/// zero_of_init() for the time `0s`.
-static bool zero_time_text(const char * t) {
-  return zero_of_init("0s", t);
-}
-
 /// Whether two serialized comma-separated lists are the same but for the spelling of zero times and lengths (`0ms` and `0s`, `0pt` and `0px`).
 static bool same_but_zero_times(const char * a, const char * b) {
   while (*a || *b) {

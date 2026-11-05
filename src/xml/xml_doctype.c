@@ -266,14 +266,6 @@ static GTEXT_XML_Status dtd_plain_name(xml_ctx * p) {
   return xml_consume(p, n);
 }
 
-static GTEXT_XML_Status dtd_quoted(xml_ctx * p, int is_public) {
-  markup_buf tmp;
-  markup_buf_init(&tmp, p->allocator);
-  GTEXT_XML_Status s = literal(p, &tmp, is_public);
-  markup_buf_free(&tmp);
-  return s;
-}
-
 static GTEXT_XML_Status dtd_charge_reference(xml_ctx * p) {
   return xml_charge_reference(p);
 }
