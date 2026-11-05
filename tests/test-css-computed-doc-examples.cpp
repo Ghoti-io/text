@@ -59,7 +59,7 @@ struct Snippet {
 };
 
 const Snippet kSnippets[] = {
-    {"computed-quick-start.c", snippets::computed_quick_start, "width: 40px\ncolor: red\nmargin-left: 5px\nborder-top-width: 0px\n"},
+    {"computed-quick-start.c", snippets::computed_quick_start, "width: 40px\ncolor: red\nmargin-left: 5px\nborder-top-width: 3px\n"},
     {"computed-element.c", snippets::computed_element, "svg: width 20px\nsymbol: width 80px\nuse: width 40px\nsymbol clone: width 40px\n"},
     {"shorthand-quick-start.c", snippets::shorthand_quick_start,
         "25 longhands\nmargin: 5px 2px 1px; border: 2px solid red; flex: 2 1 0%;\nmargin -> \"5px 2px 1px\"\nmargin-right -> \"2px\"\nborder-top-style -> \"solid\"\ngrid -> \"\"\n"},
