@@ -420,6 +420,8 @@ def policy_controls():
     answers the record's on the retry is unstable and listed; one that differs twice is a change and stays different; from nothing, two answers that agree are the answer and
     answers that never agree twice in a row are an error; and a host with more than UNSTABLE_LIMIT unstable pages is refused. Returns the number of controls that failed."""
     global ask
+    import contextlib
+    import io
     real = ask
     X0 = {'status': 0, 'tests': [['t', 0, None]]}
     X1 = {'status': 0, 'tests': [['t', 1, 'assert_equals: expected "1" but got "2"']]}
@@ -445,6 +447,8 @@ def policy_controls():
         nonlocal failed
         print('policy control %s: %s' % (name, 'caught' if ok else 'NOT caught'))
         failed += 0 if ok else 1
+    quiet = contextlib.redirect_stderr(io.StringIO())   # the unstable pages these scripted answers make are listed on standard error by the code under test
+    quiet.__enter__()
     try:
         pages = ['a', 'b', 'c']
         ref = {e: {'a': entry_of(row('a', X0)), 'b': entry_of(row('b', X0)), 'c': entry_of(row('c', X0))} for e in ENGINES}
@@ -467,6 +471,7 @@ def policy_controls():
             expect('too many unstable pages refuse the run', 'too loaded' in str(x))
     finally:
         ask = real
+        quiet.__exit__(None, None, None)
     return failed
 
 
