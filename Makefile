@@ -563,14 +563,23 @@ ASAN_LIBOBJECTS := $(patsubst src/%.c,$(ASAN_OBJ_DIR)/%.o,$(SOURCES))
 # nothing - and it breaks every system() call, because the spawned shell
 # inherits the preload and dies. Several tests here shell out to an oracle.
 #
-# cutil has to be built with ThreadSanitizer too (its `build/linux/release-tsan/
-# apps/libghoti.io-cutil-0-tsan.so` target, put in place of the installed
-# library). Its atomics are functions of cutil, so against a plain cutil
-# ThreadSanitizer cannot see the sequentially consistent store and load that
-# publish a lazily compiled grammar in css_registry.c, and reports the read of the
-# compiled grammar as a race. It is not one: the grammar and its report are
-# written under the registry's lock before the state is stored, and are read
-# only after a load that sees that state.
+# cutil has to be built with ThreadSanitizer too: installed into the prefix the
+# tests are linked against with `make install EXTRA_CFLAGS=-fsanitize=thread
+# EXTRA_LDFLAGS=-fsanitize=thread` run in cutil (tools/soak/sanitizers-job.sh
+# tsan does that, and builds the other dependencies plain beside it). Its atomics
+# are functions of cutil, so against a plain cutil ThreadSanitizer cannot see the
+# sequentially consistent store and load that publish a lazily compiled grammar in
+# css_registry.c, nor the last decrement of a rule index's reference count, and
+# reports the read of the compiled grammar and the free of the index as races
+# (25, 1 and 141 reports in testCssRegistry, testCssRuleIndexRetain and
+# testCssomThreads). They are not races: the grammar and its report are written
+# under the registry's lock before the state is stored, and are read only after a
+# load that sees that state, and the index is freed by the thread whose decrement
+# took the count to zero. The two targets below refuse to run (tools/tsan/
+# require-tsan-cutil.sh) when the cutil their programs would load does not
+# reference the ThreadSanitizer runtime. `make check-tsan-plants` shows the gate
+# reports a race planted in the library, and so shows that the refusal above is
+# the only reason a clean run is clean.
 #
 # LD_PRELOAD *is* cleared, for the same reason the ASan target clears it: a
 # desktop-wide preload inherited from the session (Debian sets
@@ -1011,7 +1020,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 # Debug build commands
 .PHONY: all-debug install-debug test-debug test-watch-debug uninstall-debug watch-debug
 # Sanitizer commands
-.PHONY: test-asan test-asan-quiet test-ubsan test-tsan test-tsan-quiet sanitizer-help
+.PHONY: test-asan test-asan-quiet test-ubsan test-tsan test-tsan-quiet check-tsan-plants sanitizer-help
 
 
 watch: ## Watch the file directory for changes and compile the target
@@ -1737,6 +1746,7 @@ test-tsan: ## Run all tests with ThreadSanitizer (Linux only)
 # the two things not to copy here from the ASan target.
 test-tsan: $(TSAN_APP_DIR)/$(TSAN_TARGET) $(TSAN_TEST_EXECUTABLES)
 ifeq ($(OS_NAME), Linux)
+	@sh tools/tsan/require-tsan-cutil.sh $(firstword $(TSAN_TEST_EXECUTABLES)) $(TSAN_APP_DIR)
 	@printf "\033[0;36m\n"
 	@printf "###########################################\n"
 	@printf "### Running tests with ThreadSanitizer  ###\n"
@@ -1802,6 +1812,7 @@ test-tsan-quiet: ## Run TSan tests with minimal output (Linux only)
 # next occurrence will say which half it was.
 test-tsan-quiet: $(TSAN_APP_DIR)/$(TSAN_TARGET) $(TSAN_TEST_EXECUTABLES)
 ifeq ($(OS_NAME), Linux)
+	@sh tools/tsan/require-tsan-cutil.sh $(firstword $(TSAN_TEST_EXECUTABLES)) $(TSAN_APP_DIR)
 	@races=0; failed=""; \
 	printf "\n\033[1;33m%-34s %8s %s\033[0m\n" "Test Suite (TSan)" "Tests" "Status"; \
 	for test_exe in $(TSAN_TEST_EXECUTABLES); do \
@@ -1835,6 +1846,14 @@ else
 	@printf "\033[0;31m\nSanitizer builds are currently only supported on Linux\n\033[0m\n"
 	@exit 1
 endif
+
+check-tsan-plants: ## Plant a data race in the library and show that the ThreadSanitizer gate reports it (needs a cutil built with ThreadSanitizer in PREFIX)
+# tools/tsan/check-tsan-plants.sh and tools/tsan/tsan-plants.txt: the unedited tree runs clean (the control), then each planted edit (a state published before what it
+# publishes, an object freed by the first of its releases) is built and run alone and has to end with a ThreadSanitizer report. Not one of the gates of `make test`: it
+# builds the library for ThreadSanitizer, needs the cutil of tools/tsan/require-tsan-cutil.sh, and takes minutes.
+check-tsan-plants:
+	@$(REQUIRE_PYTHON3); \
+	sh tools/tsan/check-tsan-plants.sh "$(PREFIX)"
 
 test-asan-quiet: ## Run ASan+UBSan tests with minimal output (Linux only)
 test-asan-quiet: $(ASAN_APP_DIR)/$(ASAN_TARGET) $(ASAN_TEST_EXECUTABLES)
@@ -1915,6 +1934,8 @@ sanitizer-help: ## Show help for sanitizer usage
 	@printf "  make test-ubsan        - Alias for test-asan\n"
 	@printf "  make test-tsan         - Run all tests with ThreadSanitizer\n"
 	@printf "  make test-tsan-quiet   - Run all tests with TSan (summary)\n"
+	@printf "  make check-tsan-plants - Show the TSan gate reports a race planted in the library\n"
+	@printf "  (test-tsan refuses a cutil that is not built with TSan: see the block above its flags)\n"
 	@printf "\n"
 	@printf "Sanitizers build separate instrumented libraries in:\n"
 	@printf "  $(ASAN_APP_DIR)/\n"

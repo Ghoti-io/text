@@ -381,17 +381,33 @@ documented prohibition and is deliberately *not* tested. A test for it would be
 a race on purpose: it would pass the plain build most of the time and fail
 `make test-tsan` by design, which is a gate reporting a defect that is not one.
 
-**`make test-tsan` needs a ThreadSanitizer build of cutil.** The library's atomics
-(`gcu_atomic_int_load` and the rest) are functions of cutil, so against a plain
-cutil ThreadSanitizer cannot see the ordering they provide. Where the library
-publishes data through one - the CSS registry compiles a grammar on first use
-under its lock, stores the result, and then stores the state with a
-sequentially consistent atomic that every reader loads before it reads the
-result - ThreadSanitizer then reports the read as a race although the two
-accesses are ordered. Build cutil's ThreadSanitizer variant
-(`build/linux/release-tsan/apps/libghoti.io-cutil-0-tsan.so`) and put it in
-place of the installed cutil before running the gate; the CI job for
-ThreadSanitizer does. With it the whole suite reports nothing.
+**`make test-tsan` needs a ThreadSanitizer build of cutil, and refuses to run without one.** The
+library's atomics (`gcu_atomic_int_load` and the rest) are functions of cutil, so against a plain
+cutil ThreadSanitizer cannot see the ordering they provide. Where the library publishes data
+through one - the CSS registry compiles a grammar on first use under its lock, stores the result,
+and then stores the state with a sequentially consistent atomic that every reader loads before it
+reads the result; a rule index is freed by the thread whose decrement of an atomic count takes it
+to zero - ThreadSanitizer then reports the read, or the free, as a race although the accesses are
+ordered (measured: 25 reports in `testCssRegistry`, 1 in `testCssRuleIndexRetain` and 141 in
+`testCssomThreads` against a plain cutil, 0 against one built for it). So the two targets check
+(`tools/tsan/require-tsan-cutil.sh`) that the cutil the test programs would load references the
+ThreadSanitizer runtime, and stop with the invocation when it does not.
+
+The invocation: build cutil with `EXTRA_CFLAGS=-fsanitize=thread EXTRA_LDFLAGS=-fsanitize=thread`
+into a prefix of its own, the other dependencies of the library plain beside it, and pass that
+prefix to both `PKG_CONFIG_PATH` and `PREFIX`:
+
+```sh
+make -C cutil install PREFIX=$TSAN_PREFIX EXTRA_CFLAGS=-fsanitize=thread EXTRA_LDFLAGS=-fsanitize=thread
+# the other dependencies (see the suite's manifest), plain, into $TSAN_PREFIX
+PKG_CONFIG_PATH=$TSAN_PREFIX/share/pkgconfig make test-tsan-quiet PREFIX=$TSAN_PREFIX
+```
+
+(`tools/soak/sanitizers-job.sh tsan` does it for a directory holding the sources.) The gate is
+also shown to fail: `make check-tsan-plants PREFIX=$TSAN_PREFIX` builds a copy of the tree with
+a race planted in it (a state published before the object it publishes, an object freed by the
+first of its releases) and requires a ThreadSanitizer report for each, after a clean run of the
+unedited tree.
 
 The guarantee itself is still not *enforced*. There is no internal locking to
 disable and no thread-safe build variant; a caller that needs shared access

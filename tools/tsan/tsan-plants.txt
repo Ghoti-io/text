@@ -1,0 +1,6 @@
+# tools/tsan/check-tsan-plants.sh: each plant is one edit of one source file of the library and the test program that has to report a data race (or a use of freed memory that
+# ThreadSanitizer sees as one) with it. The unedited tree runs first, as the control, and has to report nothing. Fields are tab separated; \n in a field is a newline.
+# name	file	old text (must occur once)	new text	program
+registry-state-published-before-the-grammar	src/css/css_registry.c	  lz->compiled = compiled;\n  lz->res = res;\n  gcu_atomic_int_store(&lz->state, (int32_t)final_state);	  gcu_atomic_int_store(&lz->state, (int32_t)final_state);\n  lz->compiled = compiled;\n  lz->res = res;	testCssRegistry
+rule-index-freed-by-the-first-release	src/css/css_rule_index.c	  if (gcu_atomic_int_fetch_sub(&x->refs, 1) != 1) {	  if (gcu_atomic_int_fetch_sub(&x->refs, 1) < 0) {	testCssRuleIndexRetain
+sheet-freed-by-the-first-release	src/css/css_sheet.c	  if (gcu_atomic_int_fetch_sub(&sheet->refs, 1) == 1) {	  if (gcu_atomic_int_fetch_sub(&sheet->refs, 1) >= 1) {	testCssSheetThreads
