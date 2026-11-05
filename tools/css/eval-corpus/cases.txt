@@ -531,3 +531,164 @@ test(() => {
   const y = x ? 1 : 2;
 }, "ternary");
 </script>
+=== a-style-elements-sheet-and-its-rules
+tests 1
+has sheetof|o3|e1
+has ruleat|o4|o3|0|undefined
+has rattr|r1|o4|selectorText
+has assert_equals|r:r1|s:a|
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const s = document.createElement("style");
+  s.textContent = "a { color: red }";
+  document.head.appendChild(s);
+  const rule = s.sheet.cssRules[0];
+  assert_equals(rule.selectorText, "a");
+}, "sheet");
+</script>
+=== insert-rule-delete-rule-and-the-two-ways-to-read-a-rule
+tests 1
+has insertrule|r1|o1|b { }|n:1
+has insertrule|r2|o1|c { }|u:
+has ruleat|o2|o1|3|null
+has ruleat|o3|o1|3|undefined
+has deleterule|o1|n:0
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const s = new CSSStyleSheet();
+  s.insertRule("b { }", 1);
+  s.insertRule("c { }");
+  const viaItem = s.cssRules.item(3);
+  const viaIndex = s.cssRules[3];
+  s.deleteRule(0);
+}, "edit");
+</script>
+=== a-constructed-sheet-takes-media-and-disabled
+tests 1
+has newsheet|o1|s:screen|b:true
+has newsheet|o2|u:|b:false
+has replacesync|o1|a { }
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const s = new CSSStyleSheet({ media: "screen", disabled: true });
+  const t = new CSSStyleSheet();
+  s.replaceSync("a { }");
+}, "constructed");
+</script>
+=== assert-throws-wraps-the-ops-of-its-function
+tests 1
+has throws|dom|SyntaxError
+has insertrule|r1|o1|x|u:
+has endthrows
+has throws|js|TypeError
+seq throws|dom|SyntaxError;insertrule|r1;endthrows;throws|js|TypeError;endthrows
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const s = new CSSStyleSheet();
+  assert_throws_dom("SyntaxError", () => s.insertRule("x"));
+  assert_throws_js(TypeError, () => s.cssRules[0].selectorText);
+}, "throws");
+</script>
+=== instanceof-and-the-style-of-a-rule
+tests 1
+has rinst|r2|o2|CSSStyleRule
+has rstyle|s3|o2
+has sset|s3|color|red|
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const s = new CSSStyleSheet();
+  s.insertRule("a { }");
+  const rule = s.cssRules[0];
+  assert_true(rule instanceof CSSStyleRule);
+  rule.style.setProperty("color", "red");
+}, "instanceof");
+</script>
+=== adopted-sheets-are-set-and-pushed
+tests 1
+has adoptset|o1|o2
+has adoptpush|o3
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const a = new CSSStyleSheet(), b = new CSSStyleSheet(), c = new CSSStyleSheet();
+  document.adoptedStyleSheets = [a, b];
+  document.adoptedStyleSheets.push(c);
+}, "adopted");
+</script>
+=== a-sheet-that-may-not-exist-guards-the-statements
+tests 1
+has sheetof|o2|e1
+has iftrue|o:o2
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const s = document.createElement("style");
+  const sheet = s.sheet;
+  if (sheet) { sheet.insertRule("a { }"); }
+}, "sheet guard");
+</script>
+=== rule-text-is-assigned-and-the-rest-is-left-to-the-library
+tests 1
+has rset|o2|selectorText|b
+has rattr|r2|o2|cssText
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const s = new CSSStyleSheet();
+  s.insertRule("a { }");
+  const rule = s.cssRules[0];
+  rule.selectorText = "b";
+  const css = rule.cssText;
+}, "rset");
+</script>
+=== a-sheet-that-may-not-exist-is-not-a-condition-outside-a-statement
+tests 1
+outcome 0 unmodeled:host-node-may-be-null
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const s = document.createElement("style");
+  const y = s.sheet ? 1 : 2;
+}, "sheet ternary");
+</script>
+=== an-op-in-a-try-with-an-empty-catch-is-the-runners
+tests 1
+seq try;insertrule|r1;endtry
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const s = new CSSStyleSheet();
+  try { s.insertRule("@page {}"); } catch (e) {}
+}, "swallowed at run time");
+</script>
+=== a-catch-with-statements-around-an-op-is-not-modeled
+tests 1
+outcome 0 unmodeled:host-op-in-try
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const s = new CSSStyleSheet();
+  try { s.insertRule("@page {}"); } catch (e) { assert_true(true); }
+}, "catch with a statement");
+</script>
+=== a-property-of-a-rule-object-that-the-interface-lacks-is-not-modeled
+tests 2
+outcome 0 unmodeled:host-expando-assign
+outcome 1 unmodeled:host-optional-chain
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const s = new CSSStyleSheet();
+  s.insertRule("a { }");
+  s.cssRules[0].randomProperty = 1;
+}, "expando");
+test(() => {
+  const s = new CSSStyleSheet();
+  assert_equals(s.cssRules[0]?.selectorText, undefined);
+}, "optional chain over a rule that may not exist");
+</script>

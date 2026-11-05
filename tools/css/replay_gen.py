@@ -88,6 +88,8 @@ def lit(f):
         return 'R.r[%s]' % jstr(v)
     if kind == 'e':
         return 'R.e[%s]' % jstr(v)
+    if kind == 'o':
+        return 'R.o[%s]' % jstr(v)
     raise ValueError('operand %r' % f)
 
 
@@ -101,6 +103,15 @@ def S(name):
 
 def Rg(name):
     return 'R.r[%s]' % jstr(name)
+
+
+def O(name):
+    return 'R.o[%s]' % jstr(name)
+
+
+def idx_arg(f):
+    """An index argument of an op (`n:3`, or `u:` for none) as the argument of the call."""
+    return '' if f.startswith('u:') else f[2:]
 
 
 def translate(op):
@@ -229,6 +240,90 @@ def translate(op):
         return '} else {'
     if n == 'endif':
         return '}'
+    if n == 'sheetof':
+        return '%s = %s.sheet;' % (O(a[0]), E(a[1]))
+    if n == 'nsheets':
+        return '%s = document.styleSheets.length;' % Rg(a[0])
+    if n == 'sheetat':
+        return '%s = document.styleSheets%s;' % (O(a[0]), '[%s]' % a[1] if a[2] == 'undefined' else '.item(%s)' % a[1])
+    if n == 'newsheet':
+        fields = []
+        if a[1].startswith('s:'):
+            fields.append('media: %s' % jstr(a[1][2:]))
+        if a[2] == 'b:true':
+            fields.append('disabled: true')
+        return '%s = new CSSStyleSheet(%s);' % (O(a[0]), '{%s}' % ', '.join(fields) if fields else '')
+    if n == 'replacesync':
+        return '%s.replaceSync(%s);' % (O(a[0]), jstr(a[1]))
+    if n == 'rlen':
+        return '%s = %s.cssRules.length;' % (Rg(a[0]), O(a[1]))
+    if n == 'ruleat':
+        return '%s = %s.cssRules%s;' % (O(a[0]), O(a[1]), '[%s]' % a[2] if a[3] == 'undefined' else '.item(%s)' % a[2])
+    if n == 'klen':
+        return '%s = %s.length;' % (Rg(a[0]), O(a[1]))
+    if n == 'kat':
+        return '%s = %s[%s];' % (O(a[0]), O(a[1]), a[2])
+    if n == 'rparent':
+        return '%s = %s.parentRule;' % (O(a[0]), O(a[1]))
+    if n == 'rsheet':
+        return '%s = %s.parentStyleSheet;' % (O(a[0]), O(a[1]))
+    if n == 'rstyle':
+        return '%s = %s.style;' % (S(a[0]), O(a[1]))
+    if n == 'omedia':
+        return '%s = %s.media;' % (O(a[0]), O(a[1]))
+    if n == 'kfind':
+        return '%s = %s.findRule(%s);' % (O(a[0]), O(a[1]), jstr(a[2]))
+    if n == 'ownernode':
+        return '%s = %s.ownerNode;' % (E(a[0]), O(a[1]))
+    if n == 'ownerrule':
+        return '%s = %s.ownerRule;' % (O(a[0]), O(a[1]))
+    if n == 'rattr':
+        return '%s = %s[%s];' % (Rg(a[0]), O(a[1]), jstr(a[2]))
+    if n == 'rtype':
+        return '%s = %s.type;' % (Rg(a[0]), O(a[1]))
+    if n == 'shattr':
+        return '%s = %s[%s];' % (Rg(a[0]), O(a[1]), jstr(a[2]))
+    if n == 'insertrule':
+        return '%s = %s.insertRule(%s);' % (Rg(a[0]), O(a[1]), ', '.join([jstr(a[2])] + ([idx_arg(a[3])] if idx_arg(a[3]) else [])))
+    if n in ('deleterule', 'removerule'):
+        arg = jstr(a[1][2:]) if a[1].startswith('s:') else a[1][2:]
+        return '%s.%s(%s);' % (O(a[0]), 'deleteRule' if n == 'deleterule' else 'removeRule', arg)
+    if n == 'addrule':
+        return '%s = %s.addRule(%s);' % (Rg(a[0]), O(a[1]), ', '.join([jstr(a[2]), jstr(a[3])] + ([idx_arg(a[4])] if idx_arg(a[4]) else [])))
+    if n == 'appendrule':
+        return '%s.appendRule(%s);' % (O(a[0]), jstr(a[1]))
+    if n == 'rset':
+        return '%s[%s] = %s;' % (O(a[0]), jstr(a[1]), jstr(a[2]))
+    if n == 'sdisabled':
+        return '%s.disabled = %s;' % (O(a[0]), a[1])
+    if n == 'mtext':
+        return '%s = %s.mediaText;' % (Rg(a[0]), O(a[1]))
+    if n == 'mlen':
+        return '%s = %s.length;' % (Rg(a[0]), O(a[1]))
+    if n == 'mitem':
+        return '%s = %s%s;' % (Rg(a[0]), O(a[1]), '[%s]' % a[2] if a[3] == 'undefined' else '.item(%s)' % a[2])
+    if n == 'mset':
+        return '%s.mediaText = %s;' % (O(a[0]), jstr(a[1]))
+    if n in ('mappend', 'mdelete'):
+        return '%s.%s(%s);' % (O(a[0]), 'appendMedium' if n == 'mappend' else 'deleteMedium', jstr(a[1]))
+    if n == 'rinst':
+        return '%s = (%s instanceof %s);' % (Rg(a[0]), O(a[1]), a[2])
+    if n == 'adoptset':
+        return 'document.adoptedStyleSheets = [%s];' % ', '.join(O(x) for x in a)
+    if n == 'adoptpush':
+        return 'document.adoptedStyleSheets.push(%s);' % O(a[0])
+    if n == 'adoptn':
+        return '%s = document.adoptedStyleSheets.length;' % Rg(a[0])
+    if n == 'adoptat':
+        return '%s = document.adoptedStyleSheets[%s];' % (O(a[0]), a[1])
+    if n == 'try':
+        return 'try {'
+    if n == 'endtry':
+        return '} catch (e) {}'
+    if n == 'throws':
+        return 'assert_throws_%s(%s, function () {' % (a[0], jstr(a[1]) if a[0] == 'dom' else a[1])
+    if n == 'endthrows':
+        return '});'
     if n == 'csssupports':
         return '%s = CSS.supports(%s);' % (Rg(a[0]), ', '.join(jstr(x) for x in a[1:]))
     if n == 'cssescape':
@@ -294,7 +389,7 @@ def script_bodies(ops):
 
 def translate_script(ops):
     """The JavaScript of one script's ops."""
-    lines = ['var R = window.__R || (window.__R = {e: Object.create(null), s: Object.create(null), r: Object.create(null), l: Object.create(null)});']
+    lines = ['var R = window.__R || (window.__R = {e: Object.create(null), s: Object.create(null), r: Object.create(null), l: Object.create(null), o: Object.create(null)});']
     cur = None
     for op in ops:
         if op[0] == 'doc':

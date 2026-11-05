@@ -89,8 +89,8 @@ PLANTS = [
      "    if key == 'style':\n        # [PutForwards=cssText]",
      "    if key == 'style-':\n        # [PutForwards=cssText]"),
     ('element-identity-by-lookup', 'cssom_eval.py',
-     "(isinstance(a, HostElem) or isinstance(b, HostElem)) and not isinstance(a, Rt) and not isinstance(b, Rt) and a is not b:\n            # whether",
-     "(isinstance(a, HostElem) or isinstance(b, HostElem)) and not isinstance(a, Rt) and not isinstance(b, Rt) and False:\n            # whether"),
+     "(isinstance(a, (HostElem, HostObj)) or isinstance(b, (HostElem, HostObj))) and not isinstance(a, Rt) and not isinstance(b, Rt) and a is not b:\n            # whether",
+     "(isinstance(a, (HostElem, HostObj)) or isinstance(b, (HostElem, HostObj))) and not isinstance(a, Rt) and not isinstance(b, Rt) and False:\n            # whether"),
     ('supports-drops-the-value', 'cssom_eval.py',
      "            args = [to_str(x) for x in a[:2]]",
      "            args = [to_str(x) for x in a[:1]]"),
@@ -107,7 +107,7 @@ PLANTS = [
      "        return 's:' + to_str(v)\n    raise Unmodeled('host-node-argument')",
      "        return 's:' + str(v)\n    raise Unmodeled('host-node-argument')"),
     ('a-node-that-may-not-exist-taken-as-there', 'cssom_eval.py',
-     "    if isinstance(v, HostElem) and v.nullable:\n        raise Unmodeled('host-node-may-be-null')\n",
+     "    if isinstance(v, (HostElem, HostObj)) and v.nullable:\n        raise Unmodeled('host-node-may-be-null')\n",
      ""),
     ('guard-loses-its-else', 'cssom_eval.py',
      "            self.emit('else')\n",
@@ -118,6 +118,39 @@ PLANTS = [
     ('node-list-is-not-a-snapshot', 'cssom_eval.py',
      "    n = interp.new_node('l')\n    interp.emit('qsa', n, root, a[0])\n    return HostList(n, None, 'static')",
      "    return HostList(root, a[0])"),
+    ('rule-list-item-read-as-an-index', 'cssom_eval.py',
+     "                return at(i, int(a[0]), 'null')\n            return BoundMethod(item)\n        return at(interp, int(key), 'undefined')\n    raise Unmodeled('dom-cssRules-' + key)",
+     "                return at(i, int(a[0]), 'undefined')\n            return BoundMethod(item)\n        return at(interp, int(key), 'undefined')\n    raise Unmodeled('dom-cssRules-' + key)"),
+    ('insert-rule-index-dropped', 'cssom_eval.py',
+     "text_arg(a, 0, 'insertRule'), index_field(a[1] if len(a) > 1 else UNDEF, 'insertRule'))",
+     "text_arg(a, 0, 'insertRule'), index_field(UNDEF, 'insertRule'))"),
+    ('assert-throws-body-run-outside-the-block', 'cssom_eval.py',
+     "        self.emit('throws', kind, name)\n        self.call(fn, UNDEF, [])\n        self.emit('endthrows')",
+     "        self.call(fn, UNDEF, [])\n        self.emit('throws', kind, name)\n        self.emit('endthrows')"),
+    ('constructed-sheet-options-dropped', 'cssom_eval.py',
+     "            self.emit('newsheet', n, media, disabled)",
+     "            self.emit('newsheet', n, 'u:', 'b:false')"),
+    ('adopted-sheets-assignment-ignored', 'cssom_eval.py',
+     "        interp.emit('adoptset', *[x.name for x in value])\n        return",
+     "        return"),
+    ('instanceof-reads-the-wrong-class', 'cssom_eval.py',
+     "                self.emit('rinst', r, a.name, b.name)",
+     "                self.emit('rinst', r, a.name, 'CSSRule')"),
+    ('sheet-that-may-not-exist-taken-as-there', 'cssom_eval.py',
+     "    if isinstance(v, (HostElem, HostObj)) and v.nullable:\n        raise Unmodeled('host-node-may-be-null')",
+     "    if isinstance(v, HostElem) and v.nullable:\n        raise Unmodeled('host-node-may-be-null')"),
+    ('try-around-an-op-dropped', 'cssom_eval.py',
+     "                    self.ops.insert(n0, ('try',))\n",
+     "                    pass\n"),
+    ('expando-of-a-rule-forwarded-as-an-attribute', 'cssom_eval.py',
+     "        if key not in RULE_WRITABLE:",
+     "        if False:"),
+    ('optional-chain-over-a-node-that-may-not-exist-taken-as-there', 'cssom_eval.py',
+     "        if e[3] and isinstance(obj, (HostElem, HostObj)) and obj.nullable:\n            raise Unmodeled('host-optional-chain')   # whether the chain stops is a fact of the document\n",
+     ""),
+    ('catch-with-statements-dropped', 'cssom_eval.py',
+     "if handler is None or handler != ('block', []) or fin is not None or not self.guard_safe(blk, declared):",
+     "if handler is None or fin is not None or not self.guard_safe(blk, declared):"),
     ('text-content-null-written-as-the-word', 'cssom_eval.py',
      "        interp.emit('tcset' if key == 'textContent' else 'ihset', el.name, null_empty(value))",
      "        interp.emit('tcset' if key == 'textContent' else 'ihset', el.name, to_str(value))"),
@@ -144,6 +177,8 @@ def load_cases():
                 cur['outcome'][int(k)] = what.strip()
             elif line.startswith('has '):
                 cur['has'].append(line[4:])
+            elif line.startswith('seq '):
+                cur.setdefault('seq', []).append(line[4:].split(';'))
             elif line.startswith('name '):
                 _, k, what = line.split(None, 2)
                 cur['names'][int(k)] = what
@@ -199,6 +234,15 @@ def run_cases(E, cases):
         for needle in c['has']:
             if not any((l == needle[:-1]) if needle.endswith('$') else l.startswith(needle) for l in lines):
                 problems.append('%s: the program has no op that starts with %r' % (c['name'], needle))
+        for chain in c.get('seq', []):
+            at = 0
+            for need in chain:
+                while at < len(lines) and not lines[at].startswith(need):
+                    at += 1
+                if at == len(lines):
+                    problems.append('%s: the program has no op that starts with %r after the ones before it in %r' % (c['name'], need, chain))
+                    break
+                at += 1
         for k, name in c['names'].items():
             if k < len(res.tests) and res.tests[k].name != name:
                 problems.append('%s: test %d is named %r, expected %r' % (c['name'], k, res.tests[k].name, name))
@@ -230,7 +274,7 @@ global.getComputedStyle = () => ({});
 """
     problems = []
     for c in cases:
-        uses = re.search(r'getComputedStyle|CSS\.|document\.|class A|undefinedName|while \(true\) \{ \}', c['page'])
+        uses = re.search(r'getComputedStyle|CSS\.|CSS[A-Z]\w*|document\.|assert_throws|class A|undefinedName|while \(true\) \{ \}', c['page'])
         if c['unread'] or uses and 'cleanup' not in c['name']:
             continue
         scripts = re.findall(r'<script>(.*?)</script>', c['page'], re.S)

@@ -173,6 +173,13 @@ typedef struct {
 
 typedef struct {
   char * name;
+  int kind;    /* a sheet, a rule or a media list */
+  int state;   /* the object, null, or undefined */
+  void * ptr;  /* retained */
+} object;
+
+typedef struct {
+  char * name;
   GTEXT_Markup_Node ** nodes;   /* a static NodeList: the elements a querySelectorAll() found when it was called */
   size_t n;
 } nodelist;
@@ -196,6 +203,8 @@ typedef struct {
   size_t nregs, capregs;
   nodelist * lists;
   size_t nlists, caplists;
+  object * objs;
+  size_t nobjs, capobjs;
 } world;
 
 /* The user agent's style sheet is the part of the HTML rendering section that the display and the body's margin need; the library has no user agent sheet of its own. */
@@ -382,7 +391,14 @@ static int world_open(world * w, const char * html, size_t html_len) {
   return 1;
 }
 
+static void obj_release(object * o);
+
 static void world_close(world * w) {
+  for (size_t i = 0; i < w->nobjs; i++) {
+    obj_release(&w->objs[i]);
+    free(w->objs[i].name);
+  }
+  free(w->objs);
   for (size_t i = 0; i < w->nstyles; i++) {
     gtext_cssom_decl_release(w->styles[i].decl);
     free(w->styles[i].name);
@@ -513,6 +529,8 @@ static void put_reg(world * w, const char * name, value v) {
 }
 
 /* The operand of an op. The value is a copy the caller frees. */
+static object * find_obj(world * w, const char * name);
+
 static value operand(world * w, const char * f, size_t l, int * ok) {
   *ok = 1;
   if (l >= 2 && f[1] == ':') {
@@ -536,6 +554,19 @@ static value operand(world * w, const char * f, size_t l, int * ok) {
         }
         char id[32];
         snprintf(id, sizeof id, "%p", (void *)e->node);
+        return val('e', id, strlen(id));
+      }
+      break;
+    }
+    case 'o': {
+      /* a sheet, a rule or a media list: two lookups that found the same object are the same object */
+      object * ob = find_obj(w, f + 2);
+      if (ob) {
+        if (ob->state != 0 || !ob->ptr) {
+          return val(ob->state == 1 ? 'N' : 'u', "", 0);
+        }
+        char id[32];
+        snprintf(id, sizeof id, "%p", ob->ptr);
         return val('e', id, strlen(id));
       }
       break;
@@ -680,6 +711,13 @@ static char * status_failure(const char * what, GTEXT_CSS_Status st) {
     memset(&f, 0, sizeof f);
     if (gtext_cssom_computed_failure(g_doc, &f) == GTEXT_CSS_OK && f.callback[0]) {
       return fmt("%s: unsupported, needs %s", what, f.callback);
+    }
+  }
+  {
+    /* an exception the page's script would catch is written "Name: what", which is what assert_throws_dom() is given */
+    const char * exception = gtext_cssom_exception_name(st);
+    if (exception) {
+      return fmt("%s: %s", exception, what);
     }
   }
   return fmt("%s: %s", what, gtext_css_status_string(st));
@@ -1538,6 +1576,595 @@ static int dom_op(world * w, const op * o, int * program_error, char ** failure)
 #undef NODE
 }
 
+/* ---- the style sheet ops: sheets, rules, rule lists and media lists as objects of the page ------------------------------------------------------- */
+
+enum { OBJ_SHEET = 1, OBJ_RULE, OBJ_MEDIA };
+enum { ST_OBJECT = 0, ST_NULL, ST_UNDEFINED };
+
+static void obj_release(object * o) {
+  if (o->state == ST_OBJECT && o->ptr) {
+    if (o->kind == OBJ_SHEET) {
+      gtext_cssom_sheet_release(o->ptr);
+    }
+    else if (o->kind == OBJ_RULE) {
+      gtext_cssom_rule_release(o->ptr);
+    }
+    else if (o->kind == OBJ_MEDIA) {
+      gtext_cssom_media_release(o->ptr);
+    }
+  }
+  o->ptr = NULL;
+}
+
+static object * find_obj(world * w, const char * name) {
+  for (size_t i = w->nobjs; i-- > 0;) {
+    if (strcmp(w->objs[i].name, name) == 0) {
+      return &w->objs[i];
+    }
+  }
+  return NULL;
+}
+
+/* takes the reference the caller holds (ptr may be NULL for null and undefined) */
+static void put_obj(world * w, const char * name, int kind, int state, void * ptr) {
+  object * o = find_obj(w, name);
+  if (o) {
+    obj_release(o);
+  }
+  else {
+    if (w->nobjs == w->capobjs) {
+      w->capobjs = w->capobjs ? w->capobjs * 2 : 16;
+      w->objs = realloc(w->objs, w->capobjs * sizeof *w->objs);
+    }
+    o = &w->objs[w->nobjs++];
+    o->name = dups(name);
+  }
+  o->kind = kind;
+  o->state = ptr ? ST_OBJECT : state;
+  o->ptr = ptr;
+}
+
+static void put_found(world * w, const char * name, int kind, void * ptr, int absent) {
+  put_obj(w, name, kind, ptr ? ST_OBJECT : absent, ptr);
+}
+
+/* the exception a status stands for, as the page's script would see it: "Name: what" */
+static char * css_exception(const char * what, GTEXT_CSS_Status st) {
+  const char * n = gtext_cssom_exception_name(st);
+  if (n) {
+    return fmt("%s: %s", n, what);
+  }
+  return fmt("%s: %s", what, gtext_css_status_string(st));
+}
+
+static GTEXT_CSSOM_Scope * world_scope(world * w) {
+  return gtext_cssom_document_scope(w->doc);
+}
+
+/* a sheet's or rule's list of rules; NULL when the object has none (a rule that is not a grouping rule) */
+static GTEXT_CSS_Status rule_list_of(object * o, const GTEXT_CSSOM_Rule_List ** list) {
+  *list = NULL;
+  if (o->kind == OBJ_SHEET) {
+    return gtext_cssom_sheet_rules(o->ptr, list);
+  }
+  *list = gtext_cssom_rule_css_rules(o->ptr);
+  return GTEXT_CSS_OK;
+}
+
+static int is_style_or_link(const GTEXT_Markup_Node * n) {
+  const char * l = gtext_markup_element_local_name(n);
+  const char * ns = gtext_markup_element_namespace(n);
+  return l && ns && strcmp(ns, GTEXT_MARKUP_NS_HTML) == 0 && (strcmp(l, "style") == 0 || strcmp(l, "link") == 0);
+}
+
+/* The sheet ops. Returns 1 when the op was one of these (its failure, if any, in *failure). */
+static int sheet_op(world * w, const op * o, int * program_error, char ** failure) {
+  const char * name = o->f[0];
+  *failure = NULL;
+#define NEEDS(n_) do { if (o->n != (n_)) { *program_error = 1; *failure = fmt("the op %s has %zu fields, not %d", name, o->n, (n_)); return 1; } } while (0)
+#define OBJ(var, fld, k_) object * var = find_obj(w, o->f[fld]); \
+  if (!var) { *program_error = 1; *failure = fmt("the op %s names the object %s, which the program did not make", name, o->f[fld]); return 1; } \
+  if (var->state != ST_OBJECT) { *failure = fmt("TypeError: %s of %s", name, var->state == ST_NULL ? "null" : "undefined"); return 1; } \
+  if (var->kind != (k_) && (k_) != 0) { *failure = fmt("TypeError: %s of an object of another kind", name); return 1; }
+  GTEXT_CSS_Status st;
+  GTEXT_CSSOM_Outcome oc;
+  const int absent_default = ST_UNDEFINED;
+  (void)absent_default;
+  if (strcmp(name, "sheetof") == 0) {
+    NEEDS(3);   /* sheetof O E: element.sheet: null for a style or link element without one, undefined on any other element */
+    elem * e = find_elem(w, o->f[2]);
+    if (!e) {
+      *program_error = 1;
+      *failure = dups("sheetof names an element the program did not make");
+      return 1;
+    }
+    if (!e->node) {
+      *failure = dups("TypeError: the element is null");
+      return 1;
+    }
+    sync_world(w);
+    if (!is_element(e->node) || !is_style_or_link(e->node)) {
+      put_obj(w, o->f[1], OBJ_SHEET, ST_UNDEFINED, NULL);
+    }
+    else {
+      put_found(w, o->f[1], OBJ_SHEET, gtext_cssom_markup_sheet_of(w->binding, e->node), ST_NULL);
+    }
+    return 1;
+  }
+  if (strcmp(name, "nsheets") == 0) {
+    NEEDS(2);
+    sync_world(w);
+    put_num(w, o->f[1], gtext_cssom_scope_sheet_count(world_scope(w)));
+    return 1;
+  }
+  if (strcmp(name, "sheetat") == 0) {
+    NEEDS(4);   /* sheetat O INDEX null|undefined */
+    sync_world(w);
+    put_found(w, o->f[1], OBJ_SHEET, gtext_cssom_scope_sheet_at(world_scope(w), (size_t)strtoull(o->f[2], NULL, 10)), o->f[3][0] == 'n' ? ST_NULL : ST_UNDEFINED);
+    return 1;
+  }
+  if (strcmp(name, "newsheet") == 0) {
+    NEEDS(4);   /* newsheet O MEDIA DISABLED: new CSSStyleSheet({media, disabled}) */
+    GTEXT_CSSOM_Sheet_Options so = gtext_cssom_sheet_options_default();
+    if (o->f[2][0] == 's') {
+      so.media = o->f[2] + 2;
+    }
+    so.disabled = strcmp(o->f[3], "b:true") == 0;
+    GTEXT_CSSOM_Sheet * sh = NULL;
+    st = gtext_cssom_sheet_new_constructed(w->doc, &so, &sh);
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception("new CSSStyleSheet", st);
+      return 1;
+    }
+    put_obj(w, o->f[1], OBJ_SHEET, ST_OBJECT, sh);
+    return 1;
+  }
+  if (strcmp(name, "replacesync") == 0) {
+    NEEDS(3);
+    OBJ(sh, 1, OBJ_SHEET);
+    st = gtext_cssom_sheet_replace_sync(sh->ptr, o->f[2], o->l[2], &oc);
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception("replaceSync", st);
+    }
+    return 1;
+  }
+  if (strcmp(name, "rlen") == 0) {
+    NEEDS(3);   /* rlen R OBJ: cssRules.length */
+    OBJ(ob, 2, 0);
+    if (ob->kind == OBJ_MEDIA) {
+      *failure = dups("TypeError: cssRules of a media list");
+      return 1;
+    }
+    const GTEXT_CSSOM_Rule_List * list;
+    st = rule_list_of(ob, &list);
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception("cssRules", st);
+    }
+    else if (!list) {
+      *failure = dups("TypeError: cssRules is undefined for this rule");
+    }
+    else {
+      put_num(w, o->f[1], gtext_cssom_rule_list_length(list));
+    }
+    return 1;
+  }
+  if (strcmp(name, "ruleat") == 0) {
+    NEEDS(5);   /* ruleat O OBJ INDEX null|undefined */
+    OBJ(ob, 2, 0);
+    const GTEXT_CSSOM_Rule_List * list;
+    if (ob->kind == OBJ_MEDIA) {
+      *failure = dups("TypeError: cssRules of a media list");
+      return 1;
+    }
+    st = rule_list_of(ob, &list);
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception("cssRules", st);
+    }
+    else if (!list) {
+      *failure = dups("TypeError: cssRules is undefined for this rule");
+    }
+    else {
+      put_found(w, o->f[1], OBJ_RULE, gtext_cssom_rule_list_at(list, (size_t)strtoull(o->f[3], NULL, 10)), o->f[4][0] == 'n' ? ST_NULL : ST_UNDEFINED);
+    }
+    return 1;
+  }
+  if (strcmp(name, "klen") == 0 || strcmp(name, "kat") == 0) {
+    /* rule.length and rule[i]: the indexed getter of CSSKeyframesRule; undefined on any other rule. klen R RULE; kat O RULE INDEX */
+    NEEDS(name[1] == 'l' ? 3 : 4);
+    OBJ(ru, 2, OBJ_RULE);
+    if (strcmp(gtext_cssom_rule_interface_name(ru->ptr), "CSSKeyframesRule") != 0) {
+      if (name[1] == 'l') {
+        put_reg(w, o->f[1], val('u', "", 0));
+      }
+      else {
+        put_obj(w, o->f[1], OBJ_RULE, ST_UNDEFINED, NULL);
+      }
+    }
+    else if (name[1] == 'l') {
+      put_num(w, o->f[1], gtext_cssom_rule_list_length(gtext_cssom_rule_css_rules(ru->ptr)));
+    }
+    else {
+      put_found(w, o->f[1], OBJ_RULE, gtext_cssom_rule_list_at(gtext_cssom_rule_css_rules(ru->ptr), (size_t)strtoull(o->f[3], NULL, 10)), ST_UNDEFINED);
+    }
+    return 1;
+  }
+  if (strcmp(name, "rparent") == 0 || strcmp(name, "rsheet") == 0) {
+    NEEDS(3);   /* rparent O RULE: parentRule; rsheet O RULE: parentStyleSheet */
+    OBJ(ru, 2, OBJ_RULE);
+    if (name[1] == 'p') {
+      put_found(w, o->f[1], OBJ_RULE, gtext_cssom_rule_parent_rule(ru->ptr), ST_NULL);
+    }
+    else {
+      put_found(w, o->f[1], OBJ_SHEET, gtext_cssom_rule_parent_sheet(ru->ptr), ST_NULL);
+    }
+    return 1;
+  }
+  if (strcmp(name, "rstyle") == 0) {
+    NEEDS(3);   /* rstyle S RULE: rule.style */
+    OBJ(ru, 2, OBJ_RULE);
+    GTEXT_CSSOM_Decl * d = NULL;
+    st = gtext_cssom_rule_style(ru->ptr, &d);
+    if (st != GTEXT_CSS_OK) {
+      *failure = fmt("TypeError: this rule has no style (%s)", gtext_css_status_string(st));
+      return 1;
+    }
+    put_style(w, o->f[1], d, 0, NULL, "", "");
+    return 1;
+  }
+  if (strcmp(name, "omedia") == 0) {
+    NEEDS(3);   /* omedia M OBJ: media */
+    OBJ(ob, 2, 0);
+    GTEXT_CSSOM_Media_List * m = NULL;
+    st = ob->kind == OBJ_RULE ? gtext_cssom_rule_media(ob->ptr, &m) : ob->kind == OBJ_SHEET ? gtext_cssom_sheet_media(ob->ptr, &m) : GTEXT_CSS_E_INVALID;
+    if (st != GTEXT_CSS_OK) {
+      put_obj(w, o->f[1], OBJ_MEDIA, ST_UNDEFINED, NULL);
+    }
+    else {
+      put_obj(w, o->f[1], OBJ_MEDIA, ST_OBJECT, m);
+    }
+    return 1;
+  }
+  if (strcmp(name, "kfind") == 0) {
+    NEEDS(4);
+    OBJ(ru, 2, OBJ_RULE);
+    GTEXT_CSSOM_Rule * found = NULL;
+    st = gtext_cssom_keyframes_find_rule(ru->ptr, o->f[3], o->l[3], &found);
+    if (st != GTEXT_CSS_OK) {
+      *failure = dups("TypeError: findRule of a rule that is not @keyframes");
+      return 1;
+    }
+    put_found(w, o->f[1], OBJ_RULE, found, ST_NULL);
+    return 1;
+  }
+  if (strcmp(name, "ownernode") == 0) {
+    NEEDS(3);   /* ownernode E SHEET: a node, or null */
+    OBJ(sh, 2, OBJ_SHEET);
+    put_elem(w, o->f[1], (GTEXT_Markup_Node *)gtext_cssom_sheet_owner_node(sh->ptr));
+    return 1;
+  }
+  if (strcmp(name, "ownerrule") == 0) {
+    NEEDS(3);
+    OBJ(sh, 2, OBJ_SHEET);
+    GTEXT_CSSOM_Rule * r = NULL;
+    gtext_cssom_sheet_owner_rule(sh->ptr, &r);
+    put_found(w, o->f[1], OBJ_RULE, r, ST_NULL);
+    return 1;
+  }
+  if (strcmp(name, "rattr") == 0) {
+    NEEDS(4);   /* rattr R RULE NAME */
+    OBJ(ru, 2, OBJ_RULE);
+    char * text = NULL;
+    size_t n = 0;
+    bool is_null = false;
+    if (strcmp(o->f[3], "selectorText") == 0) {
+      st = gtext_cssom_rule_selector_text(ru->ptr, &text, &n);
+    }
+    else if (strcmp(o->f[3], "keyText") == 0) {
+      st = gtext_cssom_rule_key_text(ru->ptr, &text, &n);
+    }
+    else if (strcmp(o->f[3], "cssText") == 0) {
+      st = gtext_cssom_rule_css_text(ru->ptr, &text, &n);
+    }
+    else {
+      st = gtext_cssom_rule_get_attribute(ru->ptr, o->f[3], strlen(o->f[3]), &text, &n, &is_null);
+    }
+    if (st == GTEXT_CSS_E_UNSUPPORTED) {
+      put_reg(w, o->f[1], val('u', "", 0));   /* a member the interface does not have */
+    }
+    else if (st != GTEXT_CSS_OK) {
+      *failure = css_exception(o->f[3], st);
+    }
+    else if (is_null) {
+      put_reg(w, o->f[1], val('N', "", 0));
+      gtext_cssom_buffer_free(gtext_cssom_document_allocator(w->doc), text);
+    }
+    else {
+      put_reg(w, o->f[1], take_string(w, text, n));
+    }
+    return 1;
+  }
+  if (strcmp(name, "rtype") == 0) {
+    NEEDS(3);
+    OBJ(ru, 2, OBJ_RULE);
+    put_num(w, o->f[1], gtext_cssom_rule_type(ru->ptr));
+    return 1;
+  }
+  if (strcmp(name, "shattr") == 0) {
+    NEEDS(4);   /* shattr R SHEET NAME */
+    OBJ(sh, 2, OBJ_SHEET);
+    char * text = NULL;
+    size_t n = 0;
+    const char * a = o->f[3];
+    if (strcmp(a, "href") == 0) {
+      st = gtext_cssom_sheet_href(sh->ptr, &text, &n);
+    }
+    else if (strcmp(a, "title") == 0) {
+      st = gtext_cssom_sheet_title(sh->ptr, &text, &n);
+    }
+    else if (strcmp(a, "type") == 0) {
+      const char * t = gtext_cssom_sheet_type(sh->ptr);
+      put_reg(w, o->f[1], val('s', t, strlen(t)));
+      return 1;
+    }
+    else if (strcmp(a, "disabled") == 0) {
+      put_bool(w, o->f[1], gtext_cssom_sheet_disabled(sh->ptr));
+      return 1;
+    }
+    else {
+      *program_error = 1;
+      *failure = fmt("shattr %s is not known", a);
+      return 1;
+    }
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception(a, st);
+    }
+    else if (!text) {
+      put_reg(w, o->f[1], val('N', "", 0));   /* href and title are null for a sheet that has none */
+    }
+    else {
+      put_reg(w, o->f[1], take_string(w, text, n));
+    }
+    return 1;
+  }
+  if (strcmp(name, "insertrule") == 0) {
+    NEEDS(5);   /* insertrule R OBJ TEXT INDEX (u: for no index argument) */
+    OBJ(ob, 2, 0);
+    const size_t index = o->f[4][0] == 'u' ? 0 : (size_t)strtoull(o->f[4] + 2, NULL, 10);
+    GTEXT_CSSOM_Rule * made = NULL;
+    if (ob->kind == OBJ_SHEET) {
+      st = gtext_cssom_sheet_insert_rule(ob->ptr, o->f[3], o->l[3], index, &made, &oc);
+    }
+    else if (ob->kind == OBJ_RULE) {
+      st = gtext_cssom_rule_insert_rule(ob->ptr, o->f[3], o->l[3], index, &made, &oc);
+    }
+    else {
+      st = GTEXT_CSS_E_INVALID;
+    }
+    gtext_cssom_rule_release(made);
+    sync_world(w);
+    if (st == GTEXT_CSS_E_UNSUPPORTED) {
+      *failure = dups("TypeError: insertRule is not a function");
+    }
+    else if (st != GTEXT_CSS_OK) {
+      *failure = css_exception("insertRule", st);
+    }
+    else {
+      put_num(w, o->f[1], index);
+    }
+    return 1;
+  }
+  if (strcmp(name, "deleterule") == 0) {
+    NEEDS(3);   /* deleterule OBJ ARG: an index, or for @keyframes the text of a key */
+    OBJ(ob, 1, 0);
+    if (ob->kind == OBJ_RULE && strcmp(gtext_cssom_rule_interface_name(ob->ptr), "CSSKeyframesRule") == 0) {
+      st = gtext_cssom_keyframes_delete_rule(ob->ptr, o->f[2] + 2, o->l[2] - 2, &oc);
+    }
+    else {
+      const size_t index = (size_t)strtoull(o->f[2] + 2, NULL, 10);
+      st = ob->kind == OBJ_SHEET ? gtext_cssom_sheet_delete_rule(ob->ptr, index, &oc) : ob->kind == OBJ_RULE ? gtext_cssom_rule_delete_rule(ob->ptr, index, &oc) : GTEXT_CSS_E_INVALID;
+    }
+    sync_world(w);
+    if (st == GTEXT_CSS_E_UNSUPPORTED) {
+      *failure = dups("TypeError: deleteRule is not a function");
+    }
+    else if (st != GTEXT_CSS_OK) {
+      *failure = css_exception("deleteRule", st);
+    }
+    return 1;
+  }
+  if (strcmp(name, "addrule") == 0 || strcmp(name, "removerule") == 0) {
+    if (name[0] == 'a') {
+      NEEDS(6);   /* addrule R SHEET SELECTOR STYLE INDEX */
+    }
+    else {
+      NEEDS(3);   /* removerule SHEET INDEX */
+    }
+    OBJ(sh, name[0] == 'a' ? 2 : 1, OBJ_SHEET);
+    if (name[0] == 'a') {
+      const bool has_index = o->f[5][0] != 'u';
+      const size_t index = has_index ? (size_t)strtoull(o->f[5] + 2, NULL, 10) : 0;
+      st = gtext_cssom_sheet_add_rule(sh->ptr, o->f[3], o->l[3], o->f[4], o->l[4], has_index, index, &oc);
+      if (st == GTEXT_CSS_OK) {
+        put_reg(w, o->f[1], val('n', "-1", 2));   /* the binding returns -1 */
+      }
+    }
+    else {
+      st = gtext_cssom_sheet_remove_rule(sh->ptr, (size_t)strtoull(o->f[2] + 2, NULL, 10), &oc);
+    }
+    sync_world(w);
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception(name[0] == 'a' ? "addRule" : "removeRule", st);
+    }
+    return 1;
+  }
+  if (strcmp(name, "appendrule") == 0) {
+    NEEDS(3);
+    OBJ(ru, 1, OBJ_RULE);
+    st = gtext_cssom_keyframes_append_rule(ru->ptr, o->f[2], o->l[2], NULL, &oc);
+    if (st == GTEXT_CSS_E_UNSUPPORTED) {
+      *failure = dups("TypeError: appendRule is not a function");
+    }
+    else if (st != GTEXT_CSS_OK) {
+      *failure = css_exception("appendRule", st);
+    }
+    return 1;
+  }
+  if (strcmp(name, "rset") == 0) {
+    NEEDS(4);   /* rset RULE NAME VALUE */
+    OBJ(ru, 1, OBJ_RULE);
+    st = GTEXT_CSS_OK;
+    if (strcmp(o->f[2], "selectorText") == 0) {
+      st = gtext_cssom_rule_set_selector_text(ru->ptr, o->f[3], o->l[3], &oc);
+    }
+    else if (strcmp(o->f[2], "keyText") == 0) {
+      st = gtext_cssom_rule_set_key_text(ru->ptr, o->f[3], o->l[3], &oc);
+    }
+    else if (strcmp(o->f[2], "cssText") != 0) {
+      st = gtext_cssom_rule_set_attribute(ru->ptr, o->f[2], strlen(o->f[2]), o->f[3], o->l[3], &oc);
+    }
+    if (st == GTEXT_CSS_E_UNSUPPORTED) {
+      st = GTEXT_CSS_OK;   /* a member the object does not have: script makes a property of the object, and nothing else happens */
+    }
+    sync_world(w);
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception(o->f[2], st);
+    }
+    return 1;
+  }
+  if (strcmp(name, "sdisabled") == 0) {
+    NEEDS(3);
+    OBJ(sh, 1, OBJ_SHEET);
+    st = gtext_cssom_sheet_set_disabled(sh->ptr, strcmp(o->f[2], "true") == 0, &oc);
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception("disabled", st);
+    }
+    return 1;
+  }
+  if (strcmp(name, "mtext") == 0 || strcmp(name, "mlen") == 0 || strcmp(name, "mitem") == 0) {
+    NEEDS(name[1] == 'i' ? 5 : 3);   /* mtext R M; mlen R M; mitem R M INDEX null|undefined */
+    OBJ(m, 2, OBJ_MEDIA);
+    if (name[1] == 't') {
+      char * text = NULL;
+      size_t n = 0;
+      st = gtext_cssom_media_text(m->ptr, &text, &n);
+      if (st != GTEXT_CSS_OK) {
+        *failure = css_exception("mediaText", st);
+      }
+      else {
+        put_reg(w, o->f[1], take_string(w, text, n));
+      }
+    }
+    else if (name[1] == 'l') {
+      size_t n = 0;
+      gtext_cssom_media_length(m->ptr, &n);
+      put_num(w, o->f[1], n);
+    }
+    else {
+      char * text = NULL;
+      size_t n = 0;
+      bool is_null = false;
+      size_t len = 0;
+      gtext_cssom_media_length(m->ptr, &len);
+      const size_t index = (size_t)strtoull(o->f[3], NULL, 10);
+      if (index >= len) {
+        put_reg(w, o->f[1], o->f[4][0] == 'n' ? val('N', "", 0) : val('u', "", 0));
+        return 1;
+      }
+      st = gtext_cssom_media_item(m->ptr, index, &text, &n, &is_null);
+      if (st != GTEXT_CSS_OK || is_null) {
+        put_reg(w, o->f[1], val('N', "", 0));
+      }
+      else {
+        put_reg(w, o->f[1], take_string(w, text, n));
+      }
+    }
+    return 1;
+  }
+  if (strcmp(name, "mset") == 0 || strcmp(name, "mappend") == 0 || strcmp(name, "mdelete") == 0) {
+    NEEDS(3);
+    OBJ(m, 1, OBJ_MEDIA);
+    st = name[1] == 's' ? gtext_cssom_media_set_text(m->ptr, o->f[2], o->l[2], &oc) : name[1] == 'a' ? gtext_cssom_media_append(m->ptr, o->f[2], o->l[2], &oc) :
+                                                                                                          gtext_cssom_media_delete(m->ptr, o->f[2], o->l[2], &oc);
+    sync_world(w);
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception(name[1] == 's' ? "mediaText" : name[1] == 'a' ? "appendMedium" : "deleteMedium", st);
+    }
+    return 1;
+  }
+  if (strcmp(name, "rinst") == 0) {
+    NEEDS(4);   /* rinst R OBJ CLASS: x instanceof CLASS, for the names of the interfaces of rules and the sheet */
+    object * ob = find_obj(w, o->f[2]);
+    if (!ob) {
+      *program_error = 1;
+      *failure = dups("rinst names an object the program did not make");
+      return 1;
+    }
+    int yes = 0;
+    if (ob->state == ST_OBJECT) {
+      if (ob->kind == OBJ_SHEET) {
+        yes = strcmp(o->f[3], "CSSStyleSheet") == 0 || strcmp(o->f[3], "StyleSheet") == 0;
+      }
+      else if (ob->kind == OBJ_RULE) {
+        yes = strcmp(o->f[3], "CSSRule") == 0 || strcmp(o->f[3], gtext_cssom_rule_interface_name(ob->ptr)) == 0;
+      }
+      else {
+        yes = strcmp(o->f[3], "MediaList") == 0;
+      }
+    }
+    put_bool(w, o->f[1], yes);
+    return 1;
+  }
+  if (strcmp(name, "adoptset") == 0) {
+    /* document.adoptedStyleSheets = [sheets]: the checks of the setter are the library's */
+    GTEXT_CSSOM_Sheet * list[64];
+    if (o->n > 65) {
+      *program_error = 1;
+      *failure = dups("adoptset has too many sheets");
+      return 1;
+    }
+    for (size_t i = 1; i < o->n; i++) {
+      object * ob = find_obj(w, o->f[i]);
+      if (!ob) {
+        *program_error = 1;
+        *failure = dups("adoptset names an object the program did not make");
+        return 1;
+      }
+      if (ob->state != ST_OBJECT || ob->kind != OBJ_SHEET) {
+        *failure = dups("TypeError: adoptedStyleSheets takes sheets");
+        return 1;
+      }
+      list[i - 1] = ob->ptr;
+    }
+    st = gtext_cssom_scope_adopted_set(world_scope(w), list, o->n - 1, &oc);
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception("adoptedStyleSheets", st);
+    }
+    return 1;
+  }
+  if (strcmp(name, "adoptpush") == 0) {
+    NEEDS(2);
+    OBJ(sh, 1, OBJ_SHEET);
+    st = gtext_cssom_scope_adopted_insert(world_scope(w), sh->ptr, gtext_cssom_scope_adopted_count(world_scope(w)), &oc);
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception("adoptedStyleSheets", st);
+    }
+    return 1;
+  }
+  if (strcmp(name, "adoptn") == 0) {
+    NEEDS(2);
+    put_num(w, o->f[1], gtext_cssom_scope_adopted_count(world_scope(w)));
+    return 1;
+  }
+  if (strcmp(name, "adoptat") == 0) {
+    NEEDS(3);
+    put_found(w, o->f[1], OBJ_SHEET, gtext_cssom_scope_adopted_at(world_scope(w), (size_t)strtoull(o->f[2], NULL, 10)), ST_UNDEFINED);
+    return 1;
+  }
+  return 0;
+#undef NEEDS
+#undef OBJ
+}
+
 /* ---- running one op --------------------------------------------------------------------------------------------------------------------- */
 
 /// Returns NULL, or the message of a failure of the test (an assertion, or the exception the page's script would have thrown).
@@ -1553,7 +2180,7 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
 
   {
     char * failure = NULL;
-    if (dom_op(w, o, program_error, &failure)) {
+    if (dom_op(w, o, program_error, &failure) || sheet_op(w, o, program_error, &failure)) {
       return failure;
     }
   }
@@ -2120,6 +2747,9 @@ typedef struct {
   /* `iftrue X` / `iffalse X` ... `else` ... `endif` (X an operand): the ops between are run when the value is true in JavaScript's sense (for a node, when there is one), and skipped otherwise; the blocks nest */
   int gdepth;
   char gparent[32], gcond[32], gact[32];
+  /* `throws KIND NAME` ... `endthrows`: the ops between are the function of assert_throws_dom() or assert_throws_js(); the first failure among them is the exception, and the rest is skipped */
+  int exp_active, exp_ignore;
+  char * exp_kind, * exp_name, * exp_msg;
 } program;
 
 /* ---- the document as a script sees it -------------------------------------------------------------------------------------------------- */
@@ -2261,6 +2891,11 @@ static void end_test(program * p) {
 static void end_program(program * p) {
   end_test(p);
   p->gdepth = 0;
+  p->exp_active = 0;
+  free(p->exp_kind);
+  free(p->exp_name);
+  free(p->exp_msg);
+  p->exp_kind = p->exp_name = p->exp_msg = NULL;
   if (p->open) {
     world_close(&p->w);
     p->open = 0;
@@ -2370,6 +3005,43 @@ int main(void) {
       if (p.gdepth > 0 && !p.gact[p.gdepth - 1]) {
         continue;
       }
+      if ((strcmp(o.f[0], "throws") == 0 && o.n == 3) || (strcmp(o.f[0], "try") == 0 && o.n == 1)) {
+        p.exp_active = 1;
+        p.exp_ignore = !p.open || (p.in_test && p.t.failed && !p.in_cleanup);
+        free(p.exp_kind);
+        free(p.exp_name);
+        free(p.exp_msg);
+        p.exp_kind = dups(o.n == 3 ? o.f[1] : "any");
+        p.exp_name = dups(o.n == 3 ? o.f[2] : "");
+        p.exp_msg = NULL;
+        continue;
+      }
+      if (strcmp(o.f[0], "endthrows") == 0 || strcmp(o.f[0], "endtry") == 0) {
+        if (p.exp_active && !p.exp_ignore && strcmp(p.exp_kind, "any") != 0) {
+          char * result = NULL;
+          const size_t nl = strlen(p.exp_name);
+          if (!p.exp_msg) {
+            result = fmt("assert_throws_%s: function did not throw", p.exp_kind);
+          }
+          else if (strncmp(p.exp_msg, p.exp_name, nl) != 0 || p.exp_msg[nl] != ':') {
+            result = fmt("assert_throws_%s: function threw \"%.80s\", expected %s", p.exp_kind, p.exp_msg, p.exp_name);
+          }
+          if (result && p.in_test && !p.t.failed) {
+            p.t.failed = 1;
+            p.t.message = result;
+          }
+          else {
+            free(result);
+          }
+        }
+        p.exp_active = 0;
+        free(p.exp_msg);
+        p.exp_msg = NULL;
+        continue;
+      }
+      if (p.exp_active && (p.exp_ignore || p.exp_msg)) {
+        continue;
+      }
       if (!p.open || (p.in_test && p.t.failed && !p.in_cleanup)) {
         if (p.open && (strcmp(o.f[0], "elem") == 0 || strcmp(o.f[0], "gcs") == 0 || strcmp(o.f[0], "sget") == 0 || strcmp(o.f[0], "sattr") == 0)) {
           /* the exception of a failed assertion ended the test body; the reads after it are still looked at, for the one thing a read tells whatever the assertion did: that it needs a layout */
@@ -2401,6 +3073,9 @@ int main(void) {
           print_escaped(msg);
           fputc('\n', stdout);
           free(msg);
+        }
+        else if (p.exp_active) {
+          p.exp_msg = msg;
         }
         else if (p.in_test) {
           if (!p.t.failed) {

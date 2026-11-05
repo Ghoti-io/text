@@ -245,7 +245,7 @@ def to_num(v):
 def truthy(v):
     if isinstance(v, Rt):
         raise Unmodeled('computed-value-expression')
-    if isinstance(v, HostElem) and v.nullable:
+    if isinstance(v, (HostElem, HostObj)) and v.nullable:
         raise Unmodeled('host-node-may-be-null')
     if v is UNDEF or v is None or v is False:
         return False
@@ -353,6 +353,8 @@ def operand(v):
         return 'r:' + v.reg
     if isinstance(v, HostElem):
         return 'e:' + v.name
+    if isinstance(v, HostObj):
+        return 'o:' + v.name
     if isinstance(v, str):
         return 's:' + v
     if isinstance(v, bool):
@@ -395,6 +397,36 @@ class HostClassList(Host):
     pass
 
 
+class HostObj(Host):
+    """A style sheet, a rule or a media list of the document: the evaluator knows its name in the program and its kind, never its state. ``nullable``: the lookup that made it may have found
+    null or undefined, so a condition on it is the program's to decide at run time."""
+
+    def __init__(self, name, kind, nullable=True):
+        Host.__init__(self, name)
+        self.kind = kind
+        self.nullable = nullable
+
+
+class HostRuleList(Host):
+    """`cssRules` of a sheet or of a grouping rule: indexed at run time."""
+
+    def __init__(self, owner):
+        Host.__init__(self, 'rules')
+        self.owner = owner
+
+
+class HostSheetList(Host):
+    """`document.styleSheets` (kind 'doc') or `document.adoptedStyleSheets` (kind 'adopted')."""
+
+    def __init__(self, kind):
+        Host.__init__(self, kind)
+        self.kind = kind
+
+
+class HostCtor(Host):
+    """An interface object of the page (CSSStyleSheet, CSSStyleRule...): what `instanceof` and `new` take."""
+
+
 class HostList(Host):
     """A NodeList or an HTMLCollection, indexed at run time (its length is not known offline): the elements a selector matches (``kind`` 'qsa'), or the children of a node ('elements': `children`,
     'nodes': `childNodes`)."""
@@ -427,7 +459,10 @@ class HostCSS(Host):
 
 
 # the ops that change the tree, an attribute, a style attribute or a rule: after one the runner's document is no longer a parse of a prefix of the markup
-MUTATING_OPS = {'setattr', 'rmattr', 'classadd', 'classremove', 'classtoggle', 'sset', 'sattrset', 'scsstext', 'sremove',
+SHEET_OPS = {'sheetof', 'nsheets', 'sheetat', 'newsheet', 'replacesync', 'rlen', 'ruleat', 'rparent', 'rsheet', 'rstyle', 'omedia', 'kfind', 'ownernode', 'ownerrule', 'rattr', 'rtype',
+             'shattr', 'insertrule', 'deleterule', 'addrule', 'removerule', 'appendrule', 'rset', 'sdisabled', 'mtext', 'mlen', 'mitem', 'mset', 'mappend', 'mdelete', 'rinst', 'klen', 'kat', 'adoptset',
+             'adoptpush', 'adoptn', 'adoptat', 'try', 'endtry'}
+MUTATING_OPS = SHEET_OPS | {'setattr', 'rmattr', 'classadd', 'classremove', 'classtoggle', 'sset', 'sattrset', 'scsstext', 'sremove',
                 'create', 'ctext', 'ccomment', 'cfrag', 'clone', 'append', 'prepend', 'replacechildren', 'appendchild', 'insertbefore', 'removechild', 'replacechild', 'remove', 'before', 'after',
                 'replacewith', 'tcset', 'dset', 'ihset'}
 
@@ -743,8 +778,8 @@ class Interp:
         msg = self.desc(a, 2)
         if len(a) < 2:
             raise Unmodeled('harness-assert-arity')
-        if isinstance(a[0], Rt) or isinstance(a[1], Rt) or (isinstance(a[0], HostElem) and a[0] is not a[1]) or (isinstance(a[1], HostElem) and a[0] is not a[1]):
-            if any(not isinstance(x, (Rt, str, float, bool, HostElem)) and x is not None and x is not UNDEF for x in a[:2]):
+        if isinstance(a[0], Rt) or isinstance(a[1], Rt) or (isinstance(a[0], (HostElem, HostObj)) and a[0] is not a[1]) or (isinstance(a[1], (HostElem, HostObj)) and a[0] is not a[1]):
+            if any(not isinstance(x, (Rt, str, float, bool, HostElem, HostObj)) and x is not None and x is not UNDEF for x in a[:2]):
                 raise Unmodeled('computed-value-compared-with-object')
             self.runtime_assert('assert_equals', a[:2], msg)
             return UNDEF
@@ -757,8 +792,8 @@ class Interp:
         msg = self.desc(a, 2)
         if len(a) < 2:
             raise Unmodeled('harness-assert-arity')
-        if isinstance(a[0], Rt) or isinstance(a[1], Rt) or (isinstance(a[0], HostElem) and a[0] is not a[1]) or (isinstance(a[1], HostElem) and a[0] is not a[1]):
-            if any(not isinstance(x, (Rt, str, float, bool, HostElem)) and x is not None and x is not UNDEF for x in a[:2]):
+        if isinstance(a[0], Rt) or isinstance(a[1], Rt) or (isinstance(a[0], (HostElem, HostObj)) and a[0] is not a[1]) or (isinstance(a[1], (HostElem, HostObj)) and a[0] is not a[1]):
+            if any(not isinstance(x, (Rt, str, float, bool, HostElem, HostObj)) and x is not None and x is not UNDEF for x in a[:2]):
                 raise Unmodeled('computed-value-compared-with-object')
             self.runtime_assert('assert_not_equals', a[:2], msg)
             return UNDEF
@@ -840,6 +875,25 @@ class Interp:
             raise AssertFail('%s: %swrong type' % (name, msg + ' ' if msg else ''))
         if not test(*a[:nargs]):
             raise AssertFail('%s: %sfailed for %s' % (name, msg + ' ' if msg else '', ', '.join(fmt_value(x) for x in a[:nargs])))
+        return UNDEF
+
+    def throws(self, kind, name, fn):
+        """The function of assert_throws_dom() or assert_throws_js(): its ops run between `throws` and `endthrows`, and the runner takes the first failure among them as the exception."""
+        self.need_test()
+        self.emit('throws', kind, name)
+        self.call(fn, UNDEF, [])
+        self.emit('endthrows')
+
+    def n_assert_throws_dom(self, interp, this, a):
+        if len(a) < 2 or not isinstance(a[0], str) or not isinstance(a[-1], Func) or len(a) > 3:
+            raise Unmodeled('harness-assert_throws_dom-argument')
+        self.throws('dom', a[0], a[-1])
+        return UNDEF
+
+    def n_assert_throws_js(self, interp, this, a):
+        if len(a) != 2 or not isinstance(a[0], HostCtor) or a[0].name not in JS_ERRORS or not isinstance(a[1], Func):
+            raise Unmodeled('harness-assert_throws_js-argument')
+        self.throws('js', a[0].name, a[1])
         return UNDEF
 
     def n_assert_approx_equals(self, interp, this, a):
@@ -1020,7 +1074,7 @@ class Interp:
             if isinstance(test, tuple) and test[0] == 'un' and test[1] == '!':
                 test, negate = test[2], True
             v = self.eval(test, scope)
-            if (isinstance(v, HostElem) and v.nullable) or isinstance(v, Rt):
+            if (isinstance(v, (HostElem, HostObj)) and v.nullable) or isinstance(v, Rt):
                 self.exec_guarded(st, v, negate, scope)
             else:
                 taken = truthy(v)
@@ -1152,7 +1206,7 @@ class Interp:
         if st[3] is not None:
             declared_names(st[3], declared)
         if not self.guard_safe([st[2]] + ([st[3]] if st[3] is not None else []), declared):
-            raise Unmodeled('host-node-may-be-null' if isinstance(v, HostElem) else 'computed-value-expression')
+            raise Unmodeled('host-node-may-be-null' if isinstance(v, (HostElem, HostObj)) else 'computed-value-expression')
         self.emit('iffalse' if negate else 'iftrue', operand(v))
         self.exec(st[2], scope)
         if st[3] is not None:
@@ -1165,10 +1219,20 @@ class Interp:
         try:
             try:
                 self.try_depth += 1
+                n0 = len(self.ops)
                 try:
                     self.exec(blk, scope)
                 finally:
                     self.try_depth -= 1
+                if len(self.ops) > n0:
+                    # ops that the runner performs can throw at run time: the statements are the runner's to run, skipping what follows the first that throws, and the catch clause can only be empty,
+                    # since whether it runs is not known here
+                    declared = set()
+                    declared_names(blk, declared)
+                    if handler is None or handler != ('block', []) or fin is not None or not self.guard_safe(blk, declared):
+                        raise Unmodeled('host-op-in-try')
+                    self.ops.insert(n0, ('try',))
+                    self.emit('endtry')
             except (JSThrow,) as t:
                 if handler is None:
                     raise
@@ -1261,6 +1325,8 @@ class Interp:
             n = self.new_node('e')
             self.emit('elem', n, 'byid', name)
             return HostElem(n)
+        if name in CTOR_NAMES:
+            return HostCtor(name)
         raise Unmodeled(('host-global-' if name[:1].isupper() or name in ('CSS', 'document', 'navigator', 'location') else 'js-reference-error-') + name)
 
     def e_arr(self, e, scope):
@@ -1360,9 +1426,15 @@ class Interp:
         op = e[1]
         a = self.eval(e[2], scope)
         b = self.eval(e[3], scope)
-        if op in ('===', '!==', '==', '!=') and (isinstance(a, HostElem) or isinstance(b, HostElem)) and not isinstance(a, Rt) and not isinstance(b, Rt) and a is not b:
+        if op == 'instanceof':
+            if isinstance(a, HostObj) and isinstance(b, HostCtor):
+                r = self.new_reg()
+                self.emit('rinst', r, a.name, b.name)
+                return Rt(r, 'b')
+            raise Unmodeled('js-instanceof')
+        if op in ('===', '!==', '==', '!=') and (isinstance(a, (HostElem, HostObj)) or isinstance(b, (HostElem, HostObj))) and not isinstance(a, Rt) and not isinstance(b, Rt) and a is not b:
             # whether two lookups found the same element is a fact of the document, not of the page: the runner compares the nodes
-            if not all(isinstance(x, HostElem) or x is None or x is UNDEF for x in (a, b)):
+            if not all(isinstance(x, (HostElem, HostObj)) or x is None or x is UNDEF for x in (a, b)):
                 raise Unmodeled('host-element-compared-with-value')
             r = self.new_reg()
             self.emit('cmp', r, {'===': 'eq', '!==': 'ne', '==': 'leq', '!=': 'lne'}[op], operand(a), operand(b))
@@ -1516,12 +1588,16 @@ class Interp:
 
     def e_mem(self, e, scope):
         obj = self.eval(e[1], scope)
+        if e[3] and isinstance(obj, (HostElem, HostObj)) and obj.nullable:
+            raise Unmodeled('host-optional-chain')   # whether the chain stops is a fact of the document
         if e[3] and (obj is None or obj is UNDEF):
             return UNDEF
         return self.get(obj, e[2])
 
     def e_idx(self, e, scope):
         obj = self.eval(e[1], scope)
+        if e[3] and isinstance(obj, (HostElem, HostObj)) and obj.nullable:
+            raise Unmodeled('host-optional-chain')
         if e[3] and (obj is None or obj is UNDEF):
             return UNDEF
         key = self.eval(e[2], scope)
@@ -1548,6 +1624,21 @@ class Interp:
             return JObj()
         if name in ('Error', 'TypeError', 'RangeError'):
             return JObj(message=to_str(args[0]) if args else '', name=name)
+        if name == 'CSSStyleSheet':
+            self.need_dom()
+            media, disabled = 'u:', 'b:false'
+            if args and args[0] is not UNDEF:
+                if not isinstance(args[0], JObj) or any(k not in ('media', 'disabled') for k in args[0]):
+                    raise Unmodeled('js-new-CSSStyleSheet-options')
+                if 'media' in args[0]:
+                    if not isinstance(args[0]['media'], str):
+                        raise Unmodeled('js-new-CSSStyleSheet-media')
+                    media = 's:' + args[0]['media']
+                if 'disabled' in args[0]:
+                    disabled = 'b:' + ('true' if truthy(args[0]['disabled']) else 'false')
+            n = self.new_node('o')
+            self.emit('newsheet', n, media, disabled)
+            return HostObj(n, 'sheet', False)
         if name == 'Set' and (not args or isinstance(args[0], JArr)):
             raise Unmodeled('js-set')
         if name == 'Map':
@@ -1571,6 +1662,8 @@ class Interp:
         callee_node = e[1]
         if callee_node[0] in ('mem', 'idx'):
             obj = self.eval(callee_node[1], scope)
+            if callee_node[3] and isinstance(obj, (HostElem, HostObj)) and obj.nullable:
+                raise Unmodeled('host-optional-chain')
             if callee_node[3] and (obj is None or obj is UNDEF):
                 return UNDEF
             key = callee_node[2] if callee_node[0] == 'mem' else to_str(self.eval(callee_node[2], scope))
@@ -2056,6 +2149,12 @@ def doc_get(interp, d, key, for_call):
         return BoundMethod(lambda i, a: query_all(i, 'doc', a))
     if key == 'defaultView':
         return interp.glob.vars['window']
+    if key == 'styleSheets':
+        interp.need_dom()
+        return HostSheetList('doc')
+    if key == 'adoptedStyleSheets':
+        interp.need_dom()
+        return HostSheetList('adopted')
     if key == 'createElement':
         def mk(i, a):
             i.need_dom()
@@ -2330,6 +2429,10 @@ DOM_METHODS = {
 
 
 def elem_get(interp, el, key, for_call):
+    if key == 'sheet':
+        n = interp.new_node('o')
+        interp.emit('sheetof', n, el.name)
+        return HostObj(n, 'sheet')
     if key in ELEM_NAV:
         n = interp.new_node('e')
         interp.emit('elem', n, 'nav', el.name, ELEM_NAV[key])
@@ -2542,8 +2645,242 @@ def style_set(interp, st, key, value):
     interp.emit('sattrset', st.name, key, null_empty(value))
 
 
-HOST_GET = {HostDoc: doc_get, HostWindow: window_get, HostElem: elem_get, HostStyle: style_get, HostClassList: classlist_get, HostList: list_get, HostTest: test_get, HostMath: math_get, HostCSS: css_get}
-HOST_SET = {HostWindow: window_set, HostElem: elem_set, HostStyle: style_set}
+JS_ERRORS = ('TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'EvalError', 'URIError')
+CTOR_NAMES = {'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'EvalError', 'URIError', 'CSSRule', 'CSSStyleRule', 'CSSMediaRule', 'CSSImportRule', 'CSSNamespaceRule', 'CSSFontFaceRule', 'CSSPageRule', 'CSSKeyframesRule', 'CSSKeyframeRule', 'CSSSupportsRule',
+              'CSSLayerBlockRule', 'CSSLayerStatementRule', 'CSSContainerRule', 'CSSScopeRule', 'CSSPropertyRule', 'CSSCounterStyleRule', 'CSSFontFeatureValuesRule', 'CSSStartingStyleRule',
+              'CSSPositionTryRule', 'CSSNestedDeclarations', 'CSSStyleSheet', 'StyleSheet', 'MediaList'}
+
+
+def index_field(v, what):
+    """The field of an op for an index argument (an unsigned long)."""
+    if v is UNDEF:
+        return 'u:'
+    if isinstance(v, float) and v == int(v) and 0 <= v < 4294967296:
+        return 'n:' + str(int(v))
+    raise Unmodeled('host-' + what + '-index')
+
+
+def text_arg(a, i, what):
+    if len(a) <= i:
+        raise Unmodeled('host-' + what + '-argument')
+    return to_str(a[i])
+
+
+def lookup_obj(interp, op, owner, kind, *fields, nullable=True):
+    n = interp.new_node('o')
+    interp.emit(op, n, *fields)
+    return HostObj(n, kind, nullable)
+
+
+def sheetlist_get(interp, lst, key, for_call):
+    if lst.kind == 'doc':
+        if key == 'length':
+            r = interp.new_reg()
+            interp.emit('nsheets', r)
+            return Rt(r, 'n')
+        if key == 'item' or re.fullmatch(r'\d+', key):
+            def at(i, a, mode):
+                n = i.new_node('o')
+                i.emit('sheetat', n, str(int(a[0])), mode)
+                return HostObj(n, 'sheet')
+            if key == 'item':
+                def item(i, a):
+                    if not a or not isinstance(a[0], float) or a[0] != int(a[0]) or a[0] < 0:
+                        raise Unmodeled('host-styleSheets-item')
+                    return at(i, a, 'null')
+                return BoundMethod(item)
+            return at(interp, [float(key)], 'undefined')
+        raise Unmodeled('dom-styleSheets-' + key)
+    if key == 'length':
+        r = interp.new_reg()
+        interp.emit('adoptn', r)
+        return Rt(r, 'n')
+    if re.fullmatch(r'\d+', key):
+        n = interp.new_node('o')
+        interp.emit('adoptat', n, key)
+        return HostObj(n, 'sheet')
+    if key == 'push':
+        def push(i, a):
+            if len(a) != 1 or not isinstance(a[0], HostObj) or a[0].kind != 'sheet':
+                raise Unmodeled('host-adoptedStyleSheets-push')
+            i.emit('adoptpush', a[0].name)
+            r = i.new_reg()
+            i.emit('adoptn', r)
+            return Rt(r, 'n')
+        return BoundMethod(push)
+    raise Unmodeled('dom-adoptedStyleSheets-' + key)
+
+
+def rulelist_get(interp, lst, key, for_call):
+    if key == 'length':
+        r = interp.new_reg()
+        interp.emit('rlen', r, lst.owner)
+        return Rt(r, 'n')
+    if key == 'item' or re.fullmatch(r'\d+', key):
+        def at(i, idx, mode):
+            n = i.new_node('o')
+            i.emit('ruleat', n, lst.owner, str(idx), mode)
+            return HostObj(n, 'rule')
+        if key == 'item':
+            def item(i, a):
+                if not a or not isinstance(a[0], float) or a[0] != int(a[0]) or a[0] < 0:
+                    raise Unmodeled('host-cssRules-item')
+                return at(i, int(a[0]), 'null')
+            return BoundMethod(item)
+        return at(interp, int(key), 'undefined')
+    raise Unmodeled('dom-cssRules-' + key)
+
+
+RULE_WRITABLE = {'selectorText', 'keyText', 'cssText', 'name', 'system', 'symbols', 'additiveSymbols', 'negative', 'prefix', 'suffix', 'range', 'pad', 'speakAs', 'fallback', 'fontFamily'}
+RULE_NON_ATTRS = {'cssRules', 'style', 'media', 'parentRule', 'parentStyleSheet', 'type', 'insertRule', 'deleteRule', 'appendRule', 'findRule'}
+
+
+def obj_get(interp, ob, key, for_call):
+    if ob.kind == 'media':
+        if key == 'mediaText':
+            r = interp.new_reg()
+            interp.emit('mtext', r, ob.name)
+            return Rt(r, 's')
+        if key == 'length':
+            r = interp.new_reg()
+            interp.emit('mlen', r, ob.name)
+            return Rt(r, 'n')
+        if key == 'item' or re.fullmatch(r'\d+', key):
+            def at(i, idx, mode):
+                r = i.new_reg()
+                i.emit('mitem', r, ob.name, str(idx), mode)
+                return Rt(r, 'sn')
+            if key == 'item':
+                def item(i, a):
+                    if not a or not isinstance(a[0], float) or a[0] != int(a[0]) or a[0] < 0:
+                        raise Unmodeled('host-MediaList-item')
+                    return at(i, int(a[0]), 'null')
+                return BoundMethod(item)
+            return at(interp, int(key), 'undefined')
+        if key in ('appendMedium', 'deleteMedium'):
+            def call(i, a):
+                i.emit('mappend' if key == 'appendMedium' else 'mdelete', ob.name, text_arg(a, 0, key))
+                return UNDEF
+            return BoundMethod(call)
+        raise Unmodeled('dom-MediaList-' + key)
+    if key in ('cssRules', 'rules') and (ob.kind == 'sheet' or key == 'cssRules'):
+        return HostRuleList(ob.name)
+    if key == 'insertRule':
+        def ins(i, a):
+            r = i.new_reg()
+            i.emit('insertrule', r, ob.name, text_arg(a, 0, 'insertRule'), index_field(a[1] if len(a) > 1 else UNDEF, 'insertRule'))
+            return Rt(r, 'n')
+        return BoundMethod(ins)
+    if key in ('deleteRule', 'removeRule'):
+        def dele(i, a):
+            if not a:
+                raise Unmodeled('host-deleteRule-argument')
+            if isinstance(a[0], str) and ob.kind == 'rule':
+                arg = 's:' + a[0]
+            else:
+                arg = index_field(a[0], 'deleteRule')
+            i.emit('deleterule' if key == 'deleteRule' else 'removerule', ob.name, arg)
+            return UNDEF
+        return BoundMethod(dele)
+    if key == 'media':
+        return lookup_obj(interp, 'omedia', None, 'media', ob.name)
+    if ob.kind == 'sheet':
+        if key == 'replaceSync':
+            def rs(i, a):
+                i.emit('replacesync', ob.name, text_arg(a, 0, 'replaceSync'))
+                return UNDEF
+            return BoundMethod(rs)
+        if key == 'addRule':
+            def add(i, a):
+                r = i.new_reg()
+                i.emit('addrule', r, ob.name, text_arg(a, 0, 'addRule'), text_arg(a, 1, 'addRule'), index_field(a[2] if len(a) > 2 else UNDEF, 'addRule'))
+                return Rt(r, 'n')
+            return BoundMethod(add)
+        if key in ('href', 'title', 'type', 'disabled'):
+            r = interp.new_reg()
+            interp.emit('shattr', r, ob.name, key)
+            return Rt(r, {'href': 'sn', 'title': 'sn', 'type': 's', 'disabled': 'b'}[key])
+        if key == 'ownerNode':
+            n = interp.new_node('e')
+            interp.emit('ownernode', n, ob.name)
+            return HostElem(n, True)
+        if key == 'ownerRule':
+            return lookup_obj(interp, 'ownerrule', None, 'rule', ob.name)
+        raise Unmodeled('dom-sheet-' + key)
+    if ob.kind == 'rule':
+        if key == 'style':
+            s = interp.new_node('s')
+            interp.emit('rstyle', s, ob.name)
+            return HostStyle(s, False)
+        if key == 'parentRule':
+            return lookup_obj(interp, 'rparent', None, 'rule', ob.name)
+        if key == 'parentStyleSheet':
+            return lookup_obj(interp, 'rsheet', None, 'sheet', ob.name)
+        if key == 'type':
+            r = interp.new_reg()
+            interp.emit('rtype', r, ob.name)
+            return Rt(r, 'n')
+        if key == 'appendRule':
+            def app(i, a):
+                i.emit('appendrule', ob.name, text_arg(a, 0, 'appendRule'))
+                return UNDEF
+            return BoundMethod(app)
+        if key == 'findRule':
+            def fnd(i, a):
+                return lookup_obj(i, 'kfind', None, 'rule', ob.name, text_arg(a, 0, 'findRule'))
+            return BoundMethod(fnd)
+        if for_call:
+            raise Unmodeled('dom-rule-method-' + key)
+        if key == 'length' or re.fullmatch(r'\d+', key):
+            # the indexed getter and length of CSSKeyframesRule (and of nothing else): its keyframe rules
+            if key == 'length':
+                r = interp.new_reg()
+                interp.emit('klen', r, ob.name)
+                return Rt(r, 'any')
+            n = interp.new_node('o')
+            interp.emit('kat', n, ob.name, key)
+            return HostObj(n, 'rule')
+        r = interp.new_reg()
+        interp.emit('rattr', r, ob.name, key)
+        return Rt(r, 'any')
+    raise Unmodeled('dom-object-' + key)
+
+
+def obj_set(interp, ob, key, value):
+    if ob.kind == 'media':
+        if key == 'mediaText':
+            interp.emit('mset', ob.name, null_empty(value))
+            return
+        raise Unmodeled('dom-MediaList-assign-' + key)
+    if ob.kind == 'sheet':
+        if key == 'disabled':
+            interp.emit('sdisabled', ob.name, 'true' if truthy(value) else 'false')
+            return
+        raise Unmodeled('dom-sheet-assign-' + key)
+    if ob.kind == 'rule':
+        if key == 'media':
+            # [PutForwards=mediaText]
+            m = lookup_obj(interp, 'omedia', None, 'media', ob.name)
+            interp.emit('mset', m.name, null_empty(value))
+            return
+        if key not in RULE_WRITABLE:
+            raise Unmodeled('host-expando-assign')   # a property of the script's object for the rule, which the evaluator does not keep: the next test that reads it would not know
+        interp.emit('rset', ob.name, key, null_empty(value) if key != 'cssText' else to_str(value))
+        return
+    raise Unmodeled('dom-object-assign-' + key)
+
+
+def doc_set(interp, d, key, value):
+    if key == 'adoptedStyleSheets':
+        if not isinstance(value, JArr) or any(not (isinstance(x, HostObj) and x.kind == 'sheet') for x in value):
+            raise Unmodeled('host-adoptedStyleSheets-assign')
+        interp.emit('adoptset', *[x.name for x in value])
+        return
+    raise Unmodeled('host-document-assign-' + key)
+
+
+HOST_GET = {HostObj: obj_get, HostRuleList: rulelist_get, HostSheetList: sheetlist_get, HostDoc: doc_get, HostWindow: window_get, HostElem: elem_get, HostStyle: style_get, HostClassList: classlist_get, HostList: list_get, HostTest: test_get, HostMath: math_get, HostCSS: css_get}
+HOST_SET = {HostObj: obj_set, HostDoc: doc_set, HostWindow: window_set, HostElem: elem_set, HostStyle: style_set}
 
 
 # ---- the page ------------------------------------------------------------------------------------------------------------------------

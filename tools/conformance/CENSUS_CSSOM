@@ -2,9 +2,9 @@
 # tests the extractor gives each, the test calls the census counts on its own, the markers of the page and the helper scripts it loads. See the script for the columns.
 # pin	2f17dec1f36194d1c236120fd38b3556be466072
 # pages	5398
-# tests	24115
+# tests	24272
 # calls	14008
-# calls-differ-pages	1144
+# calls-differ-pages	1136
 css/CSS2/abspos/adjacent-to-relpos-inline-in-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/adjacent-to-relpos-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/remove-block-between-inline-and-abspos.html	1	1	layout-geometry,reftest	
@@ -335,7 +335,7 @@ css/css-anchor-position/anchored-transition-display-none-002.html	1	1	function,r
 css/css-anchor-position/at-position-try-allowed-declarations.html	56	2	function,loop,sheets	
 css/css-anchor-position/at-position-try-cssom.html	265	11	function,layout-geometry,loop,sheets	
 css/css-anchor-position/at-position-try-invalidation-shadow-dom.html	5	4	function,layout-geometry,shadow,sheets	
-css/css-anchor-position/at-position-try-invalidation.html	5	4	function,layout-geometry,sheets	
+css/css-anchor-position/at-position-try-invalidation.html	4	4	function,layout-geometry,sheets	
 css/css-anchor-position/at-position-try-parse.html	12	12	fonts,rule-vectors	/css/support/parsing-testcommon.js
 css/css-anchor-position/auto-inset-margin-getComputedStyle.html	12	1	computed,function,loop	
 css/css-anchor-position/chained-anchor-scrolled.html	1	1	function,layout-geometry,timing	
@@ -2674,7 +2674,7 @@ css/css-pseudo/marker-default-styles.html	1	1	computed,function,loop	/css/suppor
 css/css-pseudo/marker-display-computed.html	1	2	computed,function,loop	/css/support/computed-testcommon.js
 css/css-pseudo/marker-reverted-styles.html	1	1	computed,function,loop	/css/support/computed-testcommon.js
 css/css-pseudo/marker-variable-computed-style.html	2	2	computed,function	
-css/css-pseudo/parsing/marker-supported-properties-in-animation.html	6	2	computed,function,loop,media,sheets	
+css/css-pseudo/parsing/marker-supported-properties-in-animation.html	98	2	computed,function,loop,media,sheets	
 css/css-pseudo/placeholder-inherit.html	1	1	computed,function	
 css/css-pseudo/pseudo-replaced-elements.html	1	1	computed,function,loop	
 css/css-pseudo/scroll-button-pseudo-element-click.html	1	1	function,input-driver,timing	/resources/testdriver-actions.js
@@ -4875,7 +4875,7 @@ css/cssom/CSSImportRule-layer-media.html	3	1	function,loop,sheets,timing
 css/cssom/CSSImportRule-media-identity.html	1	1	function,sheets,timing	
 css/cssom/CSSKeyframeRule-keyText-edge-cases.html	14	14	function,sheets	
 css/cssom/CSSKeyframeRule-keyText.html	11	11	function,sheets	
-css/cssom/CSSKeyframeRule.html	3	2	function,sheets	
+css/cssom/CSSKeyframeRule.html	2	2	function,sheets	
 css/cssom/CSSKeyframesRule-appendRule-invalid.html	4	4	function,sheets	
 css/cssom/CSSKeyframesRule-appendRule-multiple.html	2	2	function,sheets	
 css/cssom/CSSKeyframesRule-deleteRule-detach.html	2	2	function,sheets	
@@ -4890,8 +4890,8 @@ css/cssom/CSSStyleDeclaration-indexed-properties.html	6	6	function,loop
 css/cssom/CSSStyleDeclaration-iterator.html	1	1	function	
 css/cssom/CSSStyleRule-selectorText-setter.html	7	7	function,sheets	
 css/cssom/CSSStyleRule-set-selectorText-namespace.html	4	1	computed,function,loop,sheets	
-css/cssom/CSSStyleRule-set-selectorText.html	6	3	computed,function,layout-geometry,loop,sheets	
-css/cssom/CSSStyleRule.html	11	10	function,sheets	
+css/cssom/CSSStyleRule-set-selectorText.html	82	3	computed,function,layout-geometry,loop,sheets	
+css/cssom/CSSStyleRule.html	10	10	function,sheets	
 css/cssom/CSSStyleSheet-constructable-baseURL.html	3	3	computed,function,shadow,sheets	
 css/cssom/CSSStyleSheet-constructable-concat.html	1	1	function,reftest,shadow,sheets	
 css/cssom/CSSStyleSheet-constructable-cssRules.html	1	1	computed,function,sheets,timing	
@@ -4935,7 +4935,7 @@ css/cssom/adoptedstylesheets-adopt-style-subresource.tentative.html	1	1	custom-e
 css/cssom/adoptedstylesheets-adopt-style.tentative.html	1	1	custom-element,reftest,shadow,sheets	
 css/cssom/adoptedstylesheets-cascade-order.html	13	13	computed,function,shadow,sheets	
 css/cssom/adoptedstylesheets-invalid-assignment-crash.html	1	1	crash,sheets	
-css/cssom/adoptedstylesheets-modify-array-and-sheet.html	7	3	computed,function,sheets	
+css/cssom/adoptedstylesheets-modify-array-and-sheet.html	3	3	computed,function,sheets	
 css/cssom/adoptedstylesheets-observablearray-removal.html	10	6	computed,function,loop,shadow,sheets	
 css/cssom/adoptedstylesheets-observablearray.html	9	5	computed,function,shadow,sheets	
 css/cssom/all-initial-csstext.html	1	1	reftest,sheets	
@@ -4952,11 +4952,11 @@ css/cssom/computed-style-set-property.html	5	5	computed,function
 css/cssom/css-rule-selector-text.html	3	2	function,loop,sheets	
 css/cssom/css-style-attr-decl-block.html	7	7	computed,function,loop	
 css/cssom/css-style-attribute-modifications.html	1	1	function	
-css/cssom/css-style-declaration-modifications.html	5	4	computed,function,loop,sheets	
+css/cssom/css-style-declaration-modifications.html	4	4	computed,function,loop,sheets	
 css/cssom/css-style-reparse.html	2	2	computed,function,sheets	
 css/cssom/cssimportrule-parent.html	1	1	function,sheets,timing	
 css/cssom/cssimportrule-sheet-identity.html	1	1	function,sheets,timing	
-css/cssom/cssimportrule.html	12	11	function,sheets	
+css/cssom/cssimportrule.html	11	11	function,sheets	
 css/cssom/cssom-cssText-serialize.html	1	1	function	
 css/cssom/cssom-cssstyledeclaration-set.html	1	1	function	
 css/cssom/cssom-fontfacerule-constructors.html	2	2	fonts,function,loop,sheets	
@@ -5130,7 +5130,7 @@ css/cssom/style-set-custom-property-priority.html	3	3	computed,function
 css/cssom/style-set-custom-property.html	1	1	function	
 css/cssom/style-set-property.html	21	21	function,sheets	
 css/cssom/style-sheet-interfaces-001.html	10	7	function,sheets	
-css/cssom/style-sheet-interfaces-002.html	3	2	function,sheets	
+css/cssom/style-sheet-interfaces-002.html	2	2	function,sheets	
 css/cssom/style-width-calc-vh-vw.html	1	1	function,loop	
 css/cssom/stylesheet-cross-origin-redirect-quirks.sub.html	5	4	computed,function,timing	
 css/cssom/stylesheet-same-origin.sub.html	14	7	function,sheets	
@@ -5139,7 +5139,7 @@ css/cssom/system-color-inherit.html	2	2	computed,function
 css/cssom/system-color-lowercase.html	4	4	computed,function	
 css/cssom/ttwf-cssom-doc-ext-load-count.html	4	3	function,sheets,timing	
 css/cssom/ttwf-cssom-doc-ext-load-tree-order.html	6	6	function,sheets	
-css/cssom/ttwf-cssom-document-extension.html	2	1	function,sheets	
+css/cssom/ttwf-cssom-document-extension.html	1	1	function,sheets	
 css/cssom/variable-names.html	6	1	function,loop	
 css/cssom/xml-stylesheet-pi-in-doctype.xhtml	1	1	computed,function,timing	
 css/fetching/fetch-resources.sub.html	7	4	fonts,function,media,timing	support/echo-helper.js
