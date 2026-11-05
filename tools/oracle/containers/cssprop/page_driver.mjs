@@ -23,7 +23,8 @@
 // It serves the pinned web-platform-tests checkout (WPT_ROOT, read only) on a loopback port, loads each page in the browser and lets the page run under its own testharness.js: the
 // only file it does not serve from the checkout is /resources/testharnessreport.js, which is the reporter below (it records every test's name, status and message, and the status of the
 // page, into window.__report). The answer for a page is {"page", "status", "message", "tests": [{"name", "status", "message"}]} with the numeric status codes of testharness.js (0 PASS,
-// 1 FAIL, 2 TIMEOUT, 3 NOTRUN, 4 PRECONDITION_FAILED) in the order the tests were made, or {"page", "error"} for a page that did not finish in time. The first line of the output is `#` and
+// 1 FAIL, 2 TIMEOUT, 3 NOTRUN, 4 PRECONDITION_FAILED) in the order the tests were made, or {"page", "error"} for a page that did not finish in time, and in both "ms", the
+// milliseconds the page took (the caller keeps the tests, not this). The viewport is 1280x800 at device pixel ratio 1, set before every page. The first line of the output is `#` and
 // a JSON object naming the engine, the browser's version and the image; the network is off, and nothing but the loopback connection of the browser to this server is used.
 
 import { execFileSync, spawn } from 'node:child_process';
@@ -38,6 +39,9 @@ const WebSocket = require('ws');
 
 const TIMEOUT_MS = Number(process.env.CSSSTYLE_TIMEOUT_MS || 60000);
 const PAGE_MS = Number(process.env.CSSPAGE_MS || 15000);
+// The viewport every page is loaded in (CSS pixels, device pixel ratio 1), set before each page. A page that reads its layout (offsetWidth, the width of a vw) answers for it.
+const VIEW_W = 1280;
+const VIEW_H = 800;
 
 const PAGE = 'data:text/html,%3C!doctype%20html%3E%3Ctitle%3Et%3C%2Ftitle%3E';
 
@@ -209,7 +213,7 @@ class Session {
     });
     const tree = await this.send('browsingContext.getTree', {});
     this.context = tree.contexts[0].context;
-    await this.send('browsingContext.setViewport', { context: this.context, viewport: { width: 1280, height: 800 }, devicePixelRatio: 1 });
+    await this.send('browsingContext.setViewport', { context: this.context, viewport: { width: VIEW_W, height: VIEW_H }, devicePixelRatio: 1 });
     await this.send('browsingContext.navigate', { context: this.context, url: PAGE, wait: 'complete' });
     this.info = { ua: '' };
   }
@@ -321,7 +325,10 @@ async function main() {
   const READ = 'function () { return window.__report ? JSON.stringify(window.__report) : null; }';
   for (const page of pages) {
     let answer;
+    const started = Date.now();
     try {
+      // the viewport is part of what a layout-bound page answers: set it again for every page rather than rely on the one set at the start of the session
+      await session.viewport(VIEW_W, VIEW_H, 1);
       await session.send('browsingContext.navigate', { context: session.context, url: PAGE, wait: 'complete' });
       session.send('browsingContext.navigate', { context: session.context, url: `http://127.0.0.1:${port}/${page}`, wait: 'none' }).catch(() => {});
       const t0 = Date.now();
@@ -350,6 +357,8 @@ async function main() {
       await session.start();
       answer = { page, error: 'restarted: ' + String(e.message).slice(0, 100) };
     }
+    // how long the page took, in milliseconds: not part of the record (css_page_record.py keeps the tests), but the one number that says a host is too loaded to trust
+    answer.ms = Date.now() - started;
     process.stdout.write(JSON.stringify(answer) + '\n');
   }
   await session.stop();

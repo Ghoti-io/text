@@ -36,6 +36,16 @@ failure, its actual value) is the page's in both engines: when it is not, the ev
 requires the comparison to refuse each.
 
 Pages are a file of paths, one a line (build/.../script-pages.txt, written by the gate); the browsers see them at /<path> of a loopback server over the checkout.
+
+**Stability.** A page that reads layout, or whose result depends on when the parser yields to a frame (one of the pages asks `rlh` of the root, and Chromium answers 36px instead of 146px
+when a frame was drawn between its `<style>` and its `<script>`), can answer differently from one run to the next when the host is loaded: the browsers' own timing, which no driver
+setting removes. The driver therefore fixes what it can (the viewport, 1280x800 at device pixel ratio 1, is set before every page; a page that does not finish in 15 s is an error,
+not a wait) and this module decides what is an answer. Recording from nothing asks every page twice, in two fresh sessions, and a page whose two answers differ is asked again, alone,
+in a session of its own, until two consecutive answers agree (five tries at most; a page that never does is recorded as an error, and the record is refused). Asking against a
+committed record (``--against``) asks every page once, and a page that differs is asked again, alone: when that answer is the committed one the page is *unstable* (listed, with both
+answers, and counted: more than UNSTABLE_LIMIT of them means the host is too loaded to be trusted and the run is refused), when it is not the answer stays and the comparison fails.
+A change in a page, in a browser or in the harness is answered the same way by the second try, so it cannot hide there; the one thing a retry can hide is a page whose answer
+really does alternate between the recorded one and another, which is what *unstable* names and counts.
 """
 import argparse
 import hashlib
@@ -94,20 +104,93 @@ def ask(engine, pages, wpt):
     return header, rows
 
 
-def record(pages, out, wpt, batch):
+UNSTABLE_LIMIT = 25
+STABLE_TRIES = 5
+
+
+def entry_of(a):
+    """What the record keeps of a driver answer: the status and the tests with the port written as PORT, or the error."""
+    if 'error' in a:
+        return {'error': normalize(a['error'])}
+    return {'status': a['status'], 'tests': [[normalize(t['name']), t['status'], normalize(t['message'])] for t in a['tests']]}
+
+
+def one_pass(engine, pages, wpt, batch, label):
+    """One session per batch of pages: (header of the engine, {page: entry}, slowest page in ms)."""
+    entries = {}
+    header = None
+    slowest = 0
+    for i in range(0, len(pages), batch):
+        part = pages[i:i + batch]
+        head, rows = ask(engine, part, wpt)
+        header = {'browser': head['browser'], 'image': head['image']}
+        for r in rows:
+            if r['page'] not in part:
+                raise SystemExit('css_page_record: %s answered a page that was not asked: %s' % (engine, r['page']))
+            entries[r['page']] = entry_of(r)
+            slowest = max(slowest, r.get('ms', 0))
+        if len(pages) > 1:
+            print('css_page_record: %s %s %d of %d pages' % (engine, label, min(i + batch, len(pages)), len(pages)), file=sys.stderr)
+    return header, entries, slowest
+
+
+def settle(engine, pages, wpt, batch, reference=None, label=''):
+    """(header, {page: entry}, {page: [the entries it answered]} for the pages that answered more than one thing).
+
+    reference None: two passes over every page, and a page whose answers differ is asked alone until two in a row agree. reference {page: entry}: one pass, and a page that differs from
+    the reference is asked once more alone; the entry kept is that second one, and the page is unstable when it is the reference's."""
+    header, first, slowest = one_pass(engine, pages, wpt, batch, label + 'pass 1')
+    entries = dict(first)
+    unstable = {}
+    if reference is not None:
+        for p in pages:
+            if first[p] != reference.get(p):
+                _, again, _ = one_pass(engine, [p], wpt, 1, label + 'retry')
+                entries[p] = again[p]
+                if again[p] == reference.get(p):
+                    unstable[p] = [first[p], again[p]]
+    else:
+        _, second, _ = one_pass(engine, pages, wpt, batch, label + 'pass 2')
+        for p in pages:
+            if first[p] == second[p]:
+                continue
+            seen = [first[p], second[p]]
+            while len(seen) < STABLE_TRIES and seen[-1] != seen[-2]:
+                _, again, _ = one_pass(engine, [p], wpt, 1, label + 'retry')
+                seen.append(again[p])
+            unstable[p] = seen
+            entries[p] = seen[-1] if seen[-1] == seen[-2] else {'error': 'unstable: %d answers, no two in a row alike' % len(seen)}
+    print('css_page_record: %s: slowest page %d ms' % (engine, slowest), file=sys.stderr)
+    return header, entries, unstable
+
+
+def settle_engines(pages, wpt, batch, references=None, label='', jobs=2):
+    """settle() for both engines (at the same time when jobs > 1): (headers, {engine: entries}, {engine: unstable}). Refuses a run with too many unstable pages."""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max(1, min(jobs, len(ENGINES)))) as pool:
+        futures = {e: pool.submit(settle, e, pages, wpt, batch, None if references is None else references.get(e, {}), label) for e in ENGINES}
+        results = {e: f.result() for e, f in futures.items()}
+    headers = {e: results[e][0] for e in ENGINES}
+    answers = {e: results[e][1] for e in ENGINES}
+    unstable = {e: results[e][2] for e in ENGINES}
+    names = sorted({p for e in ENGINES for p in unstable[e]})
+    for e in ENGINES:
+        for p in sorted(unstable[e]):
+            print('css_page_record: UNSTABLE %s in %s: %d answers (%s)' % (p, e, len(unstable[e][p]), ' | '.join(json.dumps(x, sort_keys=True)[:100] for x in unstable[e][p][:2])), file=sys.stderr)
+    if len(names) > UNSTABLE_LIMIT:
+        raise SystemExit('css_page_record: %d pages answered differently from one try to the next (more than %d): this host is too loaded to be trusted; run it on a quiet one' % (len(names), UNSTABLE_LIMIT))
+    if names:
+        print('css_page_record: %d unstable page(s), listed above' % len(names), file=sys.stderr)
+    return headers, answers, unstable
+
+
+def record(pages, out, wpt, batch, against=None, jobs=2):
     import oracle_env
-    answers = {e: {} for e in ENGINES}
-    headers = {}
-    for engine in ENGINES:
-        for i in range(0, len(pages), batch):
-            part = pages[i:i + batch]
-            header, rows = ask(engine, part, wpt)
-            headers[engine] = {'browser': header['browser'], 'image': header['image']}
-            for r in rows:
-                if r['page'] not in part:
-                    raise SystemExit('css_page_record: %s answered a page that was not asked: %s' % (engine, r['page']))
-                answers[engine][r['page']] = r
-            print('css_page_record: %s %d of %d pages' % (engine, min(i + batch, len(pages)), len(pages)), file=sys.stderr)
+    references = None
+    if against:
+        _, committed = load(against)
+        references = {e: {p: x[e] for p, x in committed.items() if e in x} for e in ENGINES}
+    headers, answers, _ = settle_engines(pages, wpt, batch, references, jobs=jobs)
     head = {
         'wpt': pin(),
         'harness': sha256_file(os.path.join(wpt, 'resources', 'testharness.js')),
@@ -119,11 +202,7 @@ def record(pages, out, wpt, batch):
         for page in sorted(pages):
             entry = {'page': page, 'sha': sha256_file(os.path.join(wpt, page))}
             for engine in ENGINES:
-                a = answers[engine][page]
-                if 'error' in a:
-                    entry[engine] = {'error': a['error']}
-                else:
-                    entry[engine] = {'status': a['status'], 'tests': [[normalize(t['name']), t['status'], normalize(t['message'])] for t in a['tests']]}
+                entry[engine] = answers[engine][page]
             f.write(json.dumps(entry, sort_keys=True, ensure_ascii=True) + '\n')
     print('css_page_record: wrote %s (%d pages)' % (out, len(pages)))
 
@@ -230,7 +309,7 @@ def replay_differences(page, page_entry, replay_entry, modeled):
     return out
 
 
-def record_replay(programs_path, out, batch, plants=None, pages=None):
+def record_replay(programs_path, out, batch, plants=None, pages=None, against=None, jobs=2):
     """Replay the programs in the browsers: the overlay of build/css-replay-root is served in place of the checkout."""
     import oracle_env
     import shutil
@@ -240,16 +319,11 @@ def record_replay(programs_path, out, batch, plants=None, pages=None):
     os.makedirs(os.path.dirname(REPLAY_ROOT), exist_ok=True)
     done = G.generate(programs_path, WPT, REPLAY_ROOT, pages, plants)
     names = sorted(done)
-    answers = {e: {} for e in ENGINES}
-    headers = {}
-    for engine in ENGINES:
-        for i in range(0, len(names), batch):
-            part = names[i:i + batch]
-            header, rows = ask(engine, part, REPLAY_ROOT)
-            headers[engine] = {'browser': header['browser'], 'image': header['image']}
-            for r in rows:
-                answers[engine][r['page']] = r
-            print('css_page_record: replay %s %d of %d pages' % (engine, min(i + batch, len(names)), len(names)), file=sys.stderr)
+    references = None
+    if against:
+        _, committed = load(against)
+        references = {e: {p: x[e] for p, x in committed.items() if e in x} for e in ENGINES}
+    headers, answers, _ = settle_engines(names, REPLAY_ROOT, batch, references, label='replay ', jobs=jobs)
     head = {
         'wpt': pin(),
         'harness': sha256_file(os.path.join(WPT, 'resources', 'testharness.js')),
@@ -261,11 +335,7 @@ def record_replay(programs_path, out, batch, plants=None, pages=None):
     for page in names:
         entry = {'page': page, 'program': done[page]}
         for engine in ENGINES:
-            a = answers[engine][page]
-            if 'error' in a:
-                entry[engine] = {'error': a['error']}
-            else:
-                entry[engine] = {'status': a['status'], 'tests': [[normalize(t['name']), t['status'], normalize(t['message'])] for t in a['tests']]}
+            entry[engine] = answers[engine][page]
         lines.append(json.dumps(entry, sort_keys=True, ensure_ascii=True))
     if out:
         with open(out, 'w', encoding='utf-8', newline='\n') as f:
@@ -345,6 +415,61 @@ def plant_candidates(progs, record):
     return found
 
 
+def policy_controls():
+    """The retry policy against a browser that is made to answer as scripted (no browser, no container): a page that never differs is as recorded; one that differs once and
+    answers the record's on the retry is unstable and listed; one that differs twice is a change and stays different; from nothing, two answers that agree are the answer and
+    answers that never agree twice in a row are an error; and a host with more than UNSTABLE_LIMIT unstable pages is refused. Returns the number of controls that failed."""
+    global ask
+    real = ask
+    X0 = {'status': 0, 'tests': [['t', 0, None]]}
+    X1 = {'status': 0, 'tests': [['t', 1, 'assert_equals: expected "1" but got "2"']]}
+
+    def row(page, x):
+        return {'page': page, 'status': x['status'], 'message': None, 'tests': [{'name': n, 'status': st, 'message': m} for n, st, m in x['tests']]}
+
+    def scripted(table):
+        calls = {}
+
+        def fake(engine, pages, wpt):
+            out = []
+            for p in pages:
+                k = (engine, p)
+                seq = table[p]
+                out.append(row(p, seq[min(calls.get(k, 0), len(seq) - 1)]))
+                calls[k] = calls.get(k, 0) + 1
+            return {'browser': 'fake', 'image': 'fake'}, out
+        return fake
+    failed = 0
+
+    def expect(name, ok):
+        nonlocal failed
+        print('policy control %s: %s' % (name, 'caught' if ok else 'NOT caught'))
+        failed += 0 if ok else 1
+    try:
+        pages = ['a', 'b', 'c']
+        ref = {e: {'a': entry_of(row('a', X0)), 'b': entry_of(row('b', X0)), 'c': entry_of(row('c', X0))} for e in ENGINES}
+        ask = scripted({'a': [X0], 'b': [X1, X0], 'c': [X1, X1]})
+        _, got, unstable = settle_engines(pages, '.', 10, ref, jobs=1)
+        expect('a flaky page is listed and answers as recorded', set(unstable['chromium']) == {'b'} and got['chromium']['b'] == ref['chromium']['b'])
+        expect('a changed page stays changed and is not called unstable', got['chromium']['c'] != ref['chromium']['c'] and 'c' not in unstable['chromium'])
+        expect('a page that never differs is not listed', 'a' not in unstable['chromium'])
+        ask = scripted({'a': [X0, X0], 'b': [X0, X1, X1], 'c': [X0, X1, X0, X1, X0, X1]})
+        _, got, unstable = settle_engines(pages, '.', 10, None, jobs=1)
+        expect('from nothing, two answers that agree are the answer', got['chromium']['a'] == entry_of(row('a', X0)) and 'a' not in unstable['chromium'])
+        expect('from nothing, a page that settles is listed', got['chromium']['b'] == entry_of(row('b', X1)) and 'b' in unstable['chromium'])
+        expect('from nothing, a page that never settles is an error', 'error' in got['chromium']['c'])
+        many = ['p%d' % i for i in range(UNSTABLE_LIMIT + 1)]
+        ask = scripted({p: [X1, X0] for p in many})
+        try:
+            settle_engines(many, '.', 100, {e: {p: entry_of(row(p, X0)) for p in many} for e in ENGINES}, jobs=1)
+            expect('too many unstable pages refuse the run', False)
+        except SystemExit as x:
+            expect('too many unstable pages refuse the run', 'too loaded' in str(x))
+    finally:
+        ask = real
+    return failed
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--record', action='store_true')
@@ -360,7 +485,12 @@ def main():
     ap.add_argument('--programs', help='script.tsv of the programs to replay')
     ap.add_argument('--replay-compare', nargs=2, metavar=('COMMITTED', 'NEW'))
     ap.add_argument('--replay-controls', action='store_true')
+    ap.add_argument('--policy-controls', action='store_true', help='check the retry policy against scripted answers (no browser)')
+    ap.add_argument('--against', help='with --record or --replay: ask once and ask again, alone, only the pages that differ from this committed record (the run that checks it); without it every page is asked twice')
+    ap.add_argument('--jobs', type=int, default=2, help='1: the engines one after the other; 2 (default): both at the same time, each in its own container')
     a = ap.parse_args()
+    if a.policy_controls:
+        return 1 if policy_controls() else 0
     if a.replay_compare:
         h1, e1 = load(a.replay_compare[0])
         h2, e2 = load(a.replay_compare[1])
@@ -390,7 +520,7 @@ def main():
                 return 1
             for page, idx in items:
                 plants[page] = plant
-        lines = record_replay(a.programs, None, a.batch, plants, sorted(plants))
+        lines = record_replay(a.programs, None, a.batch, plants, sorted(plants), jobs=a.jobs)
         replay = {json.loads(l)['page']: json.loads(l) for l in lines[1:]}
         bad = 0
         for plant, items in found.items():
@@ -402,7 +532,7 @@ def main():
                 else:
                     print('control replay-%s: caught (%s#%d: %s)' % (plant, page, idx, diffs[0][:100]))
         # and the unplanted translation of the same pages agrees with the page
-        clean = record_replay(a.programs, None, a.batch, {}, sorted(plants))
+        clean = record_replay(a.programs, None, a.batch, {}, sorted(plants), jobs=a.jobs)
         replay = {json.loads(l)['page']: json.loads(l) for l in clean[1:]}
         for plant, items in found.items():
             for page, idx in items:
@@ -435,12 +565,12 @@ def main():
             header, entries = load(a.out)
             if header.get('generator') != sha256_file(GENERATOR):
                 print('css_page_record: the replay generator changed; replay every program')
-                record_replay(a.programs, a.out, a.batch)
+                record_replay(a.programs, a.out, a.batch, jobs=a.jobs)
                 return 0
             want = [pg for pg in sorted(progs) if pg not in entries or entries[pg]['program'] != progs[pg][0]]
             tmp = a.out + '.new'
             if want:
-                record_replay(a.programs, tmp, a.batch, None, want)
+                record_replay(a.programs, tmp, a.batch, None, want, jobs=a.jobs)
                 h2, e2 = load(tmp)
                 os.unlink(tmp)
                 if any(h2.get(k) != header.get(k) for k in ('wpt', 'harness', 'driver', 'generator', 'engines')):
@@ -454,7 +584,7 @@ def main():
                     f.write(json.dumps(entries[pg], sort_keys=True, ensure_ascii=True) + '\n')
             print('css_page_record: %d programs replayed again, %d in the record' % (len(want), len(keep)))
             return 0
-        record_replay(a.programs, a.out, a.batch)
+        record_replay(a.programs, a.out, a.batch, against=a.against, jobs=a.jobs)
         return 0
     pages = read_pages(a.pages)
     if a.record:
@@ -463,7 +593,7 @@ def main():
             want = [p for p in pages if p not in entries or entries[p]['sha'] != sha256_file(os.path.join(a.wpt, p))]
             if want:
                 tmp = a.out + '.new'
-                record(want, tmp, a.wpt, a.batch)
+                record(want, tmp, a.wpt, a.batch, jobs=a.jobs)
                 h2, e2 = load(tmp)
                 os.unlink(tmp)
                 if any(h2.get(k) != header.get(k) for k in ('wpt', 'harness', 'driver', 'engines')):
@@ -477,7 +607,7 @@ def main():
                     f.write(json.dumps(entries[pg], sort_keys=True, ensure_ascii=True) + '\n')
             print('css_page_record: %d pages recorded again, %d in the record' % (len(want), len(keep)))
             return 0
-        record(pages, a.out, a.wpt, a.batch)
+        record(pages, a.out, a.wpt, a.batch, a.against, a.jobs)
         return 0
     header, entries = load(a.record_file)
     out = problems(header, entries, pages, a.wpt)

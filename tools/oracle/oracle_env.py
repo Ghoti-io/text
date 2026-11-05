@@ -68,6 +68,7 @@ import hashlib
 import json
 import os
 import shutil
+import threading
 import subprocess
 import sys
 
@@ -207,33 +208,42 @@ def _probe(name, default=None):
 _pins = None
 _ids = {}
 _cache = {}
+_pins_lock = threading.Lock()
 
 
 def pins():
-    """The IMAGES table: name -> (image, version, description)."""
+    """The IMAGES table: name -> (image, version, description).
+
+    Read once, under a lock, and published only when complete: the page record asks both engines at the same time from two threads, and a table published
+    while it was still being filled answered "no pin" to the thread that came second."""
     global _pins
     if _pins is not None:
         return _pins
-    _pins = {}
-    _ids.clear()
-    if not os.path.exists(IMAGES):
-        return _pins
-    with open(IMAGES, "r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.rstrip("\n")
-            if not line.strip() or line.lstrip().startswith("#"):
-                continue
-            parts = line.split("\t")
-            if len(parts) < 3:
-                raise OracleUnavailable(
-                    "containers/IMAGES: not three tab-separated fields: %r"
-                    % line)
-            _pins[parts[0]] = (parts[1], parts[2],
-                               parts[3] if len(parts) > 3 else "")
-            # An optional fifth field, `id=sha256:<hex>`: the image ID (the digest of its config), which an image keeps when it is copied from one
-            # engine to another with save and load, where the digest of its manifest (the one in the reference) does not survive.
-            if len(parts) > 4 and parts[4].startswith("id=sha256:"):
-                _ids[parts[0]] = parts[4][len("id="):]
+    with _pins_lock:
+        if _pins is not None:
+            return _pins
+        table = {}
+        ids = {}
+        if os.path.exists(IMAGES):
+            with open(IMAGES, "r", encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.rstrip("\n")
+                    if not line.strip() or line.lstrip().startswith("#"):
+                        continue
+                    parts = line.split("\t")
+                    if len(parts) < 3:
+                        raise OracleUnavailable(
+                            "containers/IMAGES: not three tab-separated fields: %r"
+                            % line)
+                    table[parts[0]] = (parts[1], parts[2],
+                                       parts[3] if len(parts) > 3 else "")
+                    # An optional fifth field, `id=sha256:<hex>`: the image ID (the digest of its config), which an image keeps when it is copied from one
+                    # engine to another with save and load, where the digest of its manifest (the one in the reference) does not survive.
+                    if len(parts) > 4 and parts[4].startswith("id=sha256:"):
+                        ids[parts[0]] = parts[4][len("id="):]
+        _ids.clear()
+        _ids.update(ids)
+        _pins = table
     return _pins
 
 

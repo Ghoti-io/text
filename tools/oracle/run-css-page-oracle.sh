@@ -21,7 +21,10 @@
 # each page, translated back to JavaScript on the real DOM (tools/css/replay_gen.py), run in the place of the page's scripts, has to answer what the committed replay record
 # (tools/conformance/css_cssom_replayrecord.jsonl) says, which the CSSOM gate holds equal to the page's own run. The default gate needs no browser: it refuses a stale record (the pin, the
 # harness, the driver, the generator, a page or a program changed); this is the gate that asks again. --controls changes a recorded answer and requires the refusal, then mistranslates pages
-# on purpose (a dropped assertion, a changed expectation, a wrong id, a negated comparison), replays them in the browsers and requires the comparison with the page to refuse each.
+# on purpose (a dropped assertion, a changed expectation, a wrong id, a negated comparison), replays them in the browsers and requires the comparison with the page to refuse each, and
+# runs the retry policy against scripted answers (a page that differs once and is as recorded on the second try is listed as unstable; one that differs twice is a change).
+# Both engines run at the same time, each in its own container: on a quiet 12-thread host the whole gate (1,022 pages and 614 replays, both engines) takes minutes, not hours; a page that
+# differs from the record is asked again, alone, and a host so loaded that more than a few pages differ once is refused (css_page_record.py, "Stability").
 set -e
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -49,12 +52,13 @@ PY
 		exit 1
 	fi
 	echo "control record-answer-changed: caught"
+	python3 "$root/tools/oracle/css_page_record.py" --policy-controls
 	"$root/tools/conformance/run-css-cssom.sh" --script-programs > "$scratch/programs.tsv"
 	python3 "$root/tools/oracle/css_page_record.py" --replay-controls --programs "$scratch/programs.tsv"
 	exit $?
 fi
-python3 "$root/tools/oracle/css_page_record.py" --record --pages "$scratch/pages.txt" --out "$scratch/record.jsonl"
+python3 "$root/tools/oracle/css_page_record.py" --record --pages "$scratch/pages.txt" --out "$scratch/record.jsonl" --against "$committed"
 python3 "$root/tools/oracle/css_page_record.py" --compare "$committed" "$scratch/record.jsonl"
 "$root/tools/conformance/run-css-cssom.sh" --script-programs > "$scratch/programs.tsv"
-python3 "$root/tools/oracle/css_page_record.py" --replay --programs "$scratch/programs.tsv" --out "$scratch/replay.jsonl"
+python3 "$root/tools/oracle/css_page_record.py" --replay --programs "$scratch/programs.tsv" --out "$scratch/replay.jsonl" --against "$root/tools/conformance/css_cssom_replayrecord.jsonl"
 python3 "$root/tools/oracle/css_page_record.py" --replay-compare "$root/tools/conformance/css_cssom_replayrecord.jsonl" "$scratch/replay.jsonl"
