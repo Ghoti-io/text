@@ -2387,19 +2387,24 @@ static bool gradient_half_turn(sp s) {
   while (i < s.n && ((s.p[i] >= '0' && s.p[i] <= '9') || s.p[i] == '.' || s.p[i] == '+' || s.p[i] == '-')) {
     i++;
   }
-  if (i == 0 || i == s.n || i > 24) {
+  dec d;
+  if (i == 0 || i == s.n || !dec_parse((sp){s.p, i}, &d) || d.neg) {
     return false;
   }
-  char num[32];
-  memcpy(num, s.p, i);
-  num[i] = '\0';
-  char * end = NULL;
-  const double v = strtod(num, &end);
-  if (!end || *end) {
-    return false;
+  /* the number compared as decimal text (src/css writes and reads numbers through the math library or as text, never with strtod): leading zeros of the integer part and trailing
+   * zeros of the fraction do not count */
+  size_t lead = 0;
+  while (lead < d.ip.n && d.ip.p[lead] == '0') {
+    lead++;
   }
+  size_t fn = d.fp.n;
+  while (fn > 0 && d.fp.p[fn - 1] == '0') {
+    fn--;
+  }
+  const sp ip = {d.ip.p + lead, d.ip.n - lead};
+  const sp fp = {d.fp.p, fn};
   const sp unit = {s.p + i, s.n - i};
-  return (ieq(unit, "deg") && v == 180.0) || (ieq(unit, "grad") && v == 200.0) || (ieq(unit, "turn") && v == 0.5);
+  return (ieq(unit, "deg") && eq(ip, "180") && fp.n == 0) || (ieq(unit, "grad") && eq(ip, "200") && fp.n == 0) || (ieq(unit, "turn") && ip.n == 0 && eq(fp, "5"));
 }
 
 static bool gradient_angle(sp s) {
