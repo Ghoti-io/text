@@ -1,0 +1,146 @@
+# Cases of the pseudo-element record (tools/oracle/css_pseudo_record.py): a property and a value that is valid and not its initial value, tab separated.
+# The record is tools/conformance/css_pseudo_answers.jsonl; tools/css/check-pseudo-apply.py holds the table of src/css/css_pseudo_apply.c to it.
+color	rgb(10, 20, 30)
+opacity	0.5
+font-family	monospace
+font-size	30px
+font-style	italic
+font-weight	900
+font-variant	small-caps
+font-variant-numeric	oldstyle-nums
+font-feature-settings	"vert" 2
+font-kerning	none
+font-size-adjust	0.5
+font-variation-settings	"XHGT" 0.7
+font-stretch	condensed
+line-height	40px
+letter-spacing	12px
+word-spacing	12px
+tab-size	3
+white-space	pre-wrap
+text-transform	capitalize
+text-shadow	rgb(10, 20, 30) 10px 20px 30px
+text-decoration	overline wavy rgb(10, 20, 30)
+text-decoration-line	overline
+text-decoration-skip-ink	none
+text-emphasis-style	triangle
+text-emphasis-color	rgb(10, 20, 30)
+text-emphasis-position	under left
+text-underline-position	under
+text-justify	none
+text-align	center
+text-indent	20px
+text-wrap-mode	nowrap
+hyphens	none
+line-break	anywhere
+overflow-wrap	anywhere
+word-break	break-all
+vertical-align	12%
+ruby-position	under
+cursor	move
+quotes	"«" "»"
+visibility	hidden
+direction	rtl
+unicode-bidi	embed
+writing-mode	vertical-rl
+text-orientation	upright
+text-combine-upright	all
+content	"x"
+background-color	rgb(10, 20, 30)
+background-image	linear-gradient(rgb(0, 0, 0), rgb(255, 255, 255))
+background-attachment	fixed
+background-blend-mode	hue
+background-clip	padding-box
+background-origin	border-box
+background-position	50% 50%
+background-repeat	no-repeat
+background-size	10px 20px
+background	rgb(10, 20, 30)
+display	inline-block
+position	absolute
+top	10px
+left	10px
+right	10px
+bottom	10px
+inset	10px
+float	right
+clear	both
+z-index	5
+width	100px
+height	100px
+min-width	50px
+max-width	50px
+min-height	50px
+max-height	50px
+box-sizing	border-box
+aspect-ratio	2
+margin	10px 20px 30px 40px
+margin-top	10px
+margin-left	10px
+padding	10px 20px 30px 40px
+padding-top	10px
+padding-left	10px
+border	40px dotted rgb(10, 20, 30)
+border-top-style	dashed
+border-top-color	rgb(10, 20, 30)
+border-style	dashed
+border-color	rgb(10, 20, 30)
+border-radius	10px 20px
+border-top-left-radius	10px
+border-image	linear-gradient(rgb(0, 0, 0), rgb(255, 255, 255)) 10% / 20 / 30px repeat
+border-image-source	linear-gradient(rgb(0, 0, 0), rgb(255, 255, 255))
+border-collapse	collapse
+border-spacing	5px
+box-shadow	rgb(10, 20, 30) 1px 2px 3px
+outline	3px solid rgb(10, 20, 30)
+outline-offset	4px
+overflow	hidden
+overflow-x	hidden
+text-overflow	ellipsis
+transform	rotate(45deg)
+translate	10px
+rotate	10deg
+scale	2
+transform-origin	10px 10px
+perspective	100px
+transition	transform 1s
+transition-property	transform
+transition-duration	3s
+animation	foo 1s
+animation-name	foo
+animation-duration	3s
+flex	2
+flex-direction	column
+order	2
+align-items	center
+align-self	center
+justify-content	center
+gap	5px
+grid-template-columns	10px 20px
+list-style	square inside
+list-style-type	square
+list-style-position	inside
+list-style-image	linear-gradient(rgb(0, 0, 0), rgb(255, 255, 255))
+counter-reset	a 3
+counter-increment	a 3
+columns	2
+column-count	2
+column-gap	5px
+column-rule	3px solid rgb(10, 20, 30)
+table-layout	fixed
+caption-side	bottom
+empty-cells	hide
+pointer-events	none
+user-select	none
+filter	blur(2px)
+clip-path	circle(10px)
+mask-image	linear-gradient(rgb(0, 0, 0), rgb(255, 255, 255))
+mix-blend-mode	multiply
+isolation	isolate
+will-change	transform
+contain	layout
+resize	both
+object-fit	cover
+scroll-behavior	smooth
+appearance	button
+accent-color	rgb(10, 20, 30)

@@ -1238,6 +1238,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_presentation.c \
 	src/css/css_presentation_table.c \
 	src/css/css_property.c \
+	src/css/css_pseudo_apply.c \
 	src/css/css_registry.c \
 	src/css/css_rule_index.c \
 	src/css/css_sheet.c \
@@ -2668,7 +2669,7 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=0
 CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4532 CSS_COMPUTED_MAX_DEFECTS=0
 CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=240
 CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=403 CSS_CSSOM_MIN_PAGES=95 CSS_CSSOM_MAX_DEFECTS=0 CSS_CSSOM_MIN_FRACTION=2198 \
-	CSS_CSSOM_SCRIPT_MIN_SCORED=4932 CSS_CSSOM_SCRIPT_MIN_PAGES=592 CSS_CSSOM_SCRIPT_MAX_DEFECTS=273 CSS_CSSOM_SCRIPT_MAX_LAYOUT=628 CSS_CSSOM_SCRIPT_MAX_UA=17
+	CSS_CSSOM_SCRIPT_MIN_SCORED=4932 CSS_CSSOM_SCRIPT_MIN_PAGES=592 CSS_CSSOM_SCRIPT_MAX_DEFECTS=232 CSS_CSSOM_SCRIPT_MAX_LAYOUT=628 CSS_CSSOM_SCRIPT_MAX_UA=14
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
 conformance-css-computed: $(CONFORMANCE_LIB)
@@ -2693,10 +2694,12 @@ conformance-css-cssom: ## Score the declaration object against the pinned WPT pa
 # recognized call become a program for the op interpreter (tools/conformance/css_cssom_suite.c) and are scored by tools/conformance/css_cssom_suite.py; every other page or test is a
 # line of UNSCORED_CSSOM with its number of tests and its reason, a code of REASON_CODES; tools/conformance/css_ledger.py checks the codes, the census (CENSUS_CSSOM), the partition of
 # every test into one class and the pages that SCORED_ELSEWHERE_CSSOM says another gate scores. Every failure is a line of CSS_CSSOM_EXCEPTIONS with a class and a reason; --controls makes the gate fail.
+# tools/conformance/run-css-pseudo-apply.sh holds the properties that apply to ::first-line, ::first-letter and ::marker (src/css/css_pseudo_apply.c) to the recorded answers of both browsers.
 conformance-css-cssom: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/cssom,tools/css/fetch.sh)
 	@$(CONFORMANCE_ENV) $(CSS_CSSOM_FLOOR) tools/conformance/run-css-cssom.sh && \
-	$(CONFORMANCE_ENV) $(CSS_CSSOM_FLOOR) tools/conformance/run-css-cssom.sh --controls
+	$(CONFORMANCE_ENV) $(CSS_CSSOM_FLOOR) tools/conformance/run-css-cssom.sh --controls && \
+	$(CONFORMANCE_ENV) tools/conformance/run-css-pseudo-apply.sh --controls
 
 conformance-css-atrules: ## Score the at-rule layer against the pinned WPT at-rule parsing vectors
 conformance-css-atrules: $(CONFORMANCE_LIB)

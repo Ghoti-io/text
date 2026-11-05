@@ -68,6 +68,7 @@ CLASSES = ('served-text', 'wpt-wrong', 'browsers-differ', 'wpt-tentative', 'ua-d
 
 # The owner of a defect: the part of the library (or of the harness around it) in which it is fixed. First match wins; a defect that matches none fails the gate.
 OWNERS = [
+    (r'^css/css-pseudo/parsing/marker-supported-properties-in-animation', 'owner: animation sampling and transition sampling (a layer the library does not have: the value of a property at the middle of a paused animation or a running transition on ::marker)'),
     (r'^css/css-values/tree-counting/sibling-(index|count)-keyframe-', 'owner: animation sampling (a layer the library does not have: the value of a property under an animation at a time, here with sibling-index() in its keyframes)'),
     (r'^css/(css-shapes|css-masking/clip-path)/(basic-shape-)?interpolation', 'owner: animation sampling (a layer the library does not have: the value of a property midway through an interpolation)'),
     (r'^css/css-(animations|transitions|anchor-position)/', 'owner: animation sampling and anchor positioning (a layer the library does not have: computed values under a running animation, anchor() resolution)'),
@@ -479,4 +480,5 @@ def main():
     return 0
 
 
-sys.exit(main())
+if __name__ == '__main__':
+    sys.exit(main())

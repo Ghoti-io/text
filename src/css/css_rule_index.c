@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include "css_container_internal.h"
+#include "css_pseudo_apply.h"
 #include "css_registry_internal.h"
 #include "css_sheet_internal.h"
 
@@ -1461,6 +1462,12 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
     }
   }
   size_t added = 0;
+  /* the pseudo-element asked for, when only some properties apply to it (css_pseudo_apply.c) */
+  unsigned asked = 0;
+  if (w.request) {
+    const GTEXT_CSS_Compound * pc = &w.request->compounds[0];
+    asked = (unsigned)pc->simples[pc->simple_count - 1].pseudo;
+  }
   for (size_t i = 0; i < w.nhits && st == GTEXT_CSS_OK; i++) {
     if (i > 0 && w.hits[i].number == w.hits[i - 1].number && w.hits[i].run == w.hits[i - 1].run) {
       continue; // the same rule by another of its complex selectors: the most specific was first
@@ -1471,6 +1478,12 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
     const sheet_run * run = &pl->sheet->runs[r->run];
     for (size_t j = 0; j < run->ndecl && st == GTEXT_CSS_OK; j++) {
       const sheet_decl * d = &run->decls[j];
+      if (asked && !d->custom) {
+        GTEXT_CSS_Property_Info pi;
+        if (gtext_css_registry_property_info(x->registry, d->pv.property, &pi) && !css_pseudo_applies(asked, &pi)) {
+          continue;
+        }
+      }
       GTEXT_CSS_Cascade_Entry k;
       memset(&k, 0, sizeof k);
       k.origin = pl->origin;

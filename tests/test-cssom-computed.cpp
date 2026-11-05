@@ -162,6 +162,45 @@ TEST(CssomComputed, APseudoElementArgumentThatIsNotOneIsEmptyAndAStringWithoutAC
   }
 }
 
+/* Pseudo-Elements 4, "Styling the ::first-line Pseudo-element": "The following CSS properties apply to a ::first-line pseudo-element: all font properties ... the 'color' and 'opacity'
+   properties ... all background properties ... any typesetting properties that apply to inline elements ... all text decoration properties", and "User agents may apply other properties
+   as well except for the following excluded properties: writing-mode, direction, text-orientation"; "Styling the First-Letter Pseudo-elements": "margin and padding properties" and "border
+   properties and 'box-shadow'"; Lists 3, "Properties Applying to ::marker": "only the following CSS properties actually apply to a marker box: the 'text-combine-upright', 'unicode-bidi',
+   and 'direction' properties, the 'content' property, all animation and transition properties" and "Inheritable properties that apply to text can be set on the ::marker pseudo-element".
+   A declaration of a property that does not apply takes no part in the cascade of the pseudo-element: both browsers answer the inherited or initial value (css_pseudo_answers.jsonl). */
+TEST(CssomComputed, APropertyThatDoesNotApplyToAPseudoElementIsLeftOutOfItsCascade) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "p::first-line, p::first-letter, li::marker, p::before { position: absolute; margin-left: 10px; color: rgb(10, 20, 30); transition: transform 1s; word-break: break-all; float: right; display: inline-block;"
+       " text-decoration-line: underline; list-style-type: square; direction: rtl; cursor: move; border-top-style: dashed; }"
+       "</style></head><body><p id=a>x</p><ul><li id=b>y</li></ul></body></html>");
+  auto read = [&](const char * element, const char * pseudo, const char * property) {
+    Decl d = m.computed(element, pseudo);
+    return get(d.d, property);
+  };
+  for (const char * pe : {"::first-line", "::first-letter", "::marker"}) {
+    SCOPED_TRACE(pe);
+    const char * e = std::string(pe) == "::marker" ? "#b" : "#a";
+    EXPECT_EQ(read(e, pe, "color"), "rgb(10, 20, 30)") << "color is a font and color property: it applies";
+    EXPECT_EQ(read(e, pe, "position"), "static") << "position does not apply to any of the three";
+    EXPECT_EQ(read(e, pe, "display"), std::string(pe) == "::first-letter" ? "block" : "inline")
+        << "nor does display: the initial value, the library having no user agent sheet (the float of ::first-letter blockifies it)";
+  }
+  EXPECT_EQ(read("#a", "::first-line", "margin-left"), "0px") << "margin does not apply to ::first-line";
+  EXPECT_EQ(read("#a", "::first-letter", "margin-left"), "10px") << "but it applies to ::first-letter";
+  EXPECT_EQ(read("#a", "::first-letter", "border-top-style"), "dashed") << "and so does a border";
+  EXPECT_EQ(read("#a", "::first-line", "border-top-style"), "none");
+  EXPECT_EQ(read("#a", "::first-line", "transition-property"), "all") << "no transition applies to ::first-line";
+  EXPECT_EQ(read("#b", "::marker", "transition-property"), "transform") << "all animation and transition properties apply to ::marker";
+  EXPECT_EQ(read("#a", "::first-line", "word-break"), "break-all") << "a typesetting property of CSS Text is listed, so it stays applied";
+  EXPECT_EQ(read("#a", "::first-line", "direction"), "ltr") << "the excluded properties";
+  EXPECT_EQ(read("#b", "::marker", "direction"), "rtl") << "direction is listed for ::marker";
+  EXPECT_EQ(read("#a", "::first-letter", "float"), "right") << "float applies to ::first-letter";
+  EXPECT_EQ(read("#a", "::first-line", "float"), "none");
+  EXPECT_EQ(read("#b", "::marker", "text-decoration-line"), "none") << "a property that is not inherited and not listed does not apply to a marker";
+  EXPECT_EQ(read("#b", "::marker", "list-style-type"), "disc") << "the list properties belong to the list item";
+  EXPECT_EQ(read("#a", "::before", "position"), "absolute") << "the other pseudo-elements have every property";
+}
+
 /* ---- the declaration ----------------------------------------------------------------------------------------------------------------------------------------- */
 
 /* CSSOM, 7.2: "Return a live CSSStyleProperties object with the following properties: computed flag Set. readonly flag Set." and 6.6: "Setting the cssText attribute must run these

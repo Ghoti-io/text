@@ -359,6 +359,11 @@ int run(const uint8_t * data, size_t size) {
               continue;
             }
             auto it = use.seen.find({0, f.first});
+            // a rule whose every declaration is denied for ::first-line, ::first-letter or ::marker (css_pseudo_apply.c) has no candidate to collect
+            const bool denies = pe && (std::strcmp(pe, "::first-line") == 0 || std::strcmp(pe, "::marker") == 0);
+            if (mr.matched && denies && it == use.seen.end()) {
+              continue;
+            }
             if (mr.matched != (it != use.seen.end())) {
               fail(mr.matched ? "a rule that matches is not collected" : "a rule that does not match is collected",
                   "element " + std::to_string(el) + " pseudo " + (pe ? pe : "-") + " rule " + std::to_string(f.first) + "\n" + dump_of(a), input);
