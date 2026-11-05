@@ -22,3 +22,8 @@ var-name-taint-ignored	css_substitute.c	  if (found && f->res[0].rope && css_rop
 if-condition-taint-ignored	css_substitute.c	f->res[1].rope && f->cond_tainted ?	f->res[1].rope && 0 && f->cond_tainted ?	fail
 env-index-grammar-not-checked	css_property.c	(name_is(v, "env") && !env_name_syntax(v))	(0 && name_is(v, "env") && !env_name_syntax(v))	fail
 attr-unit-not-lowercased	css_substitute.c	text[k] = (char)(text[k] - 'A' + 'a');	text[k] = (char)(text[k] - 'A' + 'A');	fail
+border-width-resolved-ignores-the-style	cssom_resolved.c	  return hidden ? recompute_text(r, info, "0px", 3, out) : GTEXT_CSS_OK;	  return GTEXT_CSS_OK;	fail
+border-width-computed-zero-under-none	css_compute_algo.c	  if (style_hides(st, m) && !is_border_width(m)) {	  if (style_hides(st, m)) {	fail
+top-level-nesting-selector-weighs-a-class	css_sheet.c	    top.nspec = gtext_css_specificity_make(0, 0, 0);	    top.nspec = gtext_css_specificity_make(0, 1, 0);	fail
+linear-gradient-line-to-bottom-written	css_property_canon.c	        if (!to_bottom && !(head == 1 && gradient_half_turn(tk.v[0]))) {	        if (1) {	fail
+ellipse-of-a-lone-extent-written	css_property_canon.c	(lengths && nsize == 2) || (nsize == 1 && gradient_extent(tk.v[first]))));	(lengths && nsize == 2)));	fail

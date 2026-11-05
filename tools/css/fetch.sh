@@ -39,8 +39,8 @@
 #                       tools/css/WEBREF_SHA256 (the manifest tools/css/gen-css-tables.py also checks). The tables of
 #                       src/css/tables/ are generated from it.
 #
-#   drafts/             Six Editors' Drafts of CSS modules that the served-text class of the scoring interpreter quotes (css-values-5, css-fonts-4,
-#                       css-mixins-1, css-grid-3, css-writing-modes-4, css-forms-1), as the Bikeshed sources (Overview.bs) of w3c/csswg-drafts at the commit
+#   drafts/             Eight Editors' Drafts of CSS modules that the served-text class of the scoring interpreter quotes (css-values-5, css-fonts-4,
+#                       css-mixins-1, css-grid-3, css-writing-modes-4, css-forms-1, css-color-4, css-values-4), as the Bikeshed sources (Overview.bs) of w3c/csswg-drafts at the commit
 #                       in tools/css/DRAFTS_COMMIT, each pinned by SHA-256 in tools/css/DRAFTS_SHA256. A commit does not move; the rendered pages at drafts.csswg.org do.
 #                       A file already fetched is checked offline.
 #

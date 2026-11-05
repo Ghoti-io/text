@@ -40,7 +40,7 @@
 typedef struct {
   const char * name;
   size_t length;
-  uint8_t category;   /* 0 computed, 1 used_color, 2 used_if_applies, 3 used_if_positioned, 4 line_height, 5 used, 6 animation_duration, 7 min_size_auto, 8 count */
+  uint8_t category;   /* 0 computed, 1 used_color, 2 used_if_applies, 3 used_if_positioned, 4 line_height, 5 used, 6 animation_duration, 7 min_size_auto, 8 border_width, 9 count */
 } css_resolved_row;
 
 #define CSS_RESOLVED_ROW_COUNT 62
@@ -49,21 +49,21 @@ static const css_resolved_row css_resolved_rows[CSS_RESOLVED_ROW_COUNT] = {
   {"background-color", 16, 1},
   {"block-size", 10, 2},
   {"border-block-end-color", 22, 1},
-  {"border-block-end-width", 22, 0},
+  {"border-block-end-width", 22, 8},
   {"border-block-start-color", 24, 1},
-  {"border-block-start-width", 24, 0},
+  {"border-block-start-width", 24, 8},
   {"border-bottom-color", 19, 1},
-  {"border-bottom-width", 19, 0},
+  {"border-bottom-width", 19, 8},
   {"border-inline-end-color", 23, 1},
-  {"border-inline-end-width", 23, 0},
+  {"border-inline-end-width", 23, 8},
   {"border-inline-start-color", 25, 1},
-  {"border-inline-start-width", 25, 0},
+  {"border-inline-start-width", 25, 8},
   {"border-left-color", 17, 1},
-  {"border-left-width", 17, 0},
+  {"border-left-width", 17, 8},
   {"border-right-color", 18, 1},
-  {"border-right-width", 18, 0},
+  {"border-right-width", 18, 8},
   {"border-top-color", 16, 1},
-  {"border-top-width", 16, 0},
+  {"border-top-width", 16, 8},
   {"bottom", 6, 3},
   {"box-shadow-color", 16, 1},
   {"caret-color", 11, 1},

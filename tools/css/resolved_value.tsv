@@ -8,21 +8,21 @@ animation-duration	animation_duration	css-animations-2	For backwards-compatibili
 background-color	used_color	cssom	The resolved value is the used value.
 block-size	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
 border-block-end-color	used_color	cssom	The resolved value is the used value.
-border-block-end-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-block-end-width	border_width	css-borders-4	The resolved value for the border-width properties is the used value.
 border-block-start-color	used_color	cssom	The resolved value is the used value.
-border-block-start-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-block-start-width	border_width	css-borders-4	The resolved value for the border-width properties is the used value.
 border-bottom-color	used_color	cssom	The resolved value is the used value.
-border-bottom-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-bottom-width	border_width	css-borders-4	The resolved value for the border-width properties is the used value.
 border-inline-end-color	used_color	cssom	The resolved value is the used value.
-border-inline-end-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-inline-end-width	border_width	css-borders-4	The resolved value for the border-width properties is the used value.
 border-inline-start-color	used_color	cssom	The resolved value is the used value.
-border-inline-start-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-inline-start-width	border_width	css-borders-4	The resolved value for the border-width properties is the used value.
 border-left-color	used_color	cssom	The resolved value is the used value.
-border-left-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-left-width	border_width	css-borders-4	The resolved value for the border-width properties is the used value.
 border-right-color	used_color	cssom	The resolved value is the used value.
-border-right-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-right-width	border_width	css-borders-4	The resolved value for the border-width properties is the used value.
 border-top-color	used_color	cssom	The resolved value is the used value.
-border-top-width	computed	css-borders-4	The resolved value for the border-width properties is the used value.
+border-top-width	border_width	css-borders-4	The resolved value for the border-width properties is the used value.
 bottom	used_if_positioned	cssom	If the property applies to a positioned element and the resolved value of the display property is not none or contents, and the property is not over-constrained, then the resolved value is the used value. Otherwise the resolved value is the computed value.
 box-shadow-color	used_color	cssom	The resolved value is the used value.
 caret-color	used_color	cssom	The resolved value is the used value.

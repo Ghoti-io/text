@@ -554,6 +554,37 @@ TEST(CssomComputed, TheComputedValuesThatAreTheUsedValuesAlready) {
   EXPECT_EQ(m.value("#a", "border-top-width"), "5px");
 }
 
+/* Backgrounds 3: the computed value of a border width is the snapped length; "the resolved value ... is the used value", and the used width is 0 under `none` and `hidden`. So the
+   parent's width resolves to 0px and the child that inherits it has the length (the page border-width-computed.html of the web-platform-tests; both pinned browsers answer 5px). */
+TEST(CssomComputed, ABorderWidthResolvesToZeroUnderNoneButIsInheritedAsTheLength) {
+  Cs m("<!DOCTYPE html><html><head><style>#p{border-top:5px none;border-bottom:thick hidden}"
+       "#q{border-block-start:4px none}"
+       "#c{border-top-style:solid;border-top-width:inherit;border-bottom-style:solid;border-bottom-width:inherit;border-inline-start:solid;border-inline-start-width:inherit}"
+       "#d{border-top-width:inherit;border-left:3px solid}</style></head><body><div id=p><div id=c><div id=d>x</div></div></div><div id=q>y</div></body></html>");
+  EXPECT_EQ(m.value("#p", "border-top-width"), "0px");
+  EXPECT_EQ(m.value("#p", "border-bottom-width"), "0px");
+  EXPECT_EQ(m.value("#q", "border-block-start-width"), "0px");
+  EXPECT_EQ(m.value("#c", "border-top-width"), "5px");
+  EXPECT_EQ(m.value("#c", "border-bottom-width"), "5px");
+  // a child whose own style is none resolves what it inherited to zero
+  EXPECT_EQ(m.value("#d", "border-top-width"), "0px");
+  Decl p = m.computed("#p");
+  EXPECT_EQ(origin(p.d, "border-top-width"), "used");
+  Decl c = m.computed("#c");
+  EXPECT_EQ(origin(c.d, "border-top-width"), "computed");
+}
+
+/* Nesting 1: "The specificity of the nesting selector is equal to the largest specificity among the complex selectors in the parent style rule's selector list ... or zero if no such
+   selector list exists." A top-level `&` matches as `:scope` does and weighs nothing, so the later of two top-level rules wins (the page top-level-parent-pseudo-specificity.html). */
+TEST(CssomComputed, ATopLevelNestingSelectorHasNoSpecificity) {
+  Cs m("<!DOCTYPE html><html><head><style>& { color: red; } :where(&) { color: green; }</style></head><body><p id=a>x</p></body></html>");
+  EXPECT_EQ(m.value("html", "color"), "rgb(0, 128, 0)");
+  Cs n("<!DOCTYPE html><html><head><style>:where(&) { color: green; } & { color: red; }</style></head><body><p id=a>x</p></body></html>");
+  EXPECT_EQ(n.value("html", "color"), "rgb(255, 0, 0)") << "the later of two rules of no specificity wins";
+  Cs o("<!DOCTYPE html><html><head><style>& { color: red; } html { color: green; }</style></head><body><p id=a>x</p></body></html>");
+  EXPECT_EQ(o.value("html", "color"), "rgb(0, 128, 0)") << "and any selector outweighs it";
+}
+
 /* ---- lifetime -------------------------------------------------------------------------------------------------------------------------------------------------- */
 
 /* CSS Transforms 2: "When the computed value is a <transform-list>, the resolved value is one <matrix()> function or one <matrix3d()> function": the library does not make the matrix, the

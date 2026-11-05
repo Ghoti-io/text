@@ -61,7 +61,7 @@ TEST(CssCompute, TheMatrixOfTheSlice) {
     {"", "width: 50%", "width", "50%"},                                           // a percentage is kept
     {"color: red", "color: unset", "color", "red"},                               // unset inherits an inherited property
     {"", "width: 10px", "margin-left", "0px"},                                    // and takes the initial value otherwise
-    {"", "border-style: none; border-width: 5px", "border-top-width", "0px"},     // a border width under none
+    {"", "border-style: none; border-width: 5px", "border-top-width", "5px"},     // a border width under none stays the length: only the used (resolved) value is 0
     {"", "border-style: solid; border-width: 5px", "border-top-width", "5px"},
     {"", "margin: 1px 2px", "margin-bottom", "1px"},                              // a shorthand is four longhands
     {"", "margin: 1px 2px", "margin-left", "2px"},
@@ -554,9 +554,9 @@ TEST(CssCompute, BorderWidthsAreKeywordsOrLengthsSnappedToDevicePixelsAndZeroUnd
     {"", "border-top-style: dashed; border-top-width: 2.7px", "border-top-width", "2px"},
     {"", "border-top-style: dashed; border-top-width: 0.4px", "border-top-width", "1px"},
     {"", "border-top-style: dashed; border-top-width: 0", "border-top-width", "0px"},
-    {"", "border-top-style: hidden; border-top-width: 5px", "border-top-width", "0px"},
-    {"", "border-top-style: none; border-top-width: thick", "border-top-width", "0px"},
-    {"", "border-left-width: 5px", "border-left-width", "0px"},                                    // the initial style is none
+    {"", "border-top-style: hidden; border-top-width: 5px", "border-top-width", "5px"},           // Backgrounds 3: the computed value is the snapped length; the used one is 0
+    {"", "border-top-style: none; border-top-width: thick", "border-top-width", "5px"},
+    {"", "border-left-width: 5px", "border-left-width", "5px"},                                    // the initial style is none
     {"", "outline-style: solid; outline-width: 4px", "outline-width", "4px"},
     {"", "outline-width: 4px", "outline-width", "0px"},
     {"", "border-style: solid; border-block-start-width: 6px", "border-top-width", "6px"},

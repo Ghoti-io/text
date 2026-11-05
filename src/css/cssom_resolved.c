@@ -730,6 +730,34 @@ static GTEXT_CSS_Status min_size_auto(rctx * r, const GTEXT_CSS_Property_Info * 
   return zero ? recompute_text(r, info, "0px", 3, out) : GTEXT_CSS_OK;
 }
 
+/// "If the border-style corresponding to a given border-width is none or hidden, then the used width is 0" (Backgrounds 3, 4.3), and "the resolved value for the border-width properties is
+/// the used value": the computed value keeps its length, which is what a child inherits, and what getComputedStyle() answers is `0px` when the style of the same side makes the width
+/// not drawn. The style is the property whose name is the width's with `-width` replaced by `-style` (a logical side has its logical style).
+static GTEXT_CSS_Status border_width(rctx * r, const GTEXT_CSS_Property_Info * info, GTEXT_CSS_Value_Set ** out) {
+  *out = NULL;
+  static const char suffix[] = "-width";
+  const size_t sl = sizeof suffix - 1;
+  char buf[160];
+  if (info->name_length <= sl || info->name_length - sl + 6 >= sizeof buf || memcmp(info->name + info->name_length - sl, suffix, sl) != 0) {
+    return GTEXT_CSS_OK;
+  }
+  memcpy(buf, info->name, info->name_length - sl);
+  memcpy(buf + info->name_length - sl, "-style", 6);
+  const GTEXT_CSS_Property_Id style_id = gtext_css_registry_find_property(r->in->core->registry, buf, info->name_length - sl + 6);
+  if (!style_id) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Status st;
+  size_t n = 0;
+  char * t = computed_text(r->style, style_id, &n, &st);
+  const bool hidden = t && (text_is(t, n, "none") || text_is(t, n, "hidden"));
+  gtext_css_serialize_buffer_free(NULL, t);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  return hidden ? recompute_text(r, info, "0px", 3, out) : GTEXT_CSS_OK;
+}
+
 /// `caret-color` and `outline-color`: the used value of `auto` is the current color, as both browsers answer (the probe of the stage; the served text leaves it to the user agent).
 static bool auto_is_current(const GTEXT_CSS_Property_Info * info) {
   return (info->name_length == 11 && memcmp(info->name, "caret-color", 11) == 0) || (info->name_length == 13 && memcmp(info->name, "outline-color", 13) == 0);
@@ -750,6 +778,10 @@ static GTEXT_CSS_Status resolve_one(rctx * r, const GTEXT_CSS_Property_Info * in
     return st;
   case CSS_RESOLVED_ANIMATION_DURATION:
     st = animation_duration(r, info, owned);
+    *origin = *owned ? GTEXT_CSSOM_ORIGIN_USED : GTEXT_CSSOM_ORIGIN_COMPUTED;
+    return st;
+  case CSS_RESOLVED_BORDER_WIDTH:
+    st = border_width(r, info, owned);
     *origin = *owned ? GTEXT_CSSOM_ORIGIN_USED : GTEXT_CSSOM_ORIGIN_COMPUTED;
     return st;
   case CSS_RESOLVED_MIN_SIZE_AUTO:

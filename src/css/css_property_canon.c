@@ -2380,6 +2380,55 @@ static void gradient_position(cb * out, const sp * t, size_t n, bool * is_center
   }
 }
 
+/* An <angle> that is a half turn, written in any unit the browsers fold it from: `180deg`, `200grad`, `0.5turn`. A radian is left alone: the browsers do not agree on it
+ * (Chromium keeps `3.14159rad`, Firefox drops it), and the number is not exact in any text. */
+static bool gradient_half_turn(sp s) {
+  size_t i = 0;
+  while (i < s.n && ((s.p[i] >= '0' && s.p[i] <= '9') || s.p[i] == '.' || s.p[i] == '+' || s.p[i] == '-')) {
+    i++;
+  }
+  if (i == 0 || i == s.n || i > 24) {
+    return false;
+  }
+  char num[32];
+  memcpy(num, s.p, i);
+  num[i] = '\0';
+  char * end = NULL;
+  const double v = strtod(num, &end);
+  if (!end || *end) {
+    return false;
+  }
+  const sp unit = {s.p + i, s.n - i};
+  return (ieq(unit, "deg") && v == 180.0) || (ieq(unit, "grad") && v == 200.0) || (ieq(unit, "turn") && v == 0.5);
+}
+
+static bool gradient_angle(sp s) {
+  if (!s.n || !((s.p[0] >= '0' && s.p[0] <= '9') || s.p[0] == '.' || s.p[0] == '+' || s.p[0] == '-')) {
+    return false;
+  }
+  size_t i = 0;
+  while (i < s.n && ((s.p[i] >= '0' && s.p[i] <= '9') || s.p[i] == '.' || s.p[i] == '+' || s.p[i] == '-' || s.p[i] == 'e' || s.p[i] == 'E')) {
+    i++;
+  }
+  const sp unit = {s.p + i, s.n - i};
+  return ieq(unit, "deg") || ieq(unit, "grad") || ieq(unit, "rad") || ieq(unit, "turn");
+}
+
+/* The `in <space>` of a gradient without what the grammar defaults: Images 4, 8 (served 2026-11-01), "omitting components when possible without changing the meaning", and both
+ * pinned browsers write `in srgb` (the space a gradient is interpolated in when none is given) as nothing and `in oklch shorter hue` as `in oklch`. */
+static void gradient_interpolation(cb * parts, const sp * t, size_t n) {
+  if (n == 2 && eq(t[0], "in") && eq(t[1], "srgb")) {
+    return;
+  }
+  if (n >= 4 && eq(t[n - 2], "shorter") && eq(t[n - 1], "hue")) {
+    n -= 2;
+  }
+  if (parts->n) {
+    cb_putc(parts, ' ');
+  }
+  put_join(parts, t, n);
+}
+
 /* Images 4, 8 (served 2026-11-01): a gradient is serialized "per its individual grammar, ... omitting components when possible without changing the meaning". The configuration
  * of a radial or conic gradient loses `from 0deg`, a center position, a lone `farthest-corner`, the `ellipse` of two sizes (or of none) and the `circle` of one size; a position of
  * one value is completed. Both pinned browsers write `conic-gradient(from 0deg at 50% 50%, red, gold)` as `conic-gradient(red, gold)` and `at 70px` as `at 70px center`. */
@@ -2392,7 +2441,8 @@ static bool gradient_function(cb * out, sp f) {
   const sp inner = {open + 1, f.n - name.n - 2};
   const bool conic = ieq(name, "conic-gradient") || ieq(name, "repeating-conic-gradient");
   const bool radial = ieq(name, "radial-gradient") || ieq(name, "repeating-radial-gradient");
-  if (!conic && !radial) {
+  const bool linear = ieq(name, "linear-gradient") || ieq(name, "repeating-linear-gradient");
+  if (!conic && !radial && !linear) {
     return false;
   }
   spv args = {out->a, NULL, 0, 0, false, &out->fail};
@@ -2402,7 +2452,8 @@ static bool gradient_function(cb * out, sp f) {
     spv tk = {out->a, NULL, 0, 0, false, &out->fail};
     top_split(&tk, args.v[0].p, args.v[0].n, ' ');
     const bool config = !tk.fail && tk.n > 0 &&
-        (eq(tk.v[0], "from") || eq(tk.v[0], "at") || eq(tk.v[0], "in") || (radial && (eq(tk.v[0], "circle") || eq(tk.v[0], "ellipse") || gradient_extent(tk.v[0]) || gradient_quantity(tk.v[0]))));
+        ((linear && (eq(tk.v[0], "to") || eq(tk.v[0], "in") || gradient_angle(tk.v[0]))) || (!linear && (eq(tk.v[0], "from") || eq(tk.v[0], "at") || eq(tk.v[0], "in"))) ||
+         (radial && (eq(tk.v[0], "circle") || eq(tk.v[0], "ellipse") || gradient_extent(tk.v[0]) || gradient_quantity(tk.v[0]))));
     if (config) {
       size_t at = tk.n, in = tk.n;
       for (size_t i = 0; i < tk.n; i++) {
@@ -2416,7 +2467,14 @@ static bool gradient_function(cb * out, sp f) {
       const size_t head = at < in ? at : in;
       cb parts = {out->a, NULL, 0, 0, false, &out->fail};
       size_t first = 0;
-      if (conic) {
+      if (linear) {
+        /* Images 3, 7.1 and 8: a gradient line that is `to bottom` (a half turn in any unit) is the default of the grammar and is not written */
+        const bool to_bottom = head == 2 && eq(tk.v[0], "to") && eq(tk.v[1], "bottom");
+        if (!to_bottom && !(head == 1 && gradient_half_turn(tk.v[0]))) {
+          put_join(&parts, tk.v, head);
+        }
+      }
+      else if (conic) {
         if (head >= 2 && eq(tk.v[0], "from")) {
           if (!eq(tk.v[1], "0deg")) {
             cb_puts(&parts, "from ");
@@ -2445,7 +2503,7 @@ static bool gradient_function(cb * out, sp f) {
           lengths = lengths && gradient_quantity(tk.v[i]);
         }
         const bool lone_default = nsize == 1 && eq(tk.v[first], "farthest-corner");
-        const bool implied = (shape_circle && lengths && nsize == 1) || (shape_ellipse && (nsize == 0 || (lengths && nsize == 2)));
+        const bool implied = (shape_circle && lengths && nsize == 1) || (shape_ellipse && (nsize == 0 || (lengths && nsize == 2) || (nsize == 1 && gradient_extent(tk.v[first]))));
         if ((shape_circle || shape_ellipse) && !implied) {
           cb_puts(&parts, shape_circle ? "circle" : "ellipse");
         }
@@ -2456,7 +2514,7 @@ static bool gradient_function(cb * out, sp f) {
           put_join(&parts, tk.v + first, nsize);
         }
       }
-      if (at < tk.n) {
+      if (!linear && at < tk.n) {
         const size_t pend = in > at ? in : tk.n;
         cb pos = {out->a, NULL, 0, 0, false, &out->fail};
         bool is_center = false, ok = true;
@@ -2478,10 +2536,7 @@ static bool gradient_function(cb * out, sp f) {
         gtext_allocator_free(out->a, pos.d);
       }
       if (in < tk.n) {
-        if (parts.n) {
-          cb_putc(&parts, ' ');
-        }
-        put_join(&parts, tk.v + in, tk.n - in);
+        gradient_interpolation(&parts, tk.v + in, tk.n - in);
       }
       /* the text of the first argument, as it was and as it would be written now */
       cb was = {out->a, NULL, 0, 0, false, &out->fail};

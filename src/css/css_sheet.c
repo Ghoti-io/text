@@ -1592,7 +1592,7 @@ static GTEXT_CSS_Status compile_impl(const GTEXT_CSS_Tree * tree, const GTEXT_CS
   {
     frame top;
     memset(&top, 0, sizeof top);
-    top.nspec = gtext_css_specificity_make(0, 1, 0);
+    top.nspec = gtext_css_specificity_make(0, 0, 0);   /* Nesting 1: the specificity of &, "or zero if no such selector list exists" (a top-level &) */
     bool imports_open = true, ns_open = true;
     uint32_t top_chain = 0;
     for (size_t i = 0; i < count && b.status == GTEXT_CSS_OK; i++) {

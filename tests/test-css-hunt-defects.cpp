@@ -173,6 +173,37 @@ TEST(CssHuntTextShadow, ANegativeSpreadIsInvalid) {
   EXPECT_EQ(P("box-shadow", "1px 2px 3px -4px"), "valid:1px 2px 3px -4px");
 }
 
+/* The same sentence of Images 3 and 4 (the example under it writes `Linear-Gradient( to bottom, red 0%,yellow,black 100px)` as `linear-gradient(red, yellow, black 100px)`) and the same
+   two browsers (Chromium 156, Firefox 158, which agree on every line here) for the gradient line and the interpolation of a linear gradient, and for the `ellipse` that a lone extent
+   implies: `to bottom` (and a half turn in any unit) is the default of the grammar, `in srgb` the default space, `shorter hue` the default hue method. */
+TEST(CssHuntGradients, TheDefaultsOfALinearGradientAndOfAnEllipseAreNotWritten) {
+  EXPECT_EQ(B("background-image", "linear-gradient(to bottom, blue, green)"), "valid:linear-gradient(blue, green)");
+  EXPECT_EQ(B("background-image", "linear-gradient(180deg, blue, green)"), "valid:linear-gradient(blue, green)");
+  EXPECT_EQ(B("background-image", "linear-gradient(200grad, blue, green)"), "valid:linear-gradient(blue, green)");
+  EXPECT_EQ(B("background-image", "linear-gradient(0.5turn, blue, green)"), "valid:linear-gradient(blue, green)");
+  EXPECT_EQ(B("background-image", "linear-gradient(to bottom, blue 0%, green 100%)"), "valid:linear-gradient(blue 0%, green 100%)");
+  EXPECT_EQ(B("background-image", "repeating-linear-gradient(to bottom, blue, green 10px)"), "valid:repeating-linear-gradient(blue, green 10px)");
+  EXPECT_EQ(B("background-image", "image-set(linear-gradient(to bottom, blue, green) 1x)"), "valid:image-set(linear-gradient(blue, green) 1x)");
+  EXPECT_EQ(B("background-image", "linear-gradient(in srgb to bottom, blue, green)"), "valid:linear-gradient(blue, green)");
+  EXPECT_EQ(B("background-image", "linear-gradient(to bottom in oklab, blue, green)"), "valid:linear-gradient(in oklab, blue, green)");
+  EXPECT_EQ(B("background-image", "linear-gradient(in oklab 180deg, blue, green)"), "valid:linear-gradient(in oklab, blue, green)");
+  EXPECT_EQ(B("background-image", "linear-gradient(in oklch shorter hue, blue, green)"), "valid:linear-gradient(in oklch, blue, green)");
+  EXPECT_EQ(B("background-image", "linear-gradient(in oklch longer hue to bottom, blue, green)"), "valid:linear-gradient(in oklch longer hue, blue, green)");
+  EXPECT_EQ(B("background-image", "radial-gradient(in srgb circle, blue, green)"), "valid:radial-gradient(circle, blue, green)");
+  EXPECT_EQ(B("background-image", "conic-gradient(from 0deg in srgb, blue, green)"), "valid:conic-gradient(blue, green)");
+  EXPECT_EQ(B("background-image", "radial-gradient(ellipse farthest-corner at center, blue, green)"), "valid:radial-gradient(blue, green)");
+  EXPECT_EQ(B("background-image", "radial-gradient(ellipse farthest-corner, blue, green)"), "valid:radial-gradient(blue, green)");
+  EXPECT_EQ(B("background-image", "radial-gradient(ellipse closest-side, blue, green)"), "valid:radial-gradient(closest-side, blue, green)");
+  EXPECT_EQ(B("background-image", "repeating-radial-gradient(ellipse farthest-corner at center, blue, green 10px)"), "valid:repeating-radial-gradient(blue, green 10px)");
+  // and what is not a default is written
+  EXPECT_EQ(B("background-image", "linear-gradient(to top, blue, green)"), "valid:linear-gradient(to top, blue, green)");
+  EXPECT_EQ(B("background-image", "linear-gradient(0deg, blue, green)"), "valid:linear-gradient(0deg, blue, green)");
+  EXPECT_EQ(B("background-image", "linear-gradient(-180deg, blue, green)"), "valid:linear-gradient(-180deg, blue, green)");
+  EXPECT_EQ(B("background-image", "linear-gradient(in srgb-linear, blue, green)"), "valid:linear-gradient(in srgb-linear, blue, green)");
+  EXPECT_EQ(B("background-image", "radial-gradient(circle farthest-corner, blue, green)"), "valid:radial-gradient(circle, blue, green)");
+  EXPECT_EQ(B("background-image", "radial-gradient(circle closest-side, blue, green)"), "valid:radial-gradient(circle closest-side, blue, green)");
+}
+
 /* Images 4, 8 (served 2026-11-01): "To serialize any function defined in this module, serialize it per its individual grammar, in the order its grammar is written in, omitting
    components when possible without changing the meaning". Both pinned browsers leave out of a gradient what is its default: `from 0deg`, `at center` (and `at 50% 50%`, `at 50%`),
    a lone `farthest-corner`, the `ellipse` of two sizes and the `circle` of one, and complete a one-value position (`at 70px` is `at 70px center`). */

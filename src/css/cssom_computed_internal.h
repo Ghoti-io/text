@@ -68,6 +68,7 @@ typedef enum {
   CSS_RESOLVED_USED,               ///< The property's own specification says the used value (a transform as a matrix).
   CSS_RESOLVED_ANIMATION_DURATION, ///< `auto` is `0s` when `animation-timeline` is `auto` (Animations 2).
   CSS_RESOLVED_MIN_SIZE_AUTO,      ///< `auto` is `0px` for the boxes of the CSS2 display types when `aspect-ratio` is `auto` (Sizing 3).
+  CSS_RESOLVED_BORDER_WIDTH,       ///< `0px` when the border style of the same side is `none` or `hidden` (Backgrounds 3: the used width is 0, and the resolved value is the used value).
   CSS_RESOLVED_COUNT
 } css_resolved_category;
 

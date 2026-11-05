@@ -403,11 +403,15 @@ TEST(CssComputeEdges, ValuesAnEnvironmentCallbackGivesAreCheckedAndNamedWhenThey
 
 TEST(CssComputeEdges, InheritIsTheParentsComputedValueEvenWhereTheBorderStyleWouldHaveMadeItZero) {
   // CSS Cascade 5: "If the cascaded value of a property is the inherit keyword, the property's specified and computed values are the inherited value."
-  // The rule that a border width is 0 under `none` and `hidden` is how a width is computed from a length, and an inherited value is not computed again.
+  // Backgrounds 3: the computed value of a border width is "absolute length, snapped as a border width"; that it is 0 under `none` and `hidden` is the used value (see CssomComputed).
   EXPECT_EQ(computed("border-top-style: solid; border-top-width: 5px", "border-top-style: none; border-top-width: inherit", "border-top-width"), "5px");
-  EXPECT_EQ(computed("border-top-style: solid; border-top-width: 5px", "border-top-style: none; border-top-width: 7px", "border-top-width"), "0px");
-  EXPECT_EQ(computed("border-top-style: solid; border-top-width: 5px", "border-top-style: none; border-top-width: unset", "border-top-width"), "0px")
-      << "unset on a property that is not inherited is initial, which is medium, which is 0 under none";
+  EXPECT_EQ(computed("border-top-style: solid; border-top-width: 5px", "border-top-style: none; border-top-width: 7px", "border-top-width"), "7px");
+  EXPECT_EQ(computed("border-top-style: solid; border-top-width: 5px", "border-top-style: none; border-top-width: unset", "border-top-width"), "3px")
+      << "unset on a property that is not inherited is initial, which is medium, and the style does not change the computed value";
+  // the parent whose border is not drawn still hands its length down: the page border-width-computed.html of the web-platform-tests
+  EXPECT_EQ(computed("border-top-style: none; border-top-width: 5px", "border-top-style: solid; border-top-width: inherit", "border-top-width"), "5px");
+  // an outline is another property, and its width is 0 under `none` in the computed value (UI 4: "0 if the outline style is none")
+  EXPECT_EQ(computed("", "outline-style: none; outline-width: 4px", "outline-width"), "0px");
   // a shorthand that holds var() is substituted
   Context ctx(R());
   Block b(R(), "margin: var(--x)");

@@ -483,6 +483,11 @@ static bool style_hides(css_state * st, const css_pmeta * m) {
   return kw(sv, "none") || kw(sv, "hidden");
 }
 
+/// Whether the property is a `border-*-width` (a side, physical or logical), whose style makes the used width 0 without changing the computed one.
+static bool is_border_width(const css_pmeta * m) {
+  return m->name_length > 7 && memcmp(m->name, "border-", 7) == 0;
+}
+
 static GTEXT_CSS_Status algo_border_width(css_state * st, GTEXT_CSS_Property_Id id, const css_pmeta * m, const GTEXT_CSS_Value_Set * src,
     GTEXT_CSS_Value_Set ** out) {
   GTEXT_CSS_Value_Set * bt = NULL;
@@ -502,7 +507,10 @@ static GTEXT_CSS_Status algo_border_width(css_state * st, GTEXT_CSS_Property_Id 
     }
   }
   gtext_css_value_set_free(bt);
-  if (style_hides(st, m)) {
+  /* Backgrounds 3, 4.3 (and Borders 4): the computed value of a border width is "absolute length, snapped as a border width"; that the width is 0 when the style is `none` or
+   * `hidden` is said of the *used* value, and the resolved value is the used value (css_resolved_border_width). So a child that inherits the width of a parent whose border is
+   * not drawn inherits the length, as both pinned browsers do. The width of an outline is another property whose text says "0 if the outline style is none" of the computed value. */
+  if (style_hides(st, m) && !is_border_width(m)) {
     px = 0.0;
   }
   else {
