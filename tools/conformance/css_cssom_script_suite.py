@@ -68,6 +68,8 @@ CLASSES = ('served-text', 'wpt-wrong', 'browsers-differ', 'wpt-tentative', 'ua-d
 
 # The owner of a defect: the part of the library (or of the harness around it) in which it is fixed. First match wins; a defect that matches none fails the gate.
 OWNERS = [
+    (r'^css/css-values/tree-counting/sibling-(index|count)-keyframe-', 'owner: animation sampling (a layer the library does not have: the value of a property under an animation at a time, here with sibling-index() in its keyframes)'),
+    (r'^css/(css-shapes|css-masking/clip-path)/(basic-shape-)?interpolation', 'owner: animation sampling (a layer the library does not have: the value of a property midway through an interpolation)'),
     (r'^css/css-(animations|transitions|anchor-position)/', 'owner: animation sampling and anchor positioning (a layer the library does not have: computed values under a running animation, anchor() resolution)'),
     (r'^css/css-(cascade|variables|mixins|properties-values-api)/', 'owner: src/css cascade and custom properties'),
     (r'^css/(css-grid|css-flexbox|css-align|css-sizing|css-box|css-multicol|css-logical|css-position|css-tables|css-forms)/', 'owner: src/css computed layer for the box properties'),

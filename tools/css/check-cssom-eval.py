@@ -97,6 +97,30 @@ PLANTS = [
     ('minus-zero-operand-lost', 'cssom_eval.py',
      "        return 'n:' + ('-0' if v == 0 and math.copysign(1.0, v) < 0 else js_num_str(v))",
      "        return 'n:' + js_num_str(v)"),
+    ('insert-before-reference-and-child-swapped', 'cssom_eval.py',
+     "        i.emit('insertbefore', el.name, child.name, ref)",
+     "        i.emit('insertbefore', el.name, ref, child.name)"),
+    ('replace-child-arguments-swapped', 'cssom_eval.py',
+     "                fields = [need_node(x, op).name for x in a[:nargs]]",
+     "                fields = [need_node(x, op).name for x in reversed(a[:nargs])]"),
+    ('append-converts-a-number-as-python-does', 'cssom_eval.py',
+     "        return 's:' + to_str(v)\n    raise Unmodeled('host-node-argument')",
+     "        return 's:' + str(v)\n    raise Unmodeled('host-node-argument')"),
+    ('a-node-that-may-not-exist-taken-as-there', 'cssom_eval.py',
+     "    if isinstance(v, HostElem) and v.nullable:\n        raise Unmodeled('host-node-may-be-null')\n",
+     ""),
+    ('guard-loses-its-else', 'cssom_eval.py',
+     "            self.emit('else')\n",
+     "            pass\n"),
+    ('guard-lets-a-page-variable-be-assigned', 'cssom_eval.py',
+     "                if any(n not in declared for n in pattern_names(t)):\n                    return False",
+     "                pass"),
+    ('node-list-is-not-a-snapshot', 'cssom_eval.py',
+     "    n = interp.new_node('l')\n    interp.emit('qsa', n, root, a[0])\n    return HostList(n, None, 'static')",
+     "    return HostList(root, a[0])"),
+    ('text-content-null-written-as-the-word', 'cssom_eval.py',
+     "        interp.emit('tcset' if key == 'textContent' else 'ihset', el.name, null_empty(value))",
+     "        interp.emit('tcset' if key == 'textContent' else 'ihset', el.name, to_str(value))"),
 ]
 
 
@@ -173,7 +197,7 @@ def run_cases(E, cases):
                 problems.append('%s: test %d is %s, expected %s' % (c['name'], k, have, want))
         lines = ['|'.join(op) for op in res.ops]
         for needle in c['has']:
-            if not any(l.startswith(needle) for l in lines):
+            if not any((l == needle[:-1]) if needle.endswith('$') else l.startswith(needle) for l in lines):
                 problems.append('%s: the program has no op that starts with %r' % (c['name'], needle))
         for k, name in c['names'].items():
             if k < len(res.tests) and res.tests[k].name != name:

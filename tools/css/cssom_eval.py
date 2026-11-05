@@ -245,6 +245,8 @@ def to_num(v):
 def truthy(v):
     if isinstance(v, Rt):
         raise Unmodeled('computed-value-expression')
+    if isinstance(v, HostElem) and v.nullable:
+        raise Unmodeled('host-node-may-be-null')
     if v is UNDEF or v is None or v is False:
         return False
     if isinstance(v, float):
@@ -373,7 +375,12 @@ class Host:
 
 
 class HostElem(Host):
-    pass
+    """A node of the document (an element, a text node, a fragment): the evaluator knows its name in the program, not what it is. ``nullable``: the lookup that made it may have found nothing, so
+    the page's use of it as a condition is a fact of the document that the evaluator cannot decide."""
+
+    def __init__(self, name, nullable=False):
+        Host.__init__(self, name)
+        self.nullable = nullable
 
 
 class HostStyle(Host):
@@ -389,12 +396,14 @@ class HostClassList(Host):
 
 
 class HostList(Host):
-    """A NodeList: the elements a selector matches, indexed at run time (its length is not known offline)."""
+    """A NodeList or an HTMLCollection, indexed at run time (its length is not known offline): the elements a selector matches (``kind`` 'qsa'), or the children of a node ('elements': `children`,
+    'nodes': `childNodes`)."""
 
-    def __init__(self, root, selector):
+    def __init__(self, root, selector, kind='qsa'):
         Host.__init__(self, 'list')
         self.root = root
         self.selector = selector
+        self.kind = kind
 
 
 class HostDoc(Host):
@@ -418,7 +427,9 @@ class HostCSS(Host):
 
 
 # the ops that change the tree, an attribute, a style attribute or a rule: after one the runner's document is no longer a parse of a prefix of the markup
-MUTATING_OPS = {'setattr', 'rmattr', 'classadd', 'classremove', 'classtoggle', 'sset', 'sattrset', 'scsstext', 'sremove'}
+MUTATING_OPS = {'setattr', 'rmattr', 'classadd', 'classremove', 'classtoggle', 'sset', 'sattrset', 'scsstext', 'sremove',
+                'create', 'ctext', 'ccomment', 'cfrag', 'clone', 'append', 'prepend', 'replacechildren', 'appendchild', 'insertbefore', 'removechild', 'replacechild', 'remove', 'before', 'after',
+                'replacewith', 'tcset', 'dset', 'ihset'}
 
 STYLE_METHODS = {'getPropertyValue', 'getPropertyPriority', 'setProperty', 'removeProperty', 'item'}
 STYLE_NON_PROPS = {'length', 'cssText', 'parentRule', 'cssFloat'}
@@ -1005,10 +1016,20 @@ class Interp:
         elif k == 'ret':
             raise ReturnSignal(UNDEF if st[1] is None else self.eval(st[1], scope))
         elif k == 'if':
-            if truthy(self.eval(st[1], scope)):
-                self.exec(st[2], scope)
-            elif st[3] is not None:
-                self.exec(st[3], scope)
+            test, negate = st[1], False
+            if isinstance(test, tuple) and test[0] == 'un' and test[1] == '!':
+                test, negate = test[2], True
+            v = self.eval(test, scope)
+            if (isinstance(v, HostElem) and v.nullable) or isinstance(v, Rt):
+                self.exec_guarded(st, v, negate, scope)
+            else:
+                taken = truthy(v)
+                if negate:
+                    taken = not taken
+                if taken:
+                    self.exec(st[2], scope)
+                elif st[3] is not None:
+                    self.exec(st[3], scope)
         elif k == 'block':
             inner = Scope(scope)
             self.hoist(st[1], inner)
@@ -1091,6 +1112,53 @@ class Interp:
             raise Unmodeled(st[1])
         else:
             raise Unmodeled('js-statement-' + k)
+
+    def guard_safe(self, node, declared, depth=0):
+        """Whether the statements can be run on a condition the program decides at run time: they leave nothing behind that the evaluator would have to know (no assignment to a variable of the
+        page, no `var`, no way out of the block, no test) and call only functions that are as harmless."""
+        if depth > 6:
+            return False
+        if isinstance(node, list):
+            return all(self.guard_safe(x, declared, depth) for x in node)
+        if not isinstance(node, tuple):
+            return True
+        k = node[0]
+        if k in ('ret', 'break', 'continue', 'throw', 'try', 'fdecl', 'unsup', 'forof', 'forin', 'for', 'while', 'dowhile', 'switch'):
+            return False
+        if k == 'var' and node[1] == 'var':
+            return False
+        if k in ('asg', 'upd'):
+            t = node[2] if k == 'asg' else node[3]
+            if isinstance(t, tuple) and t[0] in ('pid', 'parr', 'pobj'):
+                if any(n not in declared for n in pattern_names(t)):
+                    return False
+        if k == 'call':
+            callee = node[1]
+            if isinstance(callee, tuple) and callee[0] == 'id':
+                if callee[1] in ('test', 'setup', 'add_completion_callback', 'done'):
+                    return False
+                fn = self.funcs.get(callee[1])
+                if fn is not None:
+                    inner = set()
+                    declared_names(fn, inner)
+                    if not self.guard_safe(fn, inner, depth + 1):
+                        return False
+        return all(self.guard_safe(x, declared, depth) for x in node[1:] if isinstance(x, (tuple, list)))
+
+    def exec_guarded(self, st, v, negate, scope):
+        """`if (x)` where x is a node that may not exist or a value only the library knows: the statements become ops that the runner runs or skips by whether the node is there."""
+        declared = set()
+        declared_names(st[2], declared)
+        if st[3] is not None:
+            declared_names(st[3], declared)
+        if not self.guard_safe([st[2]] + ([st[3]] if st[3] is not None else []), declared):
+            raise Unmodeled('host-node-may-be-null' if isinstance(v, HostElem) else 'computed-value-expression')
+        self.emit('iffalse' if negate else 'iftrue', operand(v))
+        self.exec(st[2], scope)
+        if st[3] is not None:
+            self.emit('else')
+            self.exec(st[3], scope)
+        self.emit('endif')
 
     def exec_try(self, st, scope):
         _, blk, param, handler, fin = st
@@ -1958,8 +2026,11 @@ MATH = {
 SPECIAL_ELEM_PROPS = {
     'body': 'body', 'documentElement': 'html', 'head': 'head',
 }
-ELEM_NAV = {'parentElement': 'parentElement', 'parentNode': 'parentElement', 'firstElementChild': 'firstElementChild', 'lastElementChild': 'lastElementChild',
-            'nextElementSibling': 'nextElementSibling', 'previousElementSibling': 'previousElementSibling'}
+ELEM_NAV = {'parentElement': 'parentElement', 'parentNode': 'parentNode', 'firstElementChild': 'firstElementChild', 'lastElementChild': 'lastElementChild',
+            'nextElementSibling': 'nextElementSibling', 'previousElementSibling': 'previousElementSibling', 'firstChild': 'firstChild', 'lastChild': 'lastChild',
+            'nextSibling': 'nextSibling', 'previousSibling': 'previousSibling'}
+# the reads of a node that give a register: property -> kind of the value
+NODE_READS = {'nodeType': 'n', 'nodeName': 's', 'tagName': 'any', 'localName': 'sn', 'namespaceURI': 'sn', 'nodeValue': 'sn', 'data': 'any', 'isConnected': 'b', 'childElementCount': 'n'}
 
 
 def doc_get(interp, d, key, for_call):
@@ -1975,14 +2046,50 @@ def doc_get(interp, d, key, for_call):
                 raise Unmodeled('host-getElementById-argument')
             n = i.new_node('e')
             i.emit('elem', n, 'byid', a[0])
-            return HostElem(n)
+            return HostElem(n, True)
         return BoundMethod(f)
+    if key in ('getElementsByTagName', 'getElementsByClassName'):
+        return BoundMethod(lambda i, a: live_collection(i, 'doc', key, a))
     if key == 'querySelector':
         return BoundMethod(lambda i, a: query(i, 'doc', a))
     if key == 'querySelectorAll':
         return BoundMethod(lambda i, a: query_all(i, 'doc', a))
     if key == 'defaultView':
         return interp.glob.vars['window']
+    if key == 'createElement':
+        def mk(i, a):
+            i.need_dom()
+            if not a:
+                raise Unmodeled('host-createElement-argument')
+            n = i.new_node('e')
+            i.emit('create', n, to_str(a[0]), '')
+            return HostElem(n)
+        return BoundMethod(mk)
+    if key == 'createElementNS':
+        def mkns(i, a):
+            i.need_dom()
+            if len(a) < 2 or not isinstance(a[1], str) or ':' in a[1] or not (a[0] is None or isinstance(a[0], str)):
+                raise Unmodeled('host-createElementNS-argument')
+            n = i.new_node('e')
+            i.emit('create', n, a[1], a[0] or '')
+            return HostElem(n)
+        return BoundMethod(mkns)
+    if key in ('createTextNode', 'createComment'):
+        def mkt(i, a):
+            i.need_dom()
+            if not a:
+                raise Unmodeled('host-' + key + '-argument')
+            n = i.new_node('e')
+            i.emit('ctext' if key == 'createTextNode' else 'ccomment', n, to_str(a[0]))
+            return HostElem(n)
+        return BoundMethod(mkt)
+    if key == 'createDocumentFragment':
+        def mkf(i, a):
+            i.need_dom()
+            n = i.new_node('e')
+            i.emit('cfrag', n)
+            return HostElem(n)
+        return BoundMethod(mkf)
     raise Unmodeled('dom-document-' + key)
 
 
@@ -1992,21 +2099,54 @@ def query(interp, root, a):
         raise Unmodeled('host-querySelector-argument')
     n = interp.new_node('e')
     interp.emit('elem', n, 'sel', root, a[0])
-    return HostElem(n)
+    return HostElem(n, True)
+
+
+def live_collection(interp, root, key, a):
+    """getElementsByTagName and getElementsByClassName: a live HTMLCollection, read again at each access (a selector that means the same for names the selector syntax can spell plainly)."""
+    interp.need_dom()
+    if not a or not isinstance(a[0], str):
+        raise Unmodeled('host-' + key + '-argument')
+    if key == 'getElementsByTagName':
+        if a[0] != '*' and not re.fullmatch(r'[A-Za-z][A-Za-z0-9-]*', a[0]):
+            raise Unmodeled('host-getElementsByTagName-name')
+        if a[0] != a[0].lower():
+            raise Unmodeled('host-getElementsByTagName-case')
+        return HostList(root, a[0], 'qsa')
+    classes = a[0].split()
+    if not classes or any(not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_-]*', c) for c in classes):
+        raise Unmodeled('host-getElementsByClassName-name')
+    return HostList(root, ''.join('.' + c for c in classes), 'qsa')
 
 
 def query_all(interp, root, a):
     interp.need_dom()
     if not a or not isinstance(a[0], str):
         raise Unmodeled('host-querySelectorAll-argument')
-    return HostList(root, a[0])
+    n = interp.new_node('l')
+    interp.emit('qsa', n, root, a[0])
+    return HostList(n, None, 'static')
 
 
 def list_get(interp, lst, key, for_call):
     if re.fullmatch(r'\d+', key):
         n = interp.new_node('e')
-        interp.emit('elem', n, 'qsa', lst.root, lst.selector, key)
-        return HostElem(n)
+        if lst.kind == 'static':
+            interp.emit('elem', n, 'list', lst.root, key)
+        elif lst.kind == 'qsa':
+            interp.emit('elem', n, 'qsa', lst.root, lst.selector, key)
+        else:
+            interp.emit('child', n, lst.root, lst.kind, key)
+        return HostElem(n, True)
+    if key == 'length':
+        r = interp.new_reg()
+        if lst.kind == 'static':
+            interp.emit('llen', r, lst.root)
+        elif lst.kind == 'qsa':
+            interp.emit('qlen', r, lst.root, lst.selector)
+        else:
+            interp.emit('nchildren', r, lst.root, lst.kind)
+        return Rt(r, 'n')
     if key == 'item':
         def f(i, a):
             if not a or not isinstance(a[0], float) or a[0] != int(a[0]) or a[0] < 0:
@@ -2071,11 +2211,147 @@ def math_get(interp, m, key, for_call):
     raise Unmodeled('js-math-' + key)
 
 
+def node_argument(v):
+    """The field of an op for an argument of append() and its kin: a node, or the string a text node is made from."""
+    if isinstance(v, HostElem):
+        return 'e:' + v.name
+    if isinstance(v, Rt):
+        raise Unmodeled('computed-value-expression')
+    if isinstance(v, (str, float, bool)) or v is None or v is UNDEF:
+        return 's:' + to_str(v)
+    raise Unmodeled('host-node-argument')
+
+
+def need_node(v, what):
+    if not isinstance(v, HostElem):
+        raise Unmodeled('host-' + what + '-argument')
+    return v
+
+
+def dom_method(op, nargs=None, variadic=False, returns=None):
+    """A method of a node that is one op of the program. ``returns``: 'arg0' (the argument is returned), 'arg1', None (undefined)."""
+    def maker(el):
+        def call(i, a):
+            if variadic:
+                fields = [node_argument(x) for x in a]
+            else:
+                if len(a) < nargs:
+                    raise Unmodeled('host-' + op + '-argument')
+                fields = [need_node(x, op).name for x in a[:nargs]]
+            i.emit(op, el.name, *fields)
+            if returns == 'arg0':
+                return a[0]
+            if returns == 'arg1':
+                return a[1]
+            return UNDEF
+        return call
+    return maker
+
+
+def m_insert_before(el):
+    def call(i, a):
+        if len(a) < 2:
+            raise Unmodeled('host-insertBefore-argument')
+        child = need_node(a[0], 'insertBefore')
+        if a[1] is None:
+            ref = 'N:'
+        else:
+            ref = 'e:' + need_node(a[1], 'insertBefore').name
+        i.emit('insertbefore', el.name, child.name, ref)
+        return child
+    return call
+
+
+def m_clone(el):
+    def call(i, a):
+        deep = bool(truthy(a[0])) if a else False
+        n = i.new_node('e')
+        i.emit('clone', n, el.name, 'true' if deep else 'false')
+        return HostElem(n)
+    return call
+
+
+def m_has_children(el):
+    def call(i, a):
+        r = i.new_reg()
+        i.emit('nread', r, el.name, 'hasChildNodes')
+        return Rt(r, 'b')
+    return call
+
+
+def m_contains(el):
+    def call(i, a):
+        r = i.new_reg()
+        if not a or not (a[0] is None or isinstance(a[0], HostElem)):
+            raise Unmodeled('host-contains-argument')
+        i.emit('contains', r, el.name, operand(a[0]))
+        return Rt(r, 'b')
+    return call
+
+
+def m_matches(el):
+    def call(i, a):
+        if not a or not isinstance(a[0], str):
+            raise Unmodeled('host-matches-argument')
+        r = i.new_reg()
+        i.emit('matches', r, el.name, a[0])
+        return Rt(r, 'b')
+    return call
+
+
+def m_closest(el):
+    def call(i, a):
+        if not a or not isinstance(a[0], str):
+            raise Unmodeled('host-closest-argument')
+        n = i.new_node('e')
+        i.emit('closest', n, el.name, a[0])
+        return HostElem(n, True)
+    return call
+
+
+DOM_METHODS = {
+    'appendChild': dom_method('appendchild', 1, returns='arg0'),
+    'removeChild': dom_method('removechild', 1, returns='arg0'),
+    'replaceChild': dom_method('replacechild', 2, returns='arg1'),
+    'insertBefore': m_insert_before,
+    'append': dom_method('append', variadic=True),
+    'prepend': dom_method('prepend', variadic=True),
+    'replaceChildren': dom_method('replacechildren', variadic=True),
+    'before': dom_method('before', variadic=True),
+    'after': dom_method('after', variadic=True),
+    'replaceWith': dom_method('replacewith', variadic=True),
+    'remove': dom_method('remove', 0),
+    'cloneNode': m_clone,
+    'hasChildNodes': m_has_children,
+    'contains': m_contains,
+    'matches': m_matches,
+    'closest': m_closest,
+}
+
+
 def elem_get(interp, el, key, for_call):
     if key in ELEM_NAV:
         n = interp.new_node('e')
         interp.emit('elem', n, 'nav', el.name, ELEM_NAV[key])
-        return HostElem(n)
+        return HostElem(n, True)
+    if key in NODE_READS:
+        r = interp.new_reg()
+        interp.emit('nread', r, el.name, key)
+        return Rt(r, NODE_READS[key])
+    if key == 'textContent':
+        r = interp.new_reg()
+        interp.emit('tcget', r, el.name)
+        return Rt(r, 'sn')
+    if key in ('innerHTML', 'outerHTML'):
+        r = interp.new_reg()
+        interp.emit('ihget' if key == 'innerHTML' else 'ohget', r, el.name)
+        return Rt(r, 's')
+    if key in ('children', 'childNodes'):
+        return HostList(el.name, None, 'elements' if key == 'children' else 'nodes')
+    if key == 'ownerDocument':
+        return interp.glob.vars['document']
+    if key in DOM_METHODS:
+        return BoundMethod(DOM_METHODS[key](el))
     if key == 'style':
         s = interp.new_node('s')
         interp.emit('style', s, el.name)
@@ -2112,6 +2388,8 @@ def elem_get(interp, el, key, for_call):
             i.emit('rmattr', el.name, a[0])
             return UNDEF
         return BoundMethod(f)
+    if key in ('getElementsByTagName', 'getElementsByClassName'):
+        return BoundMethod(lambda i, a: live_collection(i, el.name, key, a))
     if key == 'querySelector':
         return BoundMethod(lambda i, a: query(i, el.name, a))
     if key == 'querySelectorAll':
@@ -2153,6 +2431,13 @@ def elem_set(interp, el, key, value):
         return
     if key in ('id', 'className'):
         interp.emit('setattr', el.name, 'id' if key == 'id' else 'class', to_str(value))
+        return
+    if key in ('textContent', 'innerHTML'):
+        # [LegacyNullToEmptyString] for both: null is the empty string
+        interp.emit('tcset' if key == 'textContent' else 'ihset', el.name, null_empty(value))
+        return
+    if key == 'data':
+        interp.emit('dset', el.name, to_str(value))
         return
     raise Unmodeled('dom-element-assign-' + key)
 

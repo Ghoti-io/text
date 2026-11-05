@@ -27,3 +27,9 @@ border-width-computed-zero-under-none	css_compute_algo.c	  if (style_hides(st, m
 top-level-nesting-selector-weighs-a-class	css_sheet.c	    top.nspec = gtext_css_specificity_make(0, 0, 0);	    top.nspec = gtext_css_specificity_make(0, 1, 0);	fail
 linear-gradient-line-to-bottom-written	css_property_canon.c	        if (!to_bottom && !(head == 1 && gradient_half_turn(tk.v[0]))) {	        if (1) {	fail
 ellipse-of-a-lone-extent-written	css_property_canon.c	(lengths && nsize == 2) || (nsize == 1 && gradient_extent(tk.v[first]))));	(lengths && nsize == 2)));	fail
+tree-sync-after-a-change-never-run	runner:	  if (w->binding) {\n    gtext_cssom_markup_sync(w->binding, NULL);	  if (0 && w->binding) {\n    gtext_cssom_markup_sync(w->binding, NULL);	fail
+replace-all-keeps-the-old-children	runner:	  for (size_t i = 0; i < count; i++) {\n    gtext_markup_remove(old[i]);\n  }	  for (size_t i = 0; i < 0; i++) {\n    gtext_markup_remove(old[i]);\n  }	fail
+static-list-forgets-its-nodes	runner:	    memcpy(own, nodes, count * sizeof *own);	    memset(own, 0, count * sizeof *own);	fail
+insert-before-appends-instead	runner:	    ms = gtext_markup_insert_before(parent->node, child->node, ref);	    ms = gtext_markup_insert_before(parent->node, child->node, NULL);	fail
+text-content-of-a-node-is-its-own-data-only	runner:	      ms = gtext_markup_node_text_content(n->node, NULL, &text, &len);	      ms = gtext_markup_node_text_content(n->node, NULL, &text, &len); len = 0;	fail
+guarded-block-always-runs	runner:	      if (p.gdepth > 0 && !p.gact[p.gdepth - 1]) {\n        continue;\n      }	      if (0) {\n        continue;\n      }	fail

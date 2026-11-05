@@ -88,3 +88,247 @@ O	end
 #expect	fixture/css-namespace-and-minus-zero	0	PASS
 #expect	fixture/css-namespace-and-minus-zero	1	FAIL
 #expect	fixture/css-namespace-and-minus-zero	2	PASS
+P	fixture/tree-edits-move-and-order-nodes	0	6
+H	<!DOCTYPE html><html><head></head><body><div id=a></div><p id=b>x</p></body></html>
+O	test	0	append moves a node and keeps the order
+O	create	e1	div	
+O	elem	e2	byid	b
+O	create	e3	span	
+O	append	e1	e:e3	e:e2
+O	elem	e4	nav	e1	firstChild
+O	assert_equals	e:e4	e:e3	
+O	elem	e5	nav	e1	lastChild
+O	assert_equals	e:e5	e:e2	
+O	elem	e6	nav	e2	parentNode
+O	assert_equals	e:e6	e:e1	
+O	elem	e7	byid	b
+O	assert_equals	e:e7	N:	
+O	end
+O	test	1	insertBefore with a null reference appends, and with a reference goes before it
+O	create	e1	div	
+O	create	e2	i	
+O	create	e3	u	
+O	appendchild	e1	e2
+O	insertbefore	e1	e3	e:e2
+O	elem	e4	nav	e1	firstChild
+O	assert_equals	e:e4	e:e3	
+O	create	e5	b	
+O	insertbefore	e1	e5	N:
+O	elem	e6	nav	e1	lastChild
+O	assert_equals	e:e6	e:e5	
+O	end
+O	test	2	removeChild of a node that is not a child is a NotFoundError
+O	create	e1	div	
+O	create	e2	div	
+O	removechild	e1	e2
+O	end
+O	test	3	remove detaches and the node is no longer found by id
+O	create	e1	div	
+O	setattr	e1	id	gone
+O	elem	e2	body	
+O	appendchild	e2	e1
+O	elem	e3	byid	gone
+O	assert_equals	e:e3	e:e1	
+O	remove	e1
+O	elem	e4	byid	gone
+O	assert_equals	e:e4	N:	
+O	nread	r1	e1	isConnected
+O	assert_false	r:r1	
+O	end
+O	test	4	a node cannot be put inside itself
+O	create	e1	div	
+O	create	e2	div	
+O	appendchild	e1	e2
+O	appendchild	e2	e1
+O	end
+O	test	5	replaceChild puts the new node where the old one was and returns the old one detached
+O	create	e1	div	
+O	create	e2	i	
+O	create	e3	b	
+O	appendchild	e1	e2
+O	replacechild	e1	e3	e2
+O	elem	e4	nav	e1	firstChild
+O	assert_equals	e:e4	e:e3	
+O	elem	e5	nav	e2	parentNode
+O	assert_equals	e:e5	N:	
+O	end
+#expect	fixture/tree-edits-move-and-order-nodes	0	PASS
+#expect	fixture/tree-edits-move-and-order-nodes	1	PASS
+#expect	fixture/tree-edits-move-and-order-nodes	2	FAIL
+#expect	fixture/tree-edits-move-and-order-nodes	3	PASS
+#expect	fixture/tree-edits-move-and-order-nodes	4	FAIL
+#expect	fixture/tree-edits-move-and-order-nodes	5	PASS
+P	fixture/text-and-markup-of-nodes	0	4
+H	<!DOCTYPE html><html><head></head><body><div id=a></div><p id=b>x</p></body></html>
+O	test	0	textContent reads and writes
+O	elem	e1	byid	b
+O	tcget	r1	e1
+O	assert_equals	r:r1	s:x	
+O	tcset	e1	y<z
+O	tcget	r2	e1
+O	assert_equals	r:r2	s:y<z	
+O	ihget	r3	e1
+O	assert_equals	r:r3	s:y&lt;z	
+O	tcset	e1	
+O	nread	r4	e1	hasChildNodes
+O	assert_false	r:r4	
+O	end
+O	test	1	innerHTML parses in the context of the element
+O	create	e1	div	
+O	setattr	e1	id	a
+O	ihset	e1	<b>one</b><i>two</i>
+O	nread	r1	e1	childElementCount
+O	assert_equals	r:r1	n:2	
+O	elem	e2	nav	e1	firstChild
+O	nread	r2	e2	nodeName
+O	assert_equals	r:r2	s:B	
+O	ohget	r3	e1
+O	assert_equals	r:r3	s:<div id="a"><b>one</b><i>two</i></div>	
+O	end
+O	test	2	cloneNode(true) copies the subtree and the copy is another node
+O	create	e1	div	
+O	ihset	e1	<b>q</b>
+O	clone	e2	e1	true
+O	clone	e3	e1	false
+O	nread	r1	e2	childElementCount
+O	assert_equals	r:r1	n:1	
+O	nread	r2	e3	childElementCount
+O	assert_equals	r:r2	n:0	
+O	cmp	r3	ne	e:e1	e:e2
+O	assert_true	r:r3	
+O	end
+O	test	3	createTextNode data and nodeType
+O	ctext	e1	hello
+O	nread	r1	e1	nodeType
+O	assert_equals	r:r1	n:3	
+O	nread	r2	e1	data
+O	assert_equals	r:r2	s:hello	
+O	dset	e1	bye
+O	tcget	r3	e1
+O	assert_equals	r:r3	s:bye	
+O	nread	r4	e1	tagName
+O	assert_equals	r:r4	u:	
+O	end
+#expect	fixture/text-and-markup-of-nodes	0	PASS
+#expect	fixture/text-and-markup-of-nodes	1	PASS
+#expect	fixture/text-and-markup-of-nodes	2	PASS
+#expect	fixture/text-and-markup-of-nodes	3	PASS
+P	fixture/a-style-element-made-by-the-script-has-a-sheet	0	3
+H	<!DOCTYPE html><html><head></head><body><div id=a class=k>t</div></body></html>
+O	test	0	a style element appended to the head applies, and removed it stops
+O	create	e1	style	
+O	tcset	e1	.k { color: rgb(1, 2, 3) }
+O	elem	e2	head	
+O	appendchild	e2	e1
+O	elem	e3	byid	a
+O	gcs	s1	e3	
+O	sget	r1	s1	color
+O	assert_equals	r:r1	s:rgb(1, 2, 3)	
+O	remove	e1
+O	gcs	s2	e3	
+O	sget	r2	s2	color
+O	assert_not_equals	r:r2	s:rgb(1, 2, 3)	
+O	end
+O	test	1	a style element not inserted does not apply, and its text can change
+O	create	e1	style	
+O	tcset	e1	.k { color: rgb(9, 9, 9) }
+O	elem	e3	byid	a
+O	gcs	s1	e3	
+O	sget	r1	s1	color
+O	assert_not_equals	r:r1	s:rgb(9, 9, 9)	
+O	elem	e2	head	
+O	appendchild	e2	e1
+O	tcset	e1	.k { color: rgb(8, 8, 8) }
+O	gcs	s2	e3	
+O	sget	r2	s2	color
+O	assert_equals	r:r2	s:rgb(8, 8, 8)	
+O	end
+O	test	2	getComputedStyle of a text node is a TypeError
+O	ctext	e1	x
+O	gcs	s1	e1	
+O	end
+#expect	fixture/a-style-element-made-by-the-script-has-a-sheet	0	PASS
+#expect	fixture/a-style-element-made-by-the-script-has-a-sheet	1	PASS
+#expect	fixture/a-style-element-made-by-the-script-has-a-sheet	2	FAIL
+P	fixture/guards-lists-and-collections	0	5
+H	<!DOCTYPE html><html><head></head><body><div id=a></div><p id=b>x</p></body></html>
+O	test	0	iftrue runs its ops for a node that is there and else for one that is not
+O	elem	e1	byid	a
+O	elem	e2	byid	nothere
+O	iftrue	e:e1
+O	assert_true	b:true	
+O	else
+O	fail	wrong
+O	endif
+O	iftrue	e:e2
+O	fail	wrong
+O	else
+O	assert_true	b:true	
+O	endif
+O	iffalse	e:e2
+O	assert_true	b:true	
+O	endif
+O	end
+O	test	1	a guard nests, and a failure inside a skipped block does not happen
+O	elem	e1	byid	nothere
+O	iftrue	e:e1
+O	iftrue	b:true
+O	fail	skipped
+O	endif
+O	fail	skipped
+O	endif
+O	iftrue	s:
+O	fail	empty string is false
+O	else
+O	assert_true	b:true	
+O	endif
+O	end
+O	test	2	a static list is a snapshot and a live count is not
+O	qsa	l1	doc	div
+O	llen	r1	l1
+O	assert_equals	r:r1	n:1	
+O	qlen	r2	doc	div
+O	assert_equals	r:r2	n:1	
+O	create	e1	div	
+O	elem	e2	body	
+O	appendchild	e2	e1
+O	llen	r3	l1
+O	assert_equals	r:r3	n:1	
+O	qlen	r4	doc	div
+O	assert_equals	r:r4	n:2	
+O	elem	e3	list	l1	1
+O	assert_equals	e:e3	N:	
+O	elem	e4	list	l1	0
+O	assert_not_equals	e:e4	N:	
+O	end
+O	test	3	children and childNodes count elements and nodes
+O	elem	e1	body	
+O	nchildren	r1	e1	elements
+O	assert_equals	r:r1	n:3	
+O	ctext	e2	t
+O	appendchild	e1	e2
+O	nchildren	r2	e1	elements
+O	assert_equals	r:r2	n:3	
+O	nchildren	r3	e1	nodes
+O	assert_equals	r:r3	n:4	
+O	child	e3	e1	elements	1
+O	nread	r4	e3	nodeName
+O	assert_equals	r:r4	s:P	
+O	end
+O	test	4	matches and closest
+O	elem	e1	byid	b
+O	matches	r1	e1	p
+O	assert_true	r:r1	
+O	matches	r2	e1	div
+O	assert_false	r:r2	
+O	closest	e2	e1	body
+O	nread	r3	e2	nodeName
+O	assert_equals	r:r3	s:BODY	
+O	closest	e3	e1	table
+O	assert_equals	e:e3	N:	
+O	end
+#expect	fixture/guards-lists-and-collections	0	PASS
+#expect	fixture/guards-lists-and-collections	1	PASS
+#expect	fixture/guards-lists-and-collections	2	PASS
+#expect	fixture/guards-lists-and-collections	3	PASS
+#expect	fixture/guards-lists-and-collections	4	PASS

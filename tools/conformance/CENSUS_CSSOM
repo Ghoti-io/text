@@ -2,9 +2,9 @@
 # tests the extractor gives each, the test calls the census counts on its own, the markers of the page and the helper scripts it loads. See the script for the columns.
 # pin	2f17dec1f36194d1c236120fd38b3556be466072
 # pages	5398
-# tests	23753
+# tests	24115
 # calls	14008
-# calls-differ-pages	1150
+# calls-differ-pages	1144
 css/CSS2/abspos/adjacent-to-relpos-inline-in-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/adjacent-to-relpos-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/remove-block-between-inline-and-abspos.html	1	1	layout-geometry,reftest	
@@ -238,14 +238,14 @@ css/css-align/content-distribution/parse-align-content-003.html	5	1	function,loo
 css/css-align/content-distribution/parse-justify-content-002.html	11	7	function	/css/css-align/resources/alignment-parsing-utils.js
 css/css-align/content-distribution/parse-justify-content-003.html	5	1	function,loop	/css/css-align/resources/alignment-parsing-utils.js
 css/css-align/content-distribution/place-content-shorthand-003.html	2	2	function	
-css/css-align/content-distribution/place-content-shorthand-005.html	3	2	computed,function	
+css/css-align/content-distribution/place-content-shorthand-005.html	2	2	computed,function	
 css/css-align/default-alignment/justify-items-legacy-001.html	1	1	computed,function	
 css/css-align/default-alignment/parse-align-items-002.html	11	7	function	/css/css-align/resources/alignment-parsing-utils.js
 css/css-align/default-alignment/parse-align-items-003.html	5	1	function,loop	/css/css-align/resources/alignment-parsing-utils.js
 css/css-align/default-alignment/parse-justify-items-002.html	11	7	function	/css/css-align/resources/alignment-parsing-utils.js
 css/css-align/default-alignment/parse-justify-items-003.html	5	1	function,loop	/css/css-align/resources/alignment-parsing-utils.js
 css/css-align/default-alignment/place-items-shorthand-003.html	2	2	function	
-css/css-align/default-alignment/place-items-shorthand-005.html	3	2	computed,function	
+css/css-align/default-alignment/place-items-shorthand-005.html	2	2	computed,function	
 css/css-align/default-alignment/shorthand-serialization-001.html	8	1	function,loop	
 css/css-align/flow-start-and-end-serialization.html	9	2	computed,function,loop	
 css/css-align/gaps/column-gap-animation-001.html	1	1	computed,function	
@@ -287,7 +287,7 @@ css/css-align/self-alignment/parse-align-self-003.html	5	1	function,loop	/css/cs
 css/css-align/self-alignment/parse-justify-self-002.html	11	7	function	/css/css-align/resources/alignment-parsing-utils.js
 css/css-align/self-alignment/parse-justify-self-003.html	5	1	function,loop	/css/css-align/resources/alignment-parsing-utils.js
 css/css-align/self-alignment/place-self-shorthand-003.html	2	2	function	
-css/css-align/self-alignment/place-self-shorthand-005.html	3	2	computed,function	
+css/css-align/self-alignment/place-self-shorthand-005.html	2	2	computed,function	
 css/css-anchor-position/anchor-animation-dynamic-default.html	1	1	function,layout-geometry	
 css/css-anchor-position/anchor-center-offset-change.html	2	2	function,layout-geometry	
 css/css-anchor-position/anchor-center-visibility-change.html	1	1	frame-or-popup,function,reftest	/common/reftest-wait.js,/common/rendering-utils.js
@@ -624,7 +624,7 @@ css/css-borders/border-shape/border-shape-ignore-radius-computed.html	1	1	comput
 css/css-borders/border-shape/border-shape-outline-invalidation.html	1	1	function,reftest,timing	
 css/css-borders/border-shape/border-shape-stroke-invalidation.html	1	1	function,reftest,timing	
 css/css-borders/border-width-hairline.html	4	5	computed,function	/css/support/parsing-testcommon.js
-css/css-borders/border-width-rounding.tentative.html	3	2	computed,function,loop	
+css/css-borders/border-width-rounding.tentative.html	22	2	computed,function,loop	
 css/css-borders/corner-shape/corner-block-start-writing-modes.html	3	1	computed,function	
 css/css-borders/corner-shape/corner-shape-outside-left.html	8	1	function,layout-geometry,loop	
 css/css-borders/corner-shape/corner-shape-outside-right.html	8	1	function,layout-geometry,loop	
@@ -715,13 +715,13 @@ css/css-cascade/important-vs-inline-003.html	1	1	computed,frame-or-popup,functio
 css/css-cascade/inherit-initial.html	4	4	computed,function	
 css/css-cascade/inline-style-background.html	1	1	function,layout-geometry	
 css/css-cascade/inline-style-revert-layer-crash.html	1	1	crash,layout-geometry	
-css/css-cascade/layer-basic.html	2	1	computed,function,loop	
+css/css-cascade/layer-basic.html	34	1	computed,function,loop	
 css/css-cascade/layer-counter-style-override.html	2	1	computed,function,layout-geometry,loop	
 css/css-cascade/layer-cssom-order-reverse-at-property.html	2	1	computed,function,loop,sheets	
 css/css-cascade/layer-cssom-order-reverse.html	2	1	computed,fonts,function,layout-geometry,loop,sheets,timing	
 css/css-cascade/layer-font-face-override.html	2	1	computed,fonts,function,layout-geometry,loop,timing	
 css/css-cascade/layer-import.html	3	1	computed,function,loop,timing	
-css/css-cascade/layer-important.html	2	1	computed,function,loop	
+css/css-cascade/layer-important.html	9	1	computed,function,loop	
 css/css-cascade/layer-keyframes-override.html	2	1	computed,function,layout-geometry,loop	
 css/css-cascade/layer-media-query.html	4	1	computed,frame-or-popup,function,loop,timing	
 css/css-cascade/layer-media-toggle.html	1	1	layout-geometry,reftest	
@@ -731,7 +731,7 @@ css/css-cascade/layer-rule-invalid-name.html	4	4	function,sheets
 css/css-cascade/layer-rules-cssom.html	2	1	function,loop,sheets,timing	
 css/css-cascade/layer-statement-before-import.html	2	1	computed,function,loop,sheets,timing	
 css/css-cascade/layer-stylesheet-multi-adoption.html	1	1	computed,function,sheets	
-css/css-cascade/layer-vs-inline-style.html	2	1	computed,function,loop	
+css/css-cascade/layer-vs-inline-style.html	4	1	computed,function,loop	
 css/css-cascade/layers-basic.html	1	1	computed,function	
 css/css-cascade/parsing/layer-import-parsing.html	13	2	function,sheets	
 css/css-cascade/parsing/layer.html	11	11	rule-vectors	/css/support/parsing-testcommon.js
@@ -832,7 +832,7 @@ css/css-color/relative-color-with-system-color.html	3	3	computed,function,typed-
 css/css-color/relative-currentcolor-visited-getcomputedstyle.html	1	1	computed	/css/support/computed-testcommon.js
 css/css-color/system-color-compute.html	4	3	computed,function,loop,typed-om	
 css/css-color/system-color-consistency.html	13	10	computed,function,loop	/css/support/computed-testcommon.js
-css/css-color/system-color-support.html	1	1	computed,function,loop	
+css/css-color/system-color-support.html	21	1	computed,function,loop	
 css/css-conditional/at-media-dynamic-001.html	1	1	frame-or-popup,function,reftest	
 css/css-conditional/at-media-matches-001.html	2	2	function,sheets	
 css/css-conditional/at-media-matches-002.html	3	2	frame-or-popup,function,timing	/common/rendering-utils.js
@@ -1515,7 +1515,7 @@ css/css-fonts/variations/font-style-interpolation.html	2	2	computed,function,tim
 css/css-fonts/variations/font-style-parsing.html	43	2	computed,function,loop,media	
 css/css-fonts/variations/font-variation-settings-inherit.html	3	3	computed,function	
 css/css-fonts/variations/font-weight-interpolation.html	2	2	computed,function,timing	
-css/css-fonts/variations/font-weight-lighter-bolder.html	4	2	computed,function,loop	
+css/css-fonts/variations/font-weight-lighter-bolder.html	22	2	computed,function,loop	
 css/css-fonts/variations/font-weight-matching-installed-fonts.html	2	1	fonts,function,layout-geometry,loop	
 css/css-fonts/variations/font-weight-matching.html	6	1	fonts,function,layout-geometry,loop,timing	
 css/css-fonts/variations/font-weight-parsing.html	26	2	computed,function,loop,media	
@@ -1863,7 +1863,7 @@ css/css-grid/parsing/grid-auto-flow-computed.html	7	7	computed	/css/support/comp
 css/css-grid/parsing/grid-auto-rows-computed.html	25	25	computed	/css/support/computed-testcommon.js
 css/css-grid/parsing/grid-columns-rows-get-set-multiple.html	8	7	computed,fonts,function,timing	
 css/css-grid/parsing/grid-content-sized-columns-resolution.html	2	1	computed,fonts,function,timing	
-css/css-grid/parsing/grid-shorthand-serialization.html	43	2	function,loop	
+css/css-grid/parsing/grid-shorthand-serialization.html	141	2	function,loop	
 css/css-grid/parsing/grid-template-areas-computed.html	9	9	computed	/css/support/computed-testcommon.js
 css/css-grid/parsing/grid-template-areas-one-cell.html	6	2	function	
 css/css-grid/parsing/grid-template-columns-computed-implicit-track.html	24	1	computed,function	
@@ -4389,10 +4389,10 @@ css/css-values/calc-size/calc-size-flex-basis-on-column.html	1	1	computed,fonts,
 css/css-values/calc-size/calc-size-flex-basis-on-row.html	1	1	computed,fonts,function,loop,timing	
 css/css-values/calc-size/calc-size-height-box-sizing.html	4	1	computed,function,layout-geometry,loop	
 css/css-values/calc-size/calc-size-height.html	37	3	computed,function,loop	
-css/css-values/calc-size/calc-size-list-box.html	4	1	function,layout-geometry,loop	
+css/css-values/calc-size/calc-size-list-box.html	10	1	function,layout-geometry,loop	
 css/css-values/calc-size/calc-size-out-of-flow.html	4	2	function,layout-geometry,loop	
 css/css-values/calc-size/calc-size-replaced-element.html	9	5	function,layout-geometry,loop	
-css/css-values/calc-size/calc-size-table.html	5	1	function,layout-geometry,loop	
+css/css-values/calc-size/calc-size-table.html	6	1	function,layout-geometry,loop	
 css/css-values/calc-size/calc-size-typed-om.html	20	1	function,typed-om	../../support/parsing-testcommon.js
 css/css-values/calc-size/calc-size-width-box-sizing.html	4	1	computed,function,layout-geometry,loop	
 css/css-values/calc-size/calc-size-width.html	1	2	computed,fonts,function,loop,timing	
@@ -4469,7 +4469,7 @@ css/css-values/sign-in-keyframes-with-relative-units.html	2	2	computed,fonts,fun
 css/css-values/signs-abs-computed.html	194	146	function	../support/numeric-testcommon.js
 css/css-values/tree-counting/calc-sibling-function-in-shadow-dom.html	5	3	computed,function,shadow	
 css/css-values/tree-counting/calc-sibling-function.html	7	7	computed,function	
-css/css-values/tree-counting/sibling-function-container-query-invalidation.html	10	8	computed,function	
+css/css-values/tree-counting/sibling-function-container-query-invalidation.html	8	8	computed,function	
 css/css-values/tree-counting/sibling-function-container-query.html	6	6	computed,function	
 css/css-values/tree-counting/sibling-function-descriptors.tentative.html	10	10	fonts,function,sheets	
 css/css-values/tree-counting/sibling-function-if-style-query.html	5	4	computed,function,loop	
@@ -4480,7 +4480,7 @@ css/css-values/tree-counting/sibling-index-keyframe-font-weight-dynamic.html	2	2
 css/css-values/tree-counting/sibling-index-keyframe-length-value-dynamic.html	2	2	computed,function	
 css/css-values/tree-counting/sibling-index-keyframe-palette-mix-dynamic.html	2	2	computed,fonts,function	
 css/css-values/tree-counting/sibling-index-keyframe-percent-dynamic.html	2	2	computed,function	
-css/css-values/tree-counting/sibling-index-keyframe-registered-properties-dynamic.html	21	20	computed,function	
+css/css-values/tree-counting/sibling-index-keyframe-registered-properties-dynamic.html	20	20	computed,function	
 css/css-values/tree-counting/sibling-index-keyframe-rotate-dynamic.html	2	2	computed,function	
 css/css-values/tree-counting/sibling-index-keyframe-scale-dynamic.html	2	2	computed,function	
 css/css-values/tree-counting/sibling-index-keyframe-transform-dynamic.html	2	2	computed,function	
@@ -4538,7 +4538,7 @@ css/css-variables/variable-animation-substitute-within-keyframe-multiple.html	3	
 css/css-variables/variable-animation-substitute-within-keyframe.html	3	2	computed,function,layout-geometry,timing	
 css/css-variables/variable-animation-to-only.html	3	2	computed,function,layout-geometry,timing	
 css/css-variables/variable-created-document.html	5	2	computed,function	
-css/css-variables/variable-created-element.html	6	3	computed,function	
+css/css-variables/variable-created-element.html	3	3	computed,function	
 css/css-variables/variable-css-wide-keywords-after-substitution.html	6	2	computed,function,loop	
 css/css-variables/variable-css-wide-keywords.html	1	1	computed,function,loop	
 css/css-variables/variable-cssText.html	11	1	function,loop	
@@ -4547,7 +4547,7 @@ css/css-variables/variable-definition-border-shorthand-serialize.html	1	1	functi
 css/css-variables/variable-definition-cascading.html	9	1	computed,function,loop	
 css/css-variables/variable-definition-keywords.html	8	2	computed,function,loop	
 css/css-variables/variable-definition.html	73	4	computed,function,loop	
-css/css-variables/variable-exponential-blowup.html	4	1	computed,function,loop	
+css/css-variables/variable-exponential-blowup.html	1	1	computed,function,loop	
 css/css-variables/variable-first-letter.html	6	1	computed,function,loop	
 css/css-variables/variable-first-line.html	6	1	computed,function,loop	
 css/css-variables/variable-invalidation.html	4	4	computed,function,sheets	
@@ -4827,7 +4827,7 @@ css/cssom-view/elementFromPoint-003.html	1	1	function,layout-geometry
 css/cssom-view/elementFromPoint-dynamic-anon-box.html	1	1	function	
 css/cssom-view/elementFromPoint-list-001.html	1	1	computed,function,layout-geometry,loop	
 css/cssom-view/elementFromPoint-negative-z-index-inline.html	8	8	function,layout-geometry	
-css/cssom-view/elementFromPosition.html	10	8	function,loop	
+css/cssom-view/elementFromPosition.html	16	8	function,loop	
 css/cssom-view/elementsFromPoint-shadowroot.html	15	3	function,layout-geometry,shadow	resources/elementsFromPoint.js
 css/cssom-view/getClientRects-inline.html	1	1	function,layout-geometry,loop,reftest	
 css/cssom-view/idlharness.html	2	1	function,media,timing	/resources/WebIDLParser.js,/resources/idlharness.js
@@ -4964,7 +4964,7 @@ css/cssom/cssom-fontfacerule.html	1	1	fonts,function,sheets
 css/cssom/cssom-getPropertyValue-common-checks.html	18	11	computed,function,loop,media	
 css/cssom/cssom-pagerule.html	22	22	function,sheets	
 css/cssom/cssom-ruleTypeAndOrder.html	3	1	fonts,function,loop,sheets	
-css/cssom/cssom-setProperty-shorthand.html	6	4	function,loop	
+css/cssom/cssom-setProperty-shorthand.html	76	4	function,loop	
 css/cssom/cssstyledeclaration-all-shorthand.html	27	27	function,sheets	
 css/cssom/cssstyledeclaration-cssfontrule.tentative.html	1	1	fonts,function,sheets	
 css/cssom/cssstyledeclaration-csstext-all-shorthand.html	6	6	computed,function,loop	
@@ -5304,11 +5304,11 @@ css/selectors/invalidation/any-link-attribute-removal.html	1	1	computed,reftest
 css/selectors/invalidation/any-link-pseudo.html	1	1	computed,function	
 css/selectors/invalidation/attribute-or-elemental-selectors-in-has.html	36	1	computed,function	
 css/selectors/invalidation/attribute.html	6	6	computed,function	
-css/selectors/invalidation/child-indexed-pseudo-classes-in-has.html	35	6	computed,function	
+css/selectors/invalidation/child-indexed-pseudo-classes-in-has.html	66	6	computed,function	
 css/selectors/invalidation/defined-in-has.html	1	1	computed,custom-element,function	
 css/selectors/invalidation/defined.html	2	1	computed,custom-element,function	
 css/selectors/invalidation/empty-pseudo-in-has-display-none.html	17	2	computed,function,layout-geometry	
-css/selectors/invalidation/empty-pseudo-in-has.html	12	1	computed,function	
+css/selectors/invalidation/empty-pseudo-in-has.html	6	1	computed,function	
 css/selectors/invalidation/enabled-disabled.html	2	2	computed,function	
 css/selectors/invalidation/first-child-last-child.html	2	2	computed,function,loop	
 css/selectors/invalidation/fullscreen-pseudo-class-in-has.html	3	2	computed,frame-or-popup,function,input-driver,timing	
@@ -5323,10 +5323,10 @@ css/selectors/invalidation/has-invalidation-after-removing-non-first-element.htm
 css/selectors/invalidation/has-invalidation-first-in-sibling-chain.html	3	1	computed,function,loop	
 css/selectors/invalidation/has-invalidation-for-wiping-an-element.html	10	1	computed,function	
 css/selectors/invalidation/has-pseudo-element-subject-child-mutation.html	4	4	computed,function	
-css/selectors/invalidation/has-pseudoclass-only.html	3	1	computed,function,loop	
-css/selectors/invalidation/has-sibling-insertion-removal.html	43	1	computed,function	
+css/selectors/invalidation/has-pseudoclass-only.html	36	1	computed,function,loop	
+css/selectors/invalidation/has-sibling-insertion-removal.html	28	1	computed,function	
 css/selectors/invalidation/has-sibling.html	42	1	computed,function	
-css/selectors/invalidation/has-side-effect.html	6	1	computed,function	
+css/selectors/invalidation/has-side-effect.html	3	1	computed,function	
 css/selectors/invalidation/has-unstyled.html	8	1	computed,function	
 css/selectors/invalidation/has-with-is-child-combinator.html	10	1	computed,function	
 css/selectors/invalidation/has-with-nesting-parent-containing-complex.html	40	3	computed,function,input-driver,timing	/resources/testdriver-actions.js
@@ -5377,7 +5377,7 @@ css/selectors/invalidation/sibling.html	7	7	computed,function
 css/selectors/invalidation/state-in-has.html	1	1	computed,custom-element,function	
 css/selectors/invalidation/subject-has-invalidation-with-display-none-anchor-element.html	1	1	computed,function	
 css/selectors/invalidation/target-pseudo-in-has.html	2	1	computed,function,timing	
-css/selectors/invalidation/typed-child-indexed-pseudo-classes-in-has.html	47	6	computed,function	
+css/selectors/invalidation/typed-child-indexed-pseudo-classes-in-has.html	102	6	computed,function	
 css/selectors/invalidation/user-action-pseudo-classes-in-has.html	1	1	computed,function,input-driver,layout-geometry,timing	/resources/testdriver-actions.js
 css/selectors/invalidation/user-valid-user-invalid.html	1	1	computed,function,input-driver,layout-geometry,timing	
 css/selectors/invalidation/where.html	6	5	computed,function,layout-geometry	

@@ -38,6 +38,12 @@
  * slen R S; scss R S; sset S PROP VALUE PRIORITY; sattrset S NAME VALUE; scsstext S VALUE; sremove R S PROP; setattr E NAME VALUE; getattr R E NAME; hasattr R E NAME; rmattr E NAME;
  * classadd|classremove E TOKEN...; classtoggle R E TOKEN; classhas R E TOKEN; cmp R eq|ne|leq|lne A B; not R A; assert_equals A B MSG; assert_not_equals A B MSG; assert_true A MSG;
  * assert_false A MSG; assert_in_array A B... MSG; assert_approx_equals A B EPS MSG; assert_greater_than|assert_less_than|assert_greater_than_equal|assert_less_than_equal A B MSG;
+ * create E TAG NAMESPACE | ctext E DATA | ccomment E DATA | cfrag E | clone E SRC true|false (nodes are `eN` too: an element, a text node, a fragment); append|prepend|replacechildren|before|
+ * after|replacewith NODE ARG... (an ARG is `e:name` or `s:text`); appendchild PARENT CHILD; insertbefore PARENT CHILD REF (`N:` for none); removechild PARENT CHILD; replacechild PARENT
+ * NEW OLD; remove NODE; tcget R NODE; tcset NODE VALUE; dset NODE VALUE; ihget|ohget R NODE; ihset NODE VALUE; nread R NODE nodeType|nodeName|tagName|localName|namespaceURI|nodeValue|
+ * data|isConnected|hasChildNodes|childElementCount; contains R A B; matches R E SEL; closest E2 E SEL; child E PARENT elements|nodes INDEX; nchildren R PARENT elements|nodes; qlen R ROOT SEL;
+ * the nav of elem also takes firstChild|lastChild|nextSibling|previousSibling|parentNode. After a change of the tree the Markup binding is synced, so a style element made by the script has
+ * its sheet.
  * fail MSG; test INDEX NAME; cleanup (the ops after it run whether or not the test failed); end. An op on an element that is null (a lookup that found nothing) fails the test, as
  * the TypeError of the page does.
  */
@@ -166,6 +172,12 @@ typedef struct {
 } style;
 
 typedef struct {
+  char * name;
+  GTEXT_Markup_Node ** nodes;   /* a static NodeList: the elements a querySelectorAll() found when it was called */
+  size_t n;
+} nodelist;
+
+typedef struct {
   GTEXT_CSS_Registry * registry;
   GTEXT_CSS_Conditions * conditions;
   GTEXT_CSSOM_Document * doc;
@@ -182,6 +194,8 @@ typedef struct {
   size_t nstyles, capstyles;
   reg * regs;
   size_t nregs, capregs;
+  nodelist * lists;
+  size_t nlists, caplists;
 } world;
 
 /* The user agent's style sheet is the part of the HTML rendering section that the display and the body's margin need; the library has no user agent sheet of its own. */
@@ -217,9 +231,9 @@ static const char UA_SHEET_FULL[] =
     "table { box-sizing: border-box; border-spacing: 2px; border-collapse: separate } td, th { padding: 1px } th { text-align: center } caption { text-align: center }\n"
     "fieldset { margin-inline: 2px; padding-block: 0.35em 0.625em; padding-inline: 0.75em; border: 2px groove } img { } svg:not(:root) { overflow: hidden }\n";
 
-/* The system colors are the user's: a computed value keeps the keyword until the consumer's environment says what it is (css_element.h resolve_color). The runner is the consumer here, and
- * gives the sRGB value both browsers give each (the palette tools/oracle/css_resolved.h has, which the computed-value gate also supplies): CanvasText, FieldText and ButtonText are black
- * and Canvas, Field and ButtonFace white in the light scheme, and the reverse (white, and 18 for the grounds) in the dark one. Any other name is not answered. */
+/* The system colors are the user's: a computed value keeps the keyword until the consumer's environment says what it is (css_element.h resolve_color). The runner is the consumer here and
+ * answers every system color of CSS Color 4 and the deprecated ones' counterparts with the sRGB value Chromium gives it in each scheme (a palette is the consumer's to choose, and the two
+ * browsers choose differently for several: the computed-value gate supplies the same values for the names it asks about). Any other name is not answered. */
 static bool runner_resolve_color(void * user, const GTEXT_CSS_Color * color, GTEXT_CSS_Color_Scheme scheme, double rgba[4]) {
   (void)user;
   if (!color || color->kind != GTEXT_CSS_COLOR_KEYWORD || (color->keyword != GTEXT_CSS_COLOR_KW_SYSTEM && color->keyword != GTEXT_CSS_COLOR_KW_DEPRECATED)) {
@@ -234,15 +248,40 @@ static bool runner_resolve_color(void * user, const GTEXT_CSS_Color * color, GTE
   }
   w[color->name.length] = '\0';
   const bool dark = scheme == GTEXT_CSS_SCHEME_DARK;
-  if (strcmp(w, "canvastext") == 0 || strcmp(w, "fieldtext") == 0 || strcmp(w, "buttontext") == 0) {
-    rgba[0] = rgba[1] = rgba[2] = dark ? 255 : 0;
-    rgba[3] = 1;
-    return true;
-  }
-  if (strcmp(w, "canvas") == 0 || strcmp(w, "field") == 0 || strcmp(w, "buttonface") == 0) {
-    rgba[0] = rgba[1] = rgba[2] = dark ? 18 : 255;
-    rgba[3] = 1;
-    return true;
+  /* the sRGB value of each system color in the light and the dark scheme: Chromium's (the browsers differ in several, and the consumer's palette is the consumer's) */
+  static const struct {
+    const char * name;
+    double light[4], dark[4];
+  } palette[] = {
+      {"canvas", {255, 255, 255, 1}, {18, 18, 18, 1}},
+      {"canvastext", {0, 0, 0, 1}, {255, 255, 255, 1}},
+      {"linktext", {0, 0, 238, 1}, {158, 158, 255, 1}},
+      {"visitedtext", {85, 26, 139, 1}, {208, 173, 240, 1}},
+      {"activetext", {255, 0, 0, 1}, {255, 0, 0, 1}},
+      {"buttonface", {239, 239, 239, 1}, {107, 107, 107, 1}},
+      {"buttontext", {0, 0, 0, 1}, {255, 255, 255, 1}},
+      {"buttonborder", {0, 0, 0, 1}, {255, 255, 255, 1}},
+      {"field", {255, 255, 255, 1}, {59, 59, 59, 1}},
+      {"fieldtext", {0, 0, 0, 1}, {255, 255, 255, 1}},
+      {"highlight", {0, 65, 198, 0.8}, {0, 65, 198, 0.8}},
+      {"highlighttext", {255, 255, 255, 1}, {255, 255, 255, 1}},
+      {"selecteditem", {25, 103, 210, 1}, {153, 200, 255, 1}},
+      {"selecteditemtext", {255, 255, 255, 1}, {59, 59, 59, 1}},
+      {"mark", {255, 255, 0, 1}, {255, 255, 0, 1}},
+      {"marktext", {0, 0, 0, 1}, {0, 0, 0, 1}},
+      {"graytext", {128, 128, 128, 1}, {128, 128, 128, 1}},
+      {"accentcolor", {0, 117, 255, 1}, {0, 117, 255, 1}},
+      {"accentcolortext", {255, 255, 255, 1}, {255, 255, 255, 1}},
+      {"appworkspace", {255, 255, 255, 1}, {18, 18, 18, 1}},
+      {"scrollbar", {255, 255, 255, 1}, {18, 18, 18, 1}},
+  };
+  for (size_t i = 0; i < sizeof palette / sizeof *palette; i++) {
+    if (strcmp(w, palette[i].name) == 0) {
+      for (int k = 0; k < 4; k++) {
+        rgba[k] = dark ? palette[i].dark[k] : palette[i].light[k];
+      }
+      return true;
+    }
   }
   return false;
 }
@@ -353,6 +392,11 @@ static void world_close(world * w) {
   for (size_t i = 0; i < w->nelems; i++) {
     free(w->elems[i].name);
   }
+  for (size_t i = 0; i < w->nlists; i++) {
+    free(w->lists[i].name);
+    free(w->lists[i].nodes);
+  }
+  free(w->lists);
   for (size_t i = 0; i < w->nregs; i++) {
     free(w->regs[i].name);
     value_free(&w->regs[i].v);
@@ -391,6 +435,33 @@ static void put_elem(world * w, const char * name, GTEXT_Markup_Node * node) {
     e->name = dups(name);
   }
   e->node = node;
+}
+
+static nodelist * find_list(world * w, const char * name) {
+  for (size_t i = w->nlists; i-- > 0;) {
+    if (strcmp(w->lists[i].name, name) == 0) {
+      return &w->lists[i];
+    }
+  }
+  return NULL;
+}
+
+/* takes ownership of `nodes` */
+static void put_list(world * w, const char * name, GTEXT_Markup_Node ** nodes, size_t n) {
+  nodelist * l = find_list(w, name);
+  if (l) {
+    free(l->nodes);
+  }
+  else {
+    if (w->nlists == w->caplists) {
+      w->caplists = w->caplists ? w->caplists * 2 : 8;
+      w->lists = realloc(w->lists, w->caplists * sizeof *w->lists);
+    }
+    l = &w->lists[w->nlists++];
+    l->name = dups(name);
+  }
+  l->nodes = nodes;
+  l->n = n;
 }
 
 static style * find_style(world * w, const char * name) {
@@ -678,6 +749,795 @@ static char * mismatch(const char * name, const char * msg, const value * expect
   return fmt("%s: %s%sexpected %s but got %s", name, msg, *msg ? " " : "", e, g);
 }
 
+/* ---- the document ops: creating, inserting, removing and reading nodes ------------------------------------------------------------------------ */
+
+static char * lower_ascii(const char * s, size_t n) {
+  char * d = dupn(s, n);
+  for (char * p = d; *p; p++) {
+    if (*p >= 'A' && *p <= 'Z') {
+      *p = (char)(*p + 32);
+    }
+  }
+  return d;
+}
+
+/* the exception a Markup status stands for, as the page's script would see it */
+static char * markup_exception(const char * what, GTEXT_Markup_Status ms) {
+  switch (ms) {
+  case GTEXT_MARKUP_E_HIERARCHY:
+    return fmt("HierarchyRequestError: %s: the new child cannot be inserted there", what);
+  case GTEXT_MARKUP_E_NAME:
+    return fmt("InvalidCharacterError: %s: the name is not valid", what);
+  case GTEXT_MARKUP_E_WRONG_DOCUMENT:
+    return fmt("WrongDocumentError: %s", what);
+  default:
+    return fmt("%s failed: %d", what, (int)ms);
+  }
+}
+
+/* after a change of the tree the binding re-reads the style elements (it returns at once when nothing changed) */
+static void sync_world(world * w) {
+  if (w->binding) {
+    gtext_cssom_markup_sync(w->binding, NULL);
+  }
+}
+
+static int node_is_inclusive_ancestor(const GTEXT_Markup_Node * a, const GTEXT_Markup_Node * n) {
+  for (; n; n = gtext_markup_node_parent(n)) {
+    if (n == a) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int node_connected(world * w, const GTEXT_Markup_Node * n) {
+  return node_is_inclusive_ancestor(gtext_markup_document_root(w->markup), n);
+}
+
+/* An argument that is a node or a string (the argument list of append(), before(), replaceChildren()...): a string is made a text node, null is the text "null". Returns the node. */
+static GTEXT_Markup_Node * argument_node(world * w, const char * f, size_t l, char ** failure) {
+  *failure = NULL;
+  GTEXT_Markup_Node * n = NULL;
+  if (l >= 2 && f[0] == 'e' && f[1] == ':') {
+    elem * e = find_elem(w, f + 2);
+    if (!e) {
+      *failure = dups("the op names an element the program did not make");
+      return NULL;
+    }
+    if (e->node) {
+      return e->node;
+    }
+    GTEXT_Markup_Status ms = gtext_markup_create_text(w->markup, "null", 4, &n);
+    if (ms != GTEXT_MARKUP_OK) {
+      *failure = markup_exception("createTextNode", ms);
+    }
+    return n;
+  }
+  if (l >= 2 && f[0] == 's' && f[1] == ':') {
+    GTEXT_Markup_Status ms = gtext_markup_create_text(w->markup, f + 2, l - 2, &n);
+    if (ms != GTEXT_MARKUP_OK) {
+      *failure = markup_exception("createTextNode", ms);
+    }
+    return n;
+  }
+  *failure = dups("the argument of the op is neither a node nor a string");
+  return NULL;
+}
+
+/* "convert nodes into a node": one node as it is, several in a fragment */
+static GTEXT_Markup_Node * argument_nodes(world * w, const op * o, size_t first, char ** failure) {
+  *failure = NULL;
+  if (o->n == first + 1) {
+    return argument_node(w, o->f[first], o->l[first], failure);
+  }
+  GTEXT_Markup_Node * frag = NULL;
+  GTEXT_Markup_Status ms = gtext_markup_create_fragment(w->markup, &frag);
+  if (ms != GTEXT_MARKUP_OK) {
+    *failure = markup_exception("createDocumentFragment", ms);
+    return NULL;
+  }
+  for (size_t i = first; i < o->n; i++) {
+    GTEXT_Markup_Node * n = argument_node(w, o->f[i], o->l[i], failure);
+    if (!n) {
+      return NULL;
+    }
+    ms = gtext_markup_append_child(frag, n);
+    if (ms != GTEXT_MARKUP_OK) {
+      *failure = markup_exception("append", ms);
+      return NULL;
+    }
+  }
+  return frag;
+}
+
+static const char * node_name_of(const GTEXT_Markup_Node * n, char ** owned) {
+  *owned = NULL;
+  switch (gtext_markup_node_kind(n)) {
+  case GTEXT_MARKUP_KIND_DOCUMENT:
+    return "#document";
+  case GTEXT_MARKUP_KIND_FRAGMENT:
+    return "#document-fragment";
+  case GTEXT_MARKUP_KIND_TEXT:
+    return "#text";
+  case GTEXT_MARKUP_KIND_CDATA:
+    return "#cdata-section";
+  case GTEXT_MARKUP_KIND_COMMENT:
+    return "#comment";
+  case GTEXT_MARKUP_KIND_DOCTYPE: {
+    const char * d = gtext_markup_doctype_name(n);
+    return d ? d : "";
+  }
+  case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION: {
+    const char * d = gtext_markup_pi_target(n);
+    return d ? d : "";
+  }
+  case GTEXT_MARKUP_KIND_ELEMENT: {
+    /* the qualified name; an element of the HTML namespace in an HTML document is upper case */
+    const char * local = gtext_markup_element_local_name(n);
+    const char * prefix = gtext_markup_element_prefix(n);
+    const char * ns = gtext_markup_element_namespace(n);
+    char * q = prefix && *prefix ? fmt("%s:%s", prefix, local) : dups(local);
+    if (ns && strcmp(ns, GTEXT_MARKUP_NS_HTML) == 0) {
+      for (char * p = q; *p; p++) {
+        if (*p >= 'a' && *p <= 'z') {
+          *p = (char)(*p - 32);
+        }
+      }
+    }
+    *owned = q;
+    return q;
+  }
+  default:
+    return "";
+  }
+}
+
+static int node_type_of(const GTEXT_Markup_Node * n) {
+  switch (gtext_markup_node_kind(n)) {
+  case GTEXT_MARKUP_KIND_ELEMENT:
+    return 1;
+  case GTEXT_MARKUP_KIND_TEXT:
+    return 3;
+  case GTEXT_MARKUP_KIND_CDATA:
+    return 4;
+  case GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION:
+    return 7;
+  case GTEXT_MARKUP_KIND_COMMENT:
+    return 8;
+  case GTEXT_MARKUP_KIND_DOCUMENT:
+    return 9;
+  case GTEXT_MARKUP_KIND_DOCTYPE:
+    return 10;
+  case GTEXT_MARKUP_KIND_FRAGMENT:
+    return 11;
+  default:
+    return 0;
+  }
+}
+
+static int is_character_data(const GTEXT_Markup_Node * n) {
+  const GTEXT_Markup_Kind k = gtext_markup_node_kind(n);
+  return k == GTEXT_MARKUP_KIND_TEXT || k == GTEXT_MARKUP_KIND_CDATA || k == GTEXT_MARKUP_KIND_COMMENT || k == GTEXT_MARKUP_KIND_PROCESSING_INSTRUCTION;
+}
+
+static void put_bool(world * w, const char * reg, int b) {
+  put_reg(w, reg, val('b', b ? "true" : "false", b ? 4 : 5));
+}
+
+static void put_num(world * w, const char * reg, size_t n) {
+  char buf[32];
+  snprintf(buf, sizeof buf, "%zu", n);
+  put_reg(w, reg, val('n', buf, strlen(buf)));
+}
+
+static GTEXT_Markup_Node * first_child_of(GTEXT_Markup_Node * n) {
+  return gtext_markup_node_first_child(n);
+}
+
+/* the children of an element, in order, as a list to hold while they are moved */
+static GTEXT_Markup_Node ** child_list(GTEXT_Markup_Node * parent, size_t * count) {
+  size_t n = 0;
+  for (GTEXT_Markup_Node * c = first_child_of(parent); c; c = gtext_markup_node_next_sibling(c)) {
+    n++;
+  }
+  GTEXT_Markup_Node ** list = malloc((n ? n : 1) * sizeof *list);
+  size_t i = 0;
+  for (GTEXT_Markup_Node * c = first_child_of(parent); c; c = gtext_markup_node_next_sibling(c)) {
+    list[i++] = c;
+  }
+  *count = n;
+  return list;
+}
+
+/* Replace all the children of `parent` with `node` (NULL: with nothing), as the DOM's "replace all": on a refusal the tree is as it was. */
+static char * replace_all(GTEXT_Markup_Node * parent, GTEXT_Markup_Node * node, const char * what) {
+  size_t count;
+  GTEXT_Markup_Node ** old = child_list(parent, &count);
+  for (size_t i = 0; i < count; i++) {
+    gtext_markup_remove(old[i]);
+  }
+  GTEXT_Markup_Status ms = node ? gtext_markup_append_child(parent, node) : GTEXT_MARKUP_OK;
+  if (ms != GTEXT_MARKUP_OK) {
+    for (size_t i = 0; i < count; i++) {
+      gtext_markup_append_child(parent, old[i]);
+    }
+    free(old);
+    return markup_exception(what, ms);
+  }
+  free(old);
+  return NULL;
+}
+
+static GTEXT_HTML_Namespace html_namespace_of(const GTEXT_Markup_Node * el) {
+  const char * ns = gtext_markup_element_namespace(el);
+  if (ns && strcmp(ns, "http://www.w3.org/2000/svg") == 0) {
+    return GTEXT_HTML_NS_SVG;
+  }
+  if (ns && strcmp(ns, "http://www.w3.org/1998/Math/MathML") == 0) {
+    return GTEXT_HTML_NS_MATHML;
+  }
+  return GTEXT_HTML_NS_HTML;
+}
+
+/* innerHTML = text: the fragment parsing algorithm in the context of the element, the result cloned into the document and put in place of the children */
+static char * set_inner_html(world * w, GTEXT_Markup_Node * el, const char * text, size_t len) {
+  GTEXT_HTML_Fragment_Context ctx;
+  memset(&ctx, 0, sizeof ctx);
+  ctx.ns = html_namespace_of(el);
+  ctx.local_name = gtext_markup_element_local_name(el);
+  ctx.quirks = gtext_markup_document_mode(w->markup);
+  for (const GTEXT_Markup_Node * p = el; p; p = gtext_markup_node_parent(p)) {
+    if (gtext_markup_node_kind(p) == GTEXT_MARKUP_KIND_ELEMENT && strcmp(gtext_markup_element_local_name(p), "form") == 0) {
+      ctx.form_ancestor = true;
+    }
+  }
+  GTEXT_Markup_Document * scratch = NULL;
+  GTEXT_Markup_Node * frag = NULL;
+  GTEXT_HTML_Result hr;
+  memset(&hr, 0, sizeof hr);
+  GTEXT_HTML_Status hs = gtext_html_parse_fragment(&ctx, text, len, NULL, &scratch, &frag, &hr);
+  gtext_html_result_free(&hr);
+  if (hs != GTEXT_HTML_OK) {
+    return fmt("innerHTML: the fragment parse failed: %d", (int)hs);
+  }
+  GTEXT_Markup_Node * copy = NULL;
+  GTEXT_Markup_Status ms = gtext_markup_clone(w->markup, frag, true, &copy);
+  gtext_markup_document_free(scratch);
+  if (ms != GTEXT_MARKUP_OK) {
+    return markup_exception("innerHTML", ms);
+  }
+  GTEXT_Markup_Node * target = el;
+  if (strcmp(gtext_markup_element_local_name(el), "template") == 0 && gtext_markup_element_template_content(el)) {
+    target = gtext_markup_element_template_content(el);
+  }
+  return replace_all(target, copy, "innerHTML");
+}
+
+static char * serialize_to_reg(world * w, const char * reg, GTEXT_Markup_Node * n, GTEXT_HTML_Serialize_Scope scope) {
+  char * out = NULL;
+  size_t len = 0;
+  GTEXT_HTML_Serialize_Result sr;
+  memset(&sr, 0, sizeof sr);
+  GTEXT_HTML_Status hs = gtext_html_serialize_buffer(n, scope, NULL, &out, &len, &sr);
+  if (hs != GTEXT_HTML_OK) {
+    return fmt("serialization failed: %d", (int)hs);
+  }
+  put_reg(w, reg, val('s', out, len));
+  gtext_html_serialize_buffer_free(w->markup, NULL, out);
+  return NULL;
+}
+
+/* A node's own place among the lists a script reads: the child at INDEX of the elements (`children`) or of all the nodes (`childNodes`), and how many. */
+static GTEXT_Markup_Node * child_at(GTEXT_Markup_Node * parent, int elements_only, size_t index, size_t * total) {
+  size_t i = 0;
+  GTEXT_Markup_Node * found = NULL;
+  for (GTEXT_Markup_Node * c = first_child_of(parent); c; c = gtext_markup_node_next_sibling(c)) {
+    if (elements_only && !is_element(c)) {
+      continue;
+    }
+    if (i == index && !found) {
+      found = c;
+    }
+    i++;
+  }
+  if (total) {
+    *total = i;
+  }
+  return found;
+}
+
+/* The document ops. Returns 1 when the op was one of these (its failure, if any, in *failure). */
+static int dom_op(world * w, const op * o, int * program_error, char ** failure) {
+  const char * name = o->f[0];
+  *failure = NULL;
+#define NEEDN(n_) do { if (o->n != (n_)) { *program_error = 1; *failure = fmt("the op %s has %zu fields, not %d", name, o->n, (n_)); return 1; } } while (0)
+#define NODE(var, fld) elem * var = find_elem(w, o->f[fld]); if (!var) { *program_error = 1; *failure = fmt("the op %s names the node %s, which the program did not make", name, o->f[fld]); return 1; } \
+  if (!var->node) { *failure = dups("TypeError: the node is null"); return 1; }
+  GTEXT_Markup_Status ms;
+  if (strcmp(name, "create") == 0) {
+    NEEDN(4);   /* create E TAG NAMESPACE (the namespace is "" for createElement in an HTML document) */
+    char * tag = o->f[3][0] ? dupn(o->f[2], o->l[2]) : lower_ascii(o->f[2], o->l[2]);
+    GTEXT_Markup_Node * n = NULL;
+    if (!gtext_markup_is_xml_name(tag, strlen(tag))) {
+      *failure = fmt("InvalidCharacterError: createElement: the name \"%s\" is not valid", tag);
+    }
+    else {
+      ms = gtext_markup_create_element(w->markup, o->f[3][0] ? o->f[3] : GTEXT_MARKUP_NS_HTML, NULL, tag, &n);
+      if (ms != GTEXT_MARKUP_OK) {
+        *failure = markup_exception("createElement", ms);
+      }
+      else {
+        put_elem(w, o->f[1], n);
+      }
+    }
+    free(tag);
+    return 1;
+  }
+  if (strcmp(name, "ctext") == 0 || strcmp(name, "ccomment") == 0) {
+    NEEDN(3);
+    GTEXT_Markup_Node * n = NULL;
+    ms = name[1] == 't' ? gtext_markup_create_text(w->markup, o->f[2], o->l[2], &n) : gtext_markup_create_comment(w->markup, o->f[2], o->l[2], &n);
+    if (ms != GTEXT_MARKUP_OK) {
+      *failure = markup_exception(name[1] == 't' ? "createTextNode" : "createComment", ms);
+    }
+    else {
+      put_elem(w, o->f[1], n);
+    }
+    return 1;
+  }
+  if (strcmp(name, "cfrag") == 0) {
+    NEEDN(2);
+    GTEXT_Markup_Node * n = NULL;
+    ms = gtext_markup_create_fragment(w->markup, &n);
+    if (ms != GTEXT_MARKUP_OK) {
+      *failure = markup_exception("createDocumentFragment", ms);
+    }
+    else {
+      put_elem(w, o->f[1], n);
+    }
+    return 1;
+  }
+  if (strcmp(name, "clone") == 0) {
+    NEEDN(4);   /* clone E SRC DEEP */
+    NODE(src, 2);
+    GTEXT_Markup_Node * n = NULL;
+    ms = gtext_markup_clone(w->markup, src->node, strcmp(o->f[3], "true") == 0, &n);
+    if (ms != GTEXT_MARKUP_OK) {
+      *failure = markup_exception("cloneNode", ms);
+    }
+    else {
+      put_elem(w, o->f[1], n);
+    }
+    return 1;
+  }
+  if (strcmp(name, "append") == 0 || strcmp(name, "prepend") == 0 || strcmp(name, "replacechildren") == 0) {
+    if (o->n < 2) {
+      *program_error = 1;
+      *failure = dups("the op has no parent");
+      return 1;
+    }
+    NODE(parent, 1);
+    GTEXT_Markup_Node * node = NULL;
+    if (o->n > 2) {
+      node = argument_nodes(w, o, 2, failure);
+      if (!node) {
+        return 1;
+      }
+    }
+    if (name[0] == 'r') {
+      *failure = replace_all(parent->node, node, "replaceChildren");
+    }
+    else if (node) {
+      ms = gtext_markup_insert_before(parent->node, node, name[0] == 'p' ? first_child_of(parent->node) : NULL);
+      if (ms != GTEXT_MARKUP_OK) {
+        *failure = markup_exception(name, ms);
+      }
+    }
+    sync_world(w);
+    return 1;
+  }
+  if (strcmp(name, "appendchild") == 0 || strcmp(name, "insertbefore") == 0) {
+    const int ib = name[0] == 'i';
+    NEEDN(ib ? 4 : 3);
+    NODE(parent, 1);
+    elem * child = find_elem(w, o->f[2]);
+    if (!child) {
+      *program_error = 1;
+      *failure = fmt("the op %s names the node %s, which the program did not make", name, o->f[2]);
+      return 1;
+    }
+    if (!child->node) {
+      *failure = dups("TypeError: Failed to execute on 'Node': parameter 1 is not of type 'Node'.");
+      return 1;
+    }
+    GTEXT_Markup_Node * ref = NULL;
+    if (ib && strcmp(o->f[3], "N:") != 0) {
+      elem * r = find_elem(w, o->f[3] + 2);
+      if (!r) {
+        *program_error = 1;
+        *failure = dups("insertbefore names a reference the program did not make");
+        return 1;
+      }
+      ref = r->node;
+    }
+    if (ref && gtext_markup_node_parent(ref) != parent->node) {
+      *failure = dups("NotFoundError: insertBefore: the reference node is not a child of this node");
+      return 1;
+    }
+    ms = gtext_markup_insert_before(parent->node, child->node, ref);
+    if (ms != GTEXT_MARKUP_OK) {
+      *failure = markup_exception(ib ? "insertBefore" : "appendChild", ms);
+    }
+    sync_world(w);
+    return 1;
+  }
+  if (strcmp(name, "removechild") == 0) {
+    NEEDN(3);
+    NODE(parent, 1);
+    NODE(child, 2);
+    if (gtext_markup_node_parent(child->node) != parent->node) {
+      *failure = dups("NotFoundError: removeChild: the node is not a child of this node");
+      return 1;
+    }
+    gtext_markup_remove(child->node);
+    sync_world(w);
+    return 1;
+  }
+  if (strcmp(name, "replacechild") == 0) {
+    NEEDN(4);   /* replacechild PARENT NEW OLD */
+    NODE(parent, 1);
+    NODE(nw, 2);
+    NODE(old, 3);
+    if (gtext_markup_node_parent(old->node) != parent->node) {
+      *failure = dups("NotFoundError: replaceChild: the node is not a child of this node");
+      return 1;
+    }
+    ms = gtext_markup_replace(old->node, nw->node);
+    if (ms != GTEXT_MARKUP_OK) {
+      *failure = markup_exception("replaceChild", ms);
+    }
+    sync_world(w);
+    return 1;
+  }
+  if (strcmp(name, "remove") == 0) {
+    NEEDN(2);
+    NODE(n, 1);
+    gtext_markup_remove(n->node);
+    sync_world(w);
+    return 1;
+  }
+  if (strcmp(name, "before") == 0 || strcmp(name, "after") == 0 || strcmp(name, "replacewith") == 0) {
+    if (o->n < 2) {
+      *program_error = 1;
+      *failure = dups("the op has no node");
+      return 1;
+    }
+    NODE(n, 1);
+    GTEXT_Markup_Node * parent = gtext_markup_node_parent(n->node);
+    if (!parent) {
+      return 1;
+    }
+    /* the nodes of the arguments, to tell a viable sibling from one of them */
+    GTEXT_Markup_Node * ref = NULL;
+    const int is_arg = 0;
+    (void)is_arg;
+    if (name[0] == 'b') {
+      ref = n->node;
+      for (;;) {
+        GTEXT_Markup_Node * prev = gtext_markup_node_previous_sibling(ref);
+        int arg = 0;
+        for (size_t i = 2; prev && i < o->n; i++) {
+          if (o->l[i] >= 2 && o->f[i][0] == 'e') {
+            elem * e = find_elem(w, o->f[i] + 2);
+            arg |= e && e->node == prev;
+          }
+        }
+        if (!arg) {
+          break;
+        }
+        ref = prev;
+      }
+      ref = gtext_markup_node_previous_sibling(ref);
+      ref = ref ? gtext_markup_node_next_sibling(ref) : first_child_of(parent);
+    }
+    else if (name[0] == 'a') {
+      ref = gtext_markup_node_next_sibling(n->node);
+      for (;;) {
+        int arg = 0;
+        for (size_t i = 2; ref && i < o->n; i++) {
+          if (o->l[i] >= 2 && o->f[i][0] == 'e') {
+            elem * e = find_elem(w, o->f[i] + 2);
+            arg |= e && e->node == ref;
+          }
+        }
+        if (!arg) {
+          break;
+        }
+        ref = gtext_markup_node_next_sibling(ref);
+      }
+    }
+    GTEXT_Markup_Node * node = NULL;
+    if (o->n > 2) {
+      node = argument_nodes(w, o, 2, failure);
+      if (!node) {
+        return 1;
+      }
+    }
+    if (name[0] == 'r') {
+      if (node) {
+        ms = gtext_markup_replace(n->node, node);
+        if (ms != GTEXT_MARKUP_OK) {
+          *failure = markup_exception("replaceWith", ms);
+        }
+      }
+      else {
+        gtext_markup_remove(n->node);
+      }
+    }
+    else if (node) {
+      ms = gtext_markup_insert_before(parent, node, ref);
+      if (ms != GTEXT_MARKUP_OK) {
+        *failure = markup_exception(name, ms);
+      }
+    }
+    sync_world(w);
+    return 1;
+  }
+  if (strcmp(name, "tcget") == 0) {
+    NEEDN(3);
+    NODE(n, 2);
+    const GTEXT_Markup_Kind k = gtext_markup_node_kind(n->node);
+    if (k == GTEXT_MARKUP_KIND_DOCUMENT || k == GTEXT_MARKUP_KIND_DOCTYPE) {
+      put_reg(w, o->f[1], val('N', "", 0));
+    }
+    else if (is_character_data(n->node)) {
+      size_t len = 0;
+      const char * d = gtext_markup_node_data(n->node, &len);
+      put_reg(w, o->f[1], val('s', d ? d : "", d ? len : 0));
+    }
+    else {
+      char * text = NULL;
+      size_t len = 0;
+      ms = gtext_markup_node_text_content(n->node, NULL, &text, &len);
+      if (ms != GTEXT_MARKUP_OK) {
+        *failure = markup_exception("textContent", ms);
+        return 1;
+      }
+      put_reg(w, o->f[1], val('s', text, len));
+      gtext_markup_string_free(NULL, text);
+    }
+    return 1;
+  }
+  if (strcmp(name, "tcset") == 0 || strcmp(name, "dset") == 0) {
+    NEEDN(3);
+    NODE(n, 1);
+    const GTEXT_Markup_Kind k = gtext_markup_node_kind(n->node);
+    if (name[0] == 'd' && !is_character_data(n->node)) {
+      return 1;   /* `data` is an ordinary property of any other node: an expando of the script object */
+    }
+    if (is_character_data(n->node)) {
+      ms = gtext_markup_node_set_data(n->node, o->f[2], o->l[2]);
+      if (ms != GTEXT_MARKUP_OK) {
+        *failure = markup_exception("textContent", ms);
+      }
+    }
+    else if (k == GTEXT_MARKUP_KIND_ELEMENT || k == GTEXT_MARKUP_KIND_FRAGMENT) {
+      GTEXT_Markup_Node * text = NULL;
+      if (o->l[2]) {
+        ms = gtext_markup_create_text(w->markup, o->f[2], o->l[2], &text);
+        if (ms != GTEXT_MARKUP_OK) {
+          *failure = markup_exception("textContent", ms);
+          return 1;
+        }
+      }
+      *failure = replace_all(n->node, text, "textContent");
+    }
+    sync_world(w);
+    return 1;
+  }
+  if (strcmp(name, "ihget") == 0 || strcmp(name, "ohget") == 0) {
+    NEEDN(3);
+    NODE(n, 2);
+    *failure = serialize_to_reg(w, o->f[1], n->node, name[0] == 'i' ? GTEXT_HTML_SERIALIZE_CHILDREN : GTEXT_HTML_SERIALIZE_OUTER);
+    return 1;
+  }
+  if (strcmp(name, "ihset") == 0) {
+    NEEDN(3);
+    NODE(n, 1);
+    *failure = set_inner_html(w, n->node, o->f[2], o->l[2]);
+    sync_world(w);
+    return 1;
+  }
+  if (strcmp(name, "nread") == 0) {
+    NEEDN(4);   /* nread R NODE WHAT */
+    NODE(n, 2);
+    const char * what = o->f[3];
+    const GTEXT_Markup_Kind k = gtext_markup_node_kind(n->node);
+    if (strcmp(what, "nodeType") == 0) {
+      put_num(w, o->f[1], (size_t)node_type_of(n->node));
+    }
+    else if (strcmp(what, "nodeName") == 0) {
+      char * owned;
+      const char * s = node_name_of(n->node, &owned);
+      put_reg(w, o->f[1], val('s', s, strlen(s)));
+      free(owned);
+    }
+    else if (strcmp(what, "tagName") == 0 || strcmp(what, "localName") == 0 || strcmp(what, "namespaceURI") == 0) {
+      /* undefined on a node that is not an element (localName and namespaceURI are null on other nodes, tagName is not there) */
+      if (k != GTEXT_MARKUP_KIND_ELEMENT) {
+        put_reg(w, o->f[1], what[0] == 't' ? val('u', "", 0) : val('N', "", 0));
+      }
+      else if (what[0] == 't') {
+        char * owned;
+        const char * s = node_name_of(n->node, &owned);
+        put_reg(w, o->f[1], val('s', s, strlen(s)));
+        free(owned);
+      }
+      else if (what[0] == 'l') {
+        const char * s = gtext_markup_element_local_name(n->node);
+        put_reg(w, o->f[1], val('s', s, strlen(s)));
+      }
+      else {
+        const char * s = gtext_markup_element_namespace(n->node);
+        put_reg(w, o->f[1], s ? val('s', s, strlen(s)) : val('N', "", 0));
+      }
+    }
+    else if (strcmp(what, "nodeValue") == 0 || strcmp(what, "data") == 0) {
+      if (is_character_data(n->node)) {
+        size_t len = 0;
+        const char * d = gtext_markup_node_data(n->node, &len);
+        put_reg(w, o->f[1], val('s', d ? d : "", d ? len : 0));
+      }
+      else {
+        put_reg(w, o->f[1], what[0] == 'n' ? val('N', "", 0) : val('u', "", 0));
+      }
+    }
+    else if (strcmp(what, "isConnected") == 0) {
+      put_bool(w, o->f[1], node_connected(w, n->node));
+    }
+    else if (strcmp(what, "hasChildNodes") == 0) {
+      put_bool(w, o->f[1], first_child_of(n->node) != NULL);
+    }
+    else if (strcmp(what, "childElementCount") == 0) {
+      size_t total = 0;
+      child_at(n->node, 1, (size_t)-1, &total);
+      put_num(w, o->f[1], total);
+    }
+    else {
+      *program_error = 1;
+      *failure = fmt("nread %s is not known", what);
+    }
+    return 1;
+  }
+  if (strcmp(name, "contains") == 0) {
+    NEEDN(4);   /* contains R A B (B may be null: false) */
+    NODE(a, 2);
+    elem * b = find_elem(w, o->f[3]);
+    if (!b) {
+      *program_error = 1;
+      *failure = dups("contains names a node the program did not make");
+      return 1;
+    }
+    put_bool(w, o->f[1], b->node && node_is_inclusive_ancestor(a->node, b->node));
+    return 1;
+  }
+  if (strcmp(name, "matches") == 0 || strcmp(name, "closest") == 0) {
+    NEEDN(4);   /* matches R E SEL; closest E2 E SEL */
+    NODE(e, 2);
+    if (!is_element(e->node)) {
+      *program_error = 1;
+      *failure = dups("matches on a node that is not an element");
+      return 1;
+    }
+    bool matched = false;
+    GTEXT_Markup_Node * found = NULL;
+    if (name[0] == 'm') {
+      ms = gtext_markup_matches(e->node, o->f[3], o->l[3], NULL, &matched, NULL);
+    }
+    else {
+      ms = gtext_markup_closest(e->node, o->f[3], o->l[3], NULL, &found, NULL);
+    }
+    if (ms == GTEXT_MARKUP_E_SELECTOR) {
+      *failure = dups("SyntaxError: the selector is not valid");
+      return 1;
+    }
+    if (ms != GTEXT_MARKUP_OK) {
+      *failure = fmt("%s failed: %d", name, (int)ms);
+      return 1;
+    }
+    if (name[0] == 'm') {
+      put_bool(w, o->f[1], matched);
+    }
+    else {
+      put_elem(w, o->f[1], found);
+    }
+    return 1;
+  }
+  if (strcmp(name, "qsa") == 0) {
+    NEEDN(4);   /* qsa L ROOT SELECTOR: a static NodeList */
+    const GTEXT_Markup_Node * scope = gtext_markup_document_root(w->markup);
+    if (strcmp(o->f[2], "doc") != 0) {
+      NODE(r, 2);
+      scope = r->node;
+    }
+    GTEXT_Markup_Node ** nodes = NULL;
+    size_t count = 0;
+    ms = gtext_markup_query_selector_all(scope, o->f[3], o->l[3], NULL, &nodes, &count, NULL);
+    if (ms == GTEXT_MARKUP_E_SELECTOR) {
+      *failure = dups("SyntaxError: the selector is not valid");
+      return 1;
+    }
+    if (ms != GTEXT_MARKUP_OK) {
+      *failure = fmt("querySelectorAll failed: %d", (int)ms);
+      return 1;
+    }
+    GTEXT_Markup_Node ** own = malloc((count ? count : 1) * sizeof *own);
+    memcpy(own, nodes, count * sizeof *own);
+    gtext_markup_query_free(NULL, nodes);
+    put_list(w, o->f[1], own, count);
+    return 1;
+  }
+  if (strcmp(name, "llen") == 0 || strcmp(name, "lget") == 0) {
+    NEEDN(name[1] == 'l' ? 3 : 4);   /* llen R L; lget E L INDEX */
+    nodelist * l = find_list(w, o->f[2]);
+    if (!l) {
+      *program_error = 1;
+      *failure = fmt("the op %s names the list %s, which the program did not make", name, o->f[2]);
+      return 1;
+    }
+    if (name[1] == 'l') {
+      put_num(w, o->f[1], l->n);
+    }
+    else {
+      const size_t idx = (size_t)strtoull(o->f[3], NULL, 10);
+      put_elem(w, o->f[1], idx < l->n ? l->nodes[idx] : NULL);
+    }
+    return 1;
+  }
+  if (strcmp(name, "qlen") == 0) {
+    NEEDN(4);   /* qlen R ROOT SELECTOR */
+    const GTEXT_Markup_Node * scope = gtext_markup_document_root(w->markup);
+    if (strcmp(o->f[2], "doc") != 0) {
+      NODE(r, 2);
+      scope = r->node;
+    }
+    GTEXT_Markup_Node ** nodes = NULL;
+    size_t count = 0;
+    ms = gtext_markup_query_selector_all(scope, o->f[3], o->l[3], NULL, &nodes, &count, NULL);
+    if (ms == GTEXT_MARKUP_E_SELECTOR) {
+      *failure = dups("SyntaxError: the selector is not valid");
+      return 1;
+    }
+    if (ms != GTEXT_MARKUP_OK) {
+      *failure = fmt("querySelectorAll failed: %d", (int)ms);
+      return 1;
+    }
+    gtext_markup_query_free(NULL, nodes);
+    put_num(w, o->f[1], count);
+    return 1;
+  }
+  if (strcmp(name, "child") == 0 || strcmp(name, "nchildren") == 0) {
+    /* child E PARENT elements|nodes INDEX; nchildren R PARENT elements|nodes */
+    const int len_op = name[0] == 'n';
+    NEEDN(len_op ? 4 : 5);
+    NODE(p, 2);
+    const int only_elements = strcmp(o->f[3], "elements") == 0;
+    size_t total = 0;
+    if (len_op) {
+      child_at(p->node, only_elements, (size_t)-1, &total);
+      put_num(w, o->f[1], total);
+    }
+    else {
+      put_elem(w, o->f[1], child_at(p->node, only_elements, (size_t)strtoull(o->f[4], NULL, 10), &total));
+    }
+    return 1;
+  }
+  return 0;
+#undef NEEDN
+#undef NODE
+}
+
 /* ---- running one op --------------------------------------------------------------------------------------------------------------------- */
 
 /// Returns NULL, or the message of a failure of the test (an assertion, or the exception the page's script would have thrown).
@@ -687,9 +1547,16 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
   int ok;
 #define NEED(n_) do { if (o->n != (n_)) { *program_error = 1; return fmt("the op %s has %zu fields, not %d", name, o->n, (n_)); } } while (0)
 #define ELEM(var, fld) elem * var = find_elem(w, o->f[fld]); if (!var) { *program_error = 1; return fmt("the op %s names the element %s, which the program did not make", name, o->f[fld]); } \
-  if (!var->node) { return dups("TypeError: the element is null"); }
+  if (!var->node) { return dups("TypeError: the element is null"); } \
+  if (!is_element(var->node)) { return dups("TypeError: the node is not an element"); }
 #define STYLE(var, fld) style * var = find_style(w, o->f[fld]); if (!var) { *program_error = 1; return fmt("the op %s names the style %s, which the program did not make", name, o->f[fld]); }
 
+  {
+    char * failure = NULL;
+    if (dom_op(w, o, program_error, &failure)) {
+      return failure;
+    }
+  }
   if (strcmp(name, "elem") == 0) {
     if (o->n < 4) {
       *program_error = 1;
@@ -753,6 +1620,15 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
         gtext_markup_query_free(NULL, nodes);
       }
     }
+    else if (strcmp(how, "list") == 0) {
+      nodelist * l = o->n > 4 ? find_list(w, o->f[3]) : NULL;
+      if (!l) {
+        *program_error = 1;
+        return fmt("elem list names the list %s, which the program did not make", o->n > 3 ? o->f[3] : "");
+      }
+      const size_t idx = (size_t)strtoull(o->f[4], NULL, 10);
+      found = idx < l->n ? l->nodes[idx] : NULL;
+    }
     else if (strcmp(how, "nav") == 0) {
       elem * from = find_elem(w, o->f[3]);
       if (!from) {
@@ -778,6 +1654,21 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
           found = is_element(c) ? c : NULL;
         }
       }
+      else if (strcmp(what, "firstChild") == 0) {
+        found = gtext_markup_node_first_child(n);
+      }
+      else if (strcmp(what, "lastChild") == 0) {
+        found = gtext_markup_node_last_child(n);
+      }
+      else if (strcmp(what, "nextSibling") == 0) {
+        found = gtext_markup_node_next_sibling(n);
+      }
+      else if (strcmp(what, "previousSibling") == 0) {
+        found = gtext_markup_node_previous_sibling(n);
+      }
+      else if (strcmp(what, "parentNode") == 0) {
+        found = gtext_markup_node_parent(n);
+      }
       else if (strcmp(what, "nextElementSibling") == 0) {
         found = element_sibling(n, 1);
       }
@@ -799,6 +1690,7 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
   if (strcmp(name, "gcs") == 0) {
     NEED(4);
     ELEM(e, 2);
+    sync_world(w);
     GTEXT_CSSOM_Decl * d = NULL;
     GTEXT_CSS_Status st = gtext_cssom_computed_style(w->doc, gtext_css_markup_handle(e->node), o->f[3], o->l[3], &d);
     if (st != GTEXT_CSS_OK) {
@@ -940,6 +1832,7 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
     }
     GTEXT_Markup_Status ms = gtext_markup_element_set_attribute(e->node, NULL, NULL, lower, o->f[3], o->l[3]);
     free(lower);
+    sync_world(w);
     return ms == GTEXT_MARKUP_OK ? NULL : fmt("setAttribute failed: %d", (int)ms);
   }
   if (strcmp(name, "rmattr") == 0) {
@@ -951,6 +1844,7 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
     }
     gtext_markup_element_remove_attribute(e->node, NULL, lower);
     free(lower);
+    sync_world(w);
     return NULL;
   }
   if (strcmp(name, "getattr") == 0 || strcmp(name, "hasattr") == 0) {
@@ -1036,6 +1930,7 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
       joined[jo] = '\0';
       gtext_markup_element_set_attribute(e->node, NULL, NULL, "class", joined, jo);
       free(joined);
+      sync_world(w);
     }
     free(list);
     if (tog || has) {
@@ -1222,6 +2117,9 @@ typedef struct {
   int index;
   testrun t;
   int errors;
+  /* `iftrue X` / `iffalse X` ... `else` ... `endif` (X an operand): the ops between are run when the value is true in JavaScript's sense (for a node, when there is one), and skipped otherwise; the blocks nest */
+  int gdepth;
+  char gparent[32], gcond[32], gact[32];
 } program;
 
 /* ---- the document as a script sees it -------------------------------------------------------------------------------------------------- */
@@ -1284,6 +2182,16 @@ static int program_open(program * p, size_t extent) {
         free(path);
       }
       put_elem(nw, ow->elems[i].name, n);
+    }
+    for (size_t i = 0; i < ow->nlists; i++) {
+      GTEXT_Markup_Node ** nodes = malloc((ow->lists[i].n ? ow->lists[i].n : 1) * sizeof *nodes);
+      for (size_t k = 0; k < ow->lists[i].n; k++) {
+        size_t depth;
+        size_t * path = node_path(ow->lists[i].nodes[k], &depth);
+        nodes[k] = node_at(nw->markup, path, depth);
+        free(path);
+      }
+      put_list(nw, ow->lists[i].name, nodes, ow->lists[i].n);
     }
     for (size_t i = 0; i < ow->nregs; i++) {
       put_reg(nw, ow->regs[i].name, val(ow->regs[i].v.kind, ow->regs[i].v.s, ow->regs[i].v.n));
@@ -1352,6 +2260,7 @@ static void end_test(program * p) {
 
 static void end_program(program * p) {
   end_test(p);
+  p->gdepth = 0;
   if (p->open) {
     world_close(&p->w);
     p->open = 0;
@@ -1428,6 +2337,38 @@ int main(void) {
       }
       if (!p.open && p.html && !program_open(&p, p.html_len)) {
         printf("E\t%s\tcould not open the document\n", p.file);
+      }
+      if (strcmp(o.f[0], "iftrue") == 0 || strcmp(o.f[0], "iffalse") == 0 || strcmp(o.f[0], "else") == 0 || strcmp(o.f[0], "endif") == 0) {
+        if (o.f[0][0] == 'e' && o.f[0][1] == 'n') {
+          if (p.gdepth > 0) {
+            p.gdepth--;
+          }
+        }
+        else if (o.f[0][0] == 'e') {
+          if (p.gdepth > 0) {
+            p.gact[p.gdepth - 1] = p.gparent[p.gdepth - 1] && !p.gcond[p.gdepth - 1];
+          }
+        }
+        else if (p.gdepth < 32 && o.n == 2) {
+          const int parent = p.gdepth == 0 ? 1 : p.gact[p.gdepth - 1];
+          int cond = 0;
+          if (parent) {
+            int okay = 0;
+            value v = operand(&p.w, o.f[1], o.l[1], &okay);
+            /* JavaScript's truthiness of the value: a node is true when there is one */
+            const int truth = !okay ? 0 : v.kind == 'b' ? strcmp(v.s, "true") == 0 : v.kind == 's' ? v.n > 0 : v.kind == 'n' ? (strtod(v.s, NULL) != 0 && strtod(v.s, NULL) == strtod(v.s, NULL)) : v.kind == 'e';
+            value_free(&v);
+            cond = o.f[0][2] == 't' ? truth : !truth;
+          }
+          p.gparent[p.gdepth] = (char)parent;
+          p.gcond[p.gdepth] = (char)cond;
+          p.gact[p.gdepth] = (char)(parent && cond);
+          p.gdepth++;
+        }
+        continue;
+      }
+      if (p.gdepth > 0 && !p.gact[p.gdepth - 1]) {
+        continue;
       }
       if (!p.open || (p.in_test && p.t.failed && !p.in_cleanup)) {
         if (p.open && (strcmp(o.f[0], "elem") == 0 || strcmp(o.f[0], "gcs") == 0 || strcmp(o.f[0], "sget") == 0 || strcmp(o.f[0], "sattr") == 0)) {

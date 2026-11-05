@@ -117,6 +117,8 @@ def translate(op):
         root = 'document' if a[2] == 'doc' else E(a[2])
         if how == 'sel':
             return '%s = %s.querySelector(%s);' % (E(r), root, jstr(a[3]))
+        if how == 'list':
+            return '%s = R.l[%s][%s] || null;' % (E(r), jstr(a[2]), a[3])
         if how == 'qsa':
             return '%s = %s.querySelectorAll(%s)[%s] || null;' % (E(r), root, jstr(a[3]), a[4] if len(a) > 4 else '0')
         if how == 'nav':
@@ -162,6 +164,71 @@ def translate(op):
         return '%s = %s.classList.toggle(%s);' % (Rg(a[0]), E(a[1]), jstr(a[2]))
     if n == 'classhas':
         return '%s = %s.classList.contains(%s);' % (Rg(a[0]), E(a[1]), jstr(a[2]))
+    if n == 'create':
+        if a[2]:
+            return '%s = document.createElementNS(%s, %s);' % (E(a[0]), jstr(a[2]), jstr(a[1]))
+        return '%s = document.createElement(%s);' % (E(a[0]), jstr(a[1]))
+    if n == 'ctext':
+        return '%s = document.createTextNode(%s);' % (E(a[0]), jstr(a[1]))
+    if n == 'ccomment':
+        return '%s = document.createComment(%s);' % (E(a[0]), jstr(a[1]))
+    if n == 'cfrag':
+        return '%s = document.createDocumentFragment();' % E(a[0])
+    if n == 'clone':
+        return '%s = %s.cloneNode(%s);' % (E(a[0]), E(a[1]), a[2])
+    if n in ('append', 'prepend', 'replacechildren', 'before', 'after', 'replacewith'):
+        method = {'replacechildren': 'replaceChildren', 'replacewith': 'replaceWith'}.get(n, n)
+        return '%s.%s(%s);' % (E(a[0]), method, ', '.join(lit(x) for x in a[1:]))
+    if n == 'appendchild':
+        return '%s.appendChild(%s);' % (E(a[0]), E(a[1]))
+    if n == 'insertbefore':
+        return '%s.insertBefore(%s, %s);' % (E(a[0]), E(a[1]), lit(a[2]))
+    if n == 'removechild':
+        return '%s.removeChild(%s);' % (E(a[0]), E(a[1]))
+    if n == 'replacechild':
+        return '%s.replaceChild(%s, %s);' % (E(a[0]), E(a[1]), E(a[2]))
+    if n == 'remove':
+        return '%s.remove();' % E(a[0])
+    if n == 'tcget':
+        return '%s = %s.textContent;' % (Rg(a[0]), E(a[1]))
+    if n == 'tcset':
+        return '%s.textContent = %s;' % (E(a[0]), jstr(a[1]))
+    if n == 'dset':
+        return '%s.data = %s;' % (E(a[0]), jstr(a[1]))
+    if n == 'ihget':
+        return '%s = %s.innerHTML;' % (Rg(a[0]), E(a[1]))
+    if n == 'ohget':
+        return '%s = %s.outerHTML;' % (Rg(a[0]), E(a[1]))
+    if n == 'ihset':
+        return '%s.innerHTML = %s;' % (E(a[0]), jstr(a[1]))
+    if n == 'nread':
+        if a[2] == 'hasChildNodes':
+            return '%s = %s.hasChildNodes();' % (Rg(a[0]), E(a[1]))
+        return '%s = %s.%s;' % (Rg(a[0]), E(a[1]), a[2])
+    if n == 'contains':
+        return '%s = %s.contains(%s);' % (Rg(a[0]), E(a[1]), lit(a[2]))
+    if n == 'matches':
+        return '%s = %s.matches(%s);' % (Rg(a[0]), E(a[1]), jstr(a[2]))
+    if n == 'closest':
+        return '%s = %s.closest(%s);' % (E(a[0]), E(a[1]), jstr(a[2]))
+    if n == 'child':
+        return '%s = %s.%s[%s] || null;' % (E(a[0]), E(a[1]), 'children' if a[2] == 'elements' else 'childNodes', a[3])
+    if n == 'nchildren':
+        return '%s = %s.%s.length;' % (Rg(a[0]), E(a[1]), 'children' if a[2] == 'elements' else 'childNodes')
+    if n == 'qsa':
+        return 'R.l[%s] = %s.querySelectorAll(%s);' % (jstr(a[0]), 'document' if a[1] == 'doc' else E(a[1]), jstr(a[2]))
+    if n == 'llen':
+        return '%s = R.l[%s].length;' % (Rg(a[0]), jstr(a[1]))
+    if n == 'qlen':
+        return '%s = %s.querySelectorAll(%s).length;' % (Rg(a[0]), 'document' if a[1] == 'doc' else E(a[1]), jstr(a[2]))
+    if n == 'iftrue':
+        return 'if (%s) {' % lit(a[0])
+    if n == 'iffalse':
+        return 'if (!%s) {' % lit(a[0])
+    if n == 'else':
+        return '} else {'
+    if n == 'endif':
+        return '}'
     if n == 'csssupports':
         return '%s = CSS.supports(%s);' % (Rg(a[0]), ', '.join(jstr(x) for x in a[1:]))
     if n == 'cssescape':
@@ -227,7 +294,7 @@ def script_bodies(ops):
 
 def translate_script(ops):
     """The JavaScript of one script's ops."""
-    lines = ['var R = window.__R || (window.__R = {e: Object.create(null), s: Object.create(null), r: Object.create(null)});']
+    lines = ['var R = window.__R || (window.__R = {e: Object.create(null), s: Object.create(null), r: Object.create(null), l: Object.create(null)});']
     cur = None
     for op in ops:
         if op[0] == 'doc':

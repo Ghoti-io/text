@@ -1,6 +1,6 @@
 # The evaluator's own corpus (tools/css/check-cssom-eval.py): pages written for it, not taken from the pin, each with a hand-checked outcome. Every assertion of a case that is meant to hold
 # is also true in a JavaScript engine (the check can run the cases under node: `check-cssom-eval.py --node`). A case is `=== name`, then lines `tests N` and `outcome K ok|fail|unmodeled:<code>` for
-# each test (K from 0; a test that is not named is `ok`), then `---`, then the page. `ok` means the test has ops and none of them is a `fail` op: the constants held.
+# each test (K from 0; a test that is not named is `ok`), then `---`, then the page. A line `has OP` is a prefix of an op of the program (`|` between the fields), or the whole op when it ends with `$`. `ok` means the test has ops and none of them is a `fail` op: the constants held.
 === loop-for-unrolls-three
 tests 3
 ---
@@ -412,4 +412,122 @@ has assert_equals|r:r1|n:-0|
 ---
 <!DOCTYPE html><title>t</title><div id=a></div><script>
 test(() => { assert_equals(getComputedStyle(document.getElementById("a")).zIndex, -0); }, "zero");
+</script>
+=== create-append-keeps-the-order-of-the-arguments
+tests 1
+has create|e1|div|
+has create|e2|span|
+has appendchild|e1|e2
+has insertbefore|e1|e2|e:e2
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const a = document.createElement("div");
+  const b = document.createElement("span");
+  a.appendChild(b);
+  a.insertBefore(b, b);
+  assert_equals(a.firstChild, b);
+}, "order");
+</script>
+=== insert-before-with-null-and-replace-child-order
+tests 1
+has insertbefore|e1|e2|N:
+has replacechild|e1|e3|e2
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const a = document.createElement("div");
+  const b = document.createElement("p");
+  const c = document.createElement("i");
+  a.insertBefore(b, null);
+  a.replaceChild(c, b);
+}, "null and replace");
+</script>
+=== append-takes-nodes-and-strings
+tests 1
+has append|e1|s:text|e:e2|s:null|s:3
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const a = document.createElement("div");
+  const b = document.createElement("b");
+  a.append("text", b, null, 3);
+}, "append");
+</script>
+=== text-content-and-inner-html-are-assigned-as-strings
+tests 1
+has tcset|e1|$
+has tcset|e1|5$
+has ihset|e1|<b>x</b>
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const a = document.createElement("div");
+  a.textContent = null;
+  a.textContent = 5;
+  a.innerHTML = "<b>x</b>";
+}, "assign");
+</script>
+=== a-node-that-may-not-exist-guards-the-statements
+tests 1
+has iftrue|e:e1
+has remove|e1
+has else
+has endif
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const old = document.querySelector("style");
+  if (old) { old.remove(); } else { document.body.setAttribute("a", "b"); }
+}, "guard");
+</script>
+=== a-negated-guard-and-a-guard-that-assigns-are-told-apart
+tests 2
+has iffalse|e:e1
+outcome 1 unmodeled:host-node-may-be-null
+---
+<!DOCTYPE html><title>t</title><script>
+let seen = 0;
+test(() => {
+  const old = document.querySelector("style");
+  if (!old) { document.body.setAttribute("a", "b"); }
+}, "negated");
+test(() => {
+  const old = document.querySelector("style");
+  if (old) { seen = 1; }
+}, "assigns a variable of the page");
+</script>
+=== a-computed-value-guards-the-statements
+tests 1
+has iftrue|r:r2
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const v = getComputedStyle(document.body).color;
+  if (v != "") { assert_equals(v, v); }
+}, "register guard");
+</script>
+=== a-static-node-list-is-a-snapshot-and-a-collection-is-live
+tests 1
+has qsa|l1|doc|div
+has elem|e2|list|l1|0
+has qlen|r1|doc|div
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const snap = document.querySelectorAll("div");
+  const live = document.getElementsByTagName("div");
+  const first = snap[0];
+  const n = live.length;
+}, "lists");
+</script>
+=== a-nullable-node-is-not-a-condition-outside-a-statement
+tests 1
+outcome 0 unmodeled:host-node-may-be-null
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => {
+  const x = document.querySelector("p");
+  const y = x ? 1 : 2;
+}, "ternary");
 </script>
