@@ -25,6 +25,8 @@
 # runs the retry policy against scripted answers (a page that differs once and is as recorded on the second try is listed as unstable; one that differs twice is a change).
 # Both engines run at the same time, each in its own container: on a quiet 12-thread host the whole gate (1,022 pages and 614 replays, both engines) takes minutes, not hours; a page that
 # differs from the record is asked again, alone, and a host so loaded that more than a few pages differ once is refused (css_page_record.py, "Stability").
+# One page is a declared flaky page (css_page_flaky.json: Chromium's answer to rlh on the root depends on a style recalculation between the page's <style> and <script>); it is asked
+# sixteen more times in one session and may answer the declared alternate, but never anything else and never only the alternate (css_page_record.py, "Declared flaky pages").
 set -e
 
 root=$(cd "$(dirname "$0")/../.." && pwd)

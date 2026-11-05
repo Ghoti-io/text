@@ -1,0 +1,19 @@
+{
+  "css/css-values/rlh-on-root-lengths.html": {
+    "chromium": {
+      "reason": "A style recalculation that runs between the page's <style> and its <script> computes the root's rlh before the root's own line-height; measured one load in thirty (one in six inside a long session), with no frame drawn. See the Declared flaky pages paragraph of css_page_record.py.",
+      "alternates": [
+        {
+          "status": 0,
+          "tests": [
+            [
+              "Non font or line-height properties on :root should resolve rlh against :root line-height",
+              1,
+              "assert_equals: expected \"146px\" but got \"36px\""
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -46,6 +46,15 @@ committed record (``--against``) asks every page once, and a page that differs i
 answers, and counted: more than UNSTABLE_LIMIT of them means the host is too loaded to be trusted and the run is refused), when it is not the answer stays and the comparison fails.
 A change in a page, in a browser or in the harness is answered the same way by the second try, so it cannot hide there; the one thing a retry can hide is a page whose answer
 really does alternate between the recorded one and another, which is what *unstable* names and counts.
+
+**Declared flaky pages.** For one page the alternation is the browser's, is measured, and does not go away with a quiet host: Chromium answers css/css-values/rlh-on-root-lengths.html
+"36px" instead of "146px" in about one load in thirty (one in six inside a long session), because a style recalculation that runs between the page's ``<style>`` and its
+``<script>`` computes the root's ``rlh`` before the root's own ``line-height`` (no frame is drawn: a ``requestAnimationFrame`` callback made first has not run). A retry alone is
+a fresh session, which is the slowest one, so "differs, then differs again" is not rare enough to be a verdict. Such a page is declared in FLAKY (tools/oracle/css_page_flaky.json:
+page, engine, the exact alternate answers, and why). The rule for a declared page, and only for it: the page is asked FLAKY_ASKS times in one session; an answer that is neither the
+recorded one nor a declared alternate is a change (the comparison fails); and when none of the answers is the recorded one the comparison fails too (a browser that has come to answer
+the alternate every time is a change, not noise). Anything else is *unstable*, listed and counted like any other. A declaration excuses its own page, its own engine and its own
+answers; the controls (``--policy-controls``) show that each of those limits holds.
 """
 import argparse
 import hashlib
@@ -106,6 +115,53 @@ def ask(engine, pages, wpt):
 
 UNSTABLE_LIMIT = 25
 STABLE_TRIES = 5
+FLAKY_ASKS = 16
+FLAKY_FILE = os.path.join(HERE, 'css_page_flaky.json')
+
+
+def load_flaky(path=None):
+    """{(page, engine): [the alternate entries]} of the declared flaky pages."""
+    out = {}
+    with open(path or FLAKY_FILE, encoding='utf-8') as f:
+        for page, engines in json.load(f).items():
+            for engine, decl in engines.items():
+                if engine not in ENGINES or not decl.get('reason') or not decl.get('alternates'):
+                    raise SystemExit('css_page_record: %s: %s/%s needs an engine, a reason and alternates' % (path or FLAKY_FILE, page, engine))
+                out[(page, engine)] = decl['alternates']
+    return out
+
+
+FLAKY = load_flaky()
+
+
+def ask_many(engine, page, count, wpt):
+    """The entries of `count` loads of one page in one session."""
+    _, rows = ask(engine, [page] * count, wpt)
+    return [entry_of(r) for r in rows]
+
+
+def settle_flaky(engine, page, seen, reference, wpt):
+    """(entry to keep, unstable answers or None) for a declared flaky page, `seen` being the answers already had. With a reference the entry is the reference when every answer is the
+    reference or a declared alternate and the reference was among them; otherwise the first answer that is neither (or, when only alternates came, the first alternate), so that the
+    comparison fails. Without one the entry is the one answer that is not an alternate, or an error when there are several."""
+    alts = FLAKY[(page, engine)]
+    seen = list(seen) + ask_many(engine, page, FLAKY_ASKS, wpt)
+    others = [x for x in seen if x not in alts and x != reference]
+    if reference is not None:
+        if others:
+            return others[0], None
+        if reference not in seen:
+            return seen[0], None
+        return reference, [x for x in seen[:2]]
+    plain = []
+    for x in seen:
+        if x not in alts and x not in plain:
+            plain.append(x)
+    if len(plain) > 1:
+        return {'error': 'unstable: %d different answers that are not declared alternates' % len(plain)}, seen[:2]
+    if not plain:
+        return seen[0], None
+    return plain[0], (seen[:2] if any(x in alts for x in seen) else None)
 
 
 def entry_of(a):
@@ -144,7 +200,11 @@ def settle(engine, pages, wpt, batch, reference=None, label=''):
     unstable = {}
     if reference is not None:
         for p in pages:
-            if first[p] != reference.get(p):
+            if first[p] != reference.get(p) and (p, engine) in FLAKY:
+                entries[p], seen = settle_flaky(engine, p, [first[p]], reference.get(p), wpt)
+                if seen is not None:
+                    unstable[p] = seen
+            elif first[p] != reference.get(p):
                 _, again, _ = one_pass(engine, [p], wpt, 1, label + 'retry')
                 entries[p] = again[p]
                 if again[p] == reference.get(p):
@@ -152,6 +212,11 @@ def settle(engine, pages, wpt, batch, reference=None, label=''):
     else:
         _, second, _ = one_pass(engine, pages, wpt, batch, label + 'pass 2')
         for p in pages:
+            if (p, engine) in FLAKY:
+                entries[p], seen = settle_flaky(engine, p, [first[p], second[p]], None, wpt)
+                if seen is not None:
+                    unstable[p] = seen
+                continue
             if first[p] == second[p]:
                 continue
             seen = [first[p], second[p]]
@@ -400,6 +465,12 @@ def plant_candidates(progs, record):
             at = G.plant_index(ops, plant)
             if at is None or test_of[at] is None:
                 continue
+            if plant == 'negate-cmp':
+                # a comparison that only guards an assertion (`if (a === b) { assert... }`, the iftrue/iffalse of a script that tests a value before it asserts on it) is skipped
+                # when negated and the test still passes: it is not a plant the verdict must show
+                reg = ops[at][1]
+                if any(o[0] in ('iftrue', 'iffalse') and o[1] == 'r:' + reg for o in ops):
+                    continue
             idx = test_of[at]
             ch, ff = e['chromium']['tests'][idx][1], e['firefox']['tests'][idx][1]
             if ch != ff:
@@ -469,6 +540,52 @@ def policy_controls():
             expect('too many unstable pages refuse the run', False)
         except SystemExit as x:
             expect('too many unstable pages refuse the run', 'too loaded' in str(x))
+        # declared flaky pages: only the page, the engine and the answers declared are excused
+        global FLAKY
+        saved = FLAKY
+        FLAKY = {('f', 'chromium'): [entry_of(row('f', X1))]}
+        try:
+            one = ['f']
+            fref = {e: {'f': entry_of(row('f', X0))} for e in ENGINES}
+            X2 = {'status': 0, 'tests': [['t', 1, 'assert_equals: expected "1" but got "3"']]}
+
+            def run(table, engine='chromium', reference=fref):
+                global ask
+                ask = scripted(table)
+                _, got, unstable = settle_engines(one, '.', 10, reference, jobs=1)
+                return got[engine]['f'], unstable[engine]
+            got, unst = run({'f': [X1, X0]})
+            expect('a declared page that answers an alternate then the record is unstable and as recorded', got == fref['chromium']['f'] and 'f' in unst)
+            got, unst = run({'f': [X1, X1, X1, X0] + [X1] * 40})
+            expect('a declared page may answer the alternate most of the time', got == fref['chromium']['f'] and 'f' in unst)
+            got, unst = run({'f': [X1]})
+            expect('a declared page that never answers the record is a change', got != fref['chromium']['f'] and 'f' not in unst)
+            got, unst = run({'f': [X1, X0, X2]})
+            expect('a declared page that answers something else once is a change', got != fref['chromium']['f'] and 'f' not in unst)
+            got, unst = run({'f': [X2, X0]})
+            expect('a declared page whose first answer is something else is a change', got != fref['chromium']['f'] and 'f' not in unst)
+            fref_alt = {e: {'f': entry_of(row('f', X2))} for e in ENGINES}
+            got, unst = run({'f': [X1, X0]}, reference=fref_alt)
+            expect('a record changed to another answer is not excused by the declaration', got != fref_alt['chromium']['f'])
+            FLAKY = {('f', 'firefox'): [entry_of(row('f', X1))]}
+            ask = scripted({'f': [X1, X1, X0, X0]})
+            _, got, unst = settle_engines(one, '.', 10, fref, jobs=1)
+            expect('a declaration for the other engine excuses nothing', got['chromium']['f'] != fref['chromium']['f'] and 'f' not in unst['chromium'] and 'f' in unst['firefox'])
+            FLAKY = {('f', 'chromium'): [entry_of(row('f', X1))]}
+            ask = scripted({'g': [X1, X0]})
+            _, got, unst = settle_engines(['g'], '.', 10, {e: {'g': entry_of(row('g', X0))} for e in ENGINES}, jobs=1)
+            expect('a declaration excuses its own page only (an undeclared page is retried once)', 'g' in unst['chromium'])
+            ask = scripted({'g': [X1, X1]})
+            _, got, unst = settle_engines(['g'], '.', 10, {e: {'g': entry_of(row('g', X0))} for e in ENGINES}, jobs=1)
+            expect('an undeclared page that answers the alternate twice is a change', got['chromium']['g'] != entry_of(row('g', X0)))
+            ask = scripted({'f': [X0, X1, X0, X1] + [X0] * 40})
+            _, got, unst = settle_engines(one, '.', 10, None, jobs=1)
+            expect('from nothing, a declared page answers the one answer that is not an alternate', got['chromium']['f'] == entry_of(row('f', X0)) and 'f' in unst['chromium'])
+            ask = scripted({'f': [X0, X2, X0] + [X0] * 40})
+            _, got, unst = settle_engines(one, '.', 10, None, jobs=1)
+            expect('from nothing, a declared page with two answers that are not alternates is an error', 'error' in got['chromium']['f'])
+        finally:
+            FLAKY = saved
     finally:
         ask = real
         quiet.__exit__(None, None, None)
