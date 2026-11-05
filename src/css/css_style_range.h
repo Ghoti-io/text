@@ -32,6 +32,7 @@
 #ifndef GHOTI_IO_GTEXT_SRC_CSS_CSS_STYLE_RANGE_H
 #define GHOTI_IO_GTEXT_SRC_CSS_CSS_STYLE_RANGE_H
 
+#include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/css/css_parse.h>
 #include <ghoti.io/text/css/css_value.h>
 

@@ -120,7 +120,7 @@ def draft_text(path):
     s = re.sub(r'\{\{([^{}\n|]*)(?:\|[^{}\n]*)?\}\}', r'\1', s)
     s = re.sub(r"''([^'\n]*)''", r'\1', s)
     s = re.sub(r"(?<![\w'])'([A-Za-z@:][\w/@:-]*)'(?![\w'])", r'\1', s)
-    s = re.sub(r'<(script|style)\b.*?</\1>', ' ', s, flags=re.S)
+    s = re.sub(r'<(script|style)(?=[\s>]).*?</\1>', ' ', s, flags=re.S)
     s = re.sub(r'<!--.*?-->', ' ', s, flags=re.S)
     s = re.sub(r'</?[A-Za-z][^<>]*>', '', s)
     s = s.replace('*', '').replace('`', '')
