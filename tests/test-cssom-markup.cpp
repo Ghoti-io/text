@@ -218,6 +218,50 @@ TEST(CssomMarkup, ATextChangeRemovesTheOldSheetAndMakesANewOneAndTheOtherIsKept)
   for (auto * s : {old1, old2, new1, new2}) gtext_cssom_sheet_release(s);
 }
 
+/* HTML Standard, "The style element": the "children changed steps" run "update a style block", which makes a new sheet whenever the children change, an empty text node included (the
+   pinned css/cssom/css-style-reparse.html: "style.appendChild(document.createTextNode(""))" drops a rule added through the object model, in both browsers). */
+TEST(CssomMarkup, AnEmptyTextNodeAddedToAStyleMakesItsSheetAgain) {
+  Mk m("<!DOCTYPE html><html><head><style id=e></style></head><body><p id=a>x</p></body></html>");
+  ASSERT_EQ(m.sync(), GTEXT_CSS_OK);
+  GTEXT_Markup_Node * st = m.el("#e");
+  GTEXT_CSSOM_Sheet * sh = m.sheet(st);
+  ASSERT_NE(sh, nullptr);
+  ASSERT_EQ(gtext_cssom_sheet_insert_rule(sh, "p{color:red}", 12, 0, nullptr, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_cssom_sheet_rule_total(sh), 1u);
+  GTEXT_CSSOM_Outcome o{};
+  ASSERT_EQ(m.sync(&o), GTEXT_CSS_OK);
+  EXPECT_EQ(o.kind, GTEXT_CSSOM_UNCHANGED) << "nothing changed yet";
+  GTEXT_Markup_Node * empty = nullptr;
+  ASSERT_EQ(gtext_markup_create_text(m.markup(), "", 0, &empty), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_markup_append_child(st, empty), GTEXT_MARKUP_OK);
+  ASSERT_EQ(m.sync(&o), GTEXT_CSS_OK);
+  EXPECT_EQ(o.kind, GTEXT_CSSOM_CHANGED);
+  GTEXT_CSSOM_Sheet * again = m.sheet(st);
+  ASSERT_NE(again, nullptr);
+  EXPECT_NE(again, sh) << "a new sheet";
+  EXPECT_EQ(gtext_cssom_sheet_rule_total(again), 0u) << "without the rule the object model added";
+  gtext_cssom_sheet_release(again);
+  gtext_cssom_sheet_release(sh);
+}
+
+/* CSSOM, "add a CSS style sheet": "If the title is not the empty string, the alternate flag is unset, and preferred CSS style sheet set name is the empty string change the preferred CSS
+   style sheet set name to the title", and the disabled flag is unset when "The title is the empty string" or the title matches the preferred name, and set otherwise (the pinned
+   css/cssom/stylesheet-title.html and preferred-stylesheet-order.html). */
+TEST(CssomMarkup, TheFirstTitledSheetIsThePreferredSetAndTheOthersWithATitleAreDisabled) {
+  Mk m("<!DOCTYPE html><html><head><style></style><style title=\"\"></style><style title=\"Preferred\">p{color:green}</style><style title=\"Not preferred\">p{color:red}</style>"
+       "<style title=\"Preferred\">p{margin-top:2px}</style></head><body><p id=a>x</p></body></html>");
+  ASSERT_EQ(m.sync(), GTEXT_CSS_OK);
+  const bool want[] = {false, false, false, true, false};
+  for (size_t i = 0; i < 5; i++) {
+    GTEXT_CSSOM_Sheet * sh = m.sheet(m.el("style", i));
+    ASSERT_NE(sh, nullptr) << i;
+    EXPECT_EQ(gtext_cssom_sheet_disabled(sh), want[i]) << "sheet " << i;
+    gtext_cssom_sheet_release(sh);
+  }
+  EXPECT_EQ(m.value("#a", "color"), "green");
+  EXPECT_EQ(m.value("#a", "margin-top"), "2px") << "a second sheet of the preferred set is enabled too";
+}
+
 TEST(CssomMarkup, TextSetToWhatItWasChangesNothingAndTheRulesTheObjectModelAddedStay) {
   Mk m;
   ASSERT_EQ(m.sync(), GTEXT_CSS_OK);

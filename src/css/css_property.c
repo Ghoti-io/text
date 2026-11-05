@@ -722,6 +722,31 @@ static bool first_time_is_negative(const GTEXT_CSS_Component_Value * values, siz
   return false;
 }
 
+/// Whether a `flex` value gives a unitless number to the basis that Flexbox 1 gives to a flex factor: "A unitless zero that is not already preceded by two flex factors must be
+/// interpreted as a flex factor." So `0 1 1` is grow 0, shrink 1 and a `1` for the basis, which is not a length: the declaration is invalid, where the grammar's `||` would read it as
+/// basis `0` with grow 1 and shrink 1 (both pinned browsers refuse it, css/css-flexbox/getcomputedstyle/flexbox_computedstyle_flex-shorthand-invalid.html).
+static bool flex_number_is_basis(const GTEXT_CSS_Component_Value * values, size_t count) {
+  size_t factors = 0;
+  for (size_t i = 0; i < count; i++) {
+    const GTEXT_CSS_Component_Value * v = &values[i];
+    if (v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_WHITESPACE) {
+      continue;
+    }
+    if (v->kind != GTEXT_CSS_VALUE_TOKEN) {
+      return false;   /* a function or block: not judged here */
+    }
+    if (v->type == GTEXT_CSS_TOKEN_NUMBER) {
+      if (factors < 2) {
+        factors++;
+      }
+      else if (v->number != 0.0) {
+        return true;   /* a third number is the basis, and a number other than zero is not a length */
+      }
+    }
+  }
+  return false;
+}
+
 GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, const char * name, size_t name_length,
     const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Property_Options * options,
     GTEXT_CSS_Property_Value * out) {
@@ -852,6 +877,12 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
   if (st != GTEXT_CSS_OK) {
     gtext_css_property_value_free(out);
     out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+  }
+  else if (out->outcome == GTEXT_CSS_PROP_RESULT_VALID && info.name_length == 4 && memcmp(info.name, "flex", 4) == 0 && flex_number_is_basis(values, count)) {
+    gtext_css_value_set_free(out->set);
+    out->set = NULL;
+    out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;
+    return GTEXT_CSS_OK;
   }
   else if (out->outcome == GTEXT_CSS_PROP_RESULT_VALID && info.name_length >= 9 &&
            (memcmp(info.name, "transition", 10) == 0 || memcmp(info.name, "animation", 9) == 0) &&

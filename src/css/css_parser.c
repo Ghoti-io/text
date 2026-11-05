@@ -525,6 +525,78 @@ static bool count_declaration(parser * p, const GTEXT_CSS_Declaration * d) {
 }
 
 /*
+ * A backslash that ends the input starts an escape with nothing after it, and CSS Syntax 4.3.7 ("consume an escaped code point") turns that into U+FFFD ("EOF: This is a parse error.
+ * Return U+FFFD."), except in a string, where 4.3.5 does nothing with it ("If the next input code point is EOF, do nothing"), so the token is the string without it. The original text of a
+ * custom property is the source, so the last token's trailing backslash is written as the token has it: U+FFFD for an identifier, a dimension, a hash or a url (a url token also gets its
+ * closing parenthesis, which the token has), and nothing, with the closing quote, for a string (the pinned css/css-syntax/escaped-eof.html; Chromium writes exactly that, Firefox keeps the
+ * backslash before the U+FFFD).
+ */
+static bool fix_escaped_eof(parser * p, tstream * s, size_t list_end, GTEXT_CSS_Declaration * d) {
+  const css_tok * stop = ts_at(s, list_end);
+  if (stop->type != GTEXT_CSS_TOKEN_EOF || d->original_text.length == 0 || d->original_text.data[d->original_text.length - 1] != '\\') {
+    return true;
+  }
+  size_t k = list_end;
+  const css_tok * last = NULL;
+  while (k > 0) {
+    const css_tok * t = ts_at(s, --k);
+    if (t->type != GTEXT_CSS_TOKEN_WHITESPACE) {
+      last = t;
+      break;
+    }
+  }
+  if (!last || last->end != stop->start) {
+    return true;   /* white space or a comment follows the backslash: it is not the last thing of the input */
+  }
+  /* an odd run of backslashes ends in an escape; an even run is escaped backslashes */
+  size_t run = 0;
+  while (run < d->original_text.length && d->original_text.data[d->original_text.length - 1 - run] == '\\') {
+    run++;
+  }
+  if (run % 2 == 0) {
+    return true;
+  }
+  const char * ending = NULL;
+  size_t drop = 1;
+  char tail[8];
+  size_t tail_len = 0;
+  switch (last->type) {
+  case GTEXT_CSS_TOKEN_IDENT:
+  case GTEXT_CSS_TOKEN_DIMENSION:
+  case GTEXT_CSS_TOKEN_HASH:
+  case GTEXT_CSS_TOKEN_AT_KEYWORD:
+  case GTEXT_CSS_TOKEN_FUNCTION:
+    ending = "\xEF\xBF\xBD";
+    break;
+  case GTEXT_CSS_TOKEN_URL:
+    ending = "\xEF\xBF\xBD)";
+    break;
+  case GTEXT_CSS_TOKEN_STRING:
+    tail[0] = (char)p->ctx->in[last->start];
+    tail_len = 1;
+    break;
+  default:
+    return true;
+  }
+  if (ending) {
+    tail_len = strlen(ending);
+    memcpy(tail, ending, tail_len);
+  }
+  const size_t length = d->original_text.length - drop + tail_len;
+  char * text = css_arena_alloc(&p->ctx->arena, length + 1);
+  if (!text) {
+    css_fail(p->ctx, GTEXT_CSS_E_OOM);
+    return false;
+  }
+  memcpy(text, d->original_text.data, d->original_text.length - drop);
+  memcpy(text + d->original_text.length - drop, tail, tail_len);
+  text[length] = '\0';
+  d->original_text.data = text;
+  d->original_text.length = length;
+  return true;
+}
+
+/*
  * Consume a declaration the speculation said is one: the name, the colon, the
  * value, `!important`, the trailing white space, the original text of a
  * custom property and the unicode-range value. Returns false if the
@@ -603,6 +675,9 @@ static bool build_decl(parser * p, tstream * s, bool nested, GTEXT_CSS_Declarati
     if (n > 0) {
       if (!css_filtered_text(p->ctx, vstack(p, base)->span.offset,
               vstack(p, base + n - 1)->span.end, &d->original_text)) {
+        return false;
+      }
+      if (!fix_escaped_eof(p, s, list_end, d)) {
         return false;
       }
     }

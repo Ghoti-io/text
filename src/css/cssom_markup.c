@@ -66,6 +66,7 @@ typedef struct mentry {
   size_t text_length;
   char * media, * title;           ///< The attributes as they were; NULL for absent.
   size_t media_length, title_length;
+  size_t children;                 ///< A style: the number of Text and CDATA children, empty ones too (the HTML Standard's "children changed steps" reparse for each change of them).
   size_t old_index;                ///< Scratch of a sync.
   bool stay;
 } mentry;
@@ -81,6 +82,8 @@ struct GTEXT_CSSOM_Markup_Binding {
   GTEXT_Allocator alloc;
   GTEXT_CSSOM_Markup_Options options;
   char * base_url;                 ///< A copy.
+  char * preferred;                ///< CSSOM's preferred CSS style sheet set name ("" until a sheet with a title and no alternate flag is added); NULL is the empty string.
+  size_t preferred_length;
   mentry ** order;
   size_t n, cap;
   mentry ** map;                   ///< Open addressing; NULL is empty, TOMB a deleted slot.
@@ -388,6 +391,19 @@ static GTEXT_CSS_Status style_text(GTEXT_CSSOM_Markup_Binding * b, const GTEXT_M
   return GTEXT_CSS_OK;
 }
 
+/// The Text and CDATA children of a style element, empty ones included: a node added or removed is a change of the children, which reparses the sheet (HTML Standard, "update a style
+/// block") even when the text stays what it was.
+static size_t style_children(const GTEXT_Markup_Node * el) {
+  size_t n = 0;
+  for (const GTEXT_Markup_Node * c = gtext_markup_node_first_child(el); c; c = gtext_markup_node_next_sibling(c)) {
+    const GTEXT_Markup_Kind k = gtext_markup_node_kind(c);
+    if (k == GTEXT_MARKUP_KIND_TEXT || k == GTEXT_MARKUP_KIND_CDATA) {
+      n++;
+    }
+  }
+  return n;
+}
+
 /// The fingerprint of the attributes that decide a link's sheet: rel, href, type, media, title and disabled, each followed by a NUL, in the scratch buffer.
 static GTEXT_CSS_Status link_fingerprint(GTEXT_CSSOM_Markup_Binding * b, const GTEXT_Markup_Node * el, const char ** text, size_t * length) {
   static const char * const names[] = {"rel", "href", "type", "media", "title", "disabled"};
@@ -506,6 +522,24 @@ static GTEXT_CSS_Status put_sheet(GTEXT_CSSOM_Markup_Binding * b, mentry * e, co
     size_t dn;
     so.disabled = attr(e->element, "disabled", &d, &dn) || so.alternate;
   }
+  /* CSSOM, "add a CSS style sheet": "If the title is not the empty string, the alternate flag is unset, and preferred CSS style sheet set name is the empty string change the
+     preferred CSS style sheet set name to the title", and the disabled flag is unset when "The title is the empty string" or "The last CSS style sheet set name is null and the title
+     is a case-sensitive match for the preferred CSS style sheet set name", and set otherwise (a sheet that was disabled to begin with stays so). The last name is never selected here. */
+  const bool titled = e->title && e->title_length > 0;
+  bool set_preferred = false;
+  if (!so.disabled) {
+    if (titled && !so.alternate && b->preferred_length == 0) {
+      char * name = dup_n(b, e->title, e->title_length);
+      if (!name) {
+        return GTEXT_CSS_E_OOM;
+      }
+      gtext_allocator_free(&b->alloc, b->preferred);
+      b->preferred = name;
+      b->preferred_length = e->title_length;
+      set_preferred = true;
+    }
+    so.disabled = titled && !(b->preferred_length == e->title_length && memcmp(b->preferred, e->title, e->title_length) == 0);
+  }
   GTEXT_CSSOM_Sheet * sheet = NULL;
   GTEXT_CSS_Status st = gtext_cssom_sheet_new_parsed(doc, text, length, &so, &sheet);
   if (st != GTEXT_CSS_OK) {
@@ -521,6 +555,20 @@ static GTEXT_CSS_Status put_sheet(GTEXT_CSSOM_Markup_Binding * b, mentry * e, co
   e->sheet = sheet;
   e->state = ENTRY_SHEET;
   b->counters.sheets_made++;
+  if (set_preferred) {
+    /* "enable a CSS style sheet set" with the new name: the sheets of other sets are disabled, those of this one are not */
+    for (size_t i = 0; i < b->n && st == GTEXT_CSS_OK; i++) {
+      mentry * o = b->order[i];
+      if (o == e || !o->sheet || !o->title || o->title_length == 0) {
+        continue;
+      }
+      const bool same = o->title_length == b->preferred_length && memcmp(o->title, b->preferred, o->title_length) == 0;
+      st = gtext_cssom_sheet_set_disabled(o->sheet, !same, NULL);
+    }
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+  }
   if (outcome) {
     outcome->kind = GTEXT_CSSOM_CHANGED;
     if (o.observer_status != GTEXT_CSS_OK && outcome->observer_status == GTEXT_CSS_OK) {
@@ -564,6 +612,7 @@ static GTEXT_CSS_Status build_entry(GTEXT_CSSOM_Markup_Binding * b, mentry * e, 
   gtext_allocator_free(&b->alloc, e->text);
   e->text = remembered;
   e->text_length = length;
+  e->children = e->link ? 0 : style_children(e->element);
   gtext_allocator_free(&b->alloc, e->media);
   e->media = media;
   e->media_length = media_length;
@@ -655,6 +704,14 @@ static GTEXT_CSS_Status refresh_entry(GTEXT_CSSOM_Markup_Binding * b, mentry * e
   if (!e->link) {
     b->counters.texts_compared++;
     b->counters.bytes_compared += length < e->text_length ? length : e->text_length;
+  }
+  if (!e->link && style_children(e->element) != e->children) {
+    /* the children changed, an empty text node included, whatever the text says: "update a style block" */
+    st = take_out(b, e, outcome);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+    return build_entry(b, e, at, hint, outcome);
   }
   if (length != e->text_length || (length && memcmp(text, e->text, length) != 0)) {
     /* the HTML Standard's "update a style block": the old sheet goes and a new one is made (a pending or failed link is asked again) */
@@ -776,6 +833,7 @@ void gtext_cssom_markup_binding_free(GTEXT_CSSOM_Markup_Binding * b) {
   gtext_allocator_free(&a, b->map);
   gtext_allocator_free(&a, b->scratch);
   gtext_allocator_free(&a, b->base_url);
+  gtext_allocator_free(&a, b->preferred);
   gtext_cssom_scope_release(b->scope);
   gtext_allocator_free(&a, b);
 }

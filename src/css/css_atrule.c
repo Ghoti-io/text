@@ -435,6 +435,39 @@ static bool wide_keyword_name(const GTEXT_CSS_String * s) {
 
 static char * text_in_arena(ctx * c, const GTEXT_CSS_Component_Value * v, size_t n, size_t * len);
 
+/// The offset of the `t` of a `to` that follows a `)` with nothing between them at the top level of an `@scope` prelude, or (size_t)-1.
+static size_t scope_to_after_paren(const char * t, size_t n) {
+  size_t depth = 0;
+  for (size_t i = 0; i < n; i++) {
+    if (t[i] == '"' || t[i] == '\'') {
+      /* a string (an attribute value): its parentheses are not the prelude's */
+      const char q = t[i];
+      for (i++; i < n && t[i] != q; i++) {
+        if (t[i] == '\\' && i + 1 < n) {
+          i++;
+        }
+      }
+    }
+    else if (t[i] == '\\') {
+      i++;   /* an escaped parenthesis */
+    }
+    else if (t[i] == '(') {
+      depth++;
+    }
+    else if (t[i] == ')') {
+      if (depth) {
+        depth--;
+      }
+      if (depth == 0 && i + 2 < n && t[i + 1] == 't' && t[i + 2] == 'o') {
+        return i + 1;
+      }
+    }
+  }
+  return (size_t)-1;
+}
+
+
+
 /// A growing text for the canonical prelude of an `@import` or `@namespace`.
 typedef struct {
   const GTEXT_Allocator * alloc;
@@ -1980,6 +2013,24 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
     if (!a->prelude) {
       atrule_destroy(a);
       return cx.st != GTEXT_CSS_OK ? cx.st : fail(&cx, GTEXT_CSS_E_OOM, NULL, NULL);
+    }
+    if (kind == GTEXT_CSS_ATRULE_SCOPE && !bad_prelude) {
+      /* `@scope (.a)to (.b)`: the tokens need no white space between `)` and `to`, and CSSOM writes the prelude as `(.a) to (.b)`. At the top of a scope prelude there are only the two
+         parenthesized selector lists and the word `to`, so a `to` that follows a `)` at once gets its space. */
+      const size_t at = scope_to_after_paren(a->prelude, a->prelude_len);
+      if (at != (size_t)-1) {
+        char * spaced = css_arena_alloc(&a->arena, a->prelude_len + 2);
+        if (!spaced) {
+          atrule_destroy(a);
+          return fail(&cx, GTEXT_CSS_E_OOM, NULL, NULL);
+        }
+        memcpy(spaced, a->prelude, at);
+        spaced[at] = ' ';
+        memcpy(spaced + at + 1, a->prelude + at, a->prelude_len - at);
+        spaced[a->prelude_len + 1] = '\0';
+        a->prelude = spaced;
+        a->prelude_len++;
+      }
     }
     if (kind == GTEXT_CSS_ATRULE_PAGE) {
       /* a pseudo-page (`:first`, `:left`, `:right`, `:blank`) is a keyword and ASCII case-insensitive, and is written in lower case (the pinned css/cssom/cssom-pagerule.html: `named:First`

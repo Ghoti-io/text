@@ -110,7 +110,7 @@ def read_normalize():
 
 def read_consolidate():
     path = os.path.join(HERE, "consolidate.tsv")
-    rules = {"ignore-grammar": {}, "enum-from-values": {}, "descriptor-alias": {}, "nested-ignore": {}, "append-grammar": {}, "replace-grammar": {}, "replace-property-grammar": {}, "append-longhand": {}}
+    rules = {"ignore-grammar": {}, "enum-from-values": {}, "descriptor-alias": {}, "nested-ignore": {}, "append-grammar": {}, "replace-grammar": {}, "replace-property-grammar": {}, "append-longhand": {}, "append-reset": {}}
     if not os.path.exists(path):
         return rules
     with open(path, encoding="utf-8") as handle:
@@ -121,9 +121,9 @@ def read_consolidate():
             cols = line.split("\t")
             if cols[0] not in rules or len(cols) < 4:
                 die("consolidate.tsv:%d: expected directive, scope, name, reason" % n)
-            if cols[0] in ("append-grammar", "replace-grammar", "replace-property-grammar", "append-longhand") and not quotes_a_sentence(cols[3]):
+            if cols[0] in ("append-grammar", "replace-grammar", "replace-property-grammar", "append-longhand", "append-reset") and not quotes_a_sentence(cols[3]):
                 die("consolidate.tsv:%d: %s wants a reason that quotes a sentence of the draft (four words and twenty characters at least)" % (n, cols[0]))
-            if cols[0] in ("append-grammar", "append-longhand"):
+            if cols[0] in ("append-grammar", "append-longhand", "append-reset"):
                 if len(cols) != 5:
                     die("consolidate.tsv:%d: %s wants directive, scope, name, reason, text" % (n, cols[0]))
                 rules[cols[0]][(cols[1], cols[2])] = (cols[3], cols[4])
@@ -363,6 +363,16 @@ def build(model):
         props[name]["longhands"].extend(names_to_add)
         consolidate["append-longhand"][(scope, name)] = ("used", reason, longhand)
 
+    for (scope, name), (reason, reset) in sorted(consolidate["append-reset"].items()):
+        # the served draft's shorthand also resets a property that is not one of its longhands (`columns` resets `column-wrap`): the line adds it to the shorthand's resets, and is
+        # stale when the shorthand or the property is not in the pin or the shorthand resets it already
+        names_to_add = reset.split()
+        if scope or name not in props or not names_to_add or len(set(names_to_add)) != len(names_to_add) \
+                or any(l not in props or l in props[name]["longhands"] or l in props[name]["resets"] for l in names_to_add):
+            die("consolidate.tsv: append-reset %s %s: the pin has no such shorthand or property, or the shorthand resets it already (stale)" % (name, reset))
+        props[name]["resets"].extend(names_to_add)
+        consolidate["append-reset"][(scope, name)] = ("used", reason, reset)
+
     # `all` is the shorthand of every property but two. CSS Cascade 5, "all": "The all property is a shorthand that resets all CSS properties except direction and unicode-bidi";
     # it "does not reset custom properties". The pin gives it no longhands; they are the properties that are neither shorthands nor aliases (a shorthand is the properties it sets, an
     # alias is its target). A property the caller registers is added to them when the registry is frozen (css_registry.c, `all_extra`), not here.
@@ -533,7 +543,7 @@ def build(model):
             t["grammar"] = grammar
             t["source"] = "(supplement)"
             t["flags"] = flags
-    for rule in ("ignore-grammar", "enum-from-values", "append-grammar", "replace-grammar", "replace-property-grammar", "append-longhand"):
+    for rule in ("ignore-grammar", "enum-from-values", "append-grammar", "replace-grammar", "replace-property-grammar", "append-longhand", "append-reset"):
         for k, v in consolidate[rule].items():
             if not (isinstance(v, tuple) and v[0] == "used"):
                 die("consolidate.tsv: %s %s %s names no type (stale)" % ((rule,) + k))

@@ -28,8 +28,11 @@
  * values it reads come from the tokens' values: `-n-\35` is
  * `<dashndashdigit-ident>` (an escape of a digit is a digit by then), and a
  * `+` is a `<delim-token>` only when the tokenizer did not read a number
- * with it. A and B are integers in the standard; here their magnitudes saturate at
- * INT64_MAX, which the standard does not bound (so INT64_MIN is never read).
+ * with it. A and B are integers in the standard, which gives them no range; each integer
+ * token is clamped to [INT32_MIN, INT32_MAX], as Chromium and Firefox both do (the pinned
+ * css/selectors/nth-child-large-anplusb-clamp.html, and `n -99999999999` is n-2147483648 in
+ * both). The digits of an identifier (`n-99999999999`) are a magnitude, clamped to INT32_MAX
+ * and then negated: Chromium refuses that spelling and Firefox writes n-2147483648.
  */
 
 #include <ghoti.io/text/macros.h>
@@ -50,11 +53,14 @@ static size_t skip_ws(const GTEXT_CSS_Component_Value * v, size_t n, size_t i) {
   return i;
 }
 
-/* The magnitude of every value saturates at INT64_MAX, so the range is
-   symmetric, [-INT64_MAX, INT64_MAX], and negating never overflows (INT64_MIN
-   is never produced). */
+/* A magnitude is read saturating at INT64_MAX so that negating never overflows; the value
+   of a token is then clamped to the int range. */
 static int64_t negate(int64_t v) {
   return -v;
+}
+
+static int64_t clamp32(int64_t v) {
+  return v > INT32_MAX ? INT32_MAX : v < INT32_MIN ? INT32_MIN : v;
 }
 
 /* The value of an integer token (or a dimension's number) from its
@@ -76,7 +82,7 @@ static int64_t integer_of(const GTEXT_CSS_Component_Value * v) {
     const int d = s[i] - '0';
     m = m > (INT64_MAX - d) / 10 ? INT64_MAX : m * 10 + d;
   }
-  return minus ? negate(m) : m;
+  return clamp32(minus ? negate(m) : m);
 }
 
 static bool is_token(const GTEXT_CSS_Component_Value * v, GTEXT_CSS_Token_Type type) {
@@ -123,7 +129,7 @@ static bool shape(const char * s, size_t n, const char * prefix, bool digits, in
     const int d = s[i] - '0';
     v = v > (INT64_MAX - d) / 10 ? INT64_MAX : v * 10 + d;
   }
-  *value = v;
+  *value = v > INT32_MAX ? INT32_MAX : v;
   return true;
 }
 

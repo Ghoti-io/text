@@ -299,10 +299,11 @@ GTEXT_API size_t gtext_css_match_grammar_list(
  * The values are what an `:nth-child()` holds: for example the children of
  * a function, or a list from gtext_css_parse_component_values(). White space
  * before and after is allowed; between a `+` and the `n` that follows it, it
- * is not (the standard's dagger). A and B are read exactly; their magnitudes
- * saturate at INT64_MAX (the range is symmetric, INT64_MIN is never produced),
- * so `n-9223372036854775808` and `n -9223372036854775808` both give
- * B = -INT64_MAX.
+ * is not (the standard's dagger). A and B are integers the standard does not
+ * bound; each integer token is clamped to [INT32_MIN, INT32_MAX] as both browsers
+ * do, so `n -9223372036854775808` gives B = -2147483648 and `n- 99999999999`
+ * gives B = -2147483647 (the digits of an identifier, `n-99999999999`, are
+ * a magnitude clamped to 2147483647 and then negated).
  *
  * @param values The values.
  * @param count Their number.

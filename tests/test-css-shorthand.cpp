@@ -230,6 +230,26 @@ TEST(CssShorthandExpand, ALayerListReadsTheCommasOfALonghandThatIsAListItself) {
   EXPECT_EQ(items_of(Block(R(), "animation-delay: 20s, 10s")), "animation-delay-start=20s, 10s; animation-delay-end=0s, 0s");
 }
 
+/* Flexbox 1, "flex": "A unitless zero that is not already preceded by two flex factors must be interpreted as a flex factor." So `0 1 1` is a zero, a one and a `1` for the basis,
+   which is not a length, and the declaration is invalid (the pinned css/css-flexbox/getcomputedstyle/flexbox_computedstyle_flex-shorthand-invalid.html, both browsers); the grammar's
+   `||` alone reads it as basis 0, grow 1, shrink 1. */
+TEST(CssShorthandExpand, AUnitlessZeroBeforeTwoFlexFactorsIsAFlexFactorNotTheBasis) {
+  EXPECT_EQ(items_of(Block(R(), "flex: 0 1 1")), "");
+  EXPECT_EQ(items_of(Block(R(), "flex: 0 0 1")), "");
+  EXPECT_EQ(items_of(Block(R(), "flex: 1 1 0")), "flex-grow=1; flex-shrink=1; flex-basis=0px") << "a zero after two factors is the basis";
+  EXPECT_EQ(items_of(Block(R(), "flex: 0 0 0")), "flex-grow=0; flex-shrink=0; flex-basis=0px");
+  EXPECT_EQ(items_of(Block(R(), "flex: 0px 1 1")), "flex-grow=1; flex-shrink=1; flex-basis=0px") << "with a unit the zero is the basis, first";
+  EXPECT_EQ(items_of(Block(R(), "flex: 0 10px")), "flex-grow=0; flex-shrink=1; flex-basis=10px");
+  EXPECT_EQ(items_of(Block(R(), "flex: 10px 0")), "flex-grow=0; flex-shrink=1; flex-basis=10px");
+}
+
+/* Multicol 2, columns: "This property also resets the column-wrap property to its initial value." */
+TEST(CssShorthandExpand, ColumnsAlsoResetsColumnWrap) {
+  const std::string items = items_of(Block(R(), "column-wrap: nowrap; columns: 100px / 100px"));
+  EXPECT_NE(items.find("column-wrap=auto"), std::string::npos) << items;
+  EXPECT_NE(items.find("column-height=100px"), std::string::npos) << items;
+}
+
 TEST(CssShorthandExpand, BorderRadiusTakesOneToFourRadiiAndASlash) {
   EXPECT_EQ(items_of(Block(R(), "border-radius: 1px")),
       "border-top-left-radius=1px; border-top-right-radius=1px; border-bottom-right-radius=1px; border-bottom-left-radius=1px");

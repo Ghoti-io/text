@@ -485,6 +485,25 @@ TEST(CssDeclaration, ACustomPropertyKeepsItsOriginalText) {
   EXPECT_EQ(p.tree->declarations[3].original_text.data, nullptr) << "only a custom property has one";
 }
 
+/* CSS Syntax 4.3.7: "EOF: This is a parse error. Return U+FFFD." for an escape at the end of the input, and 4.3.5: in a string a backslash before EOF is ignored. The pinned
+   css/css-syntax/escaped-eof.html: the custom property's text has the U+FFFD (a url token also its closing parenthesis, a string its closing quote); a backslash that does not end
+   the input, or an escaped backslash, is the text as written. */
+TEST(CssDeclaration, AnEscapedEndOfInputInACustomPropertyIsWrittenAsTheTokenHasIt) {
+  auto original = [](const std::string & css) {
+    Parsed p;
+    parse_into(p, gtext_css_parse_declaration_list, css);
+    EXPECT_EQ(p.tree->declaration_count, 1u) << css;
+    return p.tree->declaration_count ? str(p.tree->declarations[0].original_text) : std::string("?");
+  };
+  EXPECT_EQ(original("--foo:foo\\"), "foo\xEF\xBF\xBD");
+  EXPECT_EQ(original("--foo:1foo\\"), "1foo\xEF\xBF\xBD");
+  EXPECT_EQ(original("--foo:url(foo\\"), "url(foo\xEF\xBF\xBD)");
+  EXPECT_EQ(original("--foo:\"foo\\"), "\"foo\"");
+  EXPECT_EQ(original("--foo:'foo\\"), "'foo'");
+  EXPECT_EQ(original("--foo:a foo\\"), "a foo\xEF\xBF\xBD");
+  EXPECT_EQ(original("--foo:foo\\\\"), "foo\\\\") << "an escaped backslash is not an escape of the end";
+}
+
 TEST(CssDeclaration, ACustomPropertyMayHoldBlocksAnywhere) {
   Parsed p;
   parse_into(p, gtext_css_parse_declaration_list, "--x: a {b} c; --y: {} {}");
@@ -941,44 +960,49 @@ TEST(CssAnB, ReadsEachProductionOfTheGrammar) {
   }
 }
 
-TEST(CssAnB, AAndBAreReadExactlyAndSaturateSymmetrically) {
+/* The standard gives A and B no range. Chromium 156.0.8078.47 and Firefox 158.0.1 clamp each integer token to the int range: the pinned css/selectors/nth-child-large-anplusb-clamp.html
+   (":nth-child(99999999999999999999)" is ":nth-child(2147483647)", and the same for the A term and for B after an A), and a probe of both gives ":nth-child(-99999999999999999999)" as
+   -2147483648, "n -99999999999" as n-2147483648 and "n- 99999999999" as n-2147483647. The digits of an identifier ("n-99999999999") are refused by Chromium and are n-2147483648 in
+   Firefox; here they are a magnitude, clamped to 2147483647 and negated. */
+TEST(CssAnB, EachIntegerTokenIsClampedToTheIntRange) {
   int64_t a = 0, b = 0;
   ASSERT_TRUE(anb("99999999999999999999n-99999999999999999999", &a, &b));
-  EXPECT_EQ(a, INT64_MAX);
-  EXPECT_EQ(b, -INT64_MAX);
-  // Above 2^53 a double is wrong; the digits are read exactly.
-  ASSERT_TRUE(anb("2n+9007199254740993", &a, &b));
+  EXPECT_EQ(a, INT32_MAX);
+  EXPECT_EQ(b, -INT64_C(2147483647)) << "the digits of an identifier are a magnitude";
+  ASSERT_TRUE(anb("99999999999999999999", &a, &b));
+  EXPECT_EQ(a, 0);
+  EXPECT_EQ(b, INT32_MAX);
+  ASSERT_TRUE(anb("-99999999999999999999", &a, &b));
+  EXPECT_EQ(b, INT32_MIN);
+  ASSERT_TRUE(anb("2n+99999999999999999999", &a, &b));
   EXPECT_EQ(a, 2);
-  EXPECT_EQ(b, INT64_C(9007199254740993));
-  ASSERT_TRUE(anb("9007199254740993", &a, &b));
-  EXPECT_EQ(b, INT64_C(9007199254740993));
-  ASSERT_TRUE(anb("-9007199254740995n+1", &a, &b));
-  EXPECT_EQ(a, -INT64_C(9007199254740995));
-  ASSERT_TRUE(anb("n -9007199254740993", &a, &b));
-  EXPECT_EQ(b, -INT64_C(9007199254740993));
-  ASSERT_TRUE(anb("n - 9007199254740993", &a, &b));
-  EXPECT_EQ(b, -INT64_C(9007199254740993));
+  EXPECT_EQ(b, INT32_MAX);
+  ASSERT_TRUE(anb("-99999999999n+5", &a, &b));
+  EXPECT_EQ(a, INT32_MIN);
+  EXPECT_EQ(b, 5);
+  ASSERT_TRUE(anb("n -99999999999", &a, &b));
+  EXPECT_EQ(b, INT32_MIN) << "a signed integer token clamps to the most negative int";
+  ASSERT_TRUE(anb("n - 99999999999", &a, &b));
+  EXPECT_EQ(b, -INT64_C(2147483647)) << "a signless token clamps to the largest int, and the sign follows";
+  ASSERT_TRUE(anb("n- 99999999999", &a, &b));
+  EXPECT_EQ(b, -INT64_C(2147483647));
   ASSERT_TRUE(anb("n+9223372036854775807", &a, &b));
-  EXPECT_EQ(b, INT64_MAX);
-  // One rule: the magnitude saturates at INT64_MAX, so INT64_MIN is never produced, whichever way the
-  // number is spelled (an ident's digits, a signed number, a dimension).
-  const char * most_negative[] = {"n-9223372036854775808", "n -9223372036854775808", "n - 9223372036854775808",
-      "n- 9223372036854775808", "-9223372036854775808", "-n-9223372036854775808", "-n -9223372036854775808",
-      "n-99999999999999999999", "-99999999999999999999"};
-  for (const char * in : most_negative) {
-    ASSERT_TRUE(anb(in, &a, &b)) << in;
-    EXPECT_EQ(b, -INT64_MAX) << in;
-  }
-  ASSERT_TRUE(anb("-9223372036854775808n", &a, &b));
-  EXPECT_EQ(a, -INT64_MAX);
-  ASSERT_TRUE(anb("-99999999999999999999n", &a, &b));
-  EXPECT_EQ(a, -INT64_MAX);
+  EXPECT_EQ(b, INT32_MAX);
+  // inside the range nothing moves
+  ASSERT_TRUE(anb("-2147483648n+2147483647", &a, &b));
+  EXPECT_EQ(a, INT32_MIN);
+  EXPECT_EQ(b, INT32_MAX);
+  ASSERT_TRUE(anb("n+2147483648", &a, &b));
+  EXPECT_EQ(b, INT32_MAX);
+  ASSERT_TRUE(anb("2n+4", &a, &b));
+  EXPECT_EQ(a, 2);
+  EXPECT_EQ(b, 4);
   EXPECT_FALSE(gtext_css_anb_parse(nullptr, 1, &a, &b));
 }
 
-TEST(CssAnB, WhatIsReadIsWrittenAndReadBackAcrossTheSaturatingRange) {
+TEST(CssAnB, WhatIsReadIsWrittenAndReadBackAcrossTheClampedRange) {
   const char * inputs[] = {"2n+9007199254740993", "-9223372036854775808n-9223372036854775808", "n-9223372036854775808",
-      "9223372036854775807n+9223372036854775807", "99999999999999999999n+99999999999999999999", "-3n+4"};
+      "9223372036854775807n+9223372036854775807", "99999999999999999999n+99999999999999999999", "-3n+4", "-2147483648n-2147483648"};
   for (const char * in : inputs) {
     int64_t a = 0, b = 0;
     ASSERT_TRUE(anb(in, &a, &b)) << in;

@@ -208,6 +208,7 @@ typedef struct {
 } world;
 
 /* The user agent's style sheet is the part of the HTML rendering section that the display and the body's margin need; the library has no user agent sheet of its own. */
+/* `[inert] { interactivity: inert }` is the rule CSS UI 4 ("Preventing All Interaction: the interactivity property") says to insert into the HTML style sheet. */
 static const char UA_SHEET[] =
     "html, address, blockquote, center, dialog, div, figure, figcaption, footer, form, header, hr, legend, listing, main, p, plaintext, pre, search, xmp, article, aside, h1, h2, "
     "h3, h4, h5, h6, hgroup, nav, section, dir, dd, dl, dt, menu, ol, ul, details, summary, fieldset, optgroup, option { display: block }\n"
@@ -216,7 +217,8 @@ static const char UA_SHEET[] =
     "table { display: table } caption { display: table-caption } colgroup { display: table-column-group } col { display: table-column } thead { display: table-header-group }\n"
     "tbody { display: table-row-group } tfoot { display: table-footer-group } tr { display: table-row } td, th { display: table-cell }\n"
     "[hidden], area, base, basefont, datalist, head, link, meta, noembed, noframes, param, rp, script, style, template, title { display: none }\n"
-    "input, button, select, textarea { display: inline-block }\n";
+    "input, button, select, textarea { display: inline-block }\n"
+    "[inert] { interactivity: inert }\n";
 
 /* The same question asked of a fuller sheet, and of none: a failure whose answer moves with the user agent sheet of this runner is a failure that may be the runner's (the gate lists it
  * apart from the library's defects). The fuller sheet is typed from the rendering section of the HTML Standard as far as the properties a computed read can see; it is an instrument for
@@ -230,6 +232,7 @@ static const char UA_SHEET_FULL[] =
     "tbody { display: table-row-group } tfoot { display: table-footer-group } tr { display: table-row } td, th { display: table-cell }\n"
     "[hidden], area, base, basefont, datalist, head, link, meta, noembed, noframes, param, rp, script, style, template, title { display: none }\n"
     "input, button, select, textarea { display: inline-block }\n"
+    "[inert] { interactivity: inert }\n"
     "p, dl, multicol { margin-block: 1em } blockquote, figure { margin-block: 1em; margin-inline: 40px } center { text-align: center } hr { margin-block: 0.5em; margin-inline: auto; border-style: inset; border-width: 1px; color: gray }\n"
     "h1 { font-size: 2em; margin-block: 0.67em } h2 { font-size: 1.5em; margin-block: 0.83em } h3 { font-size: 1.17em; margin-block: 1em } h4 { margin-block: 1.33em } h5 { font-size: 0.83em; margin-block: 1.67em } h6 { font-size: 0.67em; margin-block: 2.33em }\n"
     "h1, h2, h3, h4, h5, h6, b, strong, th { font-weight: bold } i, cite, em, var, address, dfn { font-style: italic } dt { } dd { margin-inline-start: 40px }\n"

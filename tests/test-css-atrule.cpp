@@ -504,6 +504,22 @@ TEST(CssAtrule, AConditionalGroupRuleNeedsABlockAndAnyPreludeOfAMediaRuleIsValid
   }
 }
 
+TEST(CssAtrule, AScopePreludeIsWrittenWithASpaceBeforeTo) {
+  /* the pinned css/css-cascade/at-scope-parsing.html: `@scope (.a)to (.b)` is `@scope (.a) to (.b)` */
+  auto text = [](const char * css) {
+    Parsed p(css);
+    EXPECT_NE(p.a, nullptr) << css;
+    size_t n = 0;
+    const char * t = p.a ? gtext_css_atrule_prelude_text(p.a, &n) : "";
+    return std::string(t, n);
+  };
+  EXPECT_EQ(text("@scope (.a)to (.b) { }"), "(.a) to (.b)");
+  EXPECT_EQ(text("@scope (.a) to (.b) { }"), "(.a) to (.b)");
+  EXPECT_EQ(text("@scope to (.b) { }"), "to (.b)");
+  EXPECT_EQ(text("@scope (.a) { }"), "(.a)");
+  EXPECT_EQ(text("@scope ([x=\")to\"])to (.b) { }"), "([x=\")to\"]) to (.b)") << "the parenthesis inside a string is not the prelude's";
+}
+
 TEST(CssAtrule, ANameListHoldsNoUnquotedGenericFamily) {
   /* Fonts 2.1: a family name that is a keyword must be quoted. The names of @font-feature-values and the families of a palette are <family-name>s (web-platform-tests
    * font-palette-values-invalid.html: "multiple families are allowed, but not generics"). */

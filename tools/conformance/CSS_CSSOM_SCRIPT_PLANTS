@@ -37,3 +37,9 @@ rule-list-index-past-the-end-found	runner:	      put_found(w, o->f[1], OBJ_RULE,
 swallowed-ops-fail-the-test	runner:	        p.exp_active = 0;\n        free(p.exp_msg);	        p.exp_active = 0;\n        if (p.exp_msg && strcmp(p.exp_kind, "any") == 0 && p.in_test && !p.t.failed) { p.t.failed = 1; p.t.message = dups("x"); }\n        free(p.exp_msg);	fail
 delete-rule-deletes-the-next-one	runner:	      const size_t index = (size_t)strtoull(o->f[2] + 2, NULL, 10);\n      st = ob->kind == OBJ_SHEET	      const size_t index = (size_t)strtoull(o->f[2] + 2, NULL, 10) + 1;\n      st = ob->kind == OBJ_SHEET	fail
 pseudo-element-properties-all-apply	css_pseudo_apply.c	  const unsigned kind = kind_of(pseudo);	  const unsigned kind = kind_of(pseudo) * 0u;	fail
+an-plus-b-not-clamped-to-the-int-range	css_anb.c	  return v > INT32_MAX ? INT32_MAX : v < INT32_MIN ? INT32_MIN : v;	  return v;	fail
+flex-zero-before-two-factors-taken-as-the-basis	css_property.c	      else if (v->number != 0.0) {\n        return true;	      else if (v->number != 0.0) {\n        return false;	fail
+scope-to-written-against-the-parenthesis	css_atrule.c	        spaced[at] = ' ';	        spaced[at] = 'x';	fail
+escaped-eof-kept-as-a-backslash	css_parser.c	  if (stop->type != GTEXT_CSS_TOKEN_EOF || d->original_text.length == 0	  if (1 || stop->type != GTEXT_CSS_TOKEN_EOF || d->original_text.length == 0	fail
+style-children-change-not-a-change	cssom_markup.c	  if (!e->link && style_children(e->element) != e->children) {	  if (0) {	fail
+titled-sheets-never-disabled	cssom_markup.c	    so.disabled = titled && !(b->preferred_length == e->title_length	    so.disabled = false && !(b->preferred_length == e->title_length	fail

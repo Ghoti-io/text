@@ -652,7 +652,7 @@ writes white space that was not a token, but for the space before
 | Entry points (5.4) | all nine of the draft and the CRD's "parse a block's contents"; the grammar hooks over text and over values | the "unspecified structure" of a match is the grammar's to keep |
 | Nesting (5.5) | interleaved items, nested declarations rules, the stop token, the custom-property rules | none |
 | Validity | a callback for declarations and for rules | by default everything is valid: the grammars are above syntax |
-| An+B (6) | every production; 9.1 | A and B are read exactly; their magnitudes saturate at INT64_MAX (INT64_MIN is never produced). The serializer follows the snprintf convention |
+| An+B (6) | every production; 9.1 | Each integer token of A and B is clamped to the int range, [-2147483648, 2147483647], as Chromium and Firefox both do (the standard gives no range). The serializer follows the snprintf convention |
 | Serialization (9) | the round trip; CSSOM's idioms; the table of section 9 and the pairs it misses | CSSOM's "serialize a URL" and function-name lowercasing are not used (below) |
 | Diagnostics | 21 parse errors, positions, order, the cap and the count | names are the library's: the draft names none |
 | Limits | seven, each its own status, each exact | none |
