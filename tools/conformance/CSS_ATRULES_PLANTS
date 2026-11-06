@@ -25,3 +25,7 @@ unicode-ranges-with-a-gap-of-one-are-merged	css_font_rules.c	if (w && arr[i].fir
 family-name-keeps-a-generic-keyword-in-a-face	css_grammar_match.c	    return tok(v, GTEXT_CSS_TOKEN_IDENT) && !css_is_reserved_family_word(&v->value);	    return tok(v, GTEXT_CSS_TOKEN_IDENT) && !0;	atrule
 prelude-reads-never-kept	css_atrule.c	  if (!list || !gtext_css_media_list_as_read_differs(list)) {\n    return;	  if (1) {\n    return;	atrule
 prelude-read-ignores-the-source	css_atrule.c	  mo.source = c->opt.source;	  mo.source = NULL;	atrule
+custom-media-name-needs-no-dashes	css_atrule.c	p[a].value.data[0] != '-' || p[a].value.data[1] != '-') {	p[a].value.data[0] != '-' && p[a].value.data[1] != '-') {	atrule
+custom-media-invalid-query-kept	css_atrule.c	mr.replaced == 0 && list	1 && list	atrule
+custom-media-truth-value-takes-a-tail	css_atrule.c	return a + 1 == b;	return true;	atrule
+custom-media-block-kept	css_atrule.c	(rule->has_block || !custom_media_prelude_valid(&cx, p, pn))	(!custom_media_prelude_valid(&cx, p, pn))	atrule

@@ -552,6 +552,21 @@ TEST(CssAtrule, APreludeEndingInAnEscapedSpaceKeepsIt) {
   EXPECT_EQ(Parsed("@custom-media --x ur\\\\ ").css(), "@custom-media --x ur\\\\;") << "an escaped backslash is not an escape of the space";
 }
 
+/* Media Queries 5, Custom Media Queries: "@custom-media <extension-name> [ <media-query-list> | true | false ] ;" - the vectors of the pinned css/mediaqueries/at-custom-media-parsing.html, and the
+   rest of the grammar: the name begins with two dashes and is an identifier (not a function token), `true` and `false` stand alone, a query list holds no invalid query, it is a statement. */
+TEST(CssAtrule, ACustomMediaRuleNeedsADashedNameAndATruthValueOrAQueryList) {
+  for (const char * ok : {"@custom-media --query (max-width: 30em);", "@custom-media --query (color), (hover);", "@custom-media --query not all and (hover: hover);",
+                          "@custom-media --query true;", "@custom-media --query false;", "@custom-media -- true;", "@custom-media --foo/* */(width > 42px);",
+                          "@custom-media --q TRUE;", "@custom-media --q screen and (color);"}) {
+    EXPECT_TRUE(Parsed(ok).res.valid) << ok;
+  }
+  for (const char * bad : {"@custom-media query ();", "@custom-media query (max-width: 30em);", "@custom-media --query(max-width: 30em);", "@custom-media --query(max-width: 30em) !;",
+                           "@custom-media -query(max-width: 30em);", "@custom-media --query true!;", "@custom-media --query false true;", "@custom-media --query;",
+                           "@custom-media;", "@custom-media -q (color);", "@custom-media a-- true;", "@custom-media --q screen and;", "@custom-media --q (color), ;", "@custom-media --q true { }"}) {
+    EXPECT_FALSE(Parsed(bad).res.valid) << bad;
+  }
+}
+
 TEST(CssAtrule, DashedNamesTagsAndMarginBoxes) {
   /* A <dashed-ident> is a custom identifier that starts with two dashes, `--` included. */
   EXPECT_TRUE(Parsed("@font-palette-values -- { font-family: a }").res.valid);

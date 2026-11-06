@@ -567,6 +567,45 @@ static GTEXT_CSS_Media_Options media_options(const ctx * c) {
   return mo;
 }
 
+/// The prelude of `@custom-media`: "<extension-name> [ <media-query-list> | true | false ]" (Media Queries 5): a name that is an identifier of two dashes or more, then `true`, `false`
+/// or a media query list in which no query is invalid (an invalid query is `not all` in an `@media` rule, where the list is forgiving; here the grammar is not). A function token is
+/// not a name (`--query(...)`), and `true` or `false` stands alone.
+static bool custom_media_prelude_valid(ctx * c, const GTEXT_CSS_Component_Value * p, size_t pn) {
+  size_t a = 0, b = pn;
+  while (a < b && p[a].kind == GTEXT_CSS_VALUE_TOKEN && p[a].type == GTEXT_CSS_TOKEN_WHITESPACE) {
+    a++;
+  }
+  while (b > a && p[b - 1].kind == GTEXT_CSS_VALUE_TOKEN && p[b - 1].type == GTEXT_CSS_TOKEN_WHITESPACE) {
+    b--;
+  }
+  if (a == b || p[a].kind != GTEXT_CSS_VALUE_TOKEN || p[a].type != GTEXT_CSS_TOKEN_IDENT || p[a].value.length < 2 || p[a].value.data[0] != '-' || p[a].value.data[1] != '-') {
+    return false;
+  }
+  a++;
+  while (a < b && p[a].kind == GTEXT_CSS_VALUE_TOKEN && p[a].type == GTEXT_CSS_TOKEN_WHITESPACE) {
+    a++;
+  }
+  if (a == b) {
+    return false;
+  }
+  if (p[a].kind == GTEXT_CSS_VALUE_TOKEN && p[a].type == GTEXT_CSS_TOKEN_IDENT && (lower_eq(&p[a].value, "true") || lower_eq(&p[a].value, "false"))) {
+    return a + 1 == b;
+  }
+  GTEXT_CSS_Media_List * list = NULL;
+  GTEXT_CSS_Media_Result mr;
+  memset(&mr, 0, sizeof mr);
+  const GTEXT_CSS_Media_Options mo = media_options(c);
+  const GTEXT_CSS_Status ms = gtext_css_media_list_parse_values(p + a, b - a, &mo, &list, &mr);
+  const bool ok = ms == GTEXT_CSS_OK && mr.replaced == 0 && list && gtext_css_media_list_query_count(list) > 0;
+  gtext_css_media_result_free(&mr);
+  gtext_css_media_list_free(list);
+  if (ms == GTEXT_CSS_E_OOM) {
+    c->st = ms;
+  }
+  return ok;
+}
+
+
 /// The canonical text of the prelude of an `@import` (`url("a.css") layer(x) supports(...) screen`) or an `@namespace` (`x url("u")`), as CSSOM writes them: the URL is always
 /// `url("...")`, and the words after it keep their order, with the media query list as `mediaText` writes it. Left as written when the prelude does not have that shape (the rule is then
 /// invalid and the text is not used).
@@ -2085,6 +2124,10 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
       bad_prelude = true;
       prelude_why = "CSS Cascade 5 and CSS Namespaces 3: @import and @namespace are statements that name a URL (an @namespace may have a prefix before it)";
     }
+  }
+  if (!bad_prelude && kind == GTEXT_CSS_ATRULE_CUSTOM_MEDIA && (rule->has_block || !custom_media_prelude_valid(&cx, p, pn))) {
+    bad_prelude = true;
+    prelude_why = "Media Queries 5, Custom Media Queries: @custom-media <extension-name> [ <media-query-list> | true | false ] ; is a statement, and the name begins with two dashes";
   }
   if (cx.st != GTEXT_CSS_OK) {
     atrule_destroy(a);
