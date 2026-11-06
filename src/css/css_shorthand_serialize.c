@@ -31,6 +31,7 @@
  * (`border` holds `border-width`) is written first, and counts only if its four sides are one value.
  */
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -260,11 +261,18 @@ static bool leaves_under(const sctx * c, GTEXT_CSS_Property_Id sh, GTEXT_CSS_Pro
       /* `all` has some six hundred longhands, more than the shapes of the other shorthands (`directs`) hold, and none of them is a shorthand */
       GTEXT_CSS_Property_Info ai;
       gtext_css_registry_property_info(c->reg, cur, &ai);
+      uint64_t marked[32] = {0};   /* the ids below 2048 seen so far: the linear search of the repeats is quadratic in six hundred */
       for (size_t i = 0; i < ai.longhand_count; i++) {
         const GTEXT_CSS_Property_Id id = resolve(c, gtext_css_registry_longhand(c->reg, cur, i));
         bool seen = false;
-        for (size_t k = 0; k < *n && !seen; k++) {
-          seen = out[k] == id;
+        if (id < 2048) {
+          seen = (marked[id >> 6] >> (id & 63)) & 1u;
+          marked[id >> 6] |= (uint64_t)1 << (id & 63);
+        }
+        else {
+          for (size_t k = 0; k < *n && !seen; k++) {
+            seen = out[k] == id;
+          }
         }
         if (!seen) {
           if (*n == cap) {
