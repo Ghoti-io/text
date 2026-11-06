@@ -123,7 +123,7 @@ FAULTS = (1, 2, 3, 5, 9, 17, 33, 65)
 
 def seed(o0, o1, o3, parts):
     text = "\n---\n".join(parts)
-    return bytes([o0, o1, 0, o3]) + text.encode("utf-8")
+    return bytes([o0, o1, o3 >> 8, o3 & 255]) + text.encode("utf-8")
 
 
 def main():
@@ -160,6 +160,18 @@ def main():
     put("own-empty", seed(0, ALL, 0, ["", "", "", "", ""]))
     put("own-no-sections", bytes([0, ALL, 0, 0]))
     put("own-big-fault", seed(1, ALL, 255, ["fill: red", "", "stroke-width: 2px", "", ""]))
+    # the animated element (bit 6 of o1): the keyframes a, b, c and d of the harness, a clock that gives every effect a time (bit 7 leaves the odd ones without)
+    ANIM, UNTIMED_ODD = 0x40, 0x80
+    for name, decl in (("anim-color-length", "animation: a 2s linear"), ("anim-steps-opacity", "animation: b 2s linear -1s paused"),
+                       ("anim-composite-add", "animation: c 2s ease-in-out 1s 2 alternate"), ("anim-revert-shadow", "animation: d 3s cubic-bezier(0.1, 0.7, 1, 0.1)"),
+                       ("anim-two-effects", "animation: a 1s, b 2s -1s, c 3s, none 1s, d 2s"), ("anim-composition-list", "animation: a 2s, c 2s; animation-composition: add, accumulate"),
+                       ("anim-unknown-name", "animation: nope 2s; --x: 9"), ("anim-fill-and-delay", "animation: a 2s 5s both; animation-delay: -5s, 1s")):
+        put(name, seed(0, ALL | ANIM, 0, ["", "", decl, "", ""]))
+        put(name + "-untimed", seed(0, ALL | ANIM | UNTIMED_ODD, 0, ["", "", decl, "", ""]))
+        put(name + "-parent", seed(1, ALL | ANIM, 0, [decl, "", "color: green; width: 5px", "", ""]))
+    put("anim-entries", seed(0, ALL | ANIM, 0, ["", "", "", "", "0|animation-name: c, a; animation-duration: 3s; animation-timing-function: linear\n3|animation-composition: add"]))
+    for fault in range(1, 1960, 19):   # an animated computation of three effects allocates 1,946 times (o2 is the high byte of the one to fail): every 19th, 103 seeds
+        put("anim-oom-%04d" % fault, seed(0, ALL | ANIM | (UNTIMED_ODD if fault % 2 else 0), fault, ["", "", "animation: a 1s, d 2s linear, c 2s", "", ""]))
     print("%d seeds in %s" % (n, out))
 
 

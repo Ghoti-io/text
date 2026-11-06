@@ -32,8 +32,10 @@
  *       bit 3 the child is an HTML element (not in the SVG namespace: it has no presentation attributes); bit 4 the child is a `circle`;
  *       bit 5 the substitution environment answers (`env()`, a condition, the sibling position);
  *   o1  bits 0-3 the attribute-only spellings (unitless lengths, SVG transform syntax, path data, trimming); bit 4 the presentation attributes are read;
- *       bit 5 the `style` attribute is read (a zero byte reads neither: only the entries count);
- *   o2  reserved (zero);
+ *       bit 5 the `style` attribute is read (a zero byte reads neither: only the entries count); bit 6 the element is animated: the style options carry the `@keyframes`
+ *       `a`, `b`, `c` and `d` and a clock that gives every effect a time from its name and index (bit 7: an effect of an odd index has no time, so that the untimed path is
+ *       reached); an `animation` declaration in the input then samples them;
+ *   o2  the high byte of the allocation to fail (the failing allocation is `o3 + 256 * o2`), for the elements whose computation allocates more than 255 times (the animated ones);
  *   o3  the allocation to fail (0 for none), counted over the one computation of the child (the context is made first, on the same allocator, unarmed).
  *
  * The sections: 0 the parent's `style` attribute; 1 the parent's presentation attributes (`name=value`, one a line); 2 the child's `style` attribute;
@@ -341,7 +343,44 @@ struct Entries {
   }
 };
 
+/// The `@keyframes` the animated elements may name: a color and a length, a list of lengths with a percentage in it, an unregistered and a custom property, a
+/// keyframe with its own timing function and `animation-composition`, and a revert.
+const GTEXT_CSS_Atrule_Set * keyframes_set() {
+  static GTEXT_CSS_Atrule_Set * set = [] {
+    static const char css[] =
+        "@keyframes a { from { color: red; width: 0; --x: 1 } to { color: blue; width: 100px; --x: 2 } }"
+        "@keyframes b { 0% { opacity: 0; transform: translate(1px) } 50% { opacity: .5; animation-timing-function: steps(2) } 100% { opacity: 1; transform: translate(10px) } }"
+        "@keyframes c { from { margin-left: calc(1px + 2%); letter-spacing: normal } to { margin-left: 10em; letter-spacing: 3px; animation-composition: add } }"
+        "@keyframes d { to { text-shadow: 1px 1px red; font-style: oblique 10deg; color: revert; background-image: linear-gradient(red, blue) } }";
+    static GTEXT_CSS_Tree * tree = nullptr;   /* the set borrows from it: kept for the life of the process, and reachable */
+    GTEXT_CSS_Atrule_Set * made = nullptr;
+    GTEXT_CSS_Atrule_Set_Options so = gtext_css_atrule_set_options_default();
+    if (gtext_css_parse_stylesheet(css, sizeof css - 1, nullptr, &tree, nullptr) != GTEXT_CSS_OK ||
+        gtext_css_atrule_set_new(svgreg::shared(), &so, &made) != GTEXT_CSS_OK || gtext_css_atrule_set_add_tree(made, tree) != GTEXT_CSS_OK ||
+        gtext_css_atrule_set_freeze(made) != GTEXT_CSS_OK) {
+      fail("the keyframes could not be made", "", "");
+    }
+    return made;
+  }();
+  return set;
+}
+
+/// The local time of an effect: a function of its name and index alone (a style computed twice from the same inputs must give the same dump). Bit 7 of o1 takes the time from
+/// an effect of an odd index.
+GTEXT_CSS_Status fuzz_clock(void * user, GTEXT_CSS_Element_Handle, const GTEXT_CSS_Selector_List *, const GTEXT_CSS_Anim_Effect * e, double * ms, bool * known) {
+  const bool odd_untimed = *static_cast<const bool *>(user);
+  if (odd_untimed && (e->index & 1)) {
+    *known = false;
+    return GTEXT_CSS_OK;
+  }
+  *known = true;
+  *ms = static_cast<double>((e->name.length * 397u + e->index * 211u) % 4001u) - 1000.0;
+  return GTEXT_CSS_OK;
+}
+
 GTEXT_CSS_Style_Options style_options_of(uint8_t o1) {
+  static const bool kUntimedOdd = true, kAllTimed = false;
+  static GTEXT_CSS_Style_Animation animation[2];
   GTEXT_CSS_Style_Options o = gtext_css_style_options_default();
   o.sources = ((o1 & 16) ? GTEXT_CSS_STYLE_PRESENTATION_ATTRIBUTES : 0) | ((o1 & 32) ? GTEXT_CSS_STYLE_STYLE_ATTRIBUTE : 0);
   o.presentation.unitless_lengths = o1 & 1;
@@ -349,6 +388,15 @@ GTEXT_CSS_Style_Options style_options_of(uint8_t o1) {
   o.presentation.path_data = o1 & 4;
   o.presentation.trim_whitespace = o1 & 8;
   o.layers = layer_registry();
+  if (o1 & 64) {
+    GTEXT_CSS_Style_Animation & a = animation[(o1 >> 7) & 1];
+    std::memset(&a, 0, sizeof a);
+    a.size = sizeof a;
+    a.keyframes = keyframes_set();
+    a.user = const_cast<bool *>(&(((o1 >> 7) & 1) ? kUntimedOdd : kAllTimed));
+    a.current_time = fuzz_clock;
+    o.animation = &a;
+  }
   return o;
 }
 
@@ -416,7 +464,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   if (size < 4 || size > 8192) {
     return 0;
   }
-  const uint8_t o0 = data[0], o1 = data[1], o3 = data[3];
+  const uint8_t o0 = data[0], o1 = data[1], o2 = data[2], o3 = data[3];
+  const size_t fail_at = static_cast<size_t>(o3) + 256u * static_cast<size_t>(o2);
   const std::string input(reinterpret_cast<const char *>(data), size);
   const std::vector<std::string> sec = sections(input.substr(4));
 
@@ -442,7 +491,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   FaultAllocator fa;
   GTEXT_CSS_Compute_Context * ctx = nullptr;
   GTEXT_CSS_Compute_Result r{};
-  if (o3) {
+  if (fail_at) {
     const GTEXT_CSS_Environment env = environment_of(o0);
     const GTEXT_CSS_Compute_Options o = options_of(o0, &fa.alloc);
     if (gtext_css_compute_context_new(svgreg::shared(), &env, &o, &ctx, &r) != GTEXT_CSS_OK) {
@@ -465,7 +514,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     Elem * pe = shape == 1 ? &parent_e : &child_e;
     st = gtext_css_style_compute(ctx, pe, nullptr, nullptr, 0, &co, &parent, &r);
   }
-  fa.arm(o3);
+  fa.arm(fail_at);
   if (st == GTEXT_CSS_OK) {
     st = gtext_css_style_compute(ctx, &child_e, parent, entries.list.data(), entries.list.size(), &co, &child, &r);
   }
@@ -504,7 +553,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     }
     gtext_css_computed_free(gc);
     GTEXT_CSS_Computed_Style * again = nullptr;
-    if (!o3) {
+    if (!fail_at) {
       GTEXT_CSS_Computed_Style * p2 = nullptr;
       GTEXT_CSS_Status s2 = GTEXT_CSS_OK;
       if (shape == 1 || shape == 2) {
@@ -561,10 +610,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   }
   gtext_css_computed_free(child);
   gtext_css_computed_free(parent);
-  if (!o3) {
+  if (!fail_at) {
     check_attribute_is_declaration(input, o0);
   }
-  if (o3) {
+  if (fail_at) {
     gtext_css_compute_context_free(ctx);
     if (!fa.live.empty()) {
       fail("an allocation leaked", std::to_string(fa.live.size()) + " blocks", input);
