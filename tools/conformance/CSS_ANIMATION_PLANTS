@@ -30,3 +30,7 @@ sample-revert-keyword-reaches-the-compute	css_anim_sample.c	    if (is_frame_att
 sample-failure-loses-its-name	css_style.c	      if (result && sampled.status == st) {	      if (0) {	sample
 sample-letter-spacing-normal-is-not-zero	css_anim_sample.c	  {"letter-spacing", "normal", "0px"},	  {"letter-spacing", "normalx", "0px"},	sample
 sample-font-style-normal-is-not-oblique-zero	css_anim_sample.c	  {"font-style", "normal", "oblique 0deg"},	  {"font-style", "normal", "oblique 99deg"},	sample
+sample-revert-rolls-back-only-the-layer	css_anim_sample.c	{"revert", ROLL_ORIGIN}	{"revert", ROLL_LAYER}	sample
+sample-revert-keeps-what-nothing-declares	css_anim_sample.c	      st = gtext_css_block_remove(b, custom ? 0 : want.property, custom ? want.custom_name.data : NULL, custom ? want.custom_name.length : 0, NULL);	      st = GTEXT_CSS_OK;	sample
+sample-revert-layer-reaches-the-block	css_anim_sample.c	    if (roll == ROLL_LAYER) {\n      continue;   /* the underlying value */	    if (0) {\n      continue;   /* the underlying value */	sample
+sample-revert-takes-no-longhand-of-the-rollback	css_anim_sample.c	    const bool found = gtext_css_block_find(rolled,	    const bool found = 0 && gtext_css_block_find(rolled,	sample

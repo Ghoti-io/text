@@ -96,7 +96,8 @@ struct Sampled {
   GTEXT_CSS_Computed_Style * style = nullptr;
   GTEXT_CSS_Status status = GTEXT_CSS_E_INTERNAL;
   GTEXT_CSS_Compute_Result result{};
-  Sampled(const std::string & keyframes, const std::string & decls, std::map<std::string, double> times, const GTEXT_CSS_Computed_Style * parent = nullptr, bool with_clock = true)
+  Sampled(const std::string & keyframes, const std::string & decls, std::map<std::string, double> times, const GTEXT_CSS_Computed_Style * parent = nullptr, bool with_clock = true,
+      const std::string & user_agent = "", const std::string & user = "")
       : frames(keyframes) {
     clock.by_name = std::move(times);
     animation.size = sizeof animation;
@@ -105,11 +106,20 @@ struct Sampled {
     animation.current_time = with_clock ? &Clock::call : nullptr;
     GTEXT_CSS_Style_Options o{};
     o.animation = &animation;
-    GTEXT_CSS_Style_Entry entry;
-    std::memset(&entry, 0, sizeof entry);
-    entry.keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
-    entry.text = {decls.data(), decls.size()};
-    status = gtext_css_style_compute(ctx.c, nullptr, parent, &entry, 1, &o, &style, &result);
+    GTEXT_CSS_Style_Entry entries[3];
+    std::memset(entries, 0, sizeof entries);
+    size_t n = 0;
+    if (!user_agent.empty()) {
+      entries[n].keys.origin = GTEXT_CSS_ORIGIN_USER_AGENT;
+      entries[n++].text = {user_agent.data(), user_agent.size()};
+    }
+    if (!user.empty()) {
+      entries[n].keys.origin = GTEXT_CSS_ORIGIN_USER;
+      entries[n++].text = {user.data(), user.size()};
+    }
+    entries[n].keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
+    entries[n++].text = {decls.data(), decls.size()};
+    status = gtext_css_style_compute(ctx.c, nullptr, parent, entries, n, &o, &style, &result);
   }
   Sampled(const Sampled &) = delete;
   Sampled & operator=(const Sampled &) = delete;
@@ -400,8 +410,8 @@ TEST(CssAnimationSample, AKeyframeCannotAnimateTheAnimationProperties) {
 }
 
 /* Cascade 6: revert-rule "rolls back" to the declaration of the next rule of the cascade, which here is the declaration of the element: in a keyframe it is the underlying value, as both
-   browsers answer. (revert and revert-layer are read the same way: the cascade of the keyframes has no origin or layer of its own to roll back to.) */
-TEST(CssAnimationSample, ARevertInAKeyframeIsTheUnderlyingValue) {
+   browsers answer. (revert-layer is read the same way, the animation origin being its own layer; `revert` is the user and user-agent origins', below.) */
+TEST(CssAnimationSample, ARevertRuleOrLayerInAKeyframeIsTheUnderlyingValue) {
   const char * kf = "@keyframes a { from { width: revert-rule; --x: revert-rule } to { width: 200px; --x: 200px } }";
   Sampled s(kf, "width: 100px; --x: 100px; animation: a 3600s steps(2, start)", {{"a", 0.0}});
   ASSERT_EQ(s.status, GTEXT_CSS_OK);
@@ -409,8 +419,34 @@ TEST(CssAnimationSample, ARevertInAKeyframeIsTheUnderlyingValue) {
   Sampled mid(kf, "width: 100px; --x: 100px; animation: a 3600s linear -1800s paused", {{"a", 0.0}});
   EXPECT_EQ(mid.value("width"), "150px");
   EXPECT_EQ(mid.value("--x"), "200px") << "an unregistered custom property is discrete";
-  EXPECT_EQ(Sampled("@keyframes a { from { width: revert } to { width: 200px } }", "width: 100px; animation: a 4s linear -2s paused", {{"a", 0.0}}).value("width"), "150px");
+  EXPECT_EQ(Sampled("@keyframes a { from { width: revert } to { width: 200px } }", "width: 100px; animation: a 4s linear -2s paused", {{"a", 0.0}}).value("width"), "200px")
+      << "revert leaves the author origin: no user or user-agent origin says a width, so the frame is `unset`, the initial auto, which a length is not interpolated with";
   EXPECT_EQ(Sampled("@keyframes a { from { width: revert-layer } to { width: 200px } }", "width: 100px; animation: a 4s linear -2s paused", {{"a", 0.0}}).value("width"), "150px");
+}
+
+/* Cascade 5, `revert`: "Rolls back the cascade to the user level, so that the specified values are calculated as if no author-level rules were specified for this element." A keyframe is declared in the
+   animation origin, above the author's, and "The animation origin ... effectively forms its own cascade layer": `revert` leaves it and the author origin, and is the value of the user origin, or
+   the user-agent's where the user has none, or `unset` where neither says; `revert-layer` and `revert-rule` leave only the animation origin, and are the author's value. Both browsers answer
+   the user-agent value for `revert` (the record of tools/conformance/css_browser_answers.jsonl); for `revert-layer` Chromium answers the author's and Firefox the user-agent's, and the text and
+   Chromium agree. */
+TEST(CssAnimationSample, ARevertInAKeyframeIsTheValueOfTheUserAndUserAgentOrigins) {
+  const std::string anim = "animation: a 4s linear -2s paused";
+  auto at = [&](const std::string & keyframes, const std::string & ua, const std::string & user, const std::string & author, const std::string & property) {
+    Sampled s(keyframes, author + "; " + anim, {{"a", 0.0}}, nullptr, true, ua, user);
+    EXPECT_EQ(s.status, GTEXT_CSS_OK);
+    return s.value(property);
+  };
+  const std::string kf = "@keyframes a { from { width: revert } to { width: 200px } }";
+  EXPECT_EQ(at(kf, "width: 30px", "", "width: 100px", "width"), "115px") << "the user-agent origin's 30px, half way to 200px";
+  EXPECT_EQ(at(kf, "width: 30px", "width: 50px", "width: 100px", "width"), "125px") << "the user origin is above the user-agent's";
+  EXPECT_EQ(at(kf, "", "", "width: 100px", "width"), "200px") << "neither: unset, which for width is the initial auto; auto is not interpolated with a length, so the pair is discrete and half way is the second";
+  EXPECT_EQ(at("@keyframes a { from { width: revert-layer } to { width: 200px } }", "width: 30px", "", "width: 100px", "width"), "150px") << "revert-layer is the author's";
+  EXPECT_EQ(at("@keyframes a { from { width: revert-rule } to { width: 200px } }", "width: 30px", "", "width: 100px", "width"), "150px");
+  // a shorthand rolls back every longhand it sets, and a property that is not the reverted one stays
+  EXPECT_EQ(at("@keyframes a { from { margin: revert } to { margin: 40px } }", "margin-left: 10px", "", "margin: 20px; width: 7px", "margin-left"), "25px");
+  EXPECT_EQ(at("@keyframes a { from { margin: revert } to { margin: 40px } }", "margin-left: 10px", "", "margin: 20px; width: 7px", "margin-top"), "20px") << "unset is the initial 0px";
+  EXPECT_EQ(at("@keyframes a { from { margin: revert } to { margin: 40px } }", "margin-left: 10px", "", "margin: 20px; width: 7px", "width"), "7px");
+  EXPECT_EQ(at("@keyframes a { from { color: revert } to { color: rgb(0, 0, 100) } }", "color: rgb(0, 0, 0)", "", "color: rgb(200, 0, 0)", "color"), "rgb(0, 0, 50)");
 }
 
 /* A value the sampler cannot compute for lack of a callback is the style's failure, named as it would be for the underlying style: the caller learns which callback it lacked. */
@@ -475,6 +511,62 @@ TEST(CssAnimationSampleOom, TheStyleOfAnAnimatedElementSweptOverEveryAllocation)
     }
   }
   EXPECT_GT(failures, 50u) << "the sweep reached the allocations of the sampler";
+}
+
+/* `revert` in a keyframe asks the cascade again (a second set of candidates, its cascade, a block): each allocation of that fails the style as OOM and leaves nothing behind. */
+TEST(CssAnimationSampleOom, ARevertInAKeyframeSweptOverEveryAllocation) {
+  FaultAllocator fa;
+  GTEXT_CSS_Compute_Options co = gtext_css_compute_options_default();
+  co.allocator = &fa.alloc;
+  Context ctx(R(), nullptr, &co);
+  ASSERT_EQ(ctx.status, GTEXT_CSS_OK);
+  Frames frames("@keyframes a { from { width: revert; margin: revert; --x: revert } to { width: 200px; margin: 40px; --x: 9px } }");
+  Clock clock;
+  clock.by_name = {{"a", 2000.0}};
+  GTEXT_CSS_Style_Animation an{};
+  an.size = sizeof an;
+  an.keyframes = frames.set;
+  an.user = &clock;
+  an.current_time = &Clock::call;
+  GTEXT_CSS_Style_Options o{};
+  o.animation = &an;
+  GTEXT_CSS_Style_Entry entries[2];
+  std::memset(entries, 0, sizeof entries);
+  const char * ua = "width: 30px; margin-left: 10px";
+  const char * decls = "width: 100px; margin: 20px; animation: a 4s linear both";
+  entries[0].keys.origin = GTEXT_CSS_ORIGIN_USER_AGENT;
+  entries[0].text = {ua, std::strlen(ua)};
+  entries[1].keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
+  entries[1].text = {decls, std::strlen(decls)};
+  {
+    GTEXT_CSS_Computed_Style * warm = nullptr;
+    ASSERT_EQ(gtext_css_style_compute(ctx.c, nullptr, nullptr, entries, 2, &o, &warm, nullptr), GTEXT_CSS_OK);
+    gtext_css_computed_free(warm);
+  }
+  const size_t baseline = fa.live.size();
+  size_t failures = 0, stride = 1;
+  for (size_t n = 1; n < 200000; n += stride) {
+    GTEXT_CSS_Computed_Style * s = nullptr;
+    fa.arm(n);
+    const GTEXT_CSS_Status st = gtext_css_style_compute(ctx.c, nullptr, nullptr, entries, 2, &o, &s, nullptr);
+    fa.disarm();
+    if (!fa.failed) {
+      EXPECT_EQ(st, GTEXT_CSS_OK);
+      ASSERT_NE(s, nullptr);
+      gtext_css_computed_free(s);
+      EXPECT_EQ(fa.live.size(), baseline) << "a block is left";
+      break;
+    }
+    failures++;
+    EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n;
+    EXPECT_EQ(s, nullptr) << n;
+    EXPECT_EQ(fa.live.size(), baseline) << n << ": a block is left";
+    EXPECT_EQ(fa.bad_frees, 0u) << n;
+    if (n > 600) {
+      stride = 5;
+    }
+  }
+  EXPECT_GT(failures, 300u) << "the sweep reached the allocations of the rollback";
 }
 
 }  // namespace

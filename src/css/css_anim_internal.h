@@ -74,9 +74,20 @@ void css_anim_untimed_free(const GTEXT_Allocator * alloc, css_anim_untimed * unt
  * result of the compute that failed, so that the style's result can say what it lacked.
  * GTEXT_CSS_OK, or the status of a compute, the allocator or a callback.
  */
+/// What the sampler needs of the cascade to give `revert` in a keyframe its meaning (Cascade 5: "Rolls back the cascade to the user level"). A keyframe is declared in the animation origin;
+/// the winners of the other origins are not in the block the sampler is given (`base` holds the author's), so the cascade is asked again with the declaration `name: revert` added in the
+/// animation origin.
+typedef struct {
+  /// Cascade again with `name: revert` declared in the animation origin; `*out` is the block of the winners (the caller frees it with gtext_css_block_free()): a longhand that `name` sets and
+  /// no declaration of the user or user-agent origin gives is absent from it. GTEXT_CSS_OK, or the status of the cascade.
+  GTEXT_CSS_Status (*roll_back)(void * user, const char * name, size_t name_length, GTEXT_CSS_Declaration_Block ** out);
+  void * user;
+} css_anim_rollback;
+
+/// Sample the animations of an element over `base`, the winners of its cascade. `rollback` may be NULL: a `revert` in a keyframe is then read as the underlying value, as `revert-layer` is.
 GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Style_Options * options, GTEXT_CSS_Element_Handle element,
-    const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Declaration_Block * base, GTEXT_CSS_Declaration_Block ** animated, css_anim_untimed * untimed,
-    GTEXT_CSS_Compute_Result * failure);
+    const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Declaration_Block * base, const css_anim_rollback * rollback, GTEXT_CSS_Declaration_Block ** animated,
+    css_anim_untimed * untimed, GTEXT_CSS_Compute_Result * failure);
 
 #ifdef __cplusplus
 }

@@ -353,6 +353,147 @@ static GTEXT_CSS_Status highlight_inherit(const GTEXT_CSS_Compute_Context * cc, 
   return GTEXT_CSS_OK;
 }
 
+/// The candidates of one element: the style rules that match it, the presentation attributes, the `style` attribute and the caller's entries. `*early` is set when a failure was reported
+/// and the set is already freed (b->set is then NULL); on another failure the set is left for the caller to free.
+static GTEXT_CSS_Status fill_candidates(build * b, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Element_Interface * iface, const GTEXT_CSS_Style_Entry * entries, size_t count,
+    bool * early) {
+  const GTEXT_CSS_Compute_Context * context = b->cc;
+  const GTEXT_CSS_Style_Options * options = b->options;
+  *early = false;
+  GTEXT_CSS_Candidate_Options co = options->candidates;
+  if (!co.allocator) {
+    co.allocator = &context->alloc;
+  }
+  GTEXT_CSS_Status st = gtext_css_candidates_new(context->registry, options->layers, &co, &b->set);
+  if (st != GTEXT_CSS_OK) {
+    *early = true;
+    return fail(b, st, NULL, 0, NULL);
+  }
+  if (options->rules) {
+    GTEXT_CSS_Rule_Index_Result rr;
+    if (!options->match || !element) {
+      gtext_css_candidates_free(b->set);
+      b->set = NULL;
+      *early = true;
+      return fail(b, GTEXT_CSS_E_INVALID, NULL, 0, "style rules are given with no match context or no element");
+    }
+    GTEXT_CSS_Rules_Collect_Options ro;
+    memset(&ro, 0, sizeof ro);
+    ro.starting_style = options->starting_style;
+    ro.call = options->container_call;
+    st = gtext_css_rules_collect(options->rules, options->match, element, options->pseudo, b->set, &ro, &rr);
+    b->work += rr.work;
+    if (st != GTEXT_CSS_OK) {
+      gtext_css_candidates_free(b->set);
+      b->set = NULL;
+      *early = true;
+      return fail(b, st, rr.name, strlen(rr.name), rr.detail);
+    }
+  }
+  if (options->sources & GTEXT_CSS_STYLE_PRESENTATION_ATTRIBUTES) {
+    st = add_presentation_attributes(b, iface, element);
+  }
+  if (st == GTEXT_CSS_OK && (options->sources & GTEXT_CSS_STYLE_STYLE_ATTRIBUTE)) {
+    GTEXT_CSS_String value = {NULL, 0};
+    bool found = false;
+    st = read_attribute(b, iface, element, "style", 5, &value, &found);
+    if (st == GTEXT_CSS_OK && found) {
+      GTEXT_CSS_Cascade_Entry keys;
+      memset(&keys, 0, sizeof keys);
+      keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
+      keys.element_attached = true;
+      st = add_list(b, &keys, value.data, value.length, options->style_attribute_offset, GTEXT_CSS_STYLE_SOURCE_STYLE_ATTRIBUTE, 0);
+    }
+  }
+  for (size_t i = 0; st == GTEXT_CSS_OK && i < count; i++) {
+    GTEXT_CSS_Cascade_Entry keys = entries[i].keys;
+    keys.presentational_hint = false;
+    keys.element_attached = false;
+    st = add_list(b, &keys, entries[i].text.data ? entries[i].text.data : "", entries[i].text.length, entries[i].base_offset, GTEXT_CSS_STYLE_SOURCE_ENTRY, i);
+  }
+  return st;
+}
+
+/// `revert` in a keyframe (css_anim_internal.h, css_anim_rollback): the cascade of the same element again, with `name: revert` declared in the animation origin on top of everything, which the
+/// cascade rolls back to the value of the user and user-agent origins by its own rules (css_revert.c). The first cascade is sealed, so the candidates are collected anew; this is asked
+/// only when a keyframe holds a `revert`, once for each name in it.
+typedef struct {
+  const GTEXT_CSS_Compute_Context * cc;
+  const GTEXT_CSS_Style_Options * options;
+  GTEXT_CSS_Element_Handle element;
+  const GTEXT_CSS_Element_Interface * iface;
+  const GTEXT_CSS_Computed_Style * parent;
+  const GTEXT_CSS_Style_Entry * entries;
+  size_t count;
+} style_roll;
+
+static GTEXT_CSS_Status style_roll_back(void * user, const char * name, size_t name_length, GTEXT_CSS_Declaration_Block ** out) {
+  const style_roll * r = user;
+  build rb;
+  memset(&rb, 0, sizeof rb);
+  rb.cc = r->cc;
+  rb.options = r->options;
+  bool early = false;
+  GTEXT_CSS_Status st = fill_candidates(&rb, r->element, r->iface, r->entries, r->count, &early);
+  GTEXT_CSS_Tree * tree = NULL;
+  char * text = NULL;
+  if (st == GTEXT_CSS_OK) {
+    text = gtext_allocator_malloc(&r->cc->alloc, name_length + 9);
+    if (!text) {
+      st = GTEXT_CSS_E_OOM;
+    }
+    else {
+      memcpy(text, name, name_length);
+      memcpy(text + name_length, ": revert", 8);
+      GTEXT_CSS_Parse_Options po = r->options->parse;
+      if (!po.allocator) {
+        po.allocator = &r->cc->alloc;
+      }
+      st = gtext_css_parse_declaration_list(text, name_length + 8, &po, &tree, NULL);
+    }
+  }
+  if (st == GTEXT_CSS_OK && tree->declaration_count >= 1) {
+    GTEXT_CSS_Cascade_Entry k;
+    memset(&k, 0, sizeof k);
+    k.origin = GTEXT_CSS_ORIGIN_ANIMATION;
+    k.declaration = rb.ordinal++;
+    GTEXT_CSS_Property_Options propo;
+    memset(&propo, 0, sizeof propo);
+    propo.quirks = r->options->quirks;
+    GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+    GTEXT_CSS_Cascade_Result cr;
+    st = gtext_css_candidates_add_declaration(rb.set, &k, &tree->declarations[0], &propo, &outcome, &cr);
+  }
+  GTEXT_CSS_Cascaded * cascaded = NULL;
+  if (st == GTEXT_CSS_OK) {
+    GTEXT_CSS_Cascade_Options cascade;
+    memset(&cascade, 0, sizeof cascade);
+    cascade.allocator = &r->cc->alloc;
+    GTEXT_CSS_Flow pf;
+    if (r->parent) {
+      pf = gtext_css_computed_flow(r->parent);
+      cascade.parent_flow = &pf;
+    }
+    cascade.hash_seed = r->cc->options.custom_hash_seed;
+    GTEXT_CSS_Cascade_Result cr;
+    st = gtext_css_cascade(rb.set, &cascade, &cascaded, &cr);
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = gtext_css_cascaded_to_block(cascaded, NULL, out);
+  }
+  gtext_css_cascaded_free(cascaded);
+  gtext_css_tree_free(tree);
+  gtext_allocator_free(&r->cc->alloc, text);
+  if (!early) {
+    gtext_css_candidates_free(rb.set);
+  }
+  for (size_t i = 0; i < rb.ndiag; i++) {
+    gtext_allocator_free(&r->cc->alloc, rb.diag[i].name_copy);
+  }
+  gtext_allocator_free(&r->cc->alloc, rb.diag);
+  return st;
+}
+
 GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * context, GTEXT_CSS_Element_Handle element,
     const GTEXT_CSS_Computed_Style * parent_style, const GTEXT_CSS_Style_Entry * entries, size_t count, const GTEXT_CSS_Style_Options * options,
     GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * result) {
@@ -391,52 +532,10 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
   if (options->sources != 0 && !iface) {
     return fail(&b, GTEXT_CSS_E_UNSUPPORTED, "attribute", 9, "the context has no element interface to read attributes through");
   }
-  GTEXT_CSS_Candidate_Options co = options->candidates;
-  if (!co.allocator) {
-    co.allocator = &context->alloc;
-  }
-  GTEXT_CSS_Status st = gtext_css_candidates_new(context->registry, options->layers, &co, &b.set);
-  if (st != GTEXT_CSS_OK) {
-    return fail(&b, st, NULL, 0, NULL);
-  }
-  if (options->rules) {
-    GTEXT_CSS_Rule_Index_Result rr;
-    if (!options->match || !element) {
-      gtext_css_candidates_free(b.set);
-      return fail(&b, GTEXT_CSS_E_INVALID, NULL, 0, "style rules are given with no match context or no element");
-    }
-    GTEXT_CSS_Rules_Collect_Options ro;
-    memset(&ro, 0, sizeof ro);
-    ro.starting_style = options->starting_style;
-    ro.call = options->container_call;
-    st = gtext_css_rules_collect(options->rules, options->match, element, options->pseudo, b.set, &ro, &rr);
-    b.work += rr.work;
-    if (st != GTEXT_CSS_OK) {
-      gtext_css_candidates_free(b.set);
-      return fail(&b, st, rr.name, strlen(rr.name), rr.detail);
-    }
-  }
-  if (options->sources & GTEXT_CSS_STYLE_PRESENTATION_ATTRIBUTES) {
-    st = add_presentation_attributes(&b, iface, element);
-  }
-  if (st == GTEXT_CSS_OK && (options->sources & GTEXT_CSS_STYLE_STYLE_ATTRIBUTE)) {
-    GTEXT_CSS_String value = {NULL, 0};
-    bool found = false;
-    st = read_attribute(&b, iface, element, "style", 5, &value, &found);
-    if (st == GTEXT_CSS_OK && found) {
-      GTEXT_CSS_Cascade_Entry keys;
-      memset(&keys, 0, sizeof keys);
-      keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
-      keys.element_attached = true;
-      st = add_list(&b, &keys, value.data, value.length, options->style_attribute_offset, GTEXT_CSS_STYLE_SOURCE_STYLE_ATTRIBUTE, 0);
-    }
-  }
-  for (size_t i = 0; st == GTEXT_CSS_OK && i < count; i++) {
-    GTEXT_CSS_Cascade_Entry keys = entries[i].keys;
-    keys.presentational_hint = false;
-    keys.element_attached = false;
-    st = add_list(&b, &keys, entries[i].text.data ? entries[i].text.data : "", entries[i].text.length, entries[i].base_offset, GTEXT_CSS_STYLE_SOURCE_ENTRY,
-        i);
+  bool early = false;
+  GTEXT_CSS_Status st = fill_candidates(&b, element, iface, entries, count, &early);
+  if (early) {
+    return st;
   }
   GTEXT_CSS_Cascaded * cascaded = NULL;
   GTEXT_CSS_Declaration_Block * block = NULL;
@@ -471,7 +570,9 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
     GTEXT_CSS_Declaration_Block * animated = NULL;
     GTEXT_CSS_Compute_Result sampled;
     memset(&sampled, 0, sizeof sampled);
-    st = css_anim_sample(context, options, element, parent_style, block, &animated, &untimed, &sampled);
+    style_roll roll = {context, options, element, iface, parent_style, entries, count};
+    css_anim_rollback rollback = {style_roll_back, &roll};
+    st = css_anim_sample(context, options, element, parent_style, block, &rollback, &animated, &untimed, &sampled);
     if (st != GTEXT_CSS_OK) {
       if (result && sampled.status == st) {
         *result = sampled;   /* the compute of a keyframe failed: it says which callback or property it lacked */

@@ -81,6 +81,7 @@ typedef struct {
   GTEXT_CSS_Element_Handle element;
   const GTEXT_CSS_Computed_Style * parent;
   const GTEXT_CSS_Declaration_Block * base;
+  const css_anim_rollback * rollback;   ///< How `revert` is rolled back, or NULL.
   GTEXT_CSS_Computed_Style * base_style;
   GTEXT_CSS_Property_Id id_timing, id_composition;
   unsigned asked_pseudo;
@@ -327,10 +328,16 @@ static GTEXT_CSS_Status compute_block(sampler * s, const GTEXT_CSS_Declaration_B
   return st;
 }
 
-/// A CSS-wide keyword that rolls a declaration back (`revert`, `revert-layer`, `revert-rule`): the keyframes have no origin, layer or rule of their own to roll back to, so the value is the
-/// one the element would have without the declaration, the underlying value (Cascade 6: "revert-rule" is the value of the declaration of the rule below).
-static bool is_revert(const GTEXT_CSS_Keyframe_Property * p) {
-  static const char * const WORDS[] = {"revert", "revert-layer", "revert-rule"};
+/// A CSS-wide keyword that rolls a declaration back, and how far (Cascade 5): `revert` leaves the animation and author origins, and is the value of the user and user-agent origins;
+/// `revert-layer` and `revert-rule` leave only the animation origin ("The animation origin ... effectively forms its own cascade layer"; "The revert-rule keyword behaves like revert-layer in
+/// the animation origin"), so they are the value the element would have without the declaration, the underlying value.
+typedef enum { ROLL_NONE = 0, ROLL_LAYER, ROLL_ORIGIN } roll_kind;
+
+static roll_kind roll_of(const GTEXT_CSS_Keyframe_Property * p) {
+  static const struct {
+    const char * word;
+    roll_kind kind;
+  } WORDS[] = {{"revert", ROLL_ORIGIN}, {"revert-layer", ROLL_LAYER}, {"revert-rule", ROLL_LAYER}};
   size_t a = 0, b = p->text.length;
   while (a < b && (p->text.data[a] == ' ' || p->text.data[a] == '\n' || p->text.data[a] == '\t')) {
     a++;
@@ -339,19 +346,65 @@ static bool is_revert(const GTEXT_CSS_Keyframe_Property * p) {
     b--;
   }
   for (size_t i = 0; i < sizeof WORDS / sizeof *WORDS; i++) {
-    const size_t n = strlen(WORDS[i]);
+    const size_t n = strlen(WORDS[i].word);
     if (b - a != n) {
       continue;
     }
     size_t k = 0;
-    while (k < n && ((p->text.data[a + k] >= 'A' && p->text.data[a + k] <= 'Z') ? p->text.data[a + k] + 32 : p->text.data[a + k]) == WORDS[i][k]) {
+    while (k < n && ((p->text.data[a + k] >= 'A' && p->text.data[a + k] <= 'Z') ? p->text.data[a + k] + 32 : p->text.data[a + k]) == WORDS[i].word[k]) {
       k++;
     }
     if (k == n) {
-      return true;
+      return WORDS[i].kind;
     }
   }
-  return false;
+  return ROLL_NONE;
+}
+
+/// Roll back what `name: revert` sets in the block of a frame: each longhand gets the winner of the cascade without the author and animation origins, or is taken out of the block when
+/// nobody in those origins declares it (it is then `unset`: inherited, or initial).
+static GTEXT_CSS_Status roll_back(sampler * s, GTEXT_CSS_Declaration_Block * b, const char * name, size_t name_length) {
+  if (!s->rollback) {
+    return GTEXT_CSS_OK;   /* no cascade to ask: the underlying value */
+  }
+  GTEXT_CSS_Declaration_Block * rolled = NULL;
+  GTEXT_CSS_Status st = s->rollback->roll_back(s->rollback->user, name, name_length, &rolled);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  /* the longhands the declaration sets: the items its own expansion makes */
+  GTEXT_CSS_Declaration_Options bo = gtext_css_declaration_options_default();
+  bo.allocator = &s->al;
+  GTEXT_CSS_Declaration_Block * names = NULL;
+  st = gtext_css_block_new(s->reg, &bo, &names);
+  GTEXT_CSS_Property_Outcome outcome;
+  if (st == GTEXT_CSS_OK) {
+    st = add_declaration(s, names, name, name_length, "revert", 6, &outcome);
+  }
+  const size_t n = st == GTEXT_CSS_OK ? gtext_css_block_count(names) : 0;
+  for (size_t i = 0; i < n && st == GTEXT_CSS_OK; i++) {
+    GTEXT_CSS_Declaration_Item want, got;
+    if (!gtext_css_block_item(names, i, &want)) {
+      break;
+    }
+    const bool custom = want.custom_name.length != 0;
+    const bool found = gtext_css_block_find(rolled, custom ? 0 : want.property, custom ? want.custom_name.data : NULL, custom ? want.custom_name.length : 0, &got);
+    if (!found) {
+      st = gtext_css_block_remove(b, custom ? 0 : want.property, custom ? want.custom_name.data : NULL, custom ? want.custom_name.length : 0, NULL);
+      continue;
+    }
+    GTEXT_CSS_Property_Value pv;
+    memset(&pv, 0, sizeof pv);
+    pv.outcome = got.outcome;
+    pv.wide = got.wide;
+    pv.property = got.property;
+    pv.named = got.property;
+    pv.set = (GTEXT_CSS_Value_Set *)(uintptr_t)got.set;   /* borrowed: the block takes its own count */
+    st = custom ? gtext_css_block_set_custom(b, want.custom_name.data, want.custom_name.length, &pv, got.important, NULL) : gtext_css_block_set(b, &pv, got.important, NULL, NULL);
+  }
+  gtext_css_block_free(names);
+  gtext_css_block_free(rolled);
+  return st;
 }
 
 static GTEXT_CSS_Status frame_style(sampler * s, entry * e, size_t f, const GTEXT_CSS_Computed_Style ** out) {
@@ -367,7 +420,15 @@ static GTEXT_CSS_Status frame_style(sampler * s, entry * e, size_t f, const GTEX
   const GTEXT_CSS_Keyframe * fr = &e->kf->frames[f];
   for (size_t i = 0; i < fr->property_count && st == GTEXT_CSS_OK; i++) {
     const GTEXT_CSS_Keyframe_Property * p = &fr->properties[i];
-    if (is_frame_attribute(s, p->property) || is_revert(p)) {
+    if (is_frame_attribute(s, p->property)) {
+      continue;
+    }
+    const roll_kind roll = roll_of(p);
+    if (roll == ROLL_LAYER) {
+      continue;   /* the underlying value */
+    }
+    if (roll == ROLL_ORIGIN) {
+      st = roll_back(s, b, p->name.data, p->name.length);
       continue;
     }
     GTEXT_CSS_Property_Outcome outcome;
@@ -803,8 +864,8 @@ static bool important_in(const GTEXT_CSS_Declaration_Block * base, const key * k
 }
 
 GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Style_Options * options, GTEXT_CSS_Element_Handle element,
-    const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Declaration_Block * base, GTEXT_CSS_Declaration_Block ** animated, css_anim_untimed * untimed,
-    GTEXT_CSS_Compute_Result * failure) {
+    const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Declaration_Block * base, const css_anim_rollback * rollback, GTEXT_CSS_Declaration_Block ** animated,
+    css_anim_untimed * untimed, GTEXT_CSS_Compute_Result * failure) {
   *animated = NULL;
   const GTEXT_CSS_Style_Animation * an = options->animation;
   sampler s;
@@ -816,6 +877,7 @@ GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTE
   s.element = element;
   s.parent = parent;
   s.base = base;
+  s.rollback = rollback;
   s.asked_pseudo = asked_pseudo(options->pseudo);
   s.failure = failure;
   const GTEXT_CSS_Property_Id name_id = gtext_css_registry_find_property(s.reg, "animation-name", 14);
