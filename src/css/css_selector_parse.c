@@ -983,7 +983,8 @@ static bool parse_pseudo(P * p, const V * v, size_t * pos, size_t hi, const sctx
     if (!is_pe && st->saw_pe) {
       const sel_row * pe = &sel_rows[st->last_pe];
       cc.restrict_kind = pe->pclass == PCLASS_USER ? 2 : pe->pclass == PCLASS_NONTREE ? 1 : 3;
-      cc.restrict_extra = 0;
+      cc.restrict_extra = pe->pclass_extra[0] != 0xffff;
+      cc.restrict_row = (uint16_t)st->last_pe;
     }
     else if (is_pe) {
       cc.restrict_kind = 0;
@@ -1008,6 +1009,15 @@ static bool parse_pseudo(P * p, const V * v, size_t * pos, size_t hi, const sctx
 static bool restricted_violation(const sctx * c, const GTEXT_CSS_Simple * s) {
   if (!c->restrict_kind) {
     return false;
+  }
+  if (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_CLASS && c->restrict_extra) {
+    /* the pseudo-classes the pseudo-element names besides its class (`:current` after `::search-text`) are allowed in the arguments of `:not()` and `:is()` as they are beside it */
+    const sel_row * pe = &sel_rows[c->restrict_row];
+    for (int k = 0; k < 3 && pe->pclass_extra[k] != 0xffff; k++) {
+      if (pe->pclass_extra[k] == s->pseudo) {
+        return false;
+      }
+    }
   }
   if (s->kind != GTEXT_CSS_SIMPLE_PSEUDO_CLASS || c->restrict_kind == 3) {
     return true;

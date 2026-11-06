@@ -407,3 +407,4 @@ highlight-inherit-keyword-is-a-value-of-its-own	css_style.c	    return it.wide !
 highlight-currentcolor-is-a-value-of-its-own	css_style.c	    if (c && c->kind == GTEXT_CSS_COLOR_KEYWORD && c->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR) {\n      return false;	    if (0) {\n      return false;	computed
 highlight-made-from-the-element-alone	cssom_computed.c	  if (!is_highlight_pseudo(pseudo)) {	  if (1) {	computed
 highlight-currentcolor-not-the-originating-color	cssom_resolved.c	    if (in->pseudo && in->element_style && root && root->kind == GTEXT_CSS_VAL_COLOR	    if (0 && in->pseudo && in->element_style && root && root->kind == GTEXT_CSS_VAL_COLOR	computed
+search-text-current-not-allowed-in-the-arguments	css_selector_parse.c	      if (pe->pclass_extra[k] == s->pseudo) {\n        return false;	      if (0) {\n        return false;	computed

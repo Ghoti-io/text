@@ -558,6 +558,23 @@ TEST(CssSelectorPseudoElements, TheyEndTheComplexSelectorAndFollowTheirRules) {
   EXPECT_EQ(written("::-webkit-foo"), "::-webkit-foo") << "any ::-webkit- pseudo-element is valid";
 }
 
+// Pseudo-Elements 4, "::search-text": "The :current pseudo-class (but not ::current()) may be combined with ::search-text to represent the currently focused match instance. The :past and :future
+// pseudo-classes are reserved for analogous use in the future. Any unsupported combination of these pseudo-classes with ::search-text must be treated as invalid." What may follow the
+// pseudo-element may be written in the arguments of :not() and :is() after it as well.
+TEST(CssSelectorPseudoElements, SearchTextTakesCurrentBesideItsClassAndInsideTheLogicalPseudoClasses) {
+  EXPECT_EQ(written("::search-text:current"), "::search-text:current");
+  EXPECT_EQ(written("::search-text:hover"), "::search-text:hover");
+  EXPECT_EQ(written("::search-text:not(:current)"), "::search-text:not(:current)");
+  EXPECT_EQ(written("::search-text:is(:current, :hover)"), "::search-text:is(:current, :hover)");
+  EXPECT_EQ(written("::search-text:past"), "INVALID") << "reserved, so an unsupported combination";
+  EXPECT_EQ(written("::search-text:future"), "INVALID");
+  EXPECT_EQ(written("::search-text:current()"), "INVALID") << "not ::current(), and not :current() either";
+  EXPECT_EQ(written("::search-text:first-child"), "INVALID");
+  EXPECT_EQ(written("::search-text:not(:first-child)"), "INVALID");
+  EXPECT_EQ(written("::selection:current"), "INVALID") << "only ::search-text takes it";
+  EXPECT_EQ(written("::selection:not(:current)"), "INVALID");
+}
+
 TEST(CssSelectorPseudoElements, PartAndSlottedTakeWhatTheShadowDraftsAllow) {
   // CSS Shadow Parts 1: "The ::part() pseudo-element can take additional pseudo-classes after it ... but never matches the structural pseudo-classes"
   EXPECT_EQ(written("::part(a):hover"), "::part(a):hover");

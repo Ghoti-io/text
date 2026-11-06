@@ -265,6 +265,19 @@ TEST(CssomComputed, AHighlightInheritsFromTheCurrentStyleOfTheParentsHighlight) 
   EXPECT_EQ(shadow("#child"), "rgb(0, 128, 0) 10px 0px 0px");
 }
 
+/* "highlight-pseudos-computed-search-text": `::search-text:not(:current)` matches the highlight that is not the current match, and `::search-text:current` does not (the pseudo-element asked for
+   is not the focused match instance; the document says nothing of a current match) */
+TEST(CssomComputed, TheSearchTextHighlightThatIsNotTheCurrentMatchTakesTheNotCurrentRule) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#target::search-text { background-color: blue; color: lime; }"
+       "#target::search-text:not(:current) { background-color: green; }"
+       "#target::search-text:current { background-color: red; }"
+       "</style></head><body><div id=target></div></body></html>");
+  Decl d = m.computed("#target", "::search-text");
+  EXPECT_EQ(get(d.d, "background-color"), "rgb(0, 128, 0)");
+  EXPECT_EQ(get(d.d, "color"), "rgb(0, 255, 0)");
+}
+
 /* ---- the declaration ----------------------------------------------------------------------------------------------------------------------------------------- */
 
 /* CSSOM, 7.2: "Return a live CSSStyleProperties object with the following properties: computed flag Set. readonly flag Set." and 6.6: "Setting the cssText attribute must run these

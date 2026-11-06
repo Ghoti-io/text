@@ -151,7 +151,7 @@ ns|	type	none	-	-	-	-	NAMESPACE_URI	zero	name	implemented	namespace prefix (extr
 ::scroll-button()	element	enum:*,up,down,left,right,block-start,block-end,inline-start,inline-end	-	user,disabled,enabled	-	-	-	element	pseudo	implemented		css-overflow-5.json	https://drafts.csswg.org/css-overflow-5/#selectordef-scroll-button---scroll-button-direction	pin
 ::scroll-marker	element	none	-	user	-	-	-	element	pseudo	implemented		css-overflow-5.json	https://drafts.csswg.org/css-overflow-5/#selectordef-scroll-marker	pin
 ::scroll-marker-group	element	none	-	user	-	-	-	element	pseudo	implemented		css-overflow-5.json	https://drafts.csswg.org/css-overflow-5/#selectordef-scroll-marker-group	pin
-::search-text	element	none	-	user	-	-	-	element	pseudo	implemented		css-pseudo.json	https://drafts.csswg.org/css-pseudo-4/#selectordef-search-text	pin
+::search-text	element	none	-	user,current	-	-	-	element	pseudo	implemented		css-pseudo.json	https://drafts.csswg.org/css-pseudo-4/#selectordef-search-text	pin
 ::selection	element	none	-	user	-	-	-	element	pseudo	implemented		css-pseudo.json	https://drafts.csswg.org/css-pseudo-4/#selectordef-selection	pin
 ::slider-fill	element	none	-	user	-	-	-	element	pseudo	implemented		css-forms.json	https://drafts.csswg.org/css-forms-1/#selectordef-slider-fill	pin
 ::slider-thumb	element	none	-	user	-	-	-	element	pseudo	implemented		css-forms.json	https://drafts.csswg.org/css-forms-1/#selectordef-slider-thumb	pin

@@ -167,7 +167,7 @@ ns|	type	none	-	-	-	-	NAMESPACE_URI	zero	name	implemented	namespace prefix (extr
 ::scroll-button()	element	enum:*,up,down,left,right,block-start,block-end,inline-start,inline-end	-	user,disabled,enabled	-	-	-	element	pseudo	implemented	
 ::scroll-marker	element	none	-	user	-	-	-	element	pseudo	implemented	
 ::scroll-marker-group	element	none	-	user	-	-	-	element	pseudo	implemented	
-::search-text	element	none	-	user	-	-	-	element	pseudo	implemented	
+::search-text	element	none	-	user,current	-	-	-	element	pseudo	implemented	
 ::selection	element	none	-	user	-	-	-	element	pseudo	implemented	
 ::slider-fill	element	none	-	user	-	-	-	element	pseudo	implemented	
 ::slider-thumb	element	none	-	user	-	-	-	element	pseudo	implemented	
