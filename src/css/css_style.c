@@ -323,8 +323,28 @@ static GTEXT_CSS_Status highlight_current_color(const GTEXT_CSS_Compute_Context 
 
 /// Highlight inheritance (css_style.h, GTEXT_CSS_Style_Options::highlight): the supported properties the cascade gave no value take the parent highlight's, or at the root the initial value.
 static GTEXT_CSS_Status highlight_inherit(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Computed_Style * style,
-    const GTEXT_CSS_Computed_Style * parent) {
+    const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Computed_Style * origin) {
   const GTEXT_CSS_Property_Id color = cc->pid[CSS_P_COLOR];
+  GTEXT_CSS_Property_Id supported[sizeof HIGHLIGHT_PROPERTIES / sizeof *HIGHLIGHT_PROPERTIES];
+  for (size_t k = 0; k < sizeof supported / sizeof *supported; k++) {
+    supported[k] = gtext_css_registry_find_property(cc->registry, HIGHLIGHT_PROPERTIES[k], strlen(HIGHLIGHT_PROPERTIES[k]));
+  }
+  if (origin) {
+    /* "For any properties not listed above, but which are required to resolve the values of applicable properties, their computed values are copied from those of the originating
+       element, ignoring any values specified on the highlight pseudo-element itself." (Custom properties are on the list, and keep what the cascade made of them.) */
+    for (GTEXT_CSS_Property_Id id = 1; id <= cc->nprops && id <= origin->n && id <= style->n; id++) {
+      bool listed = false;
+      for (size_t k = 0; k < sizeof supported / sizeof *supported; k++) {
+        listed = listed || supported[k] == id;
+      }
+      if (!listed) {
+        GTEXT_CSS_Value_Set * copy = gtext_css_value_set_retain(origin->vals[id - 1]);
+        gtext_css_value_set_free(style->vals[id - 1]);
+        style->vals[id - 1] = copy;
+      }
+    }
+    style->flow = origin->flow;
+  }
   for (size_t k = 0; k < sizeof HIGHLIGHT_PROPERTIES / sizeof *HIGHLIGHT_PROPERTIES; k++) {
     const char * name = HIGHLIGHT_PROPERTIES[k];
     const GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(cc->registry, name, strlen(name));
@@ -599,7 +619,7 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
     }
   }
   if (st == GTEXT_CSS_OK && options->highlight) {
-    st = highlight_inherit(context, block, style, options->highlight_parent);
+    st = highlight_inherit(context, block, style, options->highlight_parent, parent_style);
     if (st != GTEXT_CSS_OK) {
       gtext_css_computed_free(style);
       style = NULL;

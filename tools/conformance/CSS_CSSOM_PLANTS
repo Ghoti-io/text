@@ -410,3 +410,5 @@ highlight-currentcolor-not-the-originating-color	cssom_resolved.c	    if (in->ps
 search-text-current-not-allowed-in-the-arguments	css_selector_parse.c	      if (pe->pclass_extra[k] == s->pseudo) {\n        return false;	      if (0) {\n        return false;	computed
 function-rule-with-a-bad-prelude-kept	css_atrule.c	    if (cx.st == GTEXT_CSS_OK && !valid) {\n      bad_prelude = true;\n      prelude_why = "CSS Functions and Mixins 1, @function	    if (0) {\n      bad_prelude = true;\n      prelude_why = "CSS Functions and Mixins 1, @function	rules
 initial-justify-items-shared-by-every-style	css_compute.c	    m->initial_dependent = dependent || css_val_is_keyword(spec, "legacy");	    m->initial_dependent = dependent || (0 && css_val_is_keyword(spec, "legacy"));	completion
+highlight-unsupported-property-honored	css_style.c	      if (!listed) {	      if (0) {	computed
+highlight-supported-property-copied-from-the-element	css_style.c	      if (!listed) {	      if (1) {	computed

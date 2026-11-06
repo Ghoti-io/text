@@ -278,6 +278,28 @@ TEST(CssomComputed, TheSearchTextHighlightThatIsNotTheCurrentMatchTakesTheNotCur
   EXPECT_EQ(get(d.d, "color"), "rgb(0, 255, 0)");
 }
 
+/* "For any properties not listed above, but which are required to resolve the values of applicable properties, their computed values are copied from those of the originating element,
+   ignoring any values specified on the highlight pseudo-element itself." (font-size, line-height, color-scheme and the like; the list of what a highlight supports ends before it) */
+TEST(CssomComputed, AHighlightTakesTheValueOfAnUnsupportedPropertyFromTheOriginatingElementAndIgnoresWhatItDeclares) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#a { font-size: 20px; margin-left: 3px; line-height: 30px; } #b { font-size: 12px; }"
+       "#a::selection { font-size: 40px; margin-left: 9px; line-height: 99px; width: 77px; color: red; --x: 4px; }"
+       "#b::selection { font-size: inherit; margin-left: inherit; }"
+       "</style></head><body><div id=a><span id=b>x</span></div></body></html>");
+  auto read = [&](const char * element, const char * pseudo, const char * property) {
+    Decl d = m.computed(element, pseudo);
+    return get(d.d, property);
+  };
+  EXPECT_EQ(read("#a", "::selection", "font-size"), "20px") << "the declaration on the highlight is ignored";
+  EXPECT_EQ(read("#a", "::selection", "margin-left"), "3px") << "also a property that is not inherited: the originating element's value, not the initial one";
+  EXPECT_EQ(read("#a", "::selection", "line-height"), "30px");
+  EXPECT_EQ(read("#a", "::selection", "width"), "auto");
+  EXPECT_EQ(read("#b", "::selection", "font-size"), "12px") << "the originating element's, not the parent's, which inherit would give";
+  EXPECT_EQ(read("#b", "::selection", "margin-left"), "0px");
+  EXPECT_EQ(read("#a", "::selection", "color"), "rgb(255, 0, 0)") << "a supported property is still the highlight's own";
+  EXPECT_EQ(read("#a", "::selection", "--x"), "4px") << "and a custom property is among the supported ones";
+}
+
 /* ---- the declaration ----------------------------------------------------------------------------------------------------------------------------------------- */
 
 /* CSSOM, 7.2: "Return a live CSSStyleProperties object with the following properties: computed flag Set. readonly flag Set." and 6.6: "Setting the cssText attribute must run these
