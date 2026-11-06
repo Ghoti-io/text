@@ -55,6 +55,8 @@
 #include <ghoti.io/text/css.h>
 #include <ghoti.io/text/markup.h>
 
+#include "fuzz_pending_text.h"
+
 namespace cssom_declfuzz {
 
 [[noreturn]] void fail(const char * what, const std::string & detail, const std::string & input) {
@@ -385,7 +387,7 @@ void check(World & w, int which, const std::string & input, const char * after) 
   gtext_cssom_decl_set_css_text(fresh, text.data(), text.size(), nullptr);
   const std::string again = css_text(fresh, input);
   gtext_cssom_decl_release(fresh);
-  if (again != text) {
+  if (again != cssfuzz::without_pending(text)) {
     fail("serialize, parse and serialize is not a fixed point", std::string(after) + ":\n" + text + "\n" + again, input);
   }
   if (which == 1 && w.writes > 0 && w.attr.count("e") && w.attr["e"] != text) {

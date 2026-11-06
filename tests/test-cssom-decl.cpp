@@ -934,20 +934,23 @@ TEST(CssomDecl, DisplayTakesLayoutWithOneName) {
 }
 
 // found by the libFuzzer soak of fuzz_cssom_decl (reproducer-shorthand-set-over-a-pending-all*.seed): `all: var(--x)` leaves a pending longhand for every property, the logical
-// ones among them, and `border: red` replaces only the border ones. The pending ones are not written (the text they hold is `all`'s, and only `all` can say it), so they are not in
-// the text that is read again; the logical ones among them must not stop the physical `border` from being written, or the text and the text of that text differ. Chromium 156 and
-// Firefox 158 both write `border: red` there (and write the rest differently from each other and from this library, which leaves it out).
-TEST(CssomDeclCssText, APendingLonghandThatIsNotWrittenDoesNotStopAShorthandBeingWritten) {
+// ones among them, and `border: red` replaces only the border ones. The pending ones that remain are written with an empty value (Values 5: "Pending-substitution values must be
+// serialized as the empty string"), as Firefox 158 does (Chromium 156 writes the `var(--x)` of `all` for each); the logical ones among them must not stop the physical `border` from
+// being written, which both browsers write as `border: red`. The text given back to the parser has lost the empty ones, and what is left is the text without them.
+TEST(CssomDeclCssText, APendingLonghandThatIsWrittenEmptyDoesNotStopAShorthandBeingWritten) {
   for (const char * value : {"red", "inherit", "initial", "1px solid red"}) {
     Doc doc;
     Decl d(doc);
     ASSERT_EQ(set(d.d, "all", "var(--x)").st, GTEXT_CSS_OK);
     ASSERT_EQ(set(d.d, "border", value).st, GTEXT_CSS_OK);
     const std::string text = text_of(d.d);
-    EXPECT_EQ(text, std::string("border: ") + value + ";") << "the pending longhands of `all` are left out, and the border longhands make `border`";
+    EXPECT_NE(text.find(std::string("border: ") + value + ";"), std::string::npos) << "the border longhands make `border`";
+    EXPECT_EQ(text.find("border-top-width"), std::string::npos);
+    EXPECT_NE(text.find("accent-color: ;"), std::string::npos) << "a pending longhand of `all` is written with no value";
     Decl again(doc);
     ASSERT_EQ(set_text(again.d, text).st, GTEXT_CSS_OK);
-    EXPECT_EQ(text_of(again.d), text) << "serialize, parse and serialize is a fixed point";
+    // `copy-into` is the one property whose grammar (CSS GCPM 4: "none | [ ... ]?") takes no value at all, so its empty declaration is a declaration that is read back
+    EXPECT_EQ(text_of(again.d), std::string("border: ") + value + "; copy-into: ;") << "the other declarations with no value are not read back";
   }
   // the same for the other shorthands that overlap a logical group, and for a side shorthand
   for (const char * name : {"border-width", "border-color", "margin", "padding", "inset", "border-radius"}) {
@@ -955,7 +958,7 @@ TEST(CssomDeclCssText, APendingLonghandThatIsNotWrittenDoesNotStopAShorthandBein
     Decl d(doc);
     ASSERT_EQ(set(d.d, "all", "var(--x)").st, GTEXT_CSS_OK);
     ASSERT_EQ(set(d.d, name, "inherit").st, GTEXT_CSS_OK);
-    EXPECT_EQ(text_of(d.d), std::string(name) + ": inherit;");
+    EXPECT_NE(text_of(d.d).find(std::string(name) + ": inherit;"), std::string::npos);
   }
 }
 
@@ -971,4 +974,77 @@ TEST(CssomDeclCssText, AWrittenPendingShorthandStillCountsAsAnIntermixedLogicalP
   Decl again(doc);
   ASSERT_EQ(set_text(again.d, text).st, GTEXT_CSS_OK);
   EXPECT_EQ(text_of(again.d), text);
+}
+
+/* ---- pending longhands in the cssText ------------------------------------------------------------------------------------------------------------------------ */
+
+// CSS Values 5, "Substitution in Shorthand Properties": "Pending-substitution values must be serialized as the empty string, if an API allows them to be observed." and "If all of the
+// component longhand properties for a given shorthand are pending-substitution values from the same original shorthand value, the shorthand property must serialize to that original
+// value." The longhands of a shorthand with a var() in it that are not all still the shorthand's are written one by one, each with the empty string for its value: the WPT page
+// css-variables/variable-cssText.html expects "margin-right: ; margin-bottom: ; margin-left: ; margin-top: 10px;" for `margin: var(--prop); margin-top: 10px`, and Chromium 156 and Firefox
+// 158 both write it (recorded by notes C5e9-probe-csstext.py, with the `length`, the `item()`s and the priorities below). Both keep the pending longhands in the list.
+namespace {
+
+struct Written {
+  std::string text;
+  size_t length;
+  std::string margin_right, margin_top, margin;
+};
+
+Written written(const std::string & css) {
+  Doc doc;
+  Decl d(doc);
+  EXPECT_EQ(set_text(d.d, css).st, GTEXT_CSS_OK);
+  return {text_of(d.d), length(d.d), get(d.d, "margin-right"), get(d.d, "margin-top"), get(d.d, "margin")};
+}
+
+}  // namespace
+
+TEST(CssomDeclCssText, TheLonghandsOfAPendingShorthandThatIsNoLongerWholeAreWrittenWithAnEmptyValue) {
+  Written w = written("margin: var(--p); margin-top: 10px");
+  EXPECT_EQ(w.text, "margin-right: ; margin-bottom: ; margin-left: ; margin-top: 10px;");
+  EXPECT_EQ(w.length, 4u) << "the pending longhands are in the list";
+  EXPECT_EQ(w.margin_right, "") << "and their value is the empty string";
+  EXPECT_EQ(w.margin_top, "10px");
+  EXPECT_EQ(w.margin, "") << "the shorthand has no value: one of its longhands is not pending";
+  w = written("margin: var(--p); margin-top: 10px !important");
+  EXPECT_EQ(w.text, "margin-right: ; margin-bottom: ; margin-left: ; margin-top: 10px !important;");
+  w = written("margin: var(--p) !important; margin-top: 10px !important");
+  EXPECT_EQ(w.text, "margin-right:  !important; margin-bottom:  !important; margin-left:  !important; margin-top: 10px !important;") << "an important declaration with no value is written so";
+  w = written("margin: var(--p); margin-top: 10px; margin-right: 5px");
+  EXPECT_EQ(w.text, "margin-bottom: ; margin-left: ; margin-top: 10px; margin-right: 5px;") << "a longhand set again moves to the end, the pending ones keep their place";
+  // what makes the shorthand whole again, or leaves nothing pending
+  EXPECT_EQ(written("margin: var(--p) !important; margin-top: 10px").text, "margin: var(--p) !important;") << "a later declaration that is not important does not replace an important one";
+  EXPECT_EQ(written("margin-top: 10px; margin: var(--p)").text, "margin: var(--p);");
+  EXPECT_EQ(written("margin: var(--p); margin: 3px").text, "margin: 3px;");
+  EXPECT_EQ(written("margin: var(--p); margin-inline: 3px").text, "margin: var(--p); margin-inline: 3px;");
+}
+
+TEST(CssomDeclCssText, ThePendingLonghandsOfAShorthandAreChangedAndRemovedOneByOneAndStayInTheList) {
+  Doc doc;
+  Decl d(doc);
+  ASSERT_EQ(set_text(d.d, "margin: var(--p)").st, GTEXT_CSS_OK);
+  ASSERT_EQ(set(d.d, "margin-top", "5px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin-top: 5px; margin-right: ; margin-bottom: ; margin-left: ;") << "setProperty replaces the pending longhand where it stands";
+  Decl e(doc);
+  ASSERT_EQ(set_text(e.d, "margin: var(--p)").st, GTEXT_CSS_OK);
+  ASSERT_EQ(remove(e.d, "margin-top").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(e.d), "margin-right: ; margin-bottom: ; margin-left: ;");
+  EXPECT_EQ(length(e.d), 3u);
+  Decl f(doc);
+  ASSERT_EQ(set_text(f.d, "margin: var(--p) !important; margin-top: 10px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(priority(f.d, "margin-right"), "important");
+  EXPECT_EQ(priority(f.d, "margin"), "important") << "all its longhands are pending from one declaration";
+}
+
+// The text of a pending value is the text it was written as, trimmed at both ends: a comment inside it stays and the white space around it ("preserved" because the pending value is
+// the text of the declaration, Values 5: "serialize to that original ... value"). Chromium 156 and Firefox 158 both keep a comment between two tokens, and both strip one in front;
+// they differ for a comment behind the last token (Chromium strips it, Firefox keeps it), where the library follows Chromium, which is also what the WPT page's expectation reads like.
+TEST(CssomDeclCssText, ACommentInsideAPendingValueIsKept) {
+  EXPECT_EQ(written("color: /* comment that must not be preserved */ var(--prop)  /* kept comment */ var(--prop); /* another stripped comment */ /* indeed */ ").text,
+      "color: var(--prop)  /* kept comment */ var(--prop);");
+  EXPECT_EQ(written("margin: /* c1 */ var(--p) /* c2 */ 1px /* c3 */").text, "margin: var(--p) /* c2 */ 1px;");
+  EXPECT_EQ(written("margin: /* c1 */ var(--p) /* c2 */ 1px").margin, "var(--p) /* c2 */ 1px");
+  EXPECT_EQ(written("color: var(--p, /* c1 */ red)").text, "color: var(--p, /* c1 */ red);") << "also inside the function";
+  EXPECT_EQ(written("color: /* c1 */ red /* c2 */").text, "color: red;") << "a value that is not pending is written from its tokens";
 }

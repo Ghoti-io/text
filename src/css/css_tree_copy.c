@@ -178,6 +178,7 @@ static GTEXT_CSS_Declaration * cp_declarations(copier * c, const GTEXT_CSS_Decla
     dst[i].id = next_id(c);
     cp_string(c, &dst[i].name, &src[i].name);
     cp_string(c, &dst[i].original_text, &src[i].original_text);
+    cp_string(c, &dst[i].substitution_text, &src[i].substitution_text);
     dst[i].value = cp_values(c, src[i].value, src[i].value_count);
     if (!dst[i].value) {
       dst[i].value_count = 0;

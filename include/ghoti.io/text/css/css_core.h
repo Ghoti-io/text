@@ -395,6 +395,13 @@ typedef struct {
                                    ///< text: the source of its value tokens,
                                    ///< after preprocessing. Absent (`data`
                                    ///< NULL) for any other declaration.
+  GTEXT_CSS_String substitution_text; ///< The same, for a declaration that is not a custom
+                                   ///< property and holds an arbitrary substitution
+                                   ///< function (`var()`, `env()`, `attr()`, `if()`, ...)
+                                   ///< in its value: the value is kept as it was written,
+                                   ///< comments and white space inside it included, because
+                                   ///< that is the text it is read back as. `data` NULL
+                                   ///< for any other declaration.
 } GTEXT_CSS_Declaration;
 
 /** @brief What a rule is. */

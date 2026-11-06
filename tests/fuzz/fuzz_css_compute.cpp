@@ -57,6 +57,7 @@
 #include <string>
 #include <vector>
 
+#include "fuzz_pending_text.h"
 #include <ghoti.io/text/css.h>
 
 #include "../markup_test_support.h"
@@ -335,7 +336,7 @@ void check_block(const std::string & text, size_t fault, const std::string & inp
   const std::string css2 = css_text(b2, &ws2, input);
   const std::string second_items = items_of(b2, input);
   gtext_css_block_free(b2);
-  if (css2 != css) {
+  if (css2 != cssfuzz::without_pending(css)) {
     fail("the cssText of a block is not written again as the same text", css + "\n  ->\n" + css2, input);
   }
   if (second_items != first_items) {

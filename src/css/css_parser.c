@@ -692,6 +692,21 @@ static bool build_decl(parser * p, tstream * s, bool nested, GTEXT_CSS_Declarati
     }
   }
   else {
+    if (n > 0) {
+      /* a value that holds a substitution function is read back as it was written, comments inside it included (Values 5: the shorthand "must serialize to that original ... value") */
+      bool nested = false;
+      for (size_t k = 0; k < n && !nested; k++) {
+        nested = vstack(p, base + k)->kind != GTEXT_CSS_VALUE_TOKEN;
+      }
+      bool found = false;
+      if (nested && gtext_css_has_arbitrary_substitution(vstack(p, base), n, &p->ctx->alloc, &found) != GTEXT_CSS_OK) {
+        css_fail(p->ctx, GTEXT_CSS_E_OOM);
+        return false;
+      }
+      if (found && !css_filtered_text(p->ctx, vstack(p, base)->span.offset, vstack(p, base + n - 1)->span.end, &d->substitution_text)) {
+        return false;
+      }
+    }
     bool block = false;
     size_t nonws = 0;
     for (size_t k = 0; k < n; k++) {

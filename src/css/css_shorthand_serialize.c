@@ -2369,8 +2369,11 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
     char * t = NULL;
     size_t tl = 0;
     if (it->outcome == GTEXT_CSS_PROP_RESULT_PENDING && it->shorthand) {
-      /* a longhand left pending by a shorthand that holds `var()`, when that shorthand could not be written (one of its longhands was replaced):
-         the text it holds is the shorthand's, not a value of this longhand, and an empty value is no declaration, so it is left out */
+      /* a longhand left pending by a shorthand that holds `var()`, when that shorthand could not be written (one of its longhands was replaced): the text it holds is the
+         shorthand's, not a value of this longhand. Values 5: "Pending-substitution values must be serialized as the empty string, if an API allows them to be observed", so it is
+         written with no value (`margin-right: ;`), as the WPT page variable-cssText.html expects and as Chromium 156 and Firefox 158 write it. The text read back has lost it. */
+      put_declaration(out, info.name, info.name_length, "", 0, it->important, first);
+      first = false;
       continue;
     }
     status = css_item_text(c.reg, &c.alloc, it->property, it->outcome, it->wide, it->set, &t, &tl);

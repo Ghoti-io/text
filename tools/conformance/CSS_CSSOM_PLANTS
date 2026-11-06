@@ -412,3 +412,7 @@ function-rule-with-a-bad-prelude-kept	css_atrule.c	    if (cx.st == GTEXT_CSS_OK
 initial-justify-items-shared-by-every-style	css_compute.c	    m->initial_dependent = dependent || css_val_is_keyword(spec, "legacy");	    m->initial_dependent = dependent || (0 && css_val_is_keyword(spec, "legacy"));	completion
 highlight-unsupported-property-honored	css_style.c	      if (!listed) {	      if (0) {	computed
 highlight-supported-property-copied-from-the-element	css_style.c	      if (!listed) {	      if (1) {	computed
+pending-longhand-not-written	css_shorthand_serialize.c	      put_declaration(out, info.name, info.name_length, "", 0, it->important, first);\n      first = false;\n      continue;	      continue;	decl
+pending-longhand-important-dropped	css_shorthand_serialize.c	      put_declaration(out, info.name, info.name_length, "", 0, it->important, first);	      put_declaration(out, info.name, info.name_length, "", 0, false, first);	decl
+substitution-text-not-read	css_property.c	  const GTEXT_CSS_String * written = declaration->original_text.data ? &declaration->original_text : &declaration->substitution_text;	  const GTEXT_CSS_String * written = declaration->original_text.data ? &declaration->original_text : &declaration->original_text;	decl
+substitution-text-never-kept	css_parser.c	      if (found && !css_filtered_text(	      if (found && 0 && !css_filtered_text(	decl

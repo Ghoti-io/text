@@ -1105,9 +1105,10 @@ GTEXT_CSS_Status gtext_css_parse_property_declaration(const GTEXT_CSS_Registry *
   }
   GTEXT_CSS_Status st = gtext_css_parse_property(registry, declaration->name.data, declaration->name.length, declaration->value,
       declaration->value_count, options, out);
-  if (st == GTEXT_CSS_OK && declaration->original_text.data) {
-    const char * ot = declaration->original_text.data;
-    size_t ol = declaration->original_text.length;
+  const GTEXT_CSS_String * written = declaration->original_text.data ? &declaration->original_text : &declaration->substitution_text;
+  if (st == GTEXT_CSS_OK && written->data && (declaration->original_text.data || out->outcome == GTEXT_CSS_PROP_RESULT_PENDING)) {
+    const char * ot = written->data;
+    size_t ol = written->length;
     css_trim_value_text(&ot, &ol);
     st = use_custom_text(out, ot, ol);
     if (st != GTEXT_CSS_OK) {
