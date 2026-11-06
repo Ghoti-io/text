@@ -37,7 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
 PROGRAMS = {
-    "effects": "test-css-animation-effects.cpp",
+    "effects": "test-css-animation-effects.cpp", "timing": "test-css-animation-timing.cpp", "interp": "test-css-animation-interp.cpp", "sample": "test-css-animation-sample.cpp",
 }
 EXTRA_PROGRAMS = os.path.join(ROOT, "tools", "conformance", "CSS_ANIMATION_PROGRAMS")
 

@@ -1017,7 +1017,7 @@ GTEXT_CSS_Status gtext_css_block_remove(GTEXT_CSS_Declaration_Block * block, GTE
 
 bool gtext_css_block_find(const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Property_Id property, const char * name, size_t name_length,
     GTEXT_CSS_Declaration_Item * out) {
-  if (!block || !out || (name ? name_length == 0 : !property)) {
+  if (!block || (name ? name_length == 0 : !property)) {
     return false;
   }
   const GTEXT_CSS_Property_Id id = name ? 0 : gtext_css_registry_resolve_alias(block->registry, property);
@@ -1025,7 +1025,9 @@ bool gtext_css_block_find(const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_P
   if (!at) {
     return false;
   }
-  item_out(&block->items[at - 1], out);
+  if (out) {   /* "Receives the declaration; NULL if not wanted" */
+    item_out(&block->items[at - 1], out);
+  }
   return true;
 }
 

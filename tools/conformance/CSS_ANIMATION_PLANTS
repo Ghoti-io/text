@@ -5,3 +5,24 @@ effects-time-unit-wrong	css_animation.c	    *ms = s * 1000.0;	    *ms = s * 100.
 effects-timeline-not-read	css_animation.c	    e->timeline_auto = is_keyword(pick(&timeline, i), "auto");	    e->timeline_auto = true;	effects
 effects-paused-inverted	css_animation.c	    e->paused = is_keyword(pick(&play_state, i), "paused");	    e->paused = !is_keyword(pick(&play_state, i), "paused");	effects
 effects-none-is-an-effect	css_animation.c	    if (is_keyword(nv, "none")) {\n      continue;	    if (0) {\n      continue;	effects
+timing-before-boundary-inclusive	css_anim_timing.c	  if (local < before_boundary) {	  if (local <= before_boundary) {	timing
+timing-after-boundary-exclusive	css_anim_timing.c	  else if (local >= after_boundary) {	  else if (local > after_boundary) {	timing
+timing-backwards-fill-unclamped	css_anim_timing.c	      active = max2(local - delay, 0.0);	      active = local - delay;	timing
+timing-alternate-parity-swapped	css_anim_timing.c	      forwards = d - 2.0 * gmath_floor(d / 2.0) == 0.0;	      forwards = d - 2.0 * gmath_floor(d / 2.0) != 0.0;	timing
+timing-end-of-iteration-not-held	css_anim_timing.c	    simple = 1.0;\n  }\n  out->simple_progress	    simple = 0.0;\n  }\n  out->simple_progress	timing
+easing-before-flag-ignored	css_anim_timing.c	  if (before && scaled == gmath_floor(scaled)) {	  if (0 && scaled == gmath_floor(scaled)) {	timing
+easing-cubic-not-extended	css_anim_timing.c	      return x * (e->y1 / e->x1);	      return x;	timing
+easing-linear-first-point-at-input	css_anim_timing.c	  for (size_t i = n; i-- > 0;) {\n    if (p[i].input == x) {	  for (size_t i = 0; i < n; i++) {\n    if (p[i].input == x) {	timing
+interp-integer-not-rounded	css_anim_interp.c	        r = gmath_floor(r + 0.5);	        r = r;	interp
+interp-color-not-premultiplied	css_anim_interp.c	        ch[i] = clamp(comb(c, ra[i] * ra[3], rb[i] * rb[3]) / alpha, 0.0, 255.0);	        ch[i] = clamp(comb(c, ra[i], rb[i]), 0.0, 255.0);	interp
+interp-keywords-always-compatible	css_anim_interp.c	      return same_text(&a->text, &b->text);\n    case GTEXT_CSS_VAL_CUSTOM_IDENT:	      return true;\n    case GTEXT_CSS_VAL_CUSTOM_IDENT:	interp
+interp-discrete-flips-late	css_anim_interp.c	    return finish(alloc, op == CSS_BLEND_LERP && p < 0.5 ? a : b, text, length);	    return finish(alloc, op == CSS_BLEND_LERP && p <= 0.5 ? a : b, text, length);	interp
+sample-first-name-wins	css_anim_sample.c	        val_free(&s.al, &cur);\n        cur = next;\n        any = true;	        if (any) {\n          val_free(&s.al, &next);\n        }\n        else {\n          cur = next;\n        }\n        any = true;	sample
+sample-important-overridden	css_anim_sample.c	    if (important_in(base, ky)) {\n      continue;	    if (0) {\n      continue;	sample
+sample-implicit-end-keyframe-missing	css_anim_sample.c	    list[n++] = (pk){1.0, -1, e->effect.easing, -1};	    list[n] = (pk){1.0, -1, e->effect.easing, -1};	sample
+sample-keyframe-easing-ignored	css_anim_sample.c	    list[n].easing = e->ease[f] ? e->ease[f] : e->effect.easing;	    list[n].easing = e->effect.easing;	sample
+sample-composite-always-replace	css_anim_sample.c	    const int op = k->comp >= 0 ? k->comp : (int)e->effect.composite;	    const int op = 0;	sample
+sample-effect-outside-its-interval-applies	css_anim_sample.c	    if (!e->timing.in_effect) {\n      continue;	    if (0) {\n      continue;	sample
+sample-other-timelines-sampled	css_anim_sample.c	    if (!kf || !ef.timeline_auto) {	    if (!kf) {	sample
+sample-untimed-not-reported	css_anim_sample.c	      if (untimed) {\n        untimed_args ua	      if (0) {\n        untimed_args ua	sample
+interp-currentcolor-not-the-elements	css_anim_interp.c	  return is_current(v) && c->current && c->current->kind == GTEXT_CSS_VAL_COLOR && !is_current(c->current) ? c->current : v;	  return v;	sample

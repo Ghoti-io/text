@@ -43,6 +43,7 @@
 
 #include <ghoti.io/text/css/css_custom.h>
 
+#include "css_anim_internal.h"
 #include "css_cmap.h"
 #include "css_compute_tables.h"
 #include "css_creg.h"
@@ -225,6 +226,7 @@ typedef struct {
   size_t offset, length, line, column;
 } css_style_diag;
 
+
 struct GTEXT_CSS_Computed_Style {
   const GTEXT_CSS_Compute_Context * cc;
   GTEXT_Allocator alloc;
@@ -239,6 +241,7 @@ struct GTEXT_CSS_Computed_Style {
   struct css_regvals * regvals;       ///< The registered ones (shared with the parent's style, or the context's, until this one declares one): a value for each of the context's `nregs`, NULL for the guaranteed-invalid value. NULL when the context has none.
   css_root_info root;
   GTEXT_CSS_Element_Handle element;
+  css_anim_untimed anim_untimed;       ///< The properties an animation of the element targets and was not sampled for lack of a time (css_anim_sample.c).
 };
 
 /* ---- one computation ---------------------------------------------------------------------------- */

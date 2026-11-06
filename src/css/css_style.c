@@ -25,6 +25,7 @@
  * The computed-style call (css_style.h): the element's attributes and the caller's declaration lists, cascaded and computed.
  */
 
+#include "css_anim_internal.h"
 #include "css_compute_internal.h"
 
 #include <ghoti.io/text/css/css_presentation.h>
@@ -378,6 +379,20 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
       fail(&b, st, NULL, 0, "the winners could not be made a block");
     }
   }
+  css_anim_untimed untimed;
+  memset(&untimed, 0, sizeof untimed);
+  if (st == GTEXT_CSS_OK && options->animation) {
+    /* the animations of the element, sampled at the times the caller gave: their values are declared in the animation origin, over the winners of the cascade */
+    GTEXT_CSS_Declaration_Block * animated = NULL;
+    st = css_anim_sample(context, options, element, parent_style, block, &animated, &untimed);
+    if (st != GTEXT_CSS_OK) {
+      fail(&b, st, NULL, 0, "the animations of the element could not be sampled");
+    }
+    else if (animated) {
+      gtext_css_block_free(block);
+      block = animated;
+    }
+  }
   if (st == GTEXT_CSS_OK) {
     const size_t before = b.work;
     GTEXT_CSS_Compute_Result cres;
@@ -398,8 +413,10 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
       gtext_allocator_free(&context->alloc, b.diag[i].name_copy);
     }
     gtext_allocator_free(&context->alloc, b.diag);
+    css_anim_untimed_free(&context->alloc, &untimed);
     return st;
   }
+  style->anim_untimed = untimed;
   style->cascaded = cascaded;
   style->diag = b.diag;
   style->ndiag = b.ndiag;
@@ -424,6 +441,31 @@ bool gtext_css_computed_specified_custom(const GTEXT_CSS_Computed_Style * style,
   }
   GTEXT_CSS_Cascade_Entry scratch;
   return gtext_css_cascaded_find(style->cascaded, 0, name, length, entry ? entry : &scratch);
+}
+
+bool gtext_css_computed_animation_untimed(const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Property_Id property) {
+  if (!style || !property) {
+    return false;
+  }
+  const GTEXT_CSS_Property_Id id = gtext_css_registry_resolve_alias(style->cc->registry, property);
+  for (size_t i = 0; i < style->anim_untimed.nids; i++) {
+    if (style->anim_untimed.ids[i] == id) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool gtext_css_computed_animation_untimed_custom(const GTEXT_CSS_Computed_Style * style, const char * name, size_t length) {
+  if (!style || !name) {
+    return false;
+  }
+  for (size_t i = 0; i < style->anim_untimed.nnames; i++) {
+    if (style->anim_untimed.name_lengths[i] == length && memcmp(style->anim_untimed.names[i], name, length) == 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const GTEXT_CSS_Cascaded * gtext_css_computed_cascaded(const GTEXT_CSS_Computed_Style * style) {

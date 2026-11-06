@@ -283,6 +283,15 @@ TEST(CssBlockRemove, EveryDeclarationOfAPropertyGoes) {
   gtext_css_block_change_free(&change);
 }
 
+/* The header says of `out`: "Receives the declaration; NULL if not wanted." The call that only wants to know whether the block has the property must be answered. */
+TEST(CssBlockFind, AskingWithNoOutputIsAskingWhetherTheBlockHasTheProperty) {
+  Block b(R(), "color: red; --p: 1");
+  EXPECT_TRUE(gtext_css_block_find(b.b, find(R(), "color"), nullptr, 0, nullptr));
+  EXPECT_FALSE(gtext_css_block_find(b.b, find(R(), "width"), nullptr, 0, nullptr));
+  EXPECT_TRUE(gtext_css_block_find(b.b, 0, "--p", 3, nullptr));
+  EXPECT_FALSE(gtext_css_block_find(b.b, 0, "--q", 3, nullptr));
+}
+
 TEST(CssBlockRemove, AShorthandRemovesWhatItResets) {
   Block b(R(), "font: 12px serif; color: red");
   GTEXT_CSS_Block_Change change{};

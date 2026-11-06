@@ -65,6 +65,8 @@
 #ifndef GHOTI_IO_GTEXT_CSS_CSS_STYLE_H
 #define GHOTI_IO_GTEXT_CSS_CSS_STYLE_H
 
+#include <ghoti.io/text/css/css_animation.h>
+#include <ghoti.io/text/css/css_atrule_set.h>
 #include <ghoti.io/text/css/css_cascade.h>
 #include <ghoti.io/text/css/css_computed.h>
 #include <ghoti.io/text/css/css_core.h>
@@ -101,6 +103,26 @@ typedef struct {
 #define GTEXT_CSS_STYLE_PRESENTATION_ATTRIBUTES 0x1u ///< The presentation attributes of the table (css_presentation.h), through the element interface.
 #define GTEXT_CSS_STYLE_STYLE_ATTRIBUTE 0x2u         ///< The `style` attribute, through the element interface.
 
+/**
+ * @struct GTEXT_CSS_Style_Animation
+ * @brief The animations of an element, sampled at the times the caller gives (css_animation.h).
+ *
+ * A style computed with it has, for each property that an animation of the element's `animation-name` list targets, the value of the effect stack of Web Animations 1 at the
+ * animation's current time, declared in the animation origin of the cascade: it overrides every normal declaration (and nothing important), and the elements that inherit the property,
+ * the `var()` that reads an animated custom property and the units that depend on an animated font size all see it. Without it (the field of the options is NULL) the style is the
+ * underlying one. The library reads no clock: the time of an animation is the caller's fact, and an animation the caller gives none for is not sampled.
+ */
+typedef struct {
+  size_t size;                                   ///< `sizeof` this struct. Required.
+  const GTEXT_CSS_Atrule_Set * keyframes;        ///< The `@keyframes` rules by name (css_atrule_set.h; the last in the highest layer wins). NULL: none, and nothing is sampled.
+  void * user;                                   ///< Passed to `current_time`.
+  /** The current time of the animation (Web Animations 1: the local time of the effect, in milliseconds) of one effect of the element, or of its pseudo-element (`pseudo`, or NULL
+   *  for the element). `*known` false: the caller has no time for it, and the effect is not sampled (the properties its keyframes set are reported: gtext_css_computed_animation_untimed()).
+   *  A paused animation's time is the one it holds. Any status but GTEXT_CSS_OK fails the style. NULL: no effect has a time. */
+  GTEXT_CSS_Status (*current_time)(void * user, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Anim_Effect * effect, double * time_ms,
+      bool * known);
+} GTEXT_CSS_Style_Animation;
+
 /** @brief What a style computation may be told. */
 typedef struct {
   /** Which attributes the call reads: GTEXT_CSS_STYLE_* bits. gtext_css_style_options_default() has both; a zeroed struct has neither (the entries only). Reading
@@ -132,6 +154,8 @@ typedef struct {
   bool starting_style;
   /** The context of the container queries of the call: the cache that keeps a pass over the elements of a tree linear (css_container.h); make a new one when the tree changes. NULL: one for this call. */
   GTEXT_CSS_Condition_Call * container_call;
+  /** The animations to sample (GTEXT_CSS_Style_Animation), or NULL: the style is the one without animations. Not copied; it must outlive the call. */
+  const GTEXT_CSS_Style_Animation * animation;
 } GTEXT_CSS_Style_Options;
 
 /** @brief The defaults, spelled out: both attribute sources, every attribute-only spelling, no quirks. */
@@ -169,6 +193,15 @@ GTEXT_API bool gtext_css_computed_specified(const GTEXT_CSS_Computed_Style * sty
 
 /** @brief gtext_css_computed_specified() for a custom property, by name (case-sensitive). */
 GTEXT_API bool gtext_css_computed_specified_custom(const GTEXT_CSS_Computed_Style * style, const char * name, size_t length, GTEXT_CSS_Cascade_Entry * entry);
+
+/**
+ * @brief Whether an animation of the element targets the property but was not sampled for lack of a time (GTEXT_CSS_Style_Animation::current_time did not give one): its value in this
+ *   style is the underlying one.
+ */
+GTEXT_API bool gtext_css_computed_animation_untimed(const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Property_Id property);
+
+/** @brief gtext_css_computed_animation_untimed() for a custom property, by name (case-sensitive). */
+GTEXT_API bool gtext_css_computed_animation_untimed_custom(const GTEXT_CSS_Computed_Style * style, const char * name, size_t length);
 
 /** @brief The cascade's result for the style (the winners, and with them every declaration the style was made of); NULL for a style made from a block. Valid for the life of the style. */
 GTEXT_API const GTEXT_CSS_Cascaded * gtext_css_computed_cascaded(const GTEXT_CSS_Computed_Style * style);

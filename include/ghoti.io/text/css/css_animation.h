@@ -115,6 +115,52 @@ GTEXT_API bool gtext_css_anim_list_at(const GTEXT_CSS_Anim_List * list, size_t i
 /** @brief Release a list and what it holds; NULL is ignored. */
 GTEXT_API void gtext_css_anim_list_free(GTEXT_CSS_Anim_List * list);
 
+/* ---- the timing model ----------------------------------------------------------------------------------------------------------------------------- */
+
+/** @brief The phase of an effect at a time (Web Animations 1, "Animation effect phases and states"). */
+typedef enum {
+  GTEXT_CSS_ANIM_PHASE_BEFORE = 1,
+  GTEXT_CSS_ANIM_PHASE_ACTIVE,
+  GTEXT_CSS_ANIM_PHASE_AFTER
+} GTEXT_CSS_Anim_Phase;
+
+/**
+ * @struct GTEXT_CSS_Anim_Timing
+ * @brief What the timing model says of an effect at a local time.
+ */
+typedef struct {
+  GTEXT_CSS_Anim_Phase phase;
+  bool in_effect;               ///< The active time is resolved: the effect applies a result (in its active phase, or outside it with a fill mode that reaches).
+  double active_time_ms;        ///< "Calculating the active time". 0 when not `in_effect`.
+  double overall_progress;      ///< "Calculating the overall progress". Meaningless when not `in_effect` or `overall_infinite`.
+  bool overall_infinite;        ///< The overall progress is infinity (an `infinite` count whose duration is zero, after its start).
+  double simple_progress;       ///< "Calculating the simple iteration progress", 0 to 1.
+  double iteration_index;       ///< "Calculating the current iteration index". Meaningless when `iteration_infinite`.
+  bool iteration_infinite;      ///< The index is infinity (the after phase of an `infinite` count).
+  bool forwards;                ///< The current direction is forwards.
+  double progress;              ///< The directed progress, 0 to 1: what the keyframes are indexed by (the animation timing function is applied between keyframes, not here).
+  bool before_flag;             ///< The before flag of the easing functions (Web Animations 1, "Calculating the transformed progress").
+} GTEXT_CSS_Anim_Timing;
+
+/**
+ * @brief The timing model of Web Animations 1 for the effect of a CSS animation (a playback rate of 1, an iteration start of 0) at the local time of its animation.
+ *
+ * @param effect The effect. Not NULL.
+ * @param local_time_ms The animation's current time, which is the effect's local time, in milliseconds.
+ * @param out Receives the result. Not NULL.
+ */
+GTEXT_API void gtext_css_anim_timing(const GTEXT_CSS_Anim_Effect * effect, double local_time_ms, GTEXT_CSS_Anim_Timing * out);
+
+/**
+ * @brief The output progress value of an easing function (CSS Easing Functions 1 and 2).
+ *
+ * @param easing The easing function. Not NULL.
+ * @param input The input progress value (it may be outside 0 to 1: a cubic Bezier extends along its tangent, `linear()` along its end segments).
+ * @param before_flag The before flag (it matters for the step functions and for `linear()`).
+ * @return The output progress value.
+ */
+GTEXT_API double gtext_css_easing_output(const GTEXT_CSS_Easing * easing, double input, bool before_flag);
+
 #ifdef __cplusplus
 }
 #endif
