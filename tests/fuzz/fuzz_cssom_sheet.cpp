@@ -43,6 +43,7 @@
  * Build with: make fuzz-cssom-sheet      Run: make fuzz-run-cssom-sheet
  */
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -154,6 +155,50 @@ const char * const kSelectors[] = {"d > e", "a, b", "", "a >", "1a", ":bogus", "
 const char * const kNames[] = {"color", "margin", "margin-top", "width", "bogus", "--v", "background"};
 const char * const kValues[] = {"red", "1px", "", "nonsense", "1px 2px", "blue !important", "var(--x)"};
 const char * const kMedia[] = {"print", "screen, (min-width: 1px)", "", "(bogus: 1) and", "tv", "not all", "print and (color)"};
+
+/// The declarations of a rule's text, each as written, in the order written (the text between the braces split at its semicolons).
+std::vector<std::string> declarations_of(const std::string & rule) {
+  std::vector<std::string> out;
+  const size_t open = rule.find(" {");
+  if (open == std::string::npos) {
+    return out;
+  }
+  std::string body = rule.substr(open + 2);
+  while (!body.empty() && (body.back() == ' ' || body.back() == '}')) {
+    body.pop_back();
+  }
+  size_t from = 0;
+  while (from < body.size()) {
+    const size_t semi = body.find(';', from);
+    const size_t end = semi == std::string::npos ? body.size() : semi;
+    size_t b = from;
+    while (b < end && body[b] == ' ') {
+      b++;
+    }
+    out.push_back(body.substr(b, end - b));
+    from = end + 1;
+  }
+  return out;
+}
+
+/// Whether the library's text for a rule is the model's declarations in another order, in the one case the model cannot know the order.
+///
+/// The model sets the property on a block it makes from the rule's *text*. A shorthand written from its longhands loses the order the block held them in: `g{margin:1px;margin-top:2px}` is kept
+/// (a parsed list moves the later declaration after the earlier ones, as both browsers do) as right, bottom, left, top and written `margin: 2px 1px 1px`, which reads back as top, right, bottom, left.
+/// Only a longhand that holds `var()` cannot join a shorthand, so only there are the longhands written one by one and the order shows. The declarations must be the same set, each as written.
+bool only_the_order_of_pending_longhands_differs(const std::string & actual, const std::string & expected) {
+  if (actual == expected || actual.find("var(") == std::string::npos) {
+    return false;
+  }
+  std::vector<std::string> a = declarations_of(actual);
+  std::vector<std::string> e = declarations_of(expected);
+  if (actual.substr(0, actual.find(" {")) != expected.substr(0, expected.find(" {")) || a.size() != e.size()) {
+    return false;
+  }
+  std::sort(a.begin(), a.end());
+  std::sort(e.begin(), e.end());
+  return a == e;
+}
 
 struct Held {
   GTEXT_CSSOM_Rule * rule = nullptr;
@@ -592,6 +637,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
           changed_expected = st == GTEXT_CSS_OK && o.kind == GTEXT_CSSOM_CHANGED;
         }
         if (st == GTEXT_CSS_OK) {
+          if (op == 4 && only_the_order_of_pending_longhands_differs(rule_css(r, &w.fa.alloc), expected_text)) {
+            expected_text = rule_css(r, &w.fa.alloc);
+          }
           m.rules[at].text = expected_text;
         }
       }

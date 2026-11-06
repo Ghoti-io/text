@@ -842,6 +842,29 @@ TEST(CssomDecl, ALaterShorthandThatIsNotImportantDoesNotReplaceAnImportantOneKep
   EXPECT_EQ(text_of(d.d) == made, true) << "written, read and written again is the same text";
 }
 
+// found by the libFuzzer run of fuzz_cssom_sheet (reproducer-setproperty-pending-order.seed), which was a fault of the harness's model and not of the library: in a parsed list the later
+// declaration goes after the earlier ones (both browsers do that; see the rule in css_block.c), so `margin: 1px; margin-top: 2px` holds right, bottom, left, top, and is written `margin: 2px 1px 1px`,
+// a form that does not say the order. setProperty() of a value that holds var() on it can no longer be written as the shorthand, and the longhands are written in the order the block holds them.
+// What the library owes is that its own text reads back and is written the same, and that the declarations are the same set.
+TEST(CssomDecl, ALonghandWithAVarOverAShorthandsLonghandsIsWrittenInTheOrderTheBlockHoldsAndReadsBackTheSame) {
+  Doc doc;
+  Decl d(doc);
+  ASSERT_EQ(set_text(d.d, "margin: 1px; margin-top: 2px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin: 2px 1px 1px;");
+  ASSERT_EQ(set(d.d, "margin-top", "var(--x)").st, GTEXT_CSS_OK);
+  const std::string made = text_of(d.d);
+  EXPECT_EQ(made, "margin-right: 1px; margin-bottom: 1px; margin-left: 1px; margin-top: var(--x);");
+  ASSERT_EQ(set_text(d.d, made.c_str()).st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), made) << "written, read and written again is the same text";
+  // the other route: the text of the block already names the longhand last
+  ASSERT_EQ(set_text(d.d, "margin: 1px; margin-top: var(--x)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), made);
+  // a longhand set over a shorthand with no later longhand stays where the shorthand put it
+  ASSERT_EQ(set_text(d.d, "margin: 1px").st, GTEXT_CSS_OK);
+  ASSERT_EQ(set(d.d, "margin-top", "var(--x)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin-top: var(--x); margin-right: 1px; margin-bottom: 1px; margin-left: 1px;");
+}
+
 /* ---- cssText: the shorthand form, and what stands between the longhands ----------------------------------------------------------------- */
 
 // CSSOM, "serialize into a shorthand form": "If any of the intermixed properties in decls between used longhands belong to the same logical property group as a longhand in used
