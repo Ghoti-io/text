@@ -44,6 +44,7 @@ ROOT = os.path.dirname(HERE)
 # "serialize-oracle" = name, old, new (fixed file). Directories under src/ that a file column may be relative to.
 SRC_DIRS = ["src/css", "src", "src/html", "src/markup", "src/encoding", "src/xml"]
 LISTS = [
+    ("tools/conformance/CSS_ANIMATION_PLANTS", "nfoc"),
     ("tools/conformance/CSS_ATRULES_PLANTS", "nfoc"),
     ("tools/conformance/CSS_COLOR_PLANTS", "nfoc"),
     ("tools/conformance/CSS_COMPUTED_PLANTS", "nfoc"),

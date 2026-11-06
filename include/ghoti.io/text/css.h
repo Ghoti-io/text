@@ -44,6 +44,7 @@
 #include <ghoti.io/text/css/css_atrule_set.h>
 #include <ghoti.io/text/css/css_counter_style.h>
 #include <ghoti.io/text/css/css_keyframes.h>
+#include <ghoti.io/text/css/css_animation.h>
 #include <ghoti.io/text/css/css_cascade.h>
 #include <ghoti.io/text/css/css_color.h>
 #include <ghoti.io/text/css/css_computed.h>

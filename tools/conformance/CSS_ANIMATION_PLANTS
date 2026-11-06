@@ -1,0 +1,7 @@
+# tools/css/plant-animation.py: planted defects of the animation sampling, each seen to fail. Columns (tab separated): name, file under src/css/, the text (exactly once, \n is a line feed), what replaces it, the test programs that must fail (comma separated, a key of PROGRAMS in the script).
+effects-list-not-repeated	css_animation.c	  return &c->items[i % c->n];	  return &c->items[i < c->n ? i : c->n - 1];	effects
+effects-index-is-the-effect-count	css_animation.c	    e->index = i;	    e->index = list->count;	effects
+effects-time-unit-wrong	css_animation.c	    *ms = s * 1000.0;	    *ms = s * 100.0;	effects
+effects-timeline-not-read	css_animation.c	    e->timeline_auto = is_keyword(pick(&timeline, i), "auto");	    e->timeline_auto = true;	effects
+effects-paused-inverted	css_animation.c	    e->paused = is_keyword(pick(&play_state, i), "paused");	    e->paused = !is_keyword(pick(&play_state, i), "paused");	effects
+effects-none-is-an-effect	css_animation.c	    if (is_keyword(nv, "none")) {\n      continue;	    if (0) {\n      continue;	effects
