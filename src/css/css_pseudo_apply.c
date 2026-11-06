@@ -160,6 +160,11 @@ static bool starts(const char * name, size_t n, const char * p) {
 
 /* a name a prefix row reaches that the served text puts among the applied properties */
 static bool exempt(const char * name, size_t n) {
+  if (n == 24 && memcmp(name, "text-decoration-skip-ink", 24) == 0) {
+    /* inherited and about text, so "Inheritable properties that apply to text can be set on the ::marker pseudo-element" (CSS Lists 3): Chromium applies it, Firefox leaves it; the served
+       text decides. The "text-decoration" row of ::marker is for the properties that are not inherited. */
+    return true;
+  }
   return n == 13 && memcmp(name, "overflow-wrap", 13) == 0;   /* a typesetting property of CSS Text, which the "overflow" row reaches by its prefix */
 }
 

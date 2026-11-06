@@ -171,7 +171,7 @@ TEST(CssomComputed, APseudoElementArgumentThatIsNotOneIsEmptyAndAStringWithoutAC
 TEST(CssomComputed, APropertyThatDoesNotApplyToAPseudoElementIsLeftOutOfItsCascade) {
   Cs m("<!DOCTYPE html><html><head><style>"
        "p::first-line, p::first-letter, li::marker, p::before { position: absolute; margin-left: 10px; color: rgb(10, 20, 30); transition: transform 1s; word-break: break-all; float: right; display: inline-block;"
-       " text-decoration-line: underline; list-style-type: square; direction: rtl; cursor: move; border-top-style: dashed; }"
+       " text-decoration-line: underline; text-decoration-skip-ink: none; list-style-type: square; direction: rtl; cursor: move; border-top-style: dashed; }"
        "</style></head><body><p id=a>x</p><ul><li id=b>y</li></ul></body></html>");
   auto read = [&](const char * element, const char * pseudo, const char * property) {
     Decl d = m.computed(element, pseudo);
@@ -198,6 +198,8 @@ TEST(CssomComputed, APropertyThatDoesNotApplyToAPseudoElementIsLeftOutOfItsCasca
   EXPECT_EQ(read("#a", "::first-line", "float"), "none");
   EXPECT_EQ(read("#b", "::marker", "text-decoration-line"), "none") << "a property that is not inherited and not listed does not apply to a marker";
   EXPECT_EQ(read("#b", "::marker", "list-style-type"), "disc") << "the list properties belong to the list item";
+  EXPECT_EQ(read("#b", "::marker", "text-decoration-skip-ink"), "none")
+      << "an inherited property that applies to text can be set on ::marker (Lists 3); Chromium applies it and Firefox leaves it, the served text decides";
   EXPECT_EQ(read("#a", "::before", "position"), "absolute") << "the other pseudo-elements have every property";
 }
 
