@@ -26,7 +26,7 @@ sample-effect-outside-its-interval-applies	css_anim_sample.c	    if (!e->timing.
 sample-other-timelines-sampled	css_anim_sample.c	    if (!kf || !ef.timeline_auto) {	    if (!kf) {	sample
 sample-untimed-not-reported	css_anim_sample.c	      if (untimed) {\n        untimed_args ua	      if (0) {\n        untimed_args ua	sample
 interp-currentcolor-not-the-elements	css_anim_interp.c	  return is_current(v) && c->current && c->current->kind == GTEXT_CSS_VAL_COLOR && !is_current(c->current) ? c->current : v;	  return v;	sample
-sample-revert-keyword-reaches-the-compute	css_anim_sample.c	    if (is_frame_attribute(s, p->property) || is_revert(p)) {	    if (is_frame_attribute(s, p->property)) {	sample
+sample-revert-keyword-reaches-the-compute	css_anim_sample.c	    if (roll == ROLL_ORIGIN) {\n      st = roll_back(s, b, p->name.data, p->name.length);\n      continue;\n    }	    if (0) {\n      continue;\n    }	sample
 sample-failure-loses-its-name	css_style.c	      if (result && sampled.status == st) {	      if (0) {	sample
 sample-letter-spacing-normal-is-not-zero	css_anim_sample.c	  {"letter-spacing", "normal", "0px"},	  {"letter-spacing", "normalx", "0px"},	sample
 sample-font-style-normal-is-not-oblique-zero	css_anim_sample.c	  {"font-style", "normal", "oblique 0deg"},	  {"font-style", "normal", "oblique 99deg"},	sample
