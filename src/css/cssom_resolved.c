@@ -918,6 +918,13 @@ static GTEXT_CSS_Status resolve_one(rctx * r, const GTEXT_CSS_Property_Info * in
     if (normal) {
       return GTEXT_CSS_OK;
     }
+    /* an absolute length is its own used value: no box is needed to know it (CSS Inline 3: "Computed value: for <length> the absolute length") */
+    const GTEXT_CSS_Value * root = gtext_css_value_set_root(computed);
+    if (root && !(root->flags & GTEXT_CSS_VFLAG_MATH) && (root->kind == GTEXT_CSS_VAL_ZERO || (root->kind == GTEXT_CSS_VAL_DIMENSION && root->unit == GTEXT_CSS_UNIT_PX))) {
+      *owned = gtext_css_value_set_retain(computed);
+      *origin = GTEXT_CSSOM_ORIGIN_USED;
+      return GTEXT_CSS_OK;
+    }
     break;
   }
   case CSS_RESOLVED_USED:

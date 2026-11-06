@@ -392,3 +392,4 @@ shortest-drops-a-spread-that-is-not-zero	cssom_resolved.c	children[0].kind == GT
 shortest-keeps-filled	cssom_resolved.c	memcmp(root->children[0].text.data, "filled", 6) == 0;	memcmp(root->children[0].text.data, "filled", 6) != 0;	computed
 shortest-writes-the-fill-for-the-shape	cssom_resolved.c	    *rv = root->children[1];	    *rv = root->children[0];	computed
 marker-skip-ink-left-out	css_pseudo_apply.c	if (n == 24 && memcmp(name, "text-decoration-skip-ink", 24) == 0) {	if (0) {	computed
+line-height-length-asks-the-layout	cssom_resolved.c	root->unit == GTEXT_CSS_UNIT_PX))) {	root->unit == GTEXT_CSS_UNIT_PX) && 0)) {	computed

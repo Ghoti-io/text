@@ -558,6 +558,31 @@ TEST(CssomComputed, LineHeightIsNormalOrTheUsedValue) {
   EXPECT_EQ(std::count(lay.asked.begin() + static_cast<long>(asked), lay.asked.end(), "line-height"), 0) << "normal is not asked of the layout";
 }
 
+/* CSSOM, 9: "line-height: The resolved value is normal if the computed value is normal, or the used value otherwise." The used value of a line-height that is an absolute length is that
+   length (CSS Inline 3: "Computed value: for <length> the absolute length"), a fact that needs no box: it is answered without the layout, with or without one, and with a layout the
+   layout is not asked. A number is the font size times it, a fact of the layout as before; a percentage is computed to a length, and is answered. */
+TEST(CssomComputed, AnAbsoluteLineHeightIsItsOwnUsedValueWithoutALayout) {
+  const char * page = "<!DOCTYPE html><html><head><style>"
+                      "#a{line-height:35px;font:12px/20px serif} #b{line-height:0px} #c{line-height:3em;font-size:10px} #d{line-height:1.5} #e{line-height:150%}"
+                      "</style></head><body><p id=a>x</p><p id=b>x</p><p id=c>x</p><p id=d>x</p><p id=e>x</p></body></html>";
+  Cs bare(page);
+  EXPECT_EQ(bare.value("#a", "line-height"), "20px");
+  EXPECT_EQ(bare.value("#a", "font"), "12px / 20px serif");
+  EXPECT_EQ(bare.value("#b", "line-height"), "0px");
+  EXPECT_EQ(bare.value("#c", "line-height"), "30px");
+  Decl a = bare.computed("#a");
+  EXPECT_EQ(origin(a.d, "line-height"), "used") << "no layout was needed, none was missing";
+  EXPECT_EQ(origin(a.d, "font-size"), "computed");
+  EXPECT_EQ(origin(bare.computed("#d").d, "line-height"), "absent-layout") << "a number is the font size times it";
+  EXPECT_EQ(bare.value("#e", "line-height"), "24px") << "a percentage is computed to the absolute length it is of the font size (16px)";
+  EXPECT_EQ(origin(bare.computed("#e").d, "line-height"), "used");
+  Layout lay;
+  lay.used["line-height"] = "99px";
+  Cs m(page, [&](GTEXT_CSSOM_Config & c) { lay.install(c); });
+  EXPECT_EQ(m.value("#a", "line-height"), "20px") << "the layout is not asked for a length";
+  EXPECT_EQ(m.value("#d", "line-height"), "99px") << "and is asked for a number";
+}
+
 /* "any other status fails the read" and "a callback that fails with GTEXT_CSS_E_UNSUPPORTED fails the read, naming the callback, never a guess" */
 TEST(CssomComputed, ALayoutThatFailsFailsTheReadAndNamesItself) {
   Layout lay;
