@@ -57,6 +57,7 @@
 #include <string.h>
 
 #include "css_internal.h"
+#include "css_value_internal.h"
 
 /* ---- vectors ---------------------------------------------------------- */
 
@@ -693,15 +694,36 @@ static bool build_decl(parser * p, tstream * s, bool nested, GTEXT_CSS_Declarati
   }
   else {
     if (n > 0) {
-      /* a value that holds a substitution function is read back as it was written, comments inside it included (Values 5: the shorthand "must serialize to that original ... value") */
-      bool nested = false;
-      for (size_t k = 0; k < n && !nested; k++) {
-        nested = vstack(p, base + k)->kind != GTEXT_CSS_VALUE_TOKEN;
-      }
+      /* a value that holds a substitution function is read back as it was written, comments inside it included (Values 5: the shorthand "must serialize to that original ... value").
+         The scan allocates nothing and over-approximates: a value nested deeper than the frames below is kept too. */
+      struct sub_frame {
+        const GTEXT_CSS_Component_Value * values;
+        size_t count, index;
+      } stack[32];
+      size_t top = 0;
       bool found = false;
-      if (nested && gtext_css_has_arbitrary_substitution(vstack(p, base), n, &p->ctx->alloc, &found) != GTEXT_CSS_OK) {
-        css_fail(p->ctx, GTEXT_CSS_E_OOM);
-        return false;
+      stack[top++] = (struct sub_frame){vstack(p, base), n, 0};
+      while (top > 0 && !found) {
+        struct sub_frame * f = &stack[top - 1];
+        if (f->index >= f->count) {
+          top--;
+          continue;
+        }
+        const GTEXT_CSS_Component_Value * v = &f->values[f->index++];
+        if (v->kind == GTEXT_CSS_VALUE_TOKEN) {
+          continue;
+        }
+        if (v->kind == GTEXT_CSS_VALUE_FUNCTION && css_is_substitution_name(&v->value)) {
+          found = true;
+        }
+        else if (v->child_count > 0) {
+          if (top == sizeof stack / sizeof *stack) {
+            found = true;
+          }
+          else {
+            stack[top++] = (struct sub_frame){v->children, v->child_count, 0};
+          }
+        }
       }
       if (found && !css_filtered_text(p->ctx, vstack(p, base)->span.offset, vstack(p, base + n - 1)->span.end, &d->substitution_text)) {
         return false;

@@ -499,6 +499,7 @@ void gtext_css_compute_context_free(GTEXT_CSS_Compute_Context * cc) {
     gtext_css_value_set_free(cc->meta[i].initial);
     gtext_css_value_set_free(cc->meta[i].initial_spec);
   }
+  gtext_css_value_set_free(cc->content_none);
   gtext_allocator_free(&a, cc->meta);
   gtext_allocator_free(&a, cc->groups);
   gtext_allocator_free(&a, cc->order);
@@ -987,6 +988,21 @@ GTEXT_CSS_Status gtext_css_compute_context_new(const GTEXT_CSS_Registry * regist
   gtext_css_computed_free(scheme_light);
   gtext_css_computed_free(scheme_dark);
   cc->building = false;
+  if (st == GTEXT_CSS_OK && gtext_css_registry_find_property(registry, "content", 7)) {
+    GTEXT_CSS_Property_Options po;
+    memset(&po, 0, sizeof po);
+    po.allocator = &cc->alloc;
+    GTEXT_CSS_Property_Value pv;
+    memset(&pv, 0, sizeof pv);
+    st = gtext_css_parse_property_text(registry, "content", 7, "none", 4, &po, &pv);
+    if (st == GTEXT_CSS_OK && pv.outcome == GTEXT_CSS_PROP_RESULT_VALID && gtext_css_value_set_root(pv.set)) {
+      cc->content_none = gtext_css_value_set_retain(pv.set);
+    }
+    else if (st == GTEXT_CSS_OK) {
+      st = GTEXT_CSS_E_INTERNAL;
+    }
+    gtext_css_property_value_free(&pv);
+  }
   if (st != GTEXT_CSS_OK) {
     if (result) {
       result->detail = "the initial value of a registered custom property could not be computed";

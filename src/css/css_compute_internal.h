@@ -190,6 +190,7 @@ struct GTEXT_CSS_Compute_Context {
   size_t syntax_bytes;                      ///< The bytes of the texts in the cache (it holds at most 1 MiB of them, and none longer than 4 KiB).
   css_compiled_syntax ** syntax_cache;      ///< The syntaxes of `attr()` calls seen so far (compiled once, kept for the life of the context; entries never change).
   size_t nsyntax, capsyntax;
+  GTEXT_CSS_Value_Set * content_none;       ///< The value `none` of `content`, made once: ::before and ::after compute a `normal` to it (css_style.c), and parsing it for each style cost a third of a document read.
 };
 
 /// Whether property `i` (an index, the id minus one) of a style has a value under the name it has: an overridden generated property does not.

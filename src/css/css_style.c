@@ -392,21 +392,12 @@ static GTEXT_CSS_Status content_normal_is_none(const GTEXT_CSS_Compute_Context *
   if (!id || id > cc->nprops || id > style->n || !css_val_is_keyword(gtext_css_value_set_root(style->vals[id - 1]), "normal")) {
     return GTEXT_CSS_OK;
   }
-  GTEXT_CSS_Property_Options po;
-  memset(&po, 0, sizeof po);
-  po.allocator = &cc->alloc;
-  GTEXT_CSS_Property_Value pv;
-  memset(&pv, 0, sizeof pv);
-  GTEXT_CSS_Status st = gtext_css_parse_property_text(cc->registry, "content", 7, "none", 4, &po, &pv);
-  if (st == GTEXT_CSS_OK && (pv.outcome != GTEXT_CSS_PROP_RESULT_VALID || !gtext_css_value_set_root(pv.set))) {
-    st = GTEXT_CSS_E_UNSUPPORTED;
+  if (!cc->content_none) {
+    return GTEXT_CSS_OK;
   }
-  if (st == GTEXT_CSS_OK) {
-    gtext_css_value_set_free(style->vals[id - 1]);
-    style->vals[id - 1] = gtext_css_value_set_retain(pv.set);
-  }
-  gtext_css_property_value_free(&pv);
-  return st;
+  gtext_css_value_set_free(style->vals[id - 1]);
+  style->vals[id - 1] = gtext_css_value_set_retain(cc->content_none);
+  return GTEXT_CSS_OK;
 }
 
 /// The candidates of one element: the style rules that match it, the presentation attributes, the `style` attribute and the caller's entries. `*early` is set when a failure was reported
