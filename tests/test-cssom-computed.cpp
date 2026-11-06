@@ -300,6 +300,24 @@ TEST(CssomComputed, AHighlightTakesTheValueOfAnUnsupportedPropertyFromTheOrigina
   EXPECT_EQ(read("#a", "::selection", "--x"), "4px") << "and a custom property is among the supported ones";
 }
 
+/* css/css-content/computed-value.html ("initial computed value of content for elements is not none"): the computed value of `content` of ::before and ::after is `none` where the
+   specified value is `normal`, and an element's own is `normal`. CSS Content is not among the pinned drafts; Chromium 156 and Firefox 158 both answer so. */
+TEST(CssomComputed, TheContentOfBeforeAndAfterThatIsNormalComputesToNone) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#b::before { content: normal; } #c::after { content: 'x'; } #d::marker { content: normal; }"
+       "</style></head><body><div id=a></div><div id=b></div><div id=c></div><div id=d></div></body></html>");
+  auto read = [&](const char * element, const char * pseudo) {
+    Decl d = m.computed(element, pseudo);
+    return get(d.d, "content");
+  };
+  EXPECT_EQ(read("#a", nullptr), "normal") << "an element's own is normal";
+  EXPECT_EQ(read("#a", "::before"), "none") << "no rule: the initial value normal, computed to none";
+  EXPECT_EQ(read("#a", "::after"), "none");
+  EXPECT_EQ(read("#b", "::before"), "none") << "normal written";
+  EXPECT_EQ(read("#c", "::after"), "\"x\"") << "a string stays";
+  EXPECT_EQ(read("#d", "::marker"), "normal") << "the other pseudo-elements keep normal";
+}
+
 /* ---- the declaration ----------------------------------------------------------------------------------------------------------------------------------------- */
 
 /* CSSOM, 7.2: "Return a live CSSStyleProperties object with the following properties: computed flag Set. readonly flag Set." and 6.6: "Setting the cssText attribute must run these

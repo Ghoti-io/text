@@ -373,6 +373,42 @@ static GTEXT_CSS_Status highlight_inherit(const GTEXT_CSS_Compute_Context * cc, 
   return GTEXT_CSS_OK;
 }
 
+/// Whether the pseudo-element list is `::before` or `::after` (the single-colon spelling reads as the same simple selector).
+static bool is_before_after(const GTEXT_CSS_Selector_List * pseudo) {
+  if (!pseudo || pseudo->count != 1 || pseudo->complex[0].compound_count != 1 || pseudo->complex[0].compounds[0].simple_count != 1) {
+    return false;
+  }
+  const GTEXT_CSS_Simple * s = &pseudo->complex[0].compounds[0].simples[0];
+  if (s->kind != GTEXT_CSS_SIMPLE_PSEUDO_ELEMENT) {
+    return false;
+  }
+  return (s->name.length == 6 && memcmp(s->name.data, "before", 6) == 0) || (s->name.length == 5 && memcmp(s->name.data, "after", 5) == 0);
+}
+
+/// The computed value of `content` of ::before and ::after that is `normal` is `none`: both browsers answer so (css/css-content/computed-value.html: "initial computed value of content
+/// for elements is not none", where the pseudo-element's is).
+static GTEXT_CSS_Status content_normal_is_none(const GTEXT_CSS_Compute_Context * cc, GTEXT_CSS_Computed_Style * style) {
+  const GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(cc->registry, "content", 7);
+  if (!id || id > cc->nprops || id > style->n || !css_val_is_keyword(gtext_css_value_set_root(style->vals[id - 1]), "normal")) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Property_Options po;
+  memset(&po, 0, sizeof po);
+  po.allocator = &cc->alloc;
+  GTEXT_CSS_Property_Value pv;
+  memset(&pv, 0, sizeof pv);
+  GTEXT_CSS_Status st = gtext_css_parse_property_text(cc->registry, "content", 7, "none", 4, &po, &pv);
+  if (st == GTEXT_CSS_OK && (pv.outcome != GTEXT_CSS_PROP_RESULT_VALID || !gtext_css_value_set_root(pv.set))) {
+    st = GTEXT_CSS_E_UNSUPPORTED;
+  }
+  if (st == GTEXT_CSS_OK) {
+    gtext_css_value_set_free(style->vals[id - 1]);
+    style->vals[id - 1] = gtext_css_value_set_retain(pv.set);
+  }
+  gtext_css_property_value_free(&pv);
+  return st;
+}
+
 /// The candidates of one element: the style rules that match it, the presentation attributes, the `style` attribute and the caller's entries. `*early` is set when a failure was reported
 /// and the set is already freed (b->set is then NULL); on another failure the set is left for the caller to free.
 static GTEXT_CSS_Status fill_candidates(build * b, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Element_Interface * iface, const GTEXT_CSS_Style_Entry * entries, size_t count,
@@ -616,6 +652,14 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
     }
     else {
       (void)before;
+    }
+  }
+  if (st == GTEXT_CSS_OK && is_before_after(options->pseudo)) {
+    st = content_normal_is_none(context, style);
+    if (st != GTEXT_CSS_OK) {
+      gtext_css_computed_free(style);
+      style = NULL;
+      fail(&b, st, NULL, 0, "the computed content could not be made");
     }
   }
   if (st == GTEXT_CSS_OK && options->highlight) {
