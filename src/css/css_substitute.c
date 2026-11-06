@@ -3880,6 +3880,14 @@ static int step_if(css_sub * sub, size_t fi) {
           fn_finish(sub, fi, NULL, true);
           return STEP_DONE;
         }
+        /* Syntax 3: a <declaration-value> holds no <delim-token> with the value "!" at its top level, so a branch that does is no <if-args-branch> */
+        for (size_t i = 0; i < f->args[b].count; i++) {
+          const GTEXT_CSS_Component_Value * v = &f->vals[f->args[b].from + i];
+          if (is_tok(v, GTEXT_CSS_TOKEN_DELIM) && v->delim == '!') {
+            fn_finish(sub, fi, NULL, true);
+            return STEP_DONE;
+          }
+        }
       }
       f->branch = 0;
       f->phase = 11;

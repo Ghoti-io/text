@@ -529,6 +529,14 @@ TEST(CssCustom, IfWithoutAColonInABranchIsInvalid) {
   EXPECT_EQ(if_value("if(else red)"), "<gi>");
 }
 
+TEST(CssCustom, IfWithATopLevelBangInABranchIsInvalid) {
+  // "<if-args-branch> = <declaration-value> : <declaration-value>?" and CSS Syntax 3: <declaration-value> is "any sequence of tokens that does not contain ... <delim-token> tokens
+  // with a value of "!"" at the top level, so the whole if() does not parse (css/css-values/if-conditionals.html, which Chromium 156 passes)
+  EXPECT_EQ(if_value("if(style(--x: 3): a; else: b!)"), "<gi>") << "in the value of a branch";
+  EXPECT_EQ(if_value("if(!style(--x: 3): a; else: b)"), "<gi>") << "in a condition";
+  EXPECT_EQ(if_value("if(else: calc(1px + 2px))"), "calc(1px + 2px)") << "no ! at all: a value";
+}
+
 TEST(CssCustom, IfConditionsAreBooleanExpressions) {
   auto cond = [](GTEXT_CSS_Condition_Kind k, const std::string & t) {
     if (k == GTEXT_CSS_CONDITION_SUPPORTS) {

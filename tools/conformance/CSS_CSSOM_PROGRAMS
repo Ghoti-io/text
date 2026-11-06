@@ -9,3 +9,4 @@ atproperty	test-cssom-at-property.cpp
 completion	test-css-computed-completion.cpp
 animation	test-cssom-animation.cpp
 functionset	test-css-function-set.cpp
+custom	test-css-custom.cpp
