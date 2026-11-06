@@ -816,6 +816,32 @@ TEST(CssomDecl, SettingAShorthandKeptAsWrittenLeavesTheLonghandsAlreadyThereInPl
   gtext_cssom_buffer_free(gtext_cssom_document_allocator(doc.d), name);
 }
 
+// found by the libFuzzer soak of fuzz_cssom_decl (reproducer-later-shorthand-over-an-important-one-kept-as-written.seed): in a list of declarations a later `font` that is not important does
+// not override an earlier `font: caption !important`, which the library keeps as written; it used to replace it, so text written with both and read back was not the text written
+TEST(CssomDecl, ALaterShorthandThatIsNotImportantDoesNotReplaceAnImportantOneKeptAsWritten) {
+  Doc doc;
+  Decl d(doc);
+  ASSERT_EQ(set_text(d.d, "font: caption !important; font: revert; color: red").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "font: caption !important; color: red;");
+  ASSERT_EQ(set_text(d.d, "font: caption !important; font: revert !important").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "font: revert !important;") << "an important one does replace it";
+  ASSERT_EQ(set_text(d.d, "font: caption; font: revert").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "font: revert;") << "and so does a later one when the earlier is not important";
+  ASSERT_EQ(set_text(d.d, "color: red; font: caption !important; all: revert; color: red").st, GTEXT_CSS_OK);
+  const std::string once = text_of(d.d);
+  ASSERT_EQ(set_text(d.d, once.c_str()).st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d) == once, true) << "written, read and written again is the same text";
+  // the same state made by setProperty(): `all` set over a shorthand kept as written leaves it where it stands, and the shorthand its longhands would form is not written beside it
+  ASSERT_EQ(set_text(d.d, "color: red; font: caption; font-style: italic; font: caption !important").st, GTEXT_CSS_OK);
+  ASSERT_EQ(set(d.d, "all", "revert").st, GTEXT_CSS_OK);
+  ASSERT_EQ(set(d.d, "color", "red").st, GTEXT_CSS_OK);
+  const std::string made = text_of(d.d);
+  EXPECT_EQ(made.find("font: revert"), std::string::npos) << "font is written once, as it was kept";
+  EXPECT_NE(made.find("font: caption !important"), std::string::npos);
+  ASSERT_EQ(set_text(d.d, made.c_str()).st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d) == made, true) << "written, read and written again is the same text";
+}
+
 /* ---- cssText: the shorthand form, and what stands between the longhands ----------------------------------------------------------------- */
 
 // CSSOM, "serialize into a shorthand form": "If any of the intermixed properties in decls between used longhands belong to the same logical property group as a longhand in used

@@ -377,3 +377,5 @@ disabled-sheet-registers	cssom_index.c	  (void)implicit_root;\n  bool yes = fals
 layer-order-ignored-by-property-rules	css_at_property.c	    if (held && layer_compare(s, layer, held->layer) < 0) {	    if (held && 0) {	atproperty
 registered-set-leaks-when-the-index-fails	cssom_index.c	  if (st != GTEXT_CSS_OK) {\n    gtext_css_rule_index_free(fresh);\n    return st;\n  }\n  core->counters.property_collects	  if (st != GTEXT_CSS_OK) {\n    return st;\n  }\n  core->counters.property_collects	atproperty
 math-result-outside-the-range-is-clamped-for-text-combine	css_compute_algo.c	run_build(st, id, src, CV_REJECT_RANGE, build_text_combine, m, out)	run_build(st, id, src, 0, build_text_combine, m, out)	completion
+later-shorthand-replaces-an-important-one-kept-as-written	css_block.c	  if (st == GTEXT_CSS_OK && superseded && keep_important && !important && block->items[superseded - 1].important) {	  if (0) {	decl
+shorthand-formed-from-longhands-beside-the-one-kept-as-written	css_shorthand_serialize.c	        present = !(block->items[i].opaque && !block->items[i].dead && block->items[i].property == (GTEXT_CSS_Property_Id)id);	        present = present;	decl

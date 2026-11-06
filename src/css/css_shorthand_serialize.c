@@ -2239,6 +2239,10 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
       for (size_t m = 0; present && m < nl; m++) {
         present = lv[m] <= np && c.last[lv[m]] != 0;
       }
+      /* a shorthand that is also held as written (an opaque declaration) is not formed from longhands as well: it would be written twice, and read back the second would not stand */
+      for (size_t i = 0; present && i < n; i++) {
+        present = !(block->items[i].opaque && !block->items[i].dead && block->items[i].property == (GTEXT_CSS_Property_Id)id);
+      }
       if (present) {
         cands[ncand].sh = (GTEXT_CSS_Property_Id)id;
         cands[ncand].leaves = nl;

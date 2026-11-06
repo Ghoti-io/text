@@ -699,6 +699,13 @@ GTEXT_CSS_Status css_block_set_ex(GTEXT_CSS_Declaration_Block * block, const GTE
   }
   /* a declaration of the whole shorthand supersedes the opaque one that kept its place */
   const size_t superseded = shorthand ? block_lookup(block, prop, NULL, 0) : 0;
+  if (st == GTEXT_CSS_OK && superseded && keep_important && !important && block->items[superseded - 1].important) {
+    /* a list of declarations: a later declaration does not override an earlier important one, and an important shorthand kept as written holds every longhand it sets, so a
+       later shorthand of the same name that is not important is ignored whole (the important declaration wins in the cascade, and the list algorithm of CSSOM's cssText setter ignores it the same way for a longhand) */
+    gtext_allocator_free(&block->alloc, slots);
+    gtext_css_longhand_list_free(list);
+    return GTEXT_CSS_OK;
+  }
   for (size_t i = 0; st == GTEXT_CSS_OK && i < n; i++) {
     GTEXT_CSS_Longhand lh;
     if (shorthand) {
