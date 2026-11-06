@@ -83,45 +83,6 @@ css/css-mixins/function-property-context.html#0	assert_equals: expected "20px" b
 css/css-mixins/function-property-context.html#1	assert_equals: expected "20px" but got "10px"	browsers-differ	chromium passes, firefox answers "10px"; the library answers "10px" as the engine that fails the page does
 css/css-mixins/function-property-context.html#2	assert_equals: expected "20px" but got "10px"	browsers-differ	chromium passes, firefox answers "10px"; the library answers "10px" as the engine that fails the page does
 css/css-mixins/function-property-context.html#3	assert_equals: expected "20px" but got "10px"	browsers-differ	chromium passes, firefox answers "10px"; the library answers "10px" as the engine that fails the page does
-css/css-mixins/functions/at-function-parsing.html#4	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#5	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#39	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#46	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#47	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#48	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#49	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#50	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#51	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#57	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#58	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#59	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#60	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#61	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#62	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#63	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#64	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#65	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#66	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#67	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#68	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#69	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#70	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#71	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#72	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#73	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#80	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#81	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#82	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#83	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#84	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#85	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#86	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#87	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#88	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#89	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#90	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#91	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
-css/css-mixins/functions/at-function-parsing.html#92	assert_equals: expected 0 but got 1	defect	owner: src/css cascade and custom properties; chromium passes, firefox passes
 css/css-mixins/functions/dashed-function-standard-property.html#2	assert_equals: expected "rgb(0, 128, 0)" but got "rgb(0, 0, 0)"	browsers-differ	chromium passes, firefox answers "rgb(0, 0, 0)"; the library answers "rgb(0, 0, 0)" as the engine that fails the page does
 css/css-mixins/functions/function-container-dynamic.html#0	assert_equals: --actual before resize expected "A" but got "--f()"	browsers-differ	chromium passes, firefox answers "--f()"; the library answers "--f()" as the engine that fails the page does
 css/css-mixins/functions/function-container-self.html#0	assert_equals: expected "B" but got "--f()"	browsers-differ	chromium passes, firefox answers "--f()"; the library answers "--f()" as the engine that fails the page does

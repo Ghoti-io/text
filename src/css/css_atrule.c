@@ -33,6 +33,7 @@
 
 #include "css_atrule_internal.h"
 #include "css_atrule_tables.h"
+#include "css_fndef.h"
 #include "css_registry_internal.h"
 
 #define DEF_DESCRIPTORS ((size_t)4096)
@@ -2128,6 +2129,15 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   if (!bad_prelude && kind == GTEXT_CSS_ATRULE_CUSTOM_MEDIA && (rule->has_block || !custom_media_prelude_valid(&cx, p, pn))) {
     bad_prelude = true;
     prelude_why = "Media Queries 5, Custom Media Queries: @custom-media <extension-name> [ <media-query-list> | true | false ] ; is a statement, and the name begins with two dashes";
+  }
+  if (!bad_prelude && kind == GTEXT_CSS_ATRULE_PRESERVED && a->name_len == 8 && memcmp(a->name, "function", 8) == 0) {
+    /* `@function` is kept as written (the definitions are read from the tree: css_custom_function.h), but a rule whose prelude is not one is not a rule */
+    bool valid = false;
+    cx.st = css_function_prelude_valid(cx.registry, &a->alloc, rule, &valid);
+    if (cx.st == GTEXT_CSS_OK && !valid) {
+      bad_prelude = true;
+      prelude_why = "CSS Functions and Mixins 1, @function: the name is a function token that begins with two dashes, each parameter is --name with an optional type and default, and nothing follows but returns <type>; the rule has a block";
+    }
   }
   if (cx.st != GTEXT_CSS_OK) {
     atrule_destroy(a);

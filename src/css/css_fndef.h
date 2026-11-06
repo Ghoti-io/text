@@ -68,6 +68,10 @@ typedef struct css_fn_def {
 /// The function of a name, or NULL. `work` (may be NULL) counts the probes.
 const css_fn_def * css_function_set_find(const GTEXT_CSS_Function_Set * set, const char * name, size_t length, size_t * work);
 
+/// Whether the prelude of an `@function` rule (with its block) is one: a name that is a function token of two dashes or more, parameters of the form `--name [type] [: default]` with no name twice,
+/// and nothing but `returns <type>` after them. The sheet drops a rule that is not valid, as it does for every at-rule whose prelude does not match its grammar. GTEXT_CSS_OK, or GTEXT_CSS_E_OOM.
+GTEXT_CSS_Status css_function_prelude_valid(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * alloc, const GTEXT_CSS_Rule * rule, bool * valid);
+
 /// Free a definition.
 void css_fn_def_free(css_fn_def * def);
 

@@ -176,6 +176,24 @@ TEST(CssomRuleParse, TheKindsNoBrowserExposesAreGenericRules) {
   EXPECT_EQ(gtext_cssom_rule_type(r.r), 0u);
 }
 
+// Functions and Mixins 1, @function: the rule is kept as written, but one whose prelude is not a function token of two dashes with parameters `--name [type] [: default]` and an optional
+// `returns <type>` is not a rule (the pinned page css-mixins/functions/at-function-parsing.html reads `cssRules.length` of the sheet).
+TEST(CssomRuleParse, AFunctionRuleWhosePreludeIsNotOneIsNotARule) {
+  Doc doc;
+  Sheet s(doc,
+      "@function --a() {}\n"
+      "@function --b (--x) {}\n"                // a name and a block, not a function
+      "@function --c(--x, --x) {}\n"            // a parameter twice
+      "@function --d(--x <length>: 1px) {}\n"
+      "@function --e(--x) returns <length> {}\n"
+      "@function --f(--x) returns {}\n"         // no type after returns
+      "@function bad() {}\n"                    // not a dashed name
+      "@function --g(--x <length>: red) {}\n"   // a default that is not a length
+      "@function --h(--x)\n");
+  ASSERT_EQ(s.status, GTEXT_CSS_OK);
+  EXPECT_EQ(shape(s), "preserved,preserved,preserved");
+}
+
 // What is not a rule: `@charset`, an unknown at-rule, a rule invalid where it is, and everything inside a dropped rule. Each is a diagnostic with a kind and a span.
 TEST(CssomRuleParse, WhatIsNotARuleIsDroppedWithADiagnostic) {
   Doc doc;

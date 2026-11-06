@@ -841,6 +841,27 @@ static GTEXT_CSS_Status handle_function(GTEXT_CSS_Function_Set * s, const GTEXT_
   return GTEXT_CSS_OK;
 }
 
+GTEXT_CSS_Status css_function_prelude_valid(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * alloc, const GTEXT_CSS_Rule * rule, bool * valid) {
+  *valid = false;
+  if (!rule || !rule->has_block) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Function_Options opt = gtext_css_function_options_default();
+  opt.allocator = alloc;
+  GTEXT_CSS_Function_Set * s = NULL;
+  GTEXT_CSS_Status st = gtext_css_function_set_new(registry, &opt, &s);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  css_fn_def * d = NULL;
+  pre_verdict verdict = PRE_BAD_PRELUDE;
+  st = read_prelude(s, rule, &d, &verdict);
+  *valid = st == GTEXT_CSS_OK && d && verdict == PRE_OK;
+  css_fn_def_free(d);
+  gtext_css_function_set_free(s);
+  return st;
+}
+
 /* ---- the walk ----------------------------------------------------------------------------------------- */
 
 typedef struct {
