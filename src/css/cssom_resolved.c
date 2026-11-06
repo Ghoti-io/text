@@ -182,6 +182,15 @@ static GTEXT_CSS_Status rctx_init(rctx * r, const css_resolve_in * in, const GTE
     if (gtext_css_computed_value(style, r->color_id, &r->color_set) != GTEXT_CSS_OK) {
       r->color_set = NULL;
     }
+    /* the `color` of a highlight pseudo-element that inherited the keyword (the inherited value of `color` at the root is `currentColor`, CSS Pseudo-Elements 4) is the color of the originating
+       element, which is the style the pseudo-element is of */
+    const GTEXT_CSS_Value * root = r->color_set ? gtext_css_value_set_root(r->color_set) : NULL;
+    if (in->pseudo && in->element_style && root && root->kind == GTEXT_CSS_VAL_COLOR && root->color && root->color->kind == GTEXT_CSS_COLOR_KEYWORD &&
+        root->color->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR) {
+      if (gtext_css_computed_value(in->element_style, r->color_id, &r->color_set) != GTEXT_CSS_OK) {
+        r->color_set = NULL;
+      }
+    }
   }
   return GTEXT_CSS_OK;
 }

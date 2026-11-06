@@ -617,10 +617,12 @@ static GTEXT_CSS_Status animation_time(void * user, GTEXT_CSS_Element_Handle ele
   return st;
 }
 
-static GTEXT_CSS_Status compute_one(css_core * core, css_cmps * cs, const GTEXT_CSS_Rule_Index * index, const void * element, const GTEXT_CSS_Computed_Style * parent,
-    const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Computed_Style ** out) {
+static GTEXT_CSS_Status compute_one_hl(css_core * core, css_cmps * cs, const GTEXT_CSS_Rule_Index * index, const void * element, const GTEXT_CSS_Computed_Style * parent,
+    const GTEXT_CSS_Selector_List * pseudo, bool highlight, const GTEXT_CSS_Computed_Style * highlight_parent, GTEXT_CSS_Computed_Style ** out) {
   GTEXT_CSS_Style_Options so = gtext_css_style_options_default();
   so.quirks = core->config.quirks;
+  so.highlight = highlight;
+  so.highlight_parent = highlight_parent;
   so.rules = index;
   so.match = cs->match;
   so.container_call = &cs->call;
@@ -652,6 +654,92 @@ static GTEXT_CSS_Status compute_one(css_core * core, css_cmps * cs, const GTEXT_
     }
   }
   return st;
+}
+
+static GTEXT_CSS_Status compute_one(css_core * core, css_cmps * cs, const GTEXT_CSS_Rule_Index * index, const void * element, const GTEXT_CSS_Computed_Style * parent,
+    const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Computed_Style ** out) {
+  return compute_one_hl(core, cs, index, element, parent, pseudo, false, NULL, out);
+}
+
+/// Whether the pseudo-element is a highlight pseudo-element (CSS Pseudo-Elements 4, "Highlight Pseudo-elements"): `::selection`, `::target-text`, `::search-text`, `::spelling-error`,
+/// `::grammar-error` or `::highlight()`. The list is one pseudo-element and nothing else (parse_pseudo()).
+static bool is_highlight_pseudo(const GTEXT_CSS_Selector_List * pseudo) {
+  if (!pseudo || pseudo->count != 1 || pseudo->complex[0].compound_count != 1 || pseudo->complex[0].compounds[0].simple_count != 1) {
+    return false;
+  }
+  const GTEXT_CSS_Simple * s = &pseudo->complex[0].compounds[0].simples[0];
+  static const char * const names[] = {"selection", "target-text", "search-text", "spelling-error", "grammar-error", "highlight"};
+  if (s->kind != GTEXT_CSS_SIMPLE_PSEUDO_ELEMENT) {
+    return false;
+  }
+  for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
+    if (s->name.length == strlen(names[i]) && memcmp(s->name.data, names[i], s->name.length) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static GTEXT_CSS_Status parent_of(css_core * core, const void * element, const void ** parent);
+static GTEXT_CSS_Status style_of(css_core * core, css_cmps * cs, const GTEXT_CSS_Rule_Index * index, const void * element, GTEXT_CSS_Computed_Style ** out);
+
+/// The style of a pseudo-element of an element. A highlight pseudo-element inherits from the same pseudo-element of the parent element (css_style.h, GTEXT_CSS_Style_Options::highlight), which
+/// inherits from its parent's: the styles are made from the root element down, each from the one above, and only the last is kept. The chain is not cached (a style of an element is, and a
+/// highlight is read rarely); the cost of a read is the depth of the element times a cascade of the pseudo-element.
+static GTEXT_CSS_Status pseudo_style_of(css_core * core, css_cmps * cs, const GTEXT_CSS_Rule_Index * index, const void * element, const GTEXT_CSS_Computed_Style * of_element,
+    const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Computed_Style ** out) {
+  if (!is_highlight_pseudo(pseudo)) {
+    return compute_one(core, cs, index, element, of_element, pseudo, out);
+  }
+  const void ** chain = NULL;
+  size_t n = 0, cap = 0;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  const void * e = element;
+  while (e) {
+    if (n == cap) {
+      const size_t grown = cap ? cap * 2 : 16;
+      const void ** bigger = gtext_allocator_realloc(&core->alloc, (void *)chain, grown * sizeof *chain);
+      if (!bigger) {
+        st = GTEXT_CSS_E_OOM;
+        break;
+      }
+      chain = bigger;
+      cap = grown;
+    }
+    if (n >= MAX_CHAIN) {
+      st = GTEXT_CSS_E_LIMIT_ELEMENTS;
+      break;
+    }
+    chain[n++] = e;
+    st = parent_of(core, e, &e);
+    if (st != GTEXT_CSS_OK) {
+      break;
+    }
+  }
+  GTEXT_CSS_Computed_Style * above = NULL;   /* the highlight of the element above the one to compute */
+  for (size_t i = n; st == GTEXT_CSS_OK && i-- > 0;) {
+    GTEXT_CSS_Computed_Style * made = NULL;
+    if (i == 0) {
+      st = compute_one_hl(core, cs, index, element, of_element, pseudo, true, above, &made);
+    }
+    else {
+      GTEXT_CSS_Computed_Style * es = NULL;
+      st = style_of(core, cs, index, chain[i], &es);
+      if (st == GTEXT_CSS_OK) {
+        st = compute_one_hl(core, cs, index, chain[i], es, pseudo, true, above, &made);
+        gtext_css_computed_free(es);
+      }
+    }
+    gtext_css_computed_free(above);
+    above = st == GTEXT_CSS_OK ? made : NULL;
+  }
+  gtext_allocator_free(&core->alloc, (void *)chain);
+  if (st != GTEXT_CSS_OK) {
+    gtext_css_computed_free(above);
+    return st;
+  }
+  *out = above;
+  return GTEXT_CSS_OK;
 }
 
 /// The inheritance parent of an element through the caller's interface: NULL at the root.
@@ -904,7 +992,7 @@ static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
         st = style_of(core, cs, index, c->element, &of_element);
       }
       if (st == GTEXT_CSS_OK && c->pseudo) {
-        st = compute_one(core, cs, index, c->element, of_element, c->pseudo, &style);
+        st = pseudo_style_of(core, cs, index, c->element, of_element, c->pseudo, &style);
       }
       else {
         style = of_element;

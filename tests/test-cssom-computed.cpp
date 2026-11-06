@@ -203,6 +203,68 @@ TEST(CssomComputed, APropertyThatDoesNotApplyToAPseudoElementIsLeftOutOfItsCasca
   EXPECT_EQ(read("#a", "::before", "position"), "absolute") << "the other pseudo-elements have every property";
 }
 
+/* Pseudo-Elements 4, "Cascading and Per-Element Highlight Styles": "When any supported property is not given a value by the cascade, or given a value of inherit or unset, its specified value is
+   determined by inheritance from the corresponding highlight pseudo-element of its originating element's parent element. This occurs regardless of whether that property is an inherited
+   property." and "Additionally, for highlight pseudo-elements originating from the root element the inherited value of 'color' is currentColor, not the initial value." */
+TEST(CssomComputed, AHighlightInheritsFromTheSameHighlightOfTheParentElementWhetherOrNotThePropertyIsInherited) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#p::selection { color: red; background-color: yellow; text-decoration-line: underline; }"
+       "#c::selection { color: inherit; }"
+       "#d::selection { background-color: unset; }"
+       "#e::selection { background-color: initial; color: lime; }"
+       "#g::selection { color: currentcolor; }"
+       "</style></head><body><div id=p><span id=c><b id=d><i id=e>x</i></b></span><s id=g>y</s></div></body></html>");
+  auto read = [&](const char * element, const char * pseudo, const char * property) {
+    Decl d = m.computed(element, pseudo);
+    return get(d.d, property);
+  };
+  EXPECT_EQ(read("#p", "::selection", "background-color"), "rgb(255, 255, 0)");
+  EXPECT_EQ(read("#c", "::selection", "background-color"), "rgb(255, 255, 0)") << "background-color is not inherited, and the highlight inherits it from the parent's highlight";
+  EXPECT_EQ(read("#c", "::selection", "text-decoration-line"), "underline") << "so is every supported property";
+  EXPECT_EQ(read("#c", "::selection", "color"), "rgb(255, 0, 0)") << "inherit, and no value at all, come to the same";
+  EXPECT_EQ(read("#d", "::selection", "background-color"), "rgb(255, 255, 0)") << "unset is inheritance for every supported property";
+  EXPECT_EQ(read("#d", "::selection", "color"), "rgb(255, 0, 0)") << "two levels down";
+  EXPECT_EQ(read("#e", "::selection", "background-color"), "rgba(0, 0, 0, 0)") << "initial is a value the cascade gave";
+  EXPECT_EQ(read("#e", "::selection", "color"), "rgb(0, 255, 0)");
+  EXPECT_EQ(read("#e", "::selection", "text-decoration-line"), "underline");
+  EXPECT_EQ(read("#g", "::selection", "color"), "rgb(255, 0, 0)") << "color: currentcolor is color: inherit, and what the highlight inherits is the parent's highlight";
+  // a highlight of one kind does not inherit from another's
+  EXPECT_EQ(read("#c", "::target-text", "background-color"), "rgba(0, 0, 0, 0)");
+  // the element's own style is untouched
+  EXPECT_EQ(read("#c", nullptr, "background-color"), "rgba(0, 0, 0, 0)");
+}
+
+/* "for highlight pseudo-elements originating from the root element the inherited value of 'color' is currentColor": the keyword, which each element that inherits it reads as its own color */
+TEST(CssomComputed, TheColorOfARootHighlightIsCurrentColorAndStandsForTheColorOfTheElementThatInheritsIt) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "html { color: green; } #c { color: blue; } #d { color: red; } #f { color: black; }"
+       "#d::selection { background-color: currentcolor; }"
+       "</style></head><body><div id=c><span id=d>x<u id=f>z</u></span><span id=e>y</span></div></body></html>");
+  auto read = [&](const char * element, const char * pseudo, const char * property) {
+    Decl d = m.computed(element, pseudo);
+    return get(d.d, property);
+  };
+  EXPECT_EQ(read("html", "::selection", "color"), "rgb(0, 128, 0)") << "the root's highlight: the root's color";
+  EXPECT_EQ(read("#c", "::selection", "color"), "rgb(0, 0, 255)") << "not the root highlight's color as it was computed: the keyword, read as this element's";
+  EXPECT_EQ(read("#d", "::selection", "color"), "rgb(255, 0, 0)");
+  EXPECT_EQ(read("#d", "::selection", "background-color"), "rgb(255, 0, 0)") << "currentcolor in another property is the color of the highlight, which is its element's";
+  EXPECT_EQ(read("#e", "::selection", "background-color"), "rgba(0, 0, 0, 0)") << "the parent's highlight has none";
+  EXPECT_EQ(read("#f", "::selection", "background-color"), "rgb(0, 0, 0)") << "currentcolor is inherited as the keyword, so it is the color of the element that inherits it, not of the one that wrote it";
+}
+
+/* "highlight-cascade-parent-style-change": a highlight inherits from the current style of its parent's highlight, not from one read before */
+TEST(CssomComputed, AHighlightInheritsFromTheCurrentStyleOfTheParentsHighlight) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#parent { font-size: 10px; } #parent::selection { text-shadow: green 1em 0; }"
+       "</style></head><body><div id=parent><span id=child>x</span></div></body></html>");
+  auto shadow = [&](const char * element) {
+    Decl d = m.computed(element, "::selection");
+    return get(d.d, "text-shadow");
+  };
+  EXPECT_EQ(shadow("#parent"), "rgb(0, 128, 0) 10px 0px 0px");
+  EXPECT_EQ(shadow("#child"), "rgb(0, 128, 0) 10px 0px 0px");
+}
+
 /* ---- the declaration ----------------------------------------------------------------------------------------------------------------------------------------- */
 
 /* CSSOM, 7.2: "Return a live CSSStyleProperties object with the following properties: computed flag Set. readonly flag Set." and 6.6: "Setting the cssText attribute must run these

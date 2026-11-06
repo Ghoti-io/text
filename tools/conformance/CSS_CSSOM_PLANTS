@@ -401,3 +401,9 @@ function-conditional-body-not-entered	css_custom_function.c	        stack[top++]
 function-too-many-parameters-accepted	css_custom_function.c	if (count > s->opt.max_parameters) {	if (0) {	functionset
 line-height-length-asks-the-layout	cssom_resolved.c	root->unit == GTEXT_CSS_UNIT_PX))) {	root->unit == GTEXT_CSS_UNIT_PX) && 0)) {	computed
 marker-skip-ink-left-out	css_pseudo_apply.c	if (n == 24 && memcmp(name, "text-decoration-skip-ink", 24) == 0) {	if (0) {	computed
+highlight-takes-nothing-from-the-parent	css_style.c	      set = gtext_css_value_set_retain(parent->vals[id - 1]);	      set = gtext_css_value_set_retain(style->vals[id - 1]);	computed
+highlight-root-color-is-the-initial-one	css_style.c	    else if (id == color) {	    else if (0 && id == color) {	computed
+highlight-inherit-keyword-is-a-value-of-its-own	css_style.c	    return it.wide != GTEXT_CSS_WIDE_INHERIT && it.wide != GTEXT_CSS_WIDE_UNSET;	    return true;	computed
+highlight-currentcolor-is-a-value-of-its-own	css_style.c	    if (c && c->kind == GTEXT_CSS_COLOR_KEYWORD && c->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR) {\n      return false;	    if (0) {\n      return false;	computed
+highlight-made-from-the-element-alone	cssom_computed.c	  if (!is_highlight_pseudo(pseudo)) {	  if (1) {	computed
+highlight-currentcolor-not-the-originating-color	cssom_resolved.c	    if (in->pseudo && in->element_style && root && root->kind == GTEXT_CSS_VAL_COLOR	    if (0 && in->pseudo && in->element_style && root && root->kind == GTEXT_CSS_VAL_COLOR	computed

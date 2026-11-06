@@ -156,6 +156,14 @@ typedef struct {
   GTEXT_CSS_Condition_Call * container_call;
   /** The animations to sample (GTEXT_CSS_Style_Animation), or NULL: the style is the one without animations. Not copied; it must outlive the call. */
   const GTEXT_CSS_Style_Animation * animation;
+  /** `pseudo` is a highlight pseudo-element (`::selection`, `::target-text`, `::search-text`, `::spelling-error`, `::grammar-error`, `::highlight()`) and the style is made by the rules of
+   *  CSS Pseudo-Elements 4, "Cascading and Per-Element Highlight Styles": a property the pseudo-element supports that the cascade gives no value, or `inherit` or `unset`, takes the value of the
+   *  same pseudo-element of the parent element (`highlight_parent`) whether or not the property is inherited, and where there is no parent element (`highlight_parent` NULL) its initial
+   *  value, `color` the keyword `currentcolor`, which stands for the color of the originating element wherever it is used. `parent_style` stays the style of the originating element: the rest of the style is inherited
+   *  from it and the units that need a font are resolved against it. */
+  bool highlight;
+  /** With `highlight`: the style of the same highlight pseudo-element of the parent element, or NULL for the root element. It must come from the same context. */
+  const GTEXT_CSS_Computed_Style * highlight_parent;
 } GTEXT_CSS_Style_Options;
 
 /** @brief The defaults, spelled out: both attribute sources, every attribute-only spelling, no quirks. */
