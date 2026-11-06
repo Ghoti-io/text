@@ -953,7 +953,10 @@ GTEXT_CSS_Status gtext_css_compute_context_new(const GTEXT_CSS_Registry * regist
     }
     const bool dependent = !same_value(base->vals[i], other->vals[i]) || !same_value(base->vals[i], child->vals[i]) ||
         !same_value(base->vals[i], scheme_light->vals[i]) || !same_value(base->vals[i], scheme_dark->vals[i]);
-    m->initial_dependent = dependent;
+    /* Box Alignment 3: the initial value of justify-items is `legacy`, which computes to the inherited value when that includes `legacy`: it depends on the parent, which the probe
+       of a child (whose parent holds no legacy value) cannot show */
+    const GTEXT_CSS_Value * spec = m->initial_spec ? gtext_css_value_set_root(m->initial_spec) : NULL;
+    m->initial_dependent = dependent || css_val_is_keyword(spec, "legacy");
     m->initial = gtext_css_value_set_retain(base->vals[i]);
   }
   /* the registered custom properties: the initial value of each is computed in the root's probe, being computationally independent */

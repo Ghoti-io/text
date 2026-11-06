@@ -270,6 +270,16 @@ TEST(CssComputedCompletionAlignment, ALoneLegacyIsTheInheritedLegacyValueOrNorma
   EXPECT_EQ(root_computed("place-items: flex-end legacy", "justify-items"), "normal");
 }
 
+/* The initial value of justify-items is legacy, which computes to the inherited value when that includes legacy (css-align/default-alignment/justify-items-legacy-001): an element that declares
+   nothing under a parent of `legacy center` is `legacy center`, so the initial value depends on the parent and is not the one value the context shares. */
+TEST(CssComputedCompletionAlignment, TheInitialJustifyItemsIsTheInheritedLegacyValue) {
+  EXPECT_EQ(computed("justify-items: legacy center", "", "justify-items"), "legacy center");
+  EXPECT_EQ(computed("justify-items: legacy left", "", "justify-items"), "legacy left");
+  EXPECT_EQ(computed("justify-items: left", "", "justify-items"), "normal") << "a parent without legacy: the initial legacy is normal";
+  EXPECT_EQ(computed("justify-items: legacy center", "justify-items: normal", "justify-items"), "normal") << "normal is not legacy, and is a value the cascade gave";
+  EXPECT_EQ(root_computed("", "justify-items"), "normal");
+}
+
 /* Viewport 1 (served 2026-10-30), zoom: "A 0 value is treated as if it was 1." and "A 0 percentage is treated as if it was 100%."; the computed value line ("as specified, but
    with <percentage> converted to the equivalent <number>") does not say whether the 1 is written, and both pinned browsers write it (recorded cases zoom.1, zoom.2). */
 TEST(CssComputedCompletionZoom, ZeroAndNormalAreOne) {
