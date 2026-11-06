@@ -46,6 +46,9 @@ struct Layout {
   bool has_used = true;
   bool has_rendered = true;
   GTEXT_CSSOM_Layout_Interface iface{};
+  /// The time of every animation, in milliseconds, when `timeline` is set (a document whose animations all began at the timeline's 0 and are read there).
+  bool timeline = false;
+  double now = 0.0;
 
   Layout() {
     iface.size = sizeof iface;
@@ -60,7 +63,19 @@ struct Layout {
     if (!has_rendered) {
       iface.is_rendered = nullptr;
     }
+    if (timeline) {
+      iface.animation_time = &Layout::anim_time;
+      iface.timeline_version = &Layout::anim_version;
+    }
     c.layout = &iface;
+  }
+  static GTEXT_CSS_Status anim_time(void * user, const void *, const GTEXT_CSS_Selector_List *, const GTEXT_CSS_Anim_Effect *, double * ms, bool * known) {
+    *ms = static_cast<Layout *>(user)->now;
+    *known = true;
+    return GTEXT_CSS_OK;
+  }
+  static uint64_t anim_version(void *) {
+    return 0;
   }
   static GTEXT_CSS_Status rendered(void * user, const void * element, const GTEXT_CSS_Selector_List *, bool * out) {
     Layout * self = static_cast<Layout *>(user);
@@ -141,7 +156,7 @@ inline std::string origin(GTEXT_CSSOM_Decl * d, const std::string & property) {
   if (!found) {
     return "absent";
   }
-  return o == GTEXT_CSSOM_ORIGIN_USED ? "used" : o == GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT ? "absent-layout" : "computed";
+  return o == GTEXT_CSSOM_ORIGIN_USED ? "used" : o == GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT ? "absent-layout" : o == GTEXT_CSSOM_ORIGIN_ABSENT_TIMELINE ? "absent-timeline" : "computed";
 }
 
 /// Every item name of a declaration, in order.

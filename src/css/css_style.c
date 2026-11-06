@@ -384,9 +384,16 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
   if (st == GTEXT_CSS_OK && options->animation) {
     /* the animations of the element, sampled at the times the caller gave: their values are declared in the animation origin, over the winners of the cascade */
     GTEXT_CSS_Declaration_Block * animated = NULL;
-    st = css_anim_sample(context, options, element, parent_style, block, &animated, &untimed);
+    GTEXT_CSS_Compute_Result sampled;
+    memset(&sampled, 0, sizeof sampled);
+    st = css_anim_sample(context, options, element, parent_style, block, &animated, &untimed, &sampled);
     if (st != GTEXT_CSS_OK) {
-      fail(&b, st, NULL, 0, "the animations of the element could not be sampled");
+      if (result && sampled.status == st) {
+        *result = sampled;   /* the compute of a keyframe failed: it says which callback or property it lacked */
+      }
+      else {
+        fail(&b, st, NULL, 0, "the animations of the element could not be sampled");
+      }
     }
     else if (animated) {
       gtext_css_block_free(block);

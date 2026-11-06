@@ -393,6 +393,8 @@ css/css-pseudo/first-line-allowed-properties.html#73	transform	the library has n
 css/css-pseudo/first-line-allowed-properties.html#106	margin	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
 css/css-pseudo/first-line-allowed-properties.html#107	padding	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
 css/css-pseudo/first-line-allowed-properties.html#110	transform	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
+css/css-pseudo/parsing/marker-supported-properties-in-animation.html#0	font	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
+css/css-pseudo/parsing/marker-supported-properties-in-animation.html#19	line-height	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
 css/css-pseudo/parsing/marker-supported-properties-in-animation.html#49	font	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
 css/css-pseudo/parsing/marker-supported-properties-in-animation.html#68	line-height	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
 css/css-sizing/min-width-max-width-precedence.html#0	width	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)

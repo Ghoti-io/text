@@ -84,6 +84,7 @@ typedef struct {
   GTEXT_CSS_Computed_Style * base_style;
   GTEXT_CSS_Property_Id id_timing, id_composition;
   unsigned asked_pseudo;
+  GTEXT_CSS_Compute_Result * failure;   ///< What the compute that failed said (the style's result carries it: which callback or property was missing).
   key * keys;
   size_t nkeys, capkeys;
   entry * entries;
@@ -319,7 +320,38 @@ static GTEXT_CSS_Status add_declaration(sampler * s, GTEXT_CSS_Declaration_Block
 
 static GTEXT_CSS_Status compute_block(sampler * s, const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Computed_Style ** out) {
   GTEXT_CSS_Compute_Result res;
-  return gtext_css_compute_style(s->cc, block, s->parent, s->element, out, &res);
+  const GTEXT_CSS_Status st = gtext_css_compute_style(s->cc, block, s->parent, s->element, out, &res);
+  if (st != GTEXT_CSS_OK && s->failure) {
+    *s->failure = res;
+  }
+  return st;
+}
+
+/// A CSS-wide keyword that rolls a declaration back (`revert`, `revert-layer`, `revert-rule`): the keyframes have no origin, layer or rule of their own to roll back to, so the value is the
+/// one the element would have without the declaration, the underlying value (Cascade 6: "revert-rule" is the value of the declaration of the rule below).
+static bool is_revert(const GTEXT_CSS_Keyframe_Property * p) {
+  static const char * const WORDS[] = {"revert", "revert-layer", "revert-rule"};
+  size_t a = 0, b = p->text.length;
+  while (a < b && (p->text.data[a] == ' ' || p->text.data[a] == '\n' || p->text.data[a] == '\t')) {
+    a++;
+  }
+  while (b > a && (p->text.data[b - 1] == ' ' || p->text.data[b - 1] == '\n' || p->text.data[b - 1] == '\t')) {
+    b--;
+  }
+  for (size_t i = 0; i < sizeof WORDS / sizeof *WORDS; i++) {
+    const size_t n = strlen(WORDS[i]);
+    if (b - a != n) {
+      continue;
+    }
+    size_t k = 0;
+    while (k < n && ((p->text.data[a + k] >= 'A' && p->text.data[a + k] <= 'Z') ? p->text.data[a + k] + 32 : p->text.data[a + k]) == WORDS[i][k]) {
+      k++;
+    }
+    if (k == n) {
+      return true;
+    }
+  }
+  return false;
 }
 
 static GTEXT_CSS_Status frame_style(sampler * s, entry * e, size_t f, const GTEXT_CSS_Computed_Style ** out) {
@@ -335,7 +367,7 @@ static GTEXT_CSS_Status frame_style(sampler * s, entry * e, size_t f, const GTEX
   const GTEXT_CSS_Keyframe * fr = &e->kf->frames[f];
   for (size_t i = 0; i < fr->property_count && st == GTEXT_CSS_OK; i++) {
     const GTEXT_CSS_Keyframe_Property * p = &fr->properties[i];
-    if (is_frame_attribute(s, p->property)) {
+    if (is_frame_attribute(s, p->property) || is_revert(p)) {
       continue;
     }
     GTEXT_CSS_Property_Outcome outcome;
@@ -455,6 +487,50 @@ static GTEXT_CSS_Status val_of_style(sampler * s, const GTEXT_CSS_Computed_Style
 static const GTEXT_CSS_Value * current_color(const sampler * s) {
   const GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(s->reg, "color", 5);
   return id ? gtext_css_computed_root(s->base_style, id) : NULL;
+}
+
+/// Where a keyword of a property means a number of the other end's type, as its animation type says: `normal` is a zero `letter-spacing` (CSS Text 4: "a zero length is written normal"), and
+/// `normal` is `oblique 0deg` for `font-style` (CSS Fonts 4: "normal animates as oblique 0deg"). The keyword is replaced by that value when the other end is not a keyword.
+typedef struct {
+  const char * property;
+  const char * keyword;
+  const char * value;
+} keyword_value;
+
+static const keyword_value KEYWORD_VALUES[] = {
+  {"letter-spacing", "normal", "0px"},
+  {"font-style", "normal", "oblique 0deg"},
+};
+
+static GTEXT_CSS_Status prepare_pair(sampler * s, const key * k, val * a, val * b) {
+  GTEXT_CSS_Property_Info pi;
+  if (!k->id || !gtext_css_registry_property_info(s->reg, k->id, &pi)) {
+    return GTEXT_CSS_OK;
+  }
+  for (size_t i = 0; i < sizeof KEYWORD_VALUES / sizeof *KEYWORD_VALUES; i++) {
+    const keyword_value * kv = &KEYWORD_VALUES[i];
+    if (strlen(kv->property) != pi.name_length || memcmp(kv->property, pi.name, pi.name_length) != 0) {
+      continue;
+    }
+    for (int side = 0; side < 2; side++) {
+      val * word = side == 0 ? a : b;
+      const val * other = side == 0 ? b : a;
+      const GTEXT_CSS_Value * wr = val_root(word);
+      const GTEXT_CSS_Value * or_ = val_root(other);
+      if (!wr || !or_ || wr->kind != GTEXT_CSS_VAL_KEYWORD || or_->kind == GTEXT_CSS_VAL_KEYWORD || wr->text.length != strlen(kv->keyword) ||
+          memcmp(wr->text.data, kv->keyword, wr->text.length) != 0) {
+        continue;
+      }
+      val replaced;
+      const GTEXT_CSS_Status st = val_of_text(s, k, kv->value, strlen(kv->value), &replaced);
+      if (st != GTEXT_CSS_OK) {
+        return st;
+      }
+      val_free(&s->al, word);
+      *word = replaced;
+    }
+  }
+  return GTEXT_CSS_OK;
 }
 
 /// The combination of two values of a key as a value: typed values by type, texts (unregistered custom properties) discrete.
@@ -594,9 +670,12 @@ static GTEXT_CSS_Status effect_value(sampler * s, entry * e, size_t key_index, c
       memset(&va, 0, sizeof va);
     }
     else {
+      st = prepare_pair(s, ky, &va, &vb);
       const double d = (t - list[a].offset) / (list[b].offset - list[a].offset);
       const double eased = gtext_css_easing_output(list[a].easing, d, e->timing.before_flag);
-      st = combine(s, ky, CSS_BLEND_LERP, &va, &vb, eased, out);
+      if (st == GTEXT_CSS_OK) {
+        st = combine(s, ky, CSS_BLEND_LERP, &va, &vb, eased, out);
+      }
     }
   }
   val_free(&s->al, &va);
@@ -724,7 +803,8 @@ static bool important_in(const GTEXT_CSS_Declaration_Block * base, const key * k
 }
 
 GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Style_Options * options, GTEXT_CSS_Element_Handle element,
-    const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Declaration_Block * base, GTEXT_CSS_Declaration_Block ** animated, css_anim_untimed * untimed) {
+    const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Declaration_Block * base, GTEXT_CSS_Declaration_Block ** animated, css_anim_untimed * untimed,
+    GTEXT_CSS_Compute_Result * failure) {
   *animated = NULL;
   const GTEXT_CSS_Style_Animation * an = options->animation;
   sampler s;
@@ -737,6 +817,7 @@ GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTE
   s.parent = parent;
   s.base = base;
   s.asked_pseudo = asked_pseudo(options->pseudo);
+  s.failure = failure;
   const GTEXT_CSS_Property_Id name_id = gtext_css_registry_find_property(s.reg, "animation-name", 14);
   if (!an || !an->keyframes || !name_id || !gtext_css_block_find(base, name_id, NULL, 0, NULL)) {
     return GTEXT_CSS_OK;   /* no animation is named by the cascade: nothing to sample, nothing computed */

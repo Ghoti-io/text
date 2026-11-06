@@ -378,16 +378,16 @@ static bool can_hold_property(const css_rule * r) {
   }
 }
 
-GTEXT_CSS_Status css_sheet_collect_properties(css_core * core, css_sheet * sheet, GTEXT_CSS_At_Property_Set ** set) {
+typedef bool (*holds_fn)(const css_rule * r);
+
+/// The nodes of the rules of a sheet that `holds` wants, in order: a rule not changed since it was read is its own node, a changed one is read again from its text (`c` keeps those trees; ctx_free() it).
+static GTEXT_CSS_Status gather_nodes(css_core * core, css_sheet * sheet, holds_fn holds, snap_ctx * c, const GTEXT_CSS_Rule *** out, size_t * count) {
   GTEXT_Allocator a = core->alloc;
-  snap_ctx c;
-  memset(&c, 0, sizeof c);
-  c.core = core;
   const GTEXT_CSS_Rule ** nodes = NULL;
   size_t n = 0, cap = 0;
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
   for (css_rule * r = css_rule_list_first(&sheet->rules); r && st == GTEXT_CSS_OK; r = css_rule_list_next(r)) {
-    if (!can_hold_property(r)) {
+    if (!holds(r)) {
       continue;
     }
     if (n == cap) {
@@ -404,20 +404,37 @@ GTEXT_CSS_Status css_sheet_collect_properties(css_core * core, css_sheet * sheet
       nodes[n++] = r->node;   /* not changed since it was read: its node is what it is */
       continue;
     }
-    if (!c.trees) {
-      c.trees = gtext_allocator_calloc(&a, sheet->rules.count, sizeof *c.trees);
-      if (!c.trees) {
+    if (!c->trees) {
+      c->trees = gtext_allocator_calloc(&a, sheet->rules.count, sizeof *c->trees);
+      if (!c->trees) {
         st = GTEXT_CSS_E_OOM;
         break;
       }
     }
     GTEXT_CSS_Rule_Source src;
     memset(&src, 0, sizeof src);
-    st = reparse(&c, r, &src);
+    st = reparse(c, r, &src);
     if (st == GTEXT_CSS_OK) {
       nodes[n++] = src.rule;
     }
   }
+  if (st != GTEXT_CSS_OK) {
+    gtext_allocator_free(&a, (void *)nodes);
+    return st;
+  }
+  *out = nodes;
+  *count = n;
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status css_sheet_collect_properties(css_core * core, css_sheet * sheet, GTEXT_CSS_At_Property_Set ** set) {
+  GTEXT_Allocator a = core->alloc;
+  snap_ctx c;
+  memset(&c, 0, sizeof c);
+  c.core = core;
+  const GTEXT_CSS_Rule ** nodes = NULL;
+  size_t n = 0;
+  GTEXT_CSS_Status st = gather_nodes(core, sheet, can_hold_property, &c, &nodes, &n);
   if (st == GTEXT_CSS_OK && n > 0) {
     if (!*set) {
       GTEXT_CSS_At_Property_Options o = gtext_css_at_property_options_default();
@@ -429,6 +446,38 @@ GTEXT_CSS_Status css_sheet_collect_properties(css_core * core, css_sheet * sheet
     if (st == GTEXT_CSS_OK) {
       GTEXT_CSS_At_Property_Result res;
       st = gtext_css_at_property_collect_rules(*set, nodes, n, &res);
+    }
+  }
+  gtext_allocator_free(&a, (void *)nodes);
+  ctx_free(&c);
+  return st;
+}
+
+/* ---- the @keyframes rules ------------------------------------------------------------------------------------------------------------------------- */
+
+/// Whether a rule of the sheet matters to the reader of `@keyframes` rules: the rule itself, a group rule it enters, and an `@layer` rule (a statement puts layers in their order, which orders the rules).
+static bool can_hold_keyframes(const css_rule * r) {
+  return r->kind == GTEXT_CSSOM_RULE_KEYFRAMES || can_hold_property(r);
+}
+
+GTEXT_CSS_Status css_sheet_collect_keyframes(css_core * core, css_sheet * sheet, GTEXT_CSS_Atrule_Set ** set) {
+  GTEXT_Allocator a = core->alloc;
+  snap_ctx c;
+  memset(&c, 0, sizeof c);
+  c.core = core;
+  const GTEXT_CSS_Rule ** nodes = NULL;
+  size_t n = 0;
+  GTEXT_CSS_Status st = gather_nodes(core, sheet, can_hold_keyframes, &c, &nodes, &n);
+  if (st == GTEXT_CSS_OK && n > 0) {
+    if (!*set) {
+      GTEXT_CSS_Atrule_Set_Options o = gtext_css_atrule_set_options_default();
+      o.allocator = &a;
+      o.conditions = core->conditions;
+      o.keyframes_only = true;
+      st = gtext_css_atrule_set_new(core->registry, &o, set);
+    }
+    if (st == GTEXT_CSS_OK) {
+      st = gtext_css_atrule_set_add_rules(*set, nodes, n);
     }
   }
   gtext_allocator_free(&a, (void *)nodes);

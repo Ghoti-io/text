@@ -71,6 +71,7 @@
 #define GHOTI_IO_GTEXT_CSS_CSS_CSSOM_CORE_H
 
 #include <ghoti.io/text/allocator.h>
+#include <ghoti.io/text/css/css_animation.h>
 #include <ghoti.io/text/css/css_condition.h>
 #include <ghoti.io/text/css/css_computed.h>
 #include <ghoti.io/text/css/css_core.h>
@@ -206,6 +207,15 @@ typedef struct {
    *  but GTEXT_CSS_OK fails the read; GTEXT_CSS_E_UNSUPPORTED names the callback and the property (gtext_cssom_computed_failure()), never a guess. Optional. */
   GTEXT_CSS_Status (*used_value)(void * user, const void * element, const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Property_Id property, bool * applies,
       GTEXT_CSS_Value_Set ** out);
+  /** The current time of an animation of the element (or of its pseudo-element, a selector list, else NULL): Web Animations 1's local time of the effect, in milliseconds. `effect`
+   *  (css_animation.h) says which of the element's `animation-name` list it is. With `*known` false (the default) the animation has no time here, is not sampled, and the properties its
+   *  `@keyframes` set are the underlying value, which gtext_cssom_computed_origin() says (GTEXT_CSSOM_ORIGIN_ABSENT_TIMELINE). A paused animation's time is the one it holds. The library
+   *  reads no clock; this is the caller's fact, the way a laid out box is. Any status but GTEXT_CSS_OK fails the read, and gtext_cssom_computed_failure() names `animation_time`. Optional. */
+  GTEXT_CSS_Status (*animation_time)(void * user, const void * element, const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Anim_Effect * effect, double * time_ms, bool * known);
+  /** A number the caller advances whenever a time `animation_time` would give could have changed (every frame, a seek, a pause): the version of the timeline. A style computed at one
+   *  version is kept for that version alone, as one computed for one version of the tree is; so a read after the clock moved without the number moving gives the old answer. Without it, a
+   *  document that has `@keyframes` rules and an `animation_time` keeps no style across reads. Optional. */
+  uint64_t (*timeline_version)(void * user);
 } GTEXT_CSSOM_Layout_Interface;
 
 /** @brief The finalizer of a user-data pair: called with the pointer and the kind of the object that held it. It must not call any `gtext_cssom_*` function on that object. */

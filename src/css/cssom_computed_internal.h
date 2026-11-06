@@ -98,6 +98,8 @@ typedef struct css_comp {
   bool empty;                         ///< The first steps made the list empty.
   bool detached;                      ///< The element was released or the document was: the declarations are frozen as they were.
   uint64_t gen, tree, epoch, cepoch;  ///< The pair (and the epochs) the declarations were made for.
+  uint64_t time;                      ///< ... and the version of the animation timeline (GTEXT_CSSOM_Layout_Interface::timeline_version) they were sampled at.
+  char * untimed_custom;              ///< The custom properties an animation targets and was not sampled for lack of a time, each NUL-terminated, the list ended by an empty name; NULL when none.
   uint8_t * origins;                  ///< GTEXT_CSSOM_Origin by property id (`norigins` entries).
   size_t norigins;
   char * position;                    ///< The computed `background-position` as the computed layer writes it (two offsets from the top left), made with the declarations; NULL where there is none (the declarations are the longhands').
@@ -118,7 +120,7 @@ typedef struct css_cmps {
   GTEXT_CSS_Condition_Call call;
   bool call_init;
   bool pair_valid;
-  uint64_t pgen, ptree, pepoch, pcepoch;
+  uint64_t pgen, ptree, pepoch, pcepoch, ptime;
   uint64_t cepoch;                    ///< Advances when the compute context is replaced.
   css_rec ** buckets;
   size_t nbuckets, nrecs;
@@ -129,6 +131,7 @@ typedef struct css_cmps {
   size_t nreleased, released_cap;
   bool released_lost;                 ///< One of them could not be written down: the whole computed state goes when the read ends.
   GTEXT_CSSOM_Computed_Failure failure;
+  bool anim_failed;                   ///< The animation time callback of the layout failed in the style being computed (the failure note names it).
 } css_cmps;
 
 /// A compute context that a registration change replaced after the document had handed it out, and the registrations it borrows.
@@ -189,7 +192,8 @@ GTEXT_CSS_Status css_computed_in_display_none(const css_resolve_in * in, bool * 
 GTEXT_CSS_Status css_computed_parent_style(const css_resolve_in * in, GTEXT_CSS_Computed_Style ** out);
 
 /// Make the block of the resolved values of a style: every supported longhand in lexicographic order, then the custom properties. `*origins` is an array indexed by property id.
-GTEXT_CSS_Status css_resolved_build(const css_resolve_in * in, const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Declaration_Block ** block, uint8_t ** origins, size_t * norigins);
+GTEXT_CSS_Status css_resolved_build(const css_resolve_in * in, const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Declaration_Block ** block, uint8_t ** origins, size_t * norigins,
+    char ** untimed_custom);
 
 /// Note why a read failed (for gtext_cssom_computed_failure()).
 void css_computed_note_failure(css_core * core, GTEXT_CSS_Status status, const char * callback, size_t callback_length, GTEXT_CSS_Property_Id property);

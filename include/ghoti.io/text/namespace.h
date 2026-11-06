@@ -1590,6 +1590,7 @@
 #define gtext_css_atrule_set_new GHOTIIO_TEXT(gtext_css_atrule_set_new)
 #define gtext_css_atrule_set_free GHOTIIO_TEXT(gtext_css_atrule_set_free)
 #define gtext_css_atrule_set_add_tree GHOTIIO_TEXT(gtext_css_atrule_set_add_tree)
+#define gtext_css_atrule_set_add_rules GHOTIIO_TEXT(gtext_css_atrule_set_add_rules)
 #define gtext_css_atrule_set_freeze GHOTIIO_TEXT(gtext_css_atrule_set_freeze)
 #define gtext_css_atrule_set_count GHOTIIO_TEXT(gtext_css_atrule_set_count)
 #define gtext_css_atrule_set_entry GHOTIIO_TEXT(gtext_css_atrule_set_entry)

@@ -66,7 +66,8 @@ extern "C" {
 typedef enum {
   GTEXT_CSSOM_ORIGIN_COMPUTED = 0,   ///< The computed value: the property's category says so, or its used value does not apply (the layout said so, or `display` is `none` or `contents`).
   GTEXT_CSSOM_ORIGIN_USED,           ///< The used value: from the layout interface, or made here by the property's rule (a color with `currentcolor` replaced, an `auto` that resolves to zero).
-  GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT   ///< The category asks for the used value, layout was not asked (no `used_value` callback) and the computed value stands in.
+  GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT,  ///< The category asks for the used value, layout was not asked (no `used_value` callback) and the computed value stands in.
+  GTEXT_CSSOM_ORIGIN_ABSENT_TIMELINE ///< An animation of the element targets the property and the layout gave it no time (no `animation_time` callback, or `*known` false): the underlying value stands in.
 } GTEXT_CSSOM_Origin;
 
 /**
@@ -92,9 +93,9 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_computed_style(GTEXT_CSSOM_Document * doc
 GTEXT_API GTEXT_CSS_Status gtext_cssom_computed_is_empty(GTEXT_CSSOM_Decl * decl, bool * empty);
 
 /**
- * @brief Where the resolved value of a property of a computed declaration came from. A shorthand is USED if any longhand is, else ABSENT_LAYOUT if any is, else COMPUTED.
+ * @brief Where the resolved value of a property of a computed declaration came from. A shorthand is USED if any longhand is, else ABSENT_LAYOUT or ABSENT_TIMELINE (the first it meets) if any is, else COMPUTED.
  * @param decl A computed declaration. Not NULL.
- * @param name The property (a longhand, a shorthand, or a custom property, which is COMPUTED).
+ * @param name The property (a longhand, a shorthand, or a custom property, which is COMPUTED unless an animation targets it and has no time).
  * @param length Its length.
  * @param origin Receives the origin. Not NULL.
  * @param found Receives whether the declaration has the property (false for an empty declaration or an unsupported property: then `origin` is COMPUTED). Not NULL.

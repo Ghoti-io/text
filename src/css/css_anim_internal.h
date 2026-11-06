@@ -70,11 +70,13 @@ void css_anim_untimed_free(const GTEXT_Allocator * alloc, css_anim_untimed * unt
 
 /**
  * Sample the animations of one element. `base` is the block of the cascade's winners. If an effect applies, `*animated` is a new block (the caller's) that is `base` with the
- * animated values declared after it; else NULL. `untimed` (may be NULL) collects the properties of the effects whose time the caller did not give.
+ * animated values declared after it; else NULL. `untimed` (may be NULL) collects the properties of the effects whose time the caller did not give. `failure` (may be NULL) receives the
+ * result of the compute that failed, so that the style's result can say what it lacked.
  * GTEXT_CSS_OK, or the status of a compute, the allocator or a callback.
  */
 GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Style_Options * options, GTEXT_CSS_Element_Handle element,
-    const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Declaration_Block * base, GTEXT_CSS_Declaration_Block ** animated, css_anim_untimed * untimed);
+    const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Declaration_Block * base, GTEXT_CSS_Declaration_Block ** animated, css_anim_untimed * untimed,
+    GTEXT_CSS_Compute_Result * failure);
 
 #ifdef __cplusplus
 }

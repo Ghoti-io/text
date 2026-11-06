@@ -301,6 +301,37 @@ static GTEXT_CSS_Status build_properties(css_core * core, GTEXT_CSS_At_Property_
   return GTEXT_CSS_OK;
 }
 
+/* ---- the @keyframes rules ------------------------------------------------------------------------------------------------------------------------- */
+
+static GTEXT_CSS_Status keyframes_live_fn(css_core * core, void * user, css_sheet * sheet, const css_scope * scope, const void * implicit_root) {
+  (void)implicit_root;
+  if (scope->context != 0) {
+    return GTEXT_CSS_OK;   /* the names of a shadow tree are that tree's: the document's elements are styled by the document's */
+  }
+  bool yes = false;
+  const GTEXT_CSS_Status st = takes_part(core, sheet, &yes);
+  if (st != GTEXT_CSS_OK || !yes) {
+    return st;
+  }
+  return css_sheet_collect_keyframes(core, sheet, (GTEXT_CSS_Atrule_Set **)user);
+}
+
+/// The `@keyframes` rules of the sheets that take part, in cascade order ("If multiple @keyframes rules are defined with the same name, the last one in the highest layer wins"), frozen.
+/// NULL when no sheet has one.
+static GTEXT_CSS_Status build_keyframes(css_core * core, GTEXT_CSS_Atrule_Set ** out) {
+  GTEXT_CSS_Atrule_Set * set = NULL;
+  GTEXT_CSS_Status st = walk_live(core, keyframes_live_fn, &set);
+  if (st == GTEXT_CSS_OK && set) {
+    st = gtext_css_atrule_set_freeze(set);
+  }
+  if (st != GTEXT_CSS_OK) {
+    gtext_css_atrule_set_free(set);
+    return st;
+  }
+  *out = set;
+  return GTEXT_CSS_OK;
+}
+
 static bool same_text(const char * a, size_t an, const char * b, size_t bn) {
   return an == bn && (an == 0 || memcmp(a, b, an) == 0);
 }
@@ -363,6 +394,14 @@ static GTEXT_CSS_Status current(css_core * core, const GTEXT_CSS_Rule_Index ** o
     gtext_css_rule_index_free(fresh);
     return st;
   }
+  /* ... and so are the `@keyframes` rules, which the style of an element samples its animations from */
+  GTEXT_CSS_Atrule_Set * frames = NULL;
+  st = build_keyframes(core, &frames);
+  if (st != GTEXT_CSS_OK) {
+    gtext_css_at_property_set_free(props);
+    gtext_css_rule_index_free(fresh);
+    return st;
+  }
   core->counters.property_collects += props != NULL;
   if (same_properties(core->props, props)) {
     gtext_css_at_property_set_free(props);   /* nothing a compute context was made with has changed */
@@ -370,6 +409,8 @@ static GTEXT_CSS_Status current(css_core * core, const GTEXT_CSS_Rule_Index ** o
   else {
     css_computed_properties_changed(core, props);
   }
+  gtext_css_atrule_set_free(core->keyframes);
+  core->keyframes = frames;
   GTEXT_CSS_Rule_Index * old = core->index;
   core->index = fresh;
   core->index_valid = true;

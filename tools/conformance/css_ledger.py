@@ -216,9 +216,9 @@ def layout_counts(path):
     return out
 
 
-def classes(resolved, scored, script=None, layout=None):
-    """{code: (pages, tests)} with ``scored`` for the tests the declaration gate runs, ``scored-script`` for the ones the interpreter scores and ``needs-layout`` for the ones it
-    reads and does not credit."""
+def classes(resolved, scored, script=None, layout=None, timeline=None):
+    """{code: (pages, tests)} with ``scored`` for the tests the declaration gate runs, ``scored-script`` for the ones the interpreter scores, ``needs-layout`` for the ones it
+    reads and does not credit because a used value needs a layout, and ``needs-timeline`` for the ones it does not credit because an animation was given no time."""
     pages, tests = {}, {}
     for page, n, code in resolved:
         pages.setdefault(code, set()).add(page)
@@ -227,11 +227,14 @@ def classes(resolved, scored, script=None, layout=None):
     tests['scored'] = sum(scored.values())
     script = script or {}
     layout = layout or {}
-    scripted = {p: n - layout.get(p, 0) for p, n in script.items() if n - layout.get(p, 0) > 0}
+    timeline = timeline or {}
+    scripted = {p: n - layout.get(p, 0) - timeline.get(p, 0) for p, n in script.items() if n - layout.get(p, 0) - timeline.get(p, 0) > 0}
     pages.setdefault('scored-script', set()).update(scripted)
     tests['scored-script'] = sum(scripted.values())
     pages.setdefault('needs-layout', set()).update(p for p in layout if layout[p])
     tests['needs-layout'] = sum(layout.values())
+    pages.setdefault('needs-timeline', set()).update(p for p in timeline if timeline[p])
+    tests['needs-timeline'] = sum(timeline.values())
     return {c: (len(pages[c]), tests[c]) for c in pages}
 
 
@@ -293,6 +296,7 @@ def check_cssom(a):
     scored = scored_tests(a['vectors'])
     scripted = script_tests(a['vectors'])
     layout = layout_counts(a.get('layout'))
+    timeline = layout_counts(os.path.join(os.path.dirname(a['layout']), 'UNSCORED_TIMELINE') if a.get('layout') else None)
     held = {}
     for page, n, code in resolved:
         held[page] = held.get(page, 0) + n
@@ -308,13 +312,13 @@ def check_cssom(a):
     if bad > 20:
         out.append('PARTITION: and %d pages more' % (bad - 20))
     # the pins of the classes
-    now = classes(resolved, scored, scripted, layout)
+    now = classes(resolved, scored, scripted, layout, timeline)
     moves = []
     for c in sorted(set(now) | {c for c, v in codes.items() if v['cssom'] != (0, 0)}):
         pin = codes.get(c, {}).get('cssom', (0, 0))
         if now.get(c, (0, 0)) != pin:
             moves.append('  %s: %d pages %d tests, pinned %d pages %d tests (%+d tests)' % (c, now.get(c, (0, 0))[0], now.get(c, (0, 0))[1], pin[0], pin[1], now.get(c, (0, 0))[1] - pin[1]))
-    for needed in ('scored', 'scored-script', 'needs-layout'):
+    for needed in ('scored', 'scored-script', 'needs-layout', 'needs-timeline'):
         if needed not in codes:
             out.append('REASON CODE: REASON_CODES has no row for the class "%s"' % needed)
     if moves:

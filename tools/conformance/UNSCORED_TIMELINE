@@ -1,0 +1,1 @@
+# tools/conformance/css_cssom_script_suite.py: the tests of the scoring interpreter that read a property an animation targets while the caller gave the animation no time. Derived: test (page#index), property, why. They are neither passed nor failed.

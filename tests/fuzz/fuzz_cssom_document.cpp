@@ -159,7 +159,7 @@ const char kHtml[] =
     "<body><div id=d><p id=p1 class=a>x</p><p id=p2>y</p></div><style id=s2>#p2{color:blue}</style></body></html>";
 
 const char * const kTexts[] = {"p{color:red}", ".a{margin-top:2px}", "#p2{color:green} p{margin-top:3px}", "", "@media print{p{color:red}} div p{color:blue}", "x{", "@import url(a.css); p{width:1px}", ".a, #p1{color:orange}",
-    "@keyframes k{from{opacity:0}} p{animation-name:k}", "p{color:red} p{color:blue !important}"};
+    "@keyframes k{from{width:0px;color:red;--v:1px} to{width:50px;color:blue;--v:3px}} p{animation:k 2s linear -1s paused}", "p{color:red} p{color:blue !important}"};
 const char * const kMedia[] = {"screen", "print", "", "(min-width: 1px)", "not all", "(bogus:"};
 const char * const kTypes[] = {"text/css", "TEXT/CSS", "", "text/plain", "text/css; x", " text/css"};
 const char * const kRules[] = {"p{color:red}", ".a{margin-top:9px}", "@media screen{p{color:pink}}", "div p{width:2px}", "}", "@import url(b.css);", "#p2{color:gold}"};
@@ -169,6 +169,29 @@ const char * const kInline[] = {"color: red", "margin-top: 1px; color: blue", ""
 const char * const kProbeProps[] = {"color", "margin-top", "width"};
 const char * const kProbeIds[] = {"p1", "p2", "d"};
 const char * const kComputedProps[] = {"color", "margin-top", "width", "border-top-color", "background-color", "display"};
+
+/// The timeline of the harness: every animation began at 0 and is read there, so that a sheet with `@keyframes` and an `animation` is sampled (the document that is built again is given
+/// the same, and the two must agree).
+GTEXT_CSS_Status timeline_time(void *, const void *, const GTEXT_CSS_Selector_List *, const GTEXT_CSS_Anim_Effect *, double * ms, bool * known) {
+  *ms = 0.0;
+  *known = true;
+  return GTEXT_CSS_OK;
+}
+
+uint64_t timeline_version(void *) {
+  return 0;
+}
+
+GTEXT_CSSOM_Layout_Interface timeline_layout() {
+  GTEXT_CSSOM_Layout_Interface l;
+  std::memset(&l, 0, sizeof l);
+  l.size = sizeof l;
+  l.animation_time = &timeline_time;
+  l.timeline_version = &timeline_version;
+  return l;
+}
+
+const GTEXT_CSSOM_Layout_Interface kTimeline = timeline_layout();
 
 std::string serialize_sheet(const GTEXT_CSSOM_Sheet * s) {
   std::string out;
@@ -426,6 +449,7 @@ GTEXT_CSSOM_Document * rebuild(World & w) {
   c.match_options = &w.mo;
   c.tree_version = &gtext_cssom_markup_tree_version;
   c.tree_version_user = w.markup;
+  c.layout = &kTimeline;
   c.max_cached_styles = 2;
   GTEXT_CSSOM_Document * fresh = nullptr;
   if (gtext_cssom_document_new(&c, &fresh) != GTEXT_CSS_OK) {
@@ -591,6 +615,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     c.match_options = &w.mo;
     c.tree_version = &gtext_cssom_markup_tree_version;
     c.tree_version_user = w.markup;
+    c.layout = &kTimeline;
     if (gtext_cssom_document_new(&c, &w.doc) != GTEXT_CSS_OK) {
       return 0;
     }

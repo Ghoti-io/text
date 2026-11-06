@@ -103,7 +103,7 @@ TEST(CssAnimationInterp, ALegacyColorIsInterpolatedInSrgbPremultiplied) {
 
 /* A pair of lists of one shape is combined item by item; a pair that differs in a keyword is discrete. */
 TEST(CssAnimationInterp, AListIsCombinedByItem) {
-  EXPECT_EQ(mix("text-shadow", "rgb(0, 200, 0) 1px 2px 3px", "rgb(100, 0, 200) 3px 2px 1px", 0.5), "rgb(50 100 100) 2px 2px 2px 0px");
+  EXPECT_EQ(mix("text-shadow", "rgb(0, 200, 0) 1px 2px 3px", "rgb(100, 0, 200) 3px 2px 1px", 0.5), "rgb(50 100 100) 2px 2px 2px 0px") << "(the computed value of a shadow has the four lengths of the pin's prose)";
   bool discrete = false;
   EXPECT_EQ(mix("font-variation-settings", "\"wght\" 100", "\"wdth\" 200", 0.7, CSS_BLEND_LERP, &discrete), "\"wdth\" 200");
   EXPECT_TRUE(discrete);

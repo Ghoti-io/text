@@ -225,6 +225,8 @@ void css_core_release(css_core * core) {
   css_computed_free(core);
   gtext_css_at_property_set_free(core->props);   /* after the contexts that borrow it */
   core->props = NULL;
+  gtext_css_atrule_set_free(core->keyframes);
+  core->keyframes = NULL;
   css_index_teardown(core);
   gtext_css_conditions_free(core->conditions);
   GTEXT_Allocator a = core->alloc;

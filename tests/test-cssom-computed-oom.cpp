@@ -40,6 +40,7 @@ const char * kHtml =
     "<!DOCTYPE html><html><head><style id=s>"
     "div{color:red;margin-top:7px;--k:1px solid red} p{width:50px;background-color:currentcolor;box-shadow:1px 2px 3px currentcolor, 4px 5px blue;animation-duration:auto}"
     "p::before{color:blue} .x{color:color-mix(in srgb, currentcolor, blue)}"
+    "@keyframes k{from{height:10px;--c:1px;color:red}to{height:90px;--c:9px;color:blue}} #b{animation:k 10s linear -5s paused;--c:5px;margin-left:var(--c)}"
     "</style></head><body><div id=d><p id=a class=x>x</p><p id=b>y</p></div></body></html>";
 
 /// Every name and value of a declaration, as one text.
@@ -87,11 +88,13 @@ struct Scenario {
   const char * pseudo;
   bool layout;
   bool mutate;   ///< a mutation of the document between the first read and the one that is failed
+  bool timeline = false;   ///< the layout gives the animations a time (0), so that `#b` is sampled
 };
 
 void sweep(const Scenario & sc) {
   SCOPED_TRACE(sc.name);
   Layout lay;
+  lay.timeline = sc.timeline;
   lay.used["width"] = "49px";
   lay.used["margin-top"] = "6px";
   std::string want;
@@ -197,6 +200,15 @@ TEST(CssomComputedOom, ReadingAPseudoElement) {
 
 TEST(CssomComputedOom, ReadingWithTheLayout) {
   sweep({"layout", "#b", nullptr, true, false});
+}
+
+/* The sampling of an animation: the `@keyframes` rules collected from the sheets, the time asked of the layout, the frames computed, the animated values declared and the style computed again. */
+TEST(CssomComputedOom, ReadingAnAnimatedElement) {
+  sweep({"animation", "#b", nullptr, true, false, true});
+}
+
+TEST(CssomComputedOom, ReadingAnAnimatedElementWhoseTimeWasNotGiven) {
+  sweep({"animation without a time", "#b", nullptr, true, false, false});
 }
 
 TEST(CssomComputedOom, ReadingAgainAfterTheTreeMoved) {

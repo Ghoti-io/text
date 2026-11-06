@@ -138,7 +138,9 @@ dropped bogus at byte 23
 3. It **cascades** them (\ref format_css_cascade "css-cascade.md"). A presentation attribute is an author-level declaration of specificity zero that comes
    before every style sheet of the author: any rule beats it, whatever its specificity, and the `style` attribute beats it too. The `style` attribute is over
    every rule that is not `!important`.
-4. It **computes** the style from the winners, the parent's style and the environment (\ref format_css_computed "css-computed.md"), substituting `var()` and
+4. When `GTEXT_CSS_Style_Options::animation` is set, it **samples the animations** of the element at the times the caller gives and declares their values after the winners, in the
+   animation origin (\ref format_css_animations "css-animations.md").
+5. It **computes** the style from the winners, the parent's style and the environment (\ref format_css_computed "css-computed.md"), substituting `var()` and
    the other functions (\ref format_css_variables "css-variables.md").
 
 The **parent** is the style of the element that this one *inherits from*, which is the tree parent for most elements and the `<use>` element for the clone that

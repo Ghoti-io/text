@@ -21,7 +21,9 @@
 
 ``script.tsv`` is the flat program of each page the evaluator read, ``script-tests.tsv`` the name of every test of those pages and either ``model`` (it has ops) or the code of the
 reason it has none. The runner gives each modeled test PASS, FAIL (with the first failed assertion's message) or LAYOUT (it read a property whose used value needs a layout: never
-credited, never failed; ``UNSCORED_LAYOUT`` lists these and is checked against the run).
+credited, never failed; ``UNSCORED_LAYOUT`` lists these and is checked against the run) or TIMELINE (it read a property that an animation targets and the caller gave the animation no time:
+the value is the underlying one; never credited, never failed; ``UNSCORED_TIMELINE``, beside the layout list, lists these). The runner is the caller: its document timeline is at 0 and every animation
+began there (the pages that depend on more are timing pages), so a TIMELINE is what the run with ``CSSOM_RUNNER_TIMELINE=none`` shows (the controls) and the list is empty.
 
 **The browsers' record.** tools/oracle/css_page_record.py holds, for every page, what Chromium and Firefox answered when they ran the page itself. The gate refuses a record that is
 not of this pin, harness, driver or page ("RECORD"), and holds the evaluator to it: a page's tests are as many as the harness reported, in the same order and with the same names, in both
@@ -52,7 +54,7 @@ typographic quotation marks and dashes made plain; a quotation does not run thro
 sentence that does not occur in the draft it names ("QUOTE"), a draft that does not hash as pinned, or a draft it was not given.
 
 Floors and ceilings (environment; they only move the right way): CSS_CSSOM_SCRIPT_MIN_SCORED, CSS_CSSOM_SCRIPT_MIN_PAGES, CSS_CSSOM_SCRIPT_MAX_DEFECTS, CSS_CSSOM_SCRIPT_MAX_LAYOUT,
-CSS_CSSOM_SCRIPT_MAX_UA.
+CSS_CSSOM_SCRIPT_MAX_TIMELINE, CSS_CSSOM_SCRIPT_MAX_UA.
 """
 import json
 import os
@@ -302,9 +304,11 @@ def main():
     if not replay_path:
         out.append('REPLAY: no replay record was given')
 
-    # the tests that read a layout
+    # the tests that read a layout, and the ones that read an animated property of an animation with no time
     layout = {k: v[1] for k, v in results.items() if v[0] == 'LAYOUT'}
-    scored = {k: v for k, v in results.items() if v[0] != 'LAYOUT'}
+    timeline = {k: v[1] for k, v in results.items() if v[0] == 'TIMELINE'}
+    scored = {k: v for k, v in results.items() if v[0] not in ('LAYOUT', 'TIMELINE')}
+    timeline_path = os.path.join(os.path.dirname(layout_path), 'UNSCORED_TIMELINE')
     listed = {}
     for n, f in tsv_lines(layout_path):
         if len(f) != 3:
@@ -312,6 +316,14 @@ def main():
             continue
         k = f[0].rsplit('#', 1)
         listed[(k[0], int(k[1]))] = f[1]
+    listed_timeline = {}
+    for n, f in tsv_lines(timeline_path):
+        if len(f) != 3:
+            out.append('SUITE PROBLEMS: %s:%d has %d fields, not three' % (os.path.basename(timeline_path), n, len(f)))
+            continue
+        k = f[0].rsplit('#', 1)
+        listed_timeline[(k[0], int(k[1]))] = f[1]
+    timeline_lines = ['%s#%d\t%s\tan animation targets this property and was given no time: its value is the underlying one (gtext_cssom_computed_origin() says ABSENT_TIMELINE)' % (p, i, prop) for (p, i), prop in sorted(timeline.items())]
     layout_lines = ['%s#%d\t%s\tthe library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)' % (p, i, prop) for (p, i), prop in sorted(layout.items())]
 
     # the classification
@@ -347,6 +359,8 @@ def main():
                 return 'is not run'
             if r[0] == 'PASS':
                 return 'passes'
+            if r[0] == 'TIMELINE':
+                return 'needs a timeline'
             if r[0] == 'LAYOUT':
                 return 'needs a layout'
             return 'answers %s' % (answer(r[1]) or r[1])
@@ -411,7 +425,10 @@ def main():
         with open(layout_path, 'w', encoding='utf-8', newline='\n') as f:
             f.write('# tools/conformance/css_cssom_script_suite.py: the tests of the scoring interpreter that read a property whose used value needs a layout. Derived: test (page#index), property, why. They are neither passed nor failed; the ceiling falls only when a layout consumer supplies used values.\n')
             f.write('\n'.join(layout_lines) + '\n')
-        print('regenerated: %d exceptions, %d layout tests' % (len(exc_lines), len(layout_lines)))
+        with open(timeline_path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write('# tools/conformance/css_cssom_script_suite.py: the tests of the scoring interpreter that read a property an animation targets while the caller gave the animation no time. Derived: test (page#index), property, why. They are neither passed nor failed.\n')
+            f.write('\n'.join(timeline_lines) + ('\n' if timeline_lines else ''))
+        print('regenerated: %d exceptions, %d layout tests, %d timeline tests' % (len(exc_lines), len(layout_lines), len(timeline_lines)))
         return 0
 
     have = {}
@@ -451,30 +468,38 @@ def main():
             out.append('LAYOUT: %s#%d reads %s, which needs a layout, and is not listed in %s' % (k[0], k[1], layout[k], os.path.basename(layout_path)))
         elif listed[k] != layout[k]:
             out.append('LAYOUT: %s#%d reads %s, the list says %s' % (k[0], k[1], layout[k], listed[k]))
+    for k in sorted(set(timeline) | set(listed_timeline)):
+        if k not in timeline:
+            out.append('TIMELINE: %s#%d is listed in %s and no longer reads an animated property of an animation with no time' % (k[0], k[1], os.path.basename(timeline_path)))
+        elif k not in listed_timeline:
+            out.append('TIMELINE: %s#%d reads %s, which needs a timeline, and is not listed in %s' % (k[0], k[1], timeline[k], os.path.basename(timeline_path)))
+        elif listed_timeline[k] != timeline[k]:
+            out.append('TIMELINE: %s#%d reads %s, the list says %s' % (k[0], k[1], timeline[k], listed_timeline[k]))
     n_scored = len(scored)
     n_pass = sum(1 for v in scored.values() if v[0] == 'PASS')
     defects = sum(1 for v in derived.values() if v[1] == 'defect')
     uas = sum(1 for v in derived.values() if v[1] == 'ua-default')
     scored_pages = len({k[0] for k in scored})
     for name, value, kind in (('CSS_CSSOM_SCRIPT_MIN_SCORED', n_scored, 'min'), ('CSS_CSSOM_SCRIPT_MIN_PAGES', scored_pages, 'min'), ('CSS_CSSOM_SCRIPT_MAX_DEFECTS', defects, 'max'),
-                              ('CSS_CSSOM_SCRIPT_MAX_LAYOUT', len(layout), 'max'), ('CSS_CSSOM_SCRIPT_MAX_UA', uas, 'max')):
+                              ('CSS_CSSOM_SCRIPT_MAX_LAYOUT', len(layout), 'max'), ('CSS_CSSOM_SCRIPT_MAX_TIMELINE', len(timeline), 'max'),
+                              ('CSS_CSSOM_SCRIPT_MAX_UA', uas, 'max')):
         limit = os.environ.get(name)
         if limit is None:
             continue
         if kind == 'min' and value < int(limit):
             out.append('below the floor: %d %s, the floor is %s' % (value, name.split('_')[-1].lower(), limit))
         if kind == 'max' and value > int(limit):
-            out.append('above the ceiling: %d %s, the ceiling is %s' % (value, 'defects' if 'DEFECTS' in name else 'ua-default tests' if name.endswith('_UA') else 'layout tests', limit))
+            out.append('above the ceiling: %d %s, the ceiling is %s' % (value, 'defects' if 'DEFECTS' in name else 'ua-default tests' if name.endswith('_UA') else 'timeline tests' if name.endswith('_TIMELINE') else 'layout tests', limit))
     if out:
         print('\n'.join(out))
         return 1
     with open(os.path.join(vdir, 'SCRIPT_SCORED'), 'w') as f:
-        f.write('%d %d\n' % (n_scored, len(layout)))
+        f.write('%d %d\n' % (n_scored, len(layout) + len(timeline)))
     classes = {}
     for v in derived.values():
         classes[v[1]] = classes.get(v[1], 0) + 1
-    print('css-cssom-script: %d tests of %d pages scored (%d pass, %d exceptions: %s); %d need a layout and are not credited; %d unmodeled (%d pages read)' % (
-        n_scored, scored_pages, n_pass, len(derived), ', '.join('%d %s' % (v, k) for k, v in sorted(classes.items())) or 'none', len(layout), len(tests) - len(modeled), len(pages)))
+    print('css-cssom-script: %d tests of %d pages scored (%d pass, %d exceptions: %s); %d need a layout and %d a timeline and are not credited; %d unmodeled (%d pages read)' % (
+        n_scored, scored_pages, n_pass, len(derived), ', '.join('%d %s' % (v, k) for k, v in sorted(classes.items())) or 'none', len(layout), len(timeline), len(tests) - len(modeled), len(pages)))
     print('css-cssom-script: ' + replay_note)
     print('css-cssom-script: passes where both engines fail the page: %d%s' % (len(report), (' (' + ', '.join(report[:6]) + (', ...' if len(report) > 6 else '') + ')') if report else ''))
     return 0

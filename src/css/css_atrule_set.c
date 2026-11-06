@@ -187,6 +187,7 @@ void gtext_css_atrule_set_free(GTEXT_CSS_Atrule_Set * s) {
 typedef struct {
   const GTEXT_CSS_Rule * rules;
   size_t rule_count;
+  const GTEXT_CSS_Rule * const * pointers;   ///< Instead of `rules`: top-level rules that are nodes of different trees.
   const GTEXT_CSS_Block_Item * items;
   size_t item_count;
   size_t pos;
@@ -333,10 +334,7 @@ static GTEXT_CSS_Status declare_layers(GTEXT_CSS_Atrule_Set * s, const GTEXT_CSS
   return layer_names(s, r, parent, block, true, inner, valid);
 }
 
-GTEXT_CSS_Status gtext_css_atrule_set_add_tree(GTEXT_CSS_Atrule_Set * s, const GTEXT_CSS_Tree * tree) {
-  if (!s || !tree || s->frozen) {
-    return GTEXT_CSS_E_INVALID;
-  }
+static GTEXT_CSS_Status collect(GTEXT_CSS_Atrule_Set * s, const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Rule * const * pointers, size_t pointer_count) {
   s->trees++;
   GTEXT_CSS_Status status = GTEXT_CSS_OK;
   size_t cap = 16, sp = 0;
@@ -345,7 +343,11 @@ GTEXT_CSS_Status gtext_css_atrule_set_add_tree(GTEXT_CSS_Atrule_Set * s, const G
     return GTEXT_CSS_E_OOM;
   }
   memset(&stack[0], 0, sizeof stack[0]);
-  if (tree->kind == GTEXT_CSS_TREE_BLOCK_CONTENTS) {
+  if (pointers) {
+    stack[0].pointers = pointers;
+    stack[0].rule_count = pointer_count;
+  }
+  else if (tree->kind == GTEXT_CSS_TREE_BLOCK_CONTENTS) {
     stack[0].items = tree->items;
     stack[0].item_count = tree->item_count;
   }
@@ -357,7 +359,12 @@ GTEXT_CSS_Status gtext_css_atrule_set_add_tree(GTEXT_CSS_Atrule_Set * s, const G
   while (status == GTEXT_CSS_OK && sp > 0) {
     frame * top = &stack[sp - 1];
     const GTEXT_CSS_Rule * rule = NULL;
-    if (top->rules) {
+    if (top->pointers) {
+      if (top->pos < top->rule_count) {
+        rule = top->pointers[top->pos++];
+      }
+    }
+    else if (top->rules) {
       if (top->pos < top->rule_count) {
         rule = &top->rules[top->pos++];
       }
@@ -399,7 +406,13 @@ GTEXT_CSS_Status gtext_css_atrule_set_add_tree(GTEXT_CSS_Atrule_Set * s, const G
       bool unresolved = top->unresolved;
       if (group) {
         if (s->opt.conditions) {
-          if (!gtext_css_conditions_active_rule((void *)s->opt.conditions, rule)) {
+          /* the status variant: a rule whose condition could not be evaluated for want of memory is a failure, not a rule that does not hold */
+          bool holds = false;
+          status = gtext_css_conditions_active_rule_status((void *)s->opt.conditions, rule, &holds);
+          if (status != GTEXT_CSS_OK) {
+            break;
+          }
+          if (!holds) {
             continue;
           }
         }
@@ -448,7 +461,7 @@ GTEXT_CSS_Status gtext_css_atrule_set_add_tree(GTEXT_CSS_Atrule_Set * s, const G
       }
     }
     const void * row = css_atrule_row_find(nm, rule->name.length);
-    if (!row || !collected_kind(css_atrule_row_kind(row))) {
+    if (!row || !collected_kind(css_atrule_row_kind(row)) || (s->opt.keyframes_only && css_atrule_row_kind(row) != GTEXT_CSS_ATRULE_KEYFRAMES)) {
       continue;
     }
     if (top->unresolved) {
@@ -469,6 +482,23 @@ GTEXT_CSS_Status gtext_css_atrule_set_add_tree(GTEXT_CSS_Atrule_Set * s, const G
   }
   gtext_allocator_free(&s->alloc, stack);
   return status;
+}
+
+GTEXT_CSS_Status gtext_css_atrule_set_add_tree(GTEXT_CSS_Atrule_Set * s, const GTEXT_CSS_Tree * tree) {
+  if (!s || !tree || s->frozen) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  return collect(s, tree, NULL, 0);
+}
+
+GTEXT_CSS_Status gtext_css_atrule_set_add_rules(GTEXT_CSS_Atrule_Set * s, const GTEXT_CSS_Rule * const * rules, size_t count) {
+  if (!s || (!rules && count) || s->frozen) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  if (count == 0) {
+    return GTEXT_CSS_OK;
+  }
+  return collect(s, NULL, rules, count);
 }
 
 /* ---- freezing -------------------------------------------------------------------------------------------------------------------------- */

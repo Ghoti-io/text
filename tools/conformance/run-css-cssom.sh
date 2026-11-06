@@ -326,6 +326,9 @@ expect script-floor "below the floor" env CSS_CSSOM_SCRIPT_MIN_SCORED=9999999 py
 expect script-page-floor "below the floor" env CSS_CSSOM_SCRIPT_MIN_PAGES=9999999 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
 expect script-defect-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_DEFECTS=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
 expect script-layout-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_LAYOUT=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
+# the timeline list: the run in which no animation is given a time reads animated properties that need one; they are neither passed nor failed, and they are not listed
+expect script-timeline-unlisted "which needs a timeline, and is not listed" env CSSOM_RUNNER_TIMELINE=none python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
+expect script-timeline-ceiling "above the ceiling" env CSSOM_RUNNER_TIMELINE=none CSS_CSSOM_SCRIPT_MAX_TIMELINE=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
 # the replay of the programs in the browsers: another program, a replayed test that is not the page's, a program with no replay, another generator, no record
 mkdir -p "$scratch/replay-vec"
 cp "$vectors"/* "$scratch/replay-vec/"

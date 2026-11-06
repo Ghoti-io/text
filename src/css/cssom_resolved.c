@@ -829,12 +829,15 @@ static GTEXT_CSS_Status resolve_one(rctx * r, const GTEXT_CSS_Property_Info * in
 /* ---- the block ------------------------------------------------------------------------------------------------------------------------------------- */
 
 GTEXT_CSS_Status css_resolved_build(const css_resolve_in * in, const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Declaration_Block ** out_block, uint8_t ** out_origins,
-    size_t * out_norigins) {
+    size_t * out_norigins, char ** out_untimed_custom) {
   css_core * core = in->core;
   const GTEXT_CSS_Registry * reg = core->registry;
   *out_block = NULL;
   *out_origins = NULL;
   *out_norigins = 0;
+  *out_untimed_custom = NULL;
+  char * untimed_custom = NULL;
+  size_t untimed_length = 0;
   rctx r;
   GTEXT_CSS_Status st = rctx_init(&r, in, style);
   if (st != GTEXT_CSS_OK) {
@@ -892,6 +895,9 @@ GTEXT_CSS_Status css_resolved_build(const css_resolve_in * in, const GTEXT_CSS_C
     if (st != GTEXT_CSS_OK) {
       break;
     }
+    if (origin == GTEXT_CSSOM_ORIGIN_COMPUTED && gtext_css_computed_animation_untimed(style, list[i].id)) {
+      origin = GTEXT_CSSOM_ORIGIN_ABSENT_TIMELINE;   /* an animation targets it and the caller gave no time: the underlying value stands */
+    }
     GTEXT_CSS_Property_Value pv;
     memset(&pv, 0, sizeof pv);
     pv.outcome = GTEXT_CSS_PROP_RESULT_VALID;
@@ -928,14 +934,28 @@ GTEXT_CSS_Status css_resolved_build(const css_resolve_in * in, const GTEXT_CSS_C
       st = gtext_css_block_add_custom(block, name.data, name.length, &pv, false);
     }
     gtext_css_property_value_free(&pv);
+    if (st == GTEXT_CSS_OK && gtext_css_computed_animation_untimed_custom(style, name.data, name.length)) {
+      char * bigger = gtext_allocator_realloc(&core->alloc, untimed_custom, untimed_length + name.length + 2);
+      if (!bigger) {
+        st = GTEXT_CSS_E_OOM;
+        break;
+      }
+      untimed_custom = bigger;
+      memcpy(untimed_custom + untimed_length, name.data, name.length);
+      untimed_custom[untimed_length + name.length] = '\0';
+      untimed_length += name.length + 1;
+      untimed_custom[untimed_length] = '\0';
+    }
   }
   rctx_free(&r);
   gtext_allocator_free(&core->alloc, list);
   if (st != GTEXT_CSS_OK) {
     gtext_css_block_free(block);
     gtext_allocator_free(&core->alloc, origins);
+    gtext_allocator_free(&core->alloc, untimed_custom);
     return st;
   }
+  *out_untimed_custom = untimed_custom;
   *out_block = block;
   *out_origins = origins;
   *out_norigins = norigins;

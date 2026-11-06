@@ -285,6 +285,7 @@ void css_computed_forget(GTEXT_CSSOM_Decl * d) {
   }
   gtext_css_selector_list_free(c->pseudo);
   gtext_allocator_free(&core->alloc, c->origins);
+  gtext_allocator_free(&core->alloc, c->untimed_custom);
   gtext_allocator_free(&core->alloc, c->position);
   gtext_allocator_free(&core->alloc, c);
   d->comp = NULL;
@@ -564,9 +565,24 @@ static GTEXT_CSS_Status ensure_match(css_core * core, css_cmps * cs) {
   return gtext_css_selector_match_context_new(iface, &mo, &cs->match);
 }
 
+/// The version of the animation timeline the caller keeps (GTEXT_CSSOM_Layout_Interface::timeline_version), 0 when it keeps none. A caller that gives the time of animations and no version cannot
+/// have a style kept across reads while the document has `@keyframes` to sample: the time could be anything, so `*cacheable` is cleared.
+static uint64_t timeline_version(const css_core * core, bool * cacheable) {
+  if (!core->has_layout) {
+    return 0;
+  }
+  if (core->layout.timeline_version) {
+    return core->layout.timeline_version(core->layout.user);
+  }
+  if (core->layout.animation_time && core->keyframes) {
+    *cacheable = false;
+  }
+  return 0;
+}
+
 /// The cache and the match context are for one state of the document and the tree: a read in another drops both.
-static void sync_pair(css_core * core, css_cmps * cs, bool cacheable, uint64_t tree) {
-  const bool same = cs->pair_valid && cacheable && cs->pgen == core->generation && cs->ptree == tree && cs->pepoch == core->tree_epoch && cs->pcepoch == cs->cepoch;
+static void sync_pair(css_core * core, css_cmps * cs, bool cacheable, uint64_t tree, uint64_t time) {
+  const bool same = cs->pair_valid && cacheable && cs->pgen == core->generation && cs->ptree == tree && cs->pepoch == core->tree_epoch && cs->pcepoch == cs->cepoch && cs->ptime == time;
   if (same) {
     return;
   }
@@ -580,7 +596,25 @@ static void sync_pair(css_core * core, css_cmps * cs, bool cacheable, uint64_t t
   cs->ptree = tree;
   cs->pepoch = core->tree_epoch;
   cs->pcepoch = cs->cepoch;
+  cs->ptime = time;
   cs->pair_valid = cacheable;
+}
+
+/// The time of an animation of the caller's layout, for the sampler of a style (css_style.h).
+static GTEXT_CSS_Status animation_time(void * user, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Anim_Effect * effect, double * time_ms, bool * known) {
+  css_core * core = user;
+  *known = false;
+  if (!core->has_layout || !core->layout.animation_time) {
+    return GTEXT_CSS_OK;
+  }
+  const GTEXT_CSS_Status st = core->layout.animation_time(core->layout.user, element, pseudo, effect, time_ms, known);
+  if (st != GTEXT_CSS_OK) {
+    *known = false;
+    if (core->cs) {
+      core->cs->anim_failed = true;
+    }
+  }
+  return st;
 }
 
 static GTEXT_CSS_Status compute_one(css_core * core, css_cmps * cs, const GTEXT_CSS_Rule_Index * index, const void * element, const GTEXT_CSS_Computed_Style * parent,
@@ -594,12 +628,28 @@ static GTEXT_CSS_Status compute_one(css_core * core, css_cmps * cs, const GTEXT_
     so.pseudo = pseudo;
     so.sources = 0;   /* the element's own style attribute and presentation attributes are not the pseudo-element's */
   }
+  /* the animations of the sheets' `@keyframes`, sampled at the times the caller's layout gives */
+  GTEXT_CSS_Style_Animation anim;
+  if (core->keyframes) {
+    memset(&anim, 0, sizeof anim);
+    anim.size = sizeof anim;
+    anim.keyframes = core->keyframes;
+    anim.user = core;
+    anim.current_time = animation_time;
+    so.animation = &anim;
+  }
+  cs->anim_failed = false;
   GTEXT_CSS_Compute_Result res;
   memset(&res, 0, sizeof res);
   core->counters.computed_computes++;
   const GTEXT_CSS_Status st = gtext_css_style_compute(cs->ctx, element, parent, NULL, 0, &so, out, &res);
   if (st != GTEXT_CSS_OK) {
-    css_computed_note_failure(core, st, res.name, css_name_length(res.name, sizeof res.name), res.property);
+    if (cs->anim_failed) {
+      css_computed_note_failure(core, st, "animation_time", 14, 0);
+    }
+    else {
+      css_computed_note_failure(core, st, res.name, css_name_length(res.name, sizeof res.name), res.property);
+    }
   }
   return st;
 }
@@ -806,8 +856,9 @@ static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
   css_cmps * cs = core->cs;
   bool hook = false;
   const uint64_t tree = css_core_tree_version(core, &hook);
-  const bool cacheable = hook || core->tree_epoch > 0 || core->config.computed_trust_tree_changed;
-  if (c->valid && cacheable && c->gen == core->generation && c->tree == tree && c->epoch == core->tree_epoch && c->cepoch == cs->cepoch) {
+  bool cacheable = hook || core->tree_epoch > 0 || core->config.computed_trust_tree_changed;
+  const uint64_t time = timeline_version(core, &cacheable);
+  if (c->valid && cacheable && c->gen == core->generation && c->tree == tree && c->epoch == core->tree_epoch && c->cepoch == cs->cepoch && c->time == time) {
     return GTEXT_CSS_OK;
   }
   core->counters.computed_refreshes++;
@@ -816,6 +867,7 @@ static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
   GTEXT_CSS_Computed_Style * style = NULL;
   uint8_t * origins = NULL;
   size_t norigins = 0;
+  char * untimed_custom = NULL;
   char * position = NULL;
   size_t position_length = 0;
   bool empty = c->null_obj;
@@ -845,7 +897,7 @@ static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
     }
     if (st == GTEXT_CSS_OK) {
       core->in_callback++;
-      sync_pair(core, cs, cacheable, tree);
+      sync_pair(core, cs, cacheable, tree, time);
       st = ensure_match(core, cs);
       GTEXT_CSS_Computed_Style * of_element = NULL;
       if (st == GTEXT_CSS_OK) {
@@ -859,7 +911,7 @@ static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
       }
       if (st == GTEXT_CSS_OK) {
         css_resolve_in in = {core, cs, c->element, c->pseudo, index, c->pseudo ? of_element : NULL};
-        st = css_resolved_build(&in, style, &block, &origins, &norigins);
+        st = css_resolved_build(&in, style, &block, &origins, &norigins, &untimed_custom);
       }
       if (st == GTEXT_CSS_OK) {
         st = position_text(core, style, &position, &position_length);
@@ -874,9 +926,12 @@ static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
     gtext_css_computed_free(style);
     gtext_css_block_free(block);
     gtext_allocator_free(&core->alloc, origins);
+    gtext_allocator_free(&core->alloc, untimed_custom);
     gtext_allocator_free(&core->alloc, position);
     return st;
   }
+  gtext_allocator_free(&core->alloc, c->untimed_custom);
+  c->untimed_custom = untimed_custom;
   gtext_allocator_free(&core->alloc, c->position);
   c->position = position;
   c->position_length = position_length;
@@ -892,6 +947,7 @@ static GTEXT_CSS_Status refresh_read(GTEXT_CSSOM_Decl * d) {
   c->tree = tree;
   c->epoch = core->tree_epoch;
   c->cepoch = cs->cepoch;
+  c->time = time;
   d->version++;
   return GTEXT_CSS_OK;
 }
@@ -1038,6 +1094,11 @@ GTEXT_CSS_Status gtext_cssom_computed_origin(GTEXT_CSSOM_Decl * decl, const char
   GTEXT_CSS_Property_Id target = info.flags & GTEXT_CSS_PROP_ALIAS ? info.alias_of : id;
   if (info.flags & GTEXT_CSS_PROP_CUSTOM) {
     *found = gtext_css_block_find(decl->block, 0, name, length, &probe);
+    for (const char * u = c->untimed_custom; *found && u && *u; u += strlen(u) + 1) {
+      if (strlen(u) == length && memcmp(u, name, length) == 0) {
+        *origin = GTEXT_CSSOM_ORIGIN_ABSENT_TIMELINE;
+      }
+    }
     return GTEXT_CSS_OK;
   }
   if (!gtext_css_registry_property_info(core->registry, target, &info)) {
@@ -1078,7 +1139,7 @@ GTEXT_CSS_Status gtext_cssom_computed_origin(GTEXT_CSSOM_Decl * decl, const char
       any = true;
       if (lh < c->norigins) {
         const GTEXT_CSSOM_Origin o = (GTEXT_CSSOM_Origin)c->origins[lh];
-        if (o == GTEXT_CSSOM_ORIGIN_USED || (o == GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT && *origin == GTEXT_CSSOM_ORIGIN_COMPUTED)) {
+        if (o == GTEXT_CSSOM_ORIGIN_USED || ((o == GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT || o == GTEXT_CSSOM_ORIGIN_ABSENT_TIMELINE) && *origin == GTEXT_CSSOM_ORIGIN_COMPUTED)) {
           *origin = o;
         }
       }

@@ -43,10 +43,12 @@ animation's time is the one it holds; a callback with no time for an animation, 
 3. Each property any keyframe sets (a shorthand sets its longhands; `all` sets none; a property that is not animatable, or does not apply to the pseudo-element, is left out) has its own list
    of keyframes ("an animation is run independently for each property"), with a keyframe made from the underlying value at `0%` and `100%` where there is none. The value of a keyframe is the
    property's **computed value in the element's own context with that keyframe's declarations in its cascade**, so `em`, `var()`, `inherit` and `sibling-index()` are the element's, and a
-   value that is out of range (a negative `calc()` length) is clamped before it is interpolated.
+   value that is out of range (a negative `calc()` length) is clamped before it is interpolated. `revert`, `revert-layer` and `revert-rule` in a keyframe are the underlying value: a keyframe
+   has no origin, layer or rule of its own to roll back to.
 4. The two keyframes that bracket the directed progress are combined by the animation type of the property (`css_interp_text()`): numbers, integers (rounded), percentages and dimensions by
    arithmetic, a length with a percentage as a `calc()`, legacy colors premultiplied in sRGB and other colors in Oklab, lists, functions and blocks item by item, and every other pair as a
-   discrete value that flips at 50 percent. The distance is passed through the easing function of the first keyframe (`animation-timing-function` in the keyframe, else the animation's),
+   discrete value that flips at 50 percent (a `letter-spacing` of `normal` is 0 and a `font-style` of `normal` is `oblique 0deg` when the other end is not a keyword; `currentcolor` is the
+   element's color). The distance is passed through the easing function of the first keyframe (`animation-timing-function` in the keyframe, else the animation's),
    `gtext_css_easing_output()`: the cubic Bezier is extended along its tangents outside 0 to 1, the step functions use the before flag, `linear()` extends its end segments.
 5. The effects of a property are composited in the order of the names (the last wins), each over the one before; `animation-composition` (or the keyframe's own) of `add` and `accumulate`
    combine the keyframe's value with the underlying value before the two are interpolated.
@@ -54,3 +56,15 @@ animation's time is the one it holds; a callback with no time for an animation, 
    that, so the children that inherit the property, a `var()` that reads an animated custom property and the `em` of an animated font size all see the animated value.
 
 Every allocation goes through the context's allocator; the sweep over each of them is in `tests/test-css-animation-sample.cpp`.
+
+# In a document
+
+A `GTEXT_CSSOM_Document` (\ref format_css_cssom "css-cssom.md") samples the animations of every element and pseudo-element it computes: the `@keyframes` rules of its sheets are collected with the
+rule index, and the time of each animation is asked of the layout interface (`animation_time`, with a `timeline_version` that keys the cached styles by the time as well as the tree). An animation
+that is given no time is not sampled, and `gtext_cssom_computed_origin()` says `GTEXT_CSSOM_ORIGIN_ABSENT_TIMELINE` for the properties it targets, as it says `ABSENT_LAYOUT` for a used value
+that needs a layout.
+
+# What is not here
+
+Running animations, the `animationstart` family of events, transitions (they need the style before the change), and scroll- or view-driven timelines: an effect whose `animation-timeline` is not
+`auto` is not sampled. A property whose animation type is not by computed value (a transform list that does not match, the individual transform properties when one is `none`, a basic shape, a grid track list, a filter list) is combined by the generic rules above where its values have one shape, and is discrete where they do not.

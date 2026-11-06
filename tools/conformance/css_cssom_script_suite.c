@@ -27,7 +27,8 @@
  * style), so the gate scores the integration and not a test double.
  *
  * Input, tab separated with `\\`, `\t`, `\n`, `\r` and `\0` escaped: `P file quirks tests`, `H html`, then `O op field...` lines. Output: `R file index PASS`, `R file index FAIL
- * message`, or `R file index LAYOUT property` (the test read a property whose used value needs a layout the library was not given: it is neither passed nor failed), for each test,
+ * message`, or `R file index LAYOUT property` (the test read a property whose used value needs a layout the library was not given: it is neither passed nor failed), or
+ * `R file index TIMELINE property` (the test read a property that an animation targets, and the animation was given no time: the same), for each test,
  * and `E file message` for a program that could not be run as the page ran it.
  *
  * Values. A value is a type and a text: `s` string, `n` number, `b` boolean, `N` null, `u` undefined. An operand is `s:text`, `n:3`, `b:true`, `N:`, `u:` or `r:<register>`. An
@@ -304,6 +305,26 @@ static size_t g_ua_len = sizeof UA_SHEET - 1;
 
 /* The conditions the environment of the compute context answers `if(media())` with, and the styles a query container is read from, are the world's: the context, the conditions object and
    the document are made in that order and each needs the next, so the callbacks reach them through the world. */
+/* The runner is the caller of the library, and its document timeline stands at 0: every animation began there, so the time of each is 0 (the pages that need more are timing pages, which the
+   scoring interpreter does not read). With CSSOM_RUNNER_TIMELINE=none it gives no time at all, which is the case the controls show: the property an animation targets then says
+   ABSENT_TIMELINE and the test is not credited. The version of the timeline never moves. */
+static int g_timeline = 1;
+
+static GTEXT_CSS_Status runner_animation_time(void * user, const void * element, const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Anim_Effect * effect, double * time_ms, bool * known) {
+  (void)user;
+  (void)element;
+  (void)pseudo;
+  (void)effect;
+  *time_ms = 0.0;
+  *known = g_timeline != 0;
+  return GTEXT_CSS_OK;
+}
+
+static uint64_t runner_timeline_version(void * user) {
+  (void)user;
+  return 0;
+}
+
 static GTEXT_CSS_Tristate runner_condition(void * user, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text, GTEXT_CSS_Element_Handle element) {
   (void)element;
   const world * w = user;
@@ -345,6 +366,12 @@ static int world_open(world * w, const char * html, size_t html_len) {
   c.match_options = &w->match_options;
   c.tree_version = &gtext_cssom_markup_tree_version;
   c.tree_version_user = w->markup;
+  GTEXT_CSSOM_Layout_Interface layout;
+  memset(&layout, 0, sizeof layout);
+  layout.size = sizeof layout;
+  layout.animation_time = runner_animation_time;
+  layout.timeline_version = runner_timeline_version;
+  c.layout = &layout;
   /* the runner is a consumer with an environment of its own (the palette, and conditions that are the world's); the document makes the compute context with it and with the registrations of the
      `@property` rules of its sheets, and the conditions object that reads a query container's style is given to the document once it exists */
   GTEXT_CSS_Environment cenv = gtext_css_environment_default();
@@ -659,6 +686,8 @@ typedef struct {
   char * message;
   int layout;
   char * layout_property;
+  int timeline;
+  char * timeline_property;
 } testrun;
 
 /* `backgroundColor` -> `background-color`; `cssFloat` -> `float`; `webkitX` -> `-webkit-x`. */
@@ -689,14 +718,18 @@ static char * idl_to_css(const char * s, size_t n) {
 }
 
 static void note_layout(testrun * t, style * s, const char * css_name) {
-  if (!s->computed || t->layout) {
+  if (!s->computed || (t->layout && t->timeline)) {
     return;
   }
   GTEXT_CSSOM_Origin origin = GTEXT_CSSOM_ORIGIN_COMPUTED;
   bool found = false;
-  if (gtext_cssom_computed_origin(s->decl, css_name, strlen(css_name), &origin, &found) == GTEXT_CSS_OK && found && origin == GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT) {
+  if (gtext_cssom_computed_origin(s->decl, css_name, strlen(css_name), &origin, &found) == GTEXT_CSS_OK && found && origin == GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT && !t->layout) {
     t->layout = 1;
     t->layout_property = dups(css_name);
+  }
+  if (found && origin == GTEXT_CSSOM_ORIGIN_ABSENT_TIMELINE && !t->timeline) {
+    t->timeline = 1;
+    t->timeline_property = dups(css_name);
   }
 }
 
@@ -2875,6 +2908,11 @@ static void end_test(program * p) {
       print_escaped(p->t.layout_property ? p->t.layout_property : "");
       fputc('\n', stdout);
     }
+    else if (p->t.timeline) {
+      printf("R\t%s\t%d\tTIMELINE\t", p->file, p->index);
+      print_escaped(p->t.timeline_property ? p->t.timeline_property : "");
+      fputc('\n', stdout);
+    }
     else if (p->t.failed) {
       printf("R\t%s\t%d\tFAIL\t", p->file, p->index);
       print_escaped(p->t.message ? p->t.message : "");
@@ -2886,6 +2924,7 @@ static void end_test(program * p) {
   }
   free(p->t.message);
   free(p->t.layout_property);
+  free(p->t.timeline_property);
   memset(&p->t, 0, sizeof p->t);
   p->in_test = 0;
   p->in_cleanup = 0;
@@ -2910,6 +2949,10 @@ static void end_program(program * p) {
 }
 
 int main(void) {
+  const char * tl = getenv("CSSOM_RUNNER_TIMELINE");
+  if (tl && strcmp(tl, "none") == 0) {
+    g_timeline = 0;
+  }
   const char * ua = getenv("CSSOM_RUNNER_UA");
   if (ua && strcmp(ua, "none") == 0) {
     g_ua_len = 0;

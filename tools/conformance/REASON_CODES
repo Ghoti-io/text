@@ -1,14 +1,15 @@
 # The closed set of reasons a page or a test of web-platform-tests is not read by a CSSOM or at-rule gate (tools/conformance/css_ledger.py). Tab separated: code, kind, CSSOM pages, CSSOM tests, at-rule pages, at-rule calls, what it means.
 # The counts are pins: the pages and tests the gate finds in each class. A class that grows or shrinks fails until the pin is changed, in the commit that moves it. `unmodeled:` is the only kind that is a list of what to build next.
 scored	scored	95	403	0	0	the gate runs the test (css_cssom_suite.c) and every failure is a line of CSS_CSSOM_EXCEPTIONS
-scored-script	scored	592	4932	0	0	the scoring interpreter (tools/css/cssom_eval.py, css_cssom_script_suite.c) runs the test on a Markup document; every failure is a line of CSS_CSSOM_SCRIPT_EXCEPTIONS
+scored-script	scored	592	4930	0	0	the scoring interpreter (tools/css/cssom_eval.py, css_cssom_script_suite.c) runs the test on a Markup document; every failure is a line of CSS_CSSOM_SCRIPT_EXCEPTIONS
 reftest	residue	1846	1846	847	847	a reference test: the assertion is that two renderings are equal, and the library produces no rendering
 crash-or-visual	residue	0	0	27	27	a crash or rendering test of the at-rule directories
 no-assertion	residue	362	362	102	102	no testharness assertion: a crash test, or a manual or visual page
 survival	residue	0	0	0	0	reserved: a crash test replayed for survival only (never added to a conformance figure)
 timing	residue	257	645	0	0	needs events, promises, observers or timing: the page waits for a task, a timer, an animation or a transition
 layout-geometry	residue	130	1195	0	0	reads layout geometry (offset, client, scroll, getBoundingClientRect) or a hover or focus state
-needs-layout	residue	168	628	0	0	the test reads a property whose used value needs a layout the library is not given (gtext_cssom_computed_origin() says ABSENT_LAYOUT): never credited, whatever the assertion did (per test, UNSCORED_LAYOUT)
+needs-layout	residue	168	630	0	0	the test reads a property whose used value needs a layout the library is not given (gtext_cssom_computed_origin() says ABSENT_LAYOUT): never credited, whatever the assertion did (per test, UNSCORED_LAYOUT)
+needs-timeline	residue	0	0	0	0	the test reads a property that an animation targets and the caller gave the animation no time, so the value is the underlying one (gtext_cssom_computed_origin() says ABSENT_TIMELINE): never credited, whatever the assertion did (per test, UNSCORED_TIMELINE)
 input-driver	residue	0	0	0	0	reserved: drives input through testdriver
 frame-or-popup	residue	0	0	0	0	reserved: needs an iframe, popup, popover, dialog or fullscreen
 typed-om	residue	0	0	0	0	reserved: Typed OM (computedStyleMap, attributeStyleMap)

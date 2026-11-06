@@ -63,6 +63,7 @@ typedef struct {
   size_t max_rules;                      ///< Most at-rules the set holds. Default 1,000,000. One more is GTEXT_CSS_E_LIMIT_DESCRIPTORS.
   size_t max_rule_depth;                 ///< Deepest nesting of rules read. Default 4,096. One more is GTEXT_CSS_E_LIMIT_DEPTH.
   GTEXT_CSS_Atrule_Options atrule;       ///< How each rule is read (zeroed: the defaults).
+  bool keyframes_only;                   ///< Collect `@keyframes` rules only; the other at-rules are skipped without being read (a document that only samples animations does not read its `@font-face` rules).
 } GTEXT_CSS_Atrule_Set_Options;
 
 /** @brief The defaults. */
@@ -80,6 +81,16 @@ GTEXT_API void gtext_css_atrule_set_free(GTEXT_CSS_Atrule_Set * set);
  * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (a frozen set); GTEXT_CSS_E_UNSUPPORTED (see `conditions`); GTEXT_CSS_E_LIMIT_DEPTH; GTEXT_CSS_E_LIMIT_DESCRIPTORS; GTEXT_CSS_E_LIMIT_LAYERS; GTEXT_CSS_E_OOM.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_atrule_set_add_tree(GTEXT_CSS_Atrule_Set * set, const GTEXT_CSS_Tree * tree);
+
+/**
+ * @brief Collect the at-rules of top-level rules that need not belong to one tree (a live style sheet keeps each rule in the tree of its own parse), in order, as gtext_css_atrule_set_add_tree()
+ *   collects those of a tree: one more "tree" of the set. The rules are only read, and need not outlive the call.
+ *
+ * @param rules The rules, nodes of syntax trees. NULL only with a count of 0.
+ * @param count Their number.
+ * @return As gtext_css_atrule_set_add_tree().
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_atrule_set_add_rules(GTEXT_CSS_Atrule_Set * set, const GTEXT_CSS_Rule * const * rules, size_t count);
 
 /** @brief Fix the layer ranks and the order; adds are then refused and the finds work. Idempotent. */
 GTEXT_API GTEXT_CSS_Status gtext_css_atrule_set_freeze(GTEXT_CSS_Atrule_Set * set);

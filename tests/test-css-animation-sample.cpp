@@ -95,6 +95,7 @@ struct Sampled {
   GTEXT_CSS_Style_Animation animation{};
   GTEXT_CSS_Computed_Style * style = nullptr;
   GTEXT_CSS_Status status = GTEXT_CSS_E_INTERNAL;
+  GTEXT_CSS_Compute_Result result{};
   Sampled(const std::string & keyframes, const std::string & decls, std::map<std::string, double> times, const GTEXT_CSS_Computed_Style * parent = nullptr, bool with_clock = true)
       : frames(keyframes) {
     clock.by_name = std::move(times);
@@ -108,7 +109,7 @@ struct Sampled {
     std::memset(&entry, 0, sizeof entry);
     entry.keys.origin = GTEXT_CSS_ORIGIN_AUTHOR;
     entry.text = {decls.data(), decls.size()};
-    status = gtext_css_style_compute(ctx.c, nullptr, parent, &entry, 1, &o, &style, nullptr);
+    status = gtext_css_style_compute(ctx.c, nullptr, parent, &entry, 1, &o, &style, &result);
   }
   Sampled(const Sampled &) = delete;
   Sampled & operator=(const Sampled &) = delete;
@@ -339,6 +340,17 @@ TEST(CssAnimationSample, AColorIsInterpolatedInSrgb) {
       "rgba(100, 200, 0, 0.5)") << "premultiplied: the color of the transparent end does not pull the middle";
 }
 
+/* CSS Text 4: a zero letter-spacing is `normal`; the pair `normal` and a length is a pair of lengths, `normal` being 0 (both browsers answer 10px at the middle of 0px to 20px). CSS Fonts 4,
+   font-style: "by computed value type; normal animates as oblique 0deg". The other pairs of a keyword and a length stay discrete. */
+TEST(CssAnimationSample, ANormalThatMeansZeroIsInterpolatedAsZero) {
+  EXPECT_EQ(Sampled("@keyframes a { from { letter-spacing: 0px } to { letter-spacing: 20px } }", "animation: a 2s linear -1s paused", {{"a", 0.0}}).value("letter-spacing"), "10px");
+  EXPECT_EQ(Sampled("@keyframes a { from { letter-spacing: normal } to { letter-spacing: 20px } }", "animation: a 2s linear -1s paused", {{"a", 0.0}}).value("letter-spacing"), "10px");
+  EXPECT_EQ(Sampled("@keyframes a { from { font-style: normal } to { font-style: oblique 20deg } }", "animation: a 2s linear -1s paused", {{"a", 0.0}}).value("font-style"), "oblique 10deg");
+  EXPECT_EQ(Sampled("@keyframes a { from { font-style: oblique 10deg } to { font-style: oblique 20deg } }", "animation: a 2s linear -1s paused", {{"a", 0.0}}).value("font-style"), "oblique 15deg");
+  EXPECT_EQ(Sampled("@keyframes a { from { font-style: normal } to { font-style: italic } }", "animation: a 2s linear -1s paused", {{"a", 0.0}}).value("font-style"), "italic") << "two keywords are discrete";
+  EXPECT_EQ(Sampled("@keyframes a { from { width: auto } to { width: 20px } }", "animation: a 2s linear -1s paused", {{"a", 0.0}}).value("width"), "20px") << "auto is not 0";
+}
+
 /* Color 4: "Interpolating to or from currentcolor is possible. The numerical value used for this purpose is the used value." The keyframe's currentcolor is the element's color, and
    it follows the element's color when that changes. */
 TEST(CssAnimationSample, ACurrentcolorKeyframeIsTheColorOfTheElement) {
@@ -385,6 +397,28 @@ TEST(CssAnimationSample, AKeyframeCannotAnimateTheAnimationProperties) {
   Sampled s("@keyframes a { from { animation-duration: 1s; width: 0px } to { animation-duration: 99s; width: 10px } }", "animation: a 10s linear both", {{"a", 5000.0}});
   EXPECT_EQ(s.value("width"), "5px");
   EXPECT_EQ(s.value("animation-duration"), "10s");
+}
+
+/* Cascade 6: revert-rule "rolls back" to the declaration of the next rule of the cascade, which here is the declaration of the element: in a keyframe it is the underlying value, as both
+   browsers answer. (revert and revert-layer are read the same way: the cascade of the keyframes has no origin or layer of its own to roll back to.) */
+TEST(CssAnimationSample, ARevertInAKeyframeIsTheUnderlyingValue) {
+  const char * kf = "@keyframes a { from { width: revert-rule; --x: revert-rule } to { width: 200px; --x: 200px } }";
+  Sampled s(kf, "width: 100px; --x: 100px; animation: a 3600s steps(2, start)", {{"a", 0.0}});
+  ASSERT_EQ(s.status, GTEXT_CSS_OK);
+  EXPECT_EQ(s.value("width"), "150px") << "steps(2, start) at 0 is the first step: half way from the underlying 100px to 200px";
+  Sampled mid(kf, "width: 100px; --x: 100px; animation: a 3600s linear -1800s paused", {{"a", 0.0}});
+  EXPECT_EQ(mid.value("width"), "150px");
+  EXPECT_EQ(mid.value("--x"), "200px") << "an unregistered custom property is discrete";
+  EXPECT_EQ(Sampled("@keyframes a { from { width: revert } to { width: 200px } }", "width: 100px; animation: a 4s linear -2s paused", {{"a", 0.0}}).value("width"), "150px");
+  EXPECT_EQ(Sampled("@keyframes a { from { width: revert-layer } to { width: 200px } }", "width: 100px; animation: a 4s linear -2s paused", {{"a", 0.0}}).value("width"), "150px");
+}
+
+/* A value the sampler cannot compute for lack of a callback is the style's failure, named as it would be for the underlying style: the caller learns which callback it lacked. */
+TEST(CssAnimationSample, AFailureOfAKeyframeNamesWhatItNeeded) {
+  Sampled s("@keyframes a { from { width: 1ex } to { width: 9ex } }", "animation: a 4s linear -2s paused", {{"a", 0.0}});
+  EXPECT_EQ(s.status, GTEXT_CSS_E_UNSUPPORTED);
+  EXPECT_EQ(s.style, nullptr);
+  EXPECT_STREQ(s.result.name, "ex");
 }
 
 /* ---- allocation failure ---------------------------------------------------------------------------------------------------------------------------- */
