@@ -426,12 +426,37 @@ TEST(CssomComputed, EveryColorInAValueIsItsUsedValue) {
        "</style></head><body><p id=a>x</p></body></html>");
   EXPECT_EQ(m.value("#a", "color"), "rgb(255, 0, 0)");
   EXPECT_EQ(m.value("#a", "background-image"), "linear-gradient(rgb(255, 0, 0), rgba(0, 0, 0, 0) 50%, rgb(255, 0, 0))");
-  EXPECT_EQ(m.value("#a", "text-shadow"), "rgb(0, 0, 255) 1px 2px 0px 0px, rgb(255, 0, 0) 3px 4px 0px 0px");
+  EXPECT_EQ(m.value("#a", "text-shadow"), "rgb(0, 0, 255) 1px 2px 0px, rgb(255, 0, 0) 3px 4px 0px");
   EXPECT_EQ(m.value("#a", "text-emphasis-color"), "rgb(0, 0, 128)");
   EXPECT_EQ(m.value("#a", "border-top-color"), "rgba(0, 0, 0, 0)");
   EXPECT_EQ(m.value("#a", "scrollbar-color"), "rgb(255, 0, 0) rgb(0, 0, 255)");
   EXPECT_EQ(m.value("#a", "filter"), "drop-shadow(rgb(128, 0, 128) 1px 1px 0px)");
   EXPECT_EQ(m.value("#a", "accent-color"), "auto") << "auto is not a color";
+}
+
+/* CSSOM, "serialize a CSS value": "If component values can be omitted or replaced with a shorter representation without changing the meaning of the value, omit/replace them." The computed
+   value of text-shadow is four lengths (a spread of 0px when none is written) and that of text-emphasis-style a pair of fill and shape; their resolved values are the shortest forms,
+   which is what both browsers write (a zero spread is left out and `filled`, which a lone shape means, is left out). The spread stays when it is not zero, `open` stays, and the
+   blur stays (Backgrounds 3 has it before the spread, and both browsers keep it). The computed value itself is unchanged. */
+TEST(CssomComputed, TheResolvedValueOfAShadowAndAnEmphasisStyleIsTheShortestForm) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#a{text-shadow:red 1px 2px 3px 4px, blue 1px 2px 3px 0px inset, green 5px 6px;text-emphasis-style:filled triangle}"
+       "#b{text-shadow:none;text-emphasis-style:open triangle}"
+       "#c{text-emphasis-style:filled}"
+       "#d{text-emphasis-style:open;text-shadow:red 1px 2px 0 0}"
+       "#e{text-emphasis-style:'x'}"
+       "#f{text-emphasis:filled dot red}"
+       "</style></head><body><p id=a>x</p><p id=b>x</p><p id=c>x</p><p id=d>x</p><p id=e>x</p><p id=f>x</p></body></html>");
+  EXPECT_EQ(m.value("#a", "text-shadow"), "rgb(255, 0, 0) 1px 2px 3px 4px, rgb(0, 0, 255) 1px 2px 3px inset, rgb(0, 128, 0) 5px 6px 0px");
+  EXPECT_EQ(m.value("#a", "text-emphasis-style"), "triangle");
+  EXPECT_EQ(m.value("#b", "text-shadow"), "none");
+  EXPECT_EQ(m.value("#b", "text-emphasis-style"), "open triangle");
+  EXPECT_EQ(m.value("#c", "text-emphasis-style"), "circle") << "a lone filled computes to circle in a horizontal mode";
+  EXPECT_EQ(m.value("#d", "text-emphasis-style"), "open circle");
+  EXPECT_EQ(m.value("#d", "text-shadow"), "rgb(255, 0, 0) 1px 2px 0px") << "an explicit zero spread is left out too";
+  EXPECT_EQ(m.value("#e", "text-emphasis-style"), "\"x\"");
+  EXPECT_EQ(m.value("#f", "text-emphasis-style"), "dot");
+  EXPECT_EQ(m.value("#f", "text-emphasis"), "dot rgb(255, 0, 0)");
 }
 
 TEST(CssomComputed, ACurrentcolorInsideAColorMixAndABoxShadowIsReplacedAndTheMixComputed) {

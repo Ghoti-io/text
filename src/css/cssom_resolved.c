@@ -568,6 +568,100 @@ static GTEXT_CSS_Status use_colors(rctx * r, const GTEXT_CSS_Value_Set * set, bo
   return GTEXT_CSS_OK;
 }
 
+/// Whether a computed length is the length zero (a calculation that is not a number yet is not).
+static bool zero_length(const GTEXT_CSS_Value * v) {
+  if (v->flags & GTEXT_CSS_VFLAG_MATH) {
+    return false;
+  }
+  return v->kind == GTEXT_CSS_VAL_ZERO || (v->kind == GTEXT_CSS_VAL_DIMENSION && v->number == 0.0);
+}
+
+/// Whether an item of a `text-shadow` list is a color, four lengths and maybe `inset` whose fourth length (the spread) is zero.
+static bool shadow_has_zero_spread(const GTEXT_CSS_Value * item) {
+  return item->kind == GTEXT_CSS_VAL_LIST && item->child_count >= 5 && item->children[0].kind == GTEXT_CSS_VAL_COLOR && zero_length(&item->children[4]);
+}
+
+/// The item without its spread; `*out` is a node of the set under construction.
+static void shadow_without_spread(css_vb * vb, const GTEXT_CSS_Value * item, GTEXT_CSS_Value * out) {
+  GTEXT_CSS_Value * kids = css_vb_values(vb, item->child_count - 1);
+  if (!kids) {
+    return;
+  }
+  memcpy(kids, item->children, 4 * sizeof *kids);
+  memcpy(kids + 4, item->children + 5, (item->child_count - 5) * sizeof *kids);
+  *out = *item;
+  out->children = kids;
+  out->child_count = item->child_count - 1;
+}
+
+/// The shortest serialization of the computed value (CSSOM, "serialize a CSS value": "If component values can be omitted or replaced with a shorter representation without changing the
+/// meaning of the value, omit/replace them."). `text-shadow` has four lengths as a computed value (Text Decoration 4: "four absolute lengths plus a computed color") and a spread of zero
+/// is what none written means, so it is left out; `text-emphasis-style` is a pair, and "If a shape keyword is specified but neither of filled nor open is specified, filled is assumed",
+/// so `filled` is left out. `*out` is the new set (owned), or NULL when the value is already the shortest.
+static GTEXT_CSS_Status shortest_form(rctx * r, const GTEXT_CSS_Property_Info * info, const GTEXT_CSS_Value_Set * set, GTEXT_CSS_Value_Set ** out) {
+  *out = NULL;
+  const GTEXT_CSS_Value * root = gtext_css_value_set_root(set);
+  if (!root || root->kind != GTEXT_CSS_VAL_LIST) {
+    return GTEXT_CSS_OK;
+  }
+  const bool emphasis = info->name_length == 19 && memcmp(info->name, "text-emphasis-style", 19) == 0;
+  bool need = false;
+  if (emphasis) {
+    need = root->child_count == 2 && root->children[0].kind == GTEXT_CSS_VAL_KEYWORD && root->children[0].text.length == 6 && memcmp(root->children[0].text.data, "filled", 6) == 0;
+  }
+  else if (root->separator == GTEXT_CSS_SEP_COMMA) {
+    for (size_t i = 0; i < root->child_count && !need; i++) {
+      need = shadow_has_zero_spread(&root->children[i]);
+    }
+  }
+  else {
+    need = shadow_has_zero_spread(root);
+  }
+  if (!need) {
+    return GTEXT_CSS_OK;
+  }
+  css_vb vb;
+  if (!css_vb_begin(&vb, &r->in->core->alloc, 0)) {
+    return GTEXT_CSS_E_OOM;
+  }
+  GTEXT_CSS_Value * rv = css_vb_value(&vb);
+  if (!rv) {
+    const GTEXT_CSS_Status status = vb.status ? vb.status : GTEXT_CSS_E_OOM;
+    css_vb_abort(&vb);
+    return status;
+  }
+  if (emphasis) {
+    *rv = root->children[1];
+  }
+  else if (root->separator == GTEXT_CSS_SEP_COMMA) {
+    GTEXT_CSS_Value * kids = css_vb_values(&vb, root->child_count);
+    for (size_t i = 0; kids && i < root->child_count; i++) {
+      if (shadow_has_zero_spread(&root->children[i])) {
+        shadow_without_spread(&vb, &root->children[i], &kids[i]);
+      }
+      else {
+        kids[i] = root->children[i];
+      }
+    }
+    *rv = *root;
+    rv->children = kids;
+  }
+  else {
+    shadow_without_spread(&vb, root, rv);
+  }
+  if (vb.status != GTEXT_CSS_OK || !css_vb_dep(&vb, set)) {
+    const GTEXT_CSS_Status status = vb.status ? vb.status : GTEXT_CSS_E_OOM;
+    css_vb_abort(&vb);
+    return status;
+  }
+  GTEXT_CSS_Value_Set * made = css_vb_finish(&vb, rv);
+  if (!made) {
+    return GTEXT_CSS_E_OOM;
+  }
+  *out = made;
+  return GTEXT_CSS_OK;
+}
+
 /// Ask the layout for the used value. `*out` is the set (owned) when the layout gave one; `*asked` says whether the callback exists.
 static GTEXT_CSS_Status ask_layout(rctx * r, const GTEXT_CSS_Property_Info * info, bool * asked, GTEXT_CSS_Value_Set ** out) {
   css_core * core = r->in->core;
@@ -776,6 +870,25 @@ static GTEXT_CSS_Status resolve_one(rctx * r, const GTEXT_CSS_Property_Info * in
     st = use_colors(r, computed, auto_is_current(info), owned);
     *origin = *owned ? GTEXT_CSSOM_ORIGIN_USED : GTEXT_CSSOM_ORIGIN_COMPUTED;
     return st;
+  case CSS_RESOLVED_SHORTEST: {
+    st = use_colors(r, computed, auto_is_current(info), owned);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+    *origin = *owned ? GTEXT_CSSOM_ORIGIN_USED : GTEXT_CSSOM_ORIGIN_COMPUTED;
+    GTEXT_CSS_Value_Set * made = NULL;
+    st = shortest_form(r, info, *owned ? *owned : computed, &made);
+    if (st != GTEXT_CSS_OK) {
+      gtext_css_value_set_free(*owned);
+      *owned = NULL;
+      return st;
+    }
+    if (made) {
+      gtext_css_value_set_free(*owned);   /* the new set holds its own count of what it shares */
+      *owned = made;
+    }
+    return GTEXT_CSS_OK;
+  }
   case CSS_RESOLVED_ANIMATION_DURATION:
     st = animation_duration(r, info, owned);
     *origin = *owned ? GTEXT_CSSOM_ORIGIN_USED : GTEXT_CSSOM_ORIGIN_COMPUTED;

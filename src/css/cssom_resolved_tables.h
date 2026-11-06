@@ -40,10 +40,10 @@
 typedef struct {
   const char * name;
   size_t length;
-  uint8_t category;   /* 0 computed, 1 used_color, 2 used_if_applies, 3 used_if_positioned, 4 line_height, 5 used, 6 animation_duration, 7 min_size_auto, 8 border_width, 9 count */
+  uint8_t category;   /* 0 computed, 1 used_color, 2 used_if_applies, 3 used_if_positioned, 4 line_height, 5 used, 6 animation_duration, 7 min_size_auto, 8 border_width, 9 shortest, 10 count */
 } css_resolved_row;
 
-#define CSS_RESOLVED_ROW_COUNT 62
+#define CSS_RESOLVED_ROW_COUNT 64
 static const css_resolved_row css_resolved_rows[CSS_RESOLVED_ROW_COUNT] = {
   {"animation-duration", 18, 6},
   {"background-color", 16, 1},
@@ -102,6 +102,8 @@ static const css_resolved_row css_resolved_rows[CSS_RESOLVED_ROW_COUNT] = {
   {"padding-top", 11, 2},
   {"perspective-origin", 18, 2},
   {"right", 5, 3},
+  {"text-emphasis-style", 19, 9},
+  {"text-shadow", 11, 9},
   {"top", 3, 3},
   {"transform", 9, 5},
   {"transform-origin", 16, 2},

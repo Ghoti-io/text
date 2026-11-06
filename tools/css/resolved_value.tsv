@@ -61,6 +61,8 @@ padding-right	used_if_applies	cssom	If the property applies to the element or ps
 padding-top	used_if_applies	cssom	If the property applies to the element or pseudo-element and the resolved value of the display property is not none or contents, then the resolved value is the used value. Otherwise the resolved value is the computed value.
 perspective-origin	used_if_applies	css-transforms-2	The perspective-origin property is a resolved value special case property like height.
 right	used_if_positioned	cssom	If the property applies to a positioned element and the resolved value of the display property is not none or contents, and the property is not over-constrained, then the resolved value is the used value. Otherwise the resolved value is the computed value.
+text-emphasis-style	shortest	cssom	If component values can be omitted or replaced with a shorter representation without changing the meaning of the value, omit/replace them.
+text-shadow	shortest	cssom	If component values can be omitted or replaced with a shorter representation without changing the meaning of the value, omit/replace them.
 top	used_if_positioned	cssom	If the property applies to a positioned element and the resolved value of the display property is not none or contents, and the property is not over-constrained, then the resolved value is the used value. Otherwise the resolved value is the computed value.
 transform	used	css-transforms-2	When the computed value is a <transform-list>, the resolved value is one <matrix()> function or one <matrix3d()> function computed by the following algorithm:
 transform-origin	used_if_applies	css-transforms-1	The transform-origin property is a resolved value special case property like height.
