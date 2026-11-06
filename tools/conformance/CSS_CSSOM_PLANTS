@@ -391,5 +391,13 @@ shortest-keeps-a-zero-spread	cssom_resolved.c	(v->kind == GTEXT_CSS_VAL_DIMENSIO
 shortest-drops-a-spread-that-is-not-zero	cssom_resolved.c	children[0].kind == GTEXT_CSS_VAL_COLOR && zero_length(&item->children[4]);	children[0].kind == GTEXT_CSS_VAL_COLOR && 1;	computed
 shortest-keeps-filled	cssom_resolved.c	memcmp(root->children[0].text.data, "filled", 6) == 0;	memcmp(root->children[0].text.data, "filled", 6) != 0;	computed
 shortest-writes-the-fill-for-the-shape	cssom_resolved.c	    *rv = root->children[1];	    *rv = root->children[0];	computed
-marker-skip-ink-left-out	css_pseudo_apply.c	if (n == 24 && memcmp(name, "text-decoration-skip-ink", 24) == 0) {	if (0) {	computed
+function-duplicate-parameter-accepted	css_custom_function.c	if (d->params[k].name_len == prm.name_len &&	if (0 && d->params[k].name_len == prm.name_len &&	functionset
+function-default-not-checked-against-its-type	css_custom_function.c	        if (!matched) {	        if (0) {	functionset
+function-weaker-layer-replaces	css_custom_function.c	if (layer_compare(s, layer, held->layer) < 0) {	if (0) {	functionset
+function-name-needs-no-dashes	css_custom_function.c	if (!css_creg_name_ok(fn->value.data, fn->value.length)) {	if (0) {	functionset
+function-result-takes-important	css_custom_function.c	if (ieq(&decl->name, "result") && !decl->important) {	if (ieq(&decl->name, "result")) {	functionset
+function-anything-follows-the-parameters	css_custom_function.c	|| !ieq(&p[ra].value, "returns")) {	|| 0) {	functionset
+function-conditional-body-not-entered	css_custom_function.c	        stack[top++] = (body_frame){item->rule, 0};	        (void)item;	functionset
+function-too-many-parameters-accepted	css_custom_function.c	if (count > s->opt.max_parameters) {	if (0) {	functionset
 line-height-length-asks-the-layout	cssom_resolved.c	root->unit == GTEXT_CSS_UNIT_PX))) {	root->unit == GTEXT_CSS_UNIT_PX) && 0)) {	computed
+marker-skip-ink-left-out	css_pseudo_apply.c	if (n == 24 && memcmp(name, "text-decoration-skip-ink", 24) == 0) {	if (0) {	computed

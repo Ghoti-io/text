@@ -413,6 +413,28 @@ are listed with the reason in `tools/css/UNEXTRACTED_VARIABLES`; the cases it fa
 
 ## Not here
 
-`@function` and custom functions; `first-valid()`; the animation and transition of custom properties; the used
+The evaluation of a custom function (`--name()`: the definitions are read, see above); `first-valid()`; the animation and transition of custom properties; the used
 value of anything; `revert` resolved after a substitution; the `CSS` object of a browser (the registry builder and the `@property` set are what it
 would call).
+
+## `@function` definitions
+
+`css/css_custom_function.h` reads the `@function` rules of stylesheets into the custom functions of CSS Functions and Mixins 1, the way `css/css_at_property.h` reads
+`@property`. **Only the definitions are read: a call (`--name(args)`) is not evaluated yet, and a value that holds one is still the guaranteed-invalid value at
+computed-value time.**
+
+```text
+GTEXT_CSS_Function_Set * set = NULL;
+gtext_css_function_set_new(registry, NULL, &set);          /* options: the allocator, `active` for @media and @supports, limits */
+gtext_css_function_collect(set, tree, NULL);               /* the trees must outlive the set: the body of a rule is read from them */
+
+GTEXT_CSS_Function_Info info;
+if (gtext_css_function_find(set, "--double", 8, &info)) {
+  /* info.parameter_count, info.returns, info.has_result, info.rule (the body) */
+}
+```
+
+A rule is invalid, ignored and reported (`gtext_css_function_diagnostic()`), when the function token does not begin with two dashes (`@function --foo ()` is a name
+and a block, not a function), a parameter is not `--name [<type>] [: <default>]`, a name is a parameter twice, a type is not one syntax component (or `type(...)`),
+or a default is not a value of its type. A declaration of the body that is neither `result` nor a custom property is ignored and reported, and the rule stands.
+Of several rules of one name the one in the stronger cascade layer wins, and the later one within a layer; the loser is reported as `superseded`.

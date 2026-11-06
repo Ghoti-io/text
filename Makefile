@@ -1169,6 +1169,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_anim_sample.c \
 	src/css/css_atrule_set.c \
 	src/css/css_at_property.c \
+	src/css/css_custom_function.c \
 	src/css/css_block.c \
 	src/css/cssom_computed.c \
 	src/css/cssom_core.c \

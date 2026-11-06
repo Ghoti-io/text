@@ -40,6 +40,7 @@
 #include <ghoti.io/text/macros.h>
 
 #include <ghoti.io/text/css/css_at_property.h>
+#include <ghoti.io/text/css/css_custom_function.h>
 #include <ghoti.io/text/css/css_atrule.h>
 #include <ghoti.io/text/css/css_atrule_set.h>
 #include <ghoti.io/text/css/css_counter_style.h>
