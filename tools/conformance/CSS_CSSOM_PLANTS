@@ -416,7 +416,7 @@ pending-longhand-not-written	css_shorthand_serialize.c	      put_declaration(out
 pending-longhand-important-dropped	css_shorthand_serialize.c	      put_declaration(out, info.name, info.name_length, "", 0, it->important, first);	      put_declaration(out, info.name, info.name_length, "", 0, false, first);	decl
 substitution-text-not-read	css_property.c	  const GTEXT_CSS_String * written = declaration->original_text.data ? &declaration->original_text : &declaration->substitution_text;	  const GTEXT_CSS_String * written = declaration->original_text.data ? &declaration->original_text : &declaration->original_text;	decl
 substitution-text-never-kept	css_parser.c	      if (found && !css_filtered_text(	      if (found && 0 && !css_filtered_text(	decl
-pseudo-content-normal-stays-normal	css_style.c	  if (st == GTEXT_CSS_OK && is_before_after(options->pseudo)) {	  if (st == GTEXT_CSS_OK && 0 && is_before_after(options->pseudo)) {	computed
+pseudo-content-normal-stays-normal	css_style.c	  if (st == GTEXT_CSS_OK && !*again && is_before_after(options->pseudo)) {	  if (st == GTEXT_CSS_OK && !*again && 0 && is_before_after(options->pseudo)) {	computed
 pseudo-content-every-pseudo	css_style.c	  return (s->name.length == 6 && memcmp(s->name.data, "before", 6) == 0) ||	  return s->name.length > 0 || (s->name.length == 6 && memcmp(s->name.data, "before", 6) == 0) ||	computed
 if-bang-branch-accepted	css_substitute.c	          if (is_tok(v, GTEXT_CSS_TOKEN_DELIM) && v->delim == '!') {	          if (0 && is_tok(v, GTEXT_CSS_TOKEN_DELIM) && v->delim == '!') {	custom
 rule-inset-written-short	css_shorthand_serialize.c	    if (!texteq(cs, ce) || !texteq(cs, js) || !texteq(cs, je)) {	    if (!texteq(cs, js) || !texteq(ce, je)) {	shorthand,computed
