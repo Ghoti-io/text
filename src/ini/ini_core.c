@@ -1090,17 +1090,25 @@ bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
     /*
      * Everything between `[` and the first `]`, and a space is fine: measured,
      * `[Serv ice]` is a section named `Serv ice` and systemd reports it as an
-     * *unknown section* rather than as a syntax error. A terminator is allowed for
-     * the same reason it is in a key - the name may be continued, and the parser is
-     * the gate.
+     * *unknown section* rather than as a syntax error. A line terminator is
+     * refused, below.
      */
     if (!len) return false;
     for (size_t i = 0; i < len; i++) {
       unsigned char c = (unsigned char) name[i];
       if (c == '[' || c == ']') return false;
-      if ((c == '\n' || c == '\r') &&
-          dialect->continuation == GTEXT_INI_CONTINUATION_NONE) {
-        return false;
+      /* A line terminator is a part of a name only as the end of a continuation line (a backslash before it, with a carriage return between for CR LF), and the
+         dialect has to have one: the parser keeps the raw spelling of a header, `Serv\<LF>ice`, and the writer writes a name as it is, so a bare line end would be
+         written as two lines for a group that no file has (the fuzz harness for the writer found `[<LF><VT>]`) */
+      if (c == '\n' || c == '\r') {
+        if (dialect->continuation == GTEXT_INI_CONTINUATION_NONE) {
+          return false;
+        }
+        const bool after_backslash = i > 0 && name[i - 1] == '\\';
+        const bool after_cr = c == '\n' && i > 1 && name[i - 1] == '\r' && name[i - 2] == '\\';
+        if (!after_backslash && !after_cr) {
+          return false;
+        }
       }
     }
     return true;

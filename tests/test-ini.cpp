@@ -2340,6 +2340,19 @@ TEST(IniSystemd, TheContinuationSkipsACommentBlockAndStopsAtABlankLine) {
   gtext_ini_free(doc);
 }
 
+TEST(IniSystemd, AGroupNameWithALineTerminatorIsRefusedBecauseNoFileSpellsIt) {
+  /* fuzz_ini_writer: `add_group("\n\v")` was accepted, and the writer wrote `[`, a line end, a vertical tab and `]` over two lines, which parse back as no such group. */
+  GTEXT_INI_Parse_Options popts = gtext_ini_parse_options_default();
+  popts.dialect = gtext_ini_dialect_systemd();
+  GTEXT_INI_Document * doc = gtext_ini_new(&popts);
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * g = nullptr;
+  EXPECT_EQ(gtext_ini_document_add_group(doc, "a\nb", &g), GTEXT_INI_E_BAD_GROUP);
+  EXPECT_EQ(gtext_ini_document_add_group(doc, "a\rb", &g), GTEXT_INI_E_BAD_GROUP);
+  EXPECT_EQ(gtext_ini_document_add_group(doc, "a b", &g), GTEXT_INI_OK);
+  gtext_ini_free(doc);
+}
+
 TEST(IniSystemd, AContinuationMayAppearInAHeaderOrAKey) {
   /*
    * **The structural finding, and it is not in the manual.** systemd assembles the
