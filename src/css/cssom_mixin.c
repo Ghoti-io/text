@@ -44,7 +44,8 @@ static GTEXT_CSS_Status put_ident(tbuf * out, const char * name, size_t length) 
   memset(&sink, 0, sizeof sink);
   sink.user = out;
   sink.write = ident_write;
-  return css_serialize_identifier_text(name, length, false, &sink);
+  const GTEXT_CSS_Status st = css_serialize_identifier_text(name, length, false, &sink);
+  return st == GTEXT_CSS_E_WRITE ? GTEXT_CSS_E_OOM : st;   /* the sink is a buffer of ours: one that could not take the bytes says E_WRITE, and here that is memory */
 }
 
 /// Whether a `@contents` rule is anywhere inside the rule: "True if the mixin accepts a contents block". An explicit stack, so that a nest of any depth is read with no recursion.

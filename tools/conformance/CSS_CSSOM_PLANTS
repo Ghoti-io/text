@@ -453,3 +453,4 @@ insert-into-a-mixin-forgets-the-mixin	cssom_insert.c	    if (x->kind == GTEXT_CS
 braced-argument-keeps-its-braces	css_custom_function.c	        list[n].values = args[x].children;\n        list[n].count = args[x].child_count;	        list[n].values = args + x;\n        list[n].count = 1;	mixin
 default-not-checked-against-the-type	css_custom_function.c	        if (!matched) {\n          css_compiled_syntax_free(p->type);\n          p->type = NULL;\n          *verdict = PRE_BAD_DEFAULT;	        if (0 && !matched) {\n          css_compiled_syntax_free(p->type);\n          p->type = NULL;\n          *verdict = PRE_BAD_DEFAULT;	mixin
 attr-with-a-type-that-does-not-parse-is-an-empty-string	css_substitute.c	    if (type_written) {	    if (0 && type_written) {	custom
+mixin-member-out-of-memory-reported-as-a-write-failure	cssom_mixin.c	  return st == GTEXT_CSS_E_WRITE ? GTEXT_CSS_E_OOM : st;	  return st;	mixin

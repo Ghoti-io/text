@@ -36,6 +36,7 @@
 #include <gtest/gtest.h>
 
 #include "cssom_test_support.h"
+#include "markup_test_support.h"
 
 using namespace cot;
 
@@ -549,6 +550,93 @@ TEST(CssomMixin, GetArgumentsIsTheArgumentsOfTheApply) {
   }
   GTEXT_CSSOM_String_List l{};
   EXPECT_EQ(gtext_cssom_apply_get_arguments(path(s, {0}).r, &l), GTEXT_CSS_E_UNSUPPORTED);
+}
+
+/* ---- allocation failure ------------------------------------------------------------------------------------------------------------------------- */
+
+// Every allocation of the text of a mixin, an @apply and an @contents, and of the members that read their preludes, fails in turn: the call is the one it would have been or is
+// out of memory, the rule is as it was, and nothing is held once the document is released.
+TEST(CssomMixinOom, EveryAllocationOfTheTextAndTheMembersFailsCleanly) {
+  const char * const text =
+      "@mixin --m(--a <length>: 1px, --b type(<color> | auto), --c) { color: var(--a); @media print { @contents { color: red } } & > p { @apply --n(1px, {a, b}) { width: 1px } } }"
+      " div { @apply --m(2px, red); @apply --k; }";
+  std::string want_mixin, want_apply;
+  {
+    Doc doc;
+    Sheet s(doc, text);
+    ASSERT_EQ(s.status, GTEXT_CSS_OK);
+    want_mixin = css(at(s.rules(), 0).r);
+    want_apply = css(path(s, {1, 0}).r);
+  }
+  size_t failures = 0;
+  for (size_t n = 1; n < 100000; n++) {
+    FaultAllocator fa;
+    bool done = false;
+    {
+      Doc doc(nullptr, &fa.alloc);
+      Sheet s(doc, text);
+      ASSERT_EQ(s.status, GTEXT_CSS_OK);
+      Rule m = at(s.rules(), 0);
+      Rule a = path(s, {1, 0});
+      ASSERT_TRUE(m && a);
+      fa.arm(n);
+      char * out = nullptr;
+      size_t len = 0;
+      GTEXT_CSS_Status st = gtext_cssom_rule_css_text(m.r, &out, &len);
+      if (st == GTEXT_CSS_OK) {
+        EXPECT_EQ(take(doc.core(), out), want_mixin) << n;
+      }
+      else {
+        EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n;
+      }
+      st = gtext_cssom_rule_css_text(a.r, &out, &len);
+      if (st == GTEXT_CSS_OK) {
+        EXPECT_EQ(take(doc.core(), out), want_apply) << n;
+      }
+      else {
+        EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n;
+      }
+      GTEXT_CSSOM_Function_Parameters ps{};
+      st = gtext_cssom_mixin_get_parameters(m.r, &ps);
+      if (st == GTEXT_CSS_OK) {
+        EXPECT_EQ(ps.count, 3u) << n;
+        gtext_cssom_buffer_free(&doc.core()->alloc, static_cast<char *>(ps.block));
+      }
+      else {
+        EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n;
+      }
+      GTEXT_CSSOM_String_List l{};
+      st = gtext_cssom_apply_get_arguments(a.r, &l);
+      if (st == GTEXT_CSS_OK) {
+        EXPECT_EQ(l.count, 2u) << n;
+        gtext_cssom_buffer_free(&doc.core()->alloc, static_cast<char *>(l.block));
+      }
+      else {
+        EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n;
+      }
+      char * name = nullptr;
+      bool is_null = false;
+      st = gtext_cssom_rule_get_attribute(m.r, "contents", 8, &name, &len, &is_null);
+      if (st == GTEXT_CSS_OK) {
+        EXPECT_EQ(take(doc.core(), name), "true") << n;
+      }
+      else {
+        EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n;
+      }
+      done = !fa.failed;
+      fa.disarm();
+      if (!done) {
+        failures++;
+      }
+      EXPECT_EQ(css(m.r), want_mixin) << "after allocation " << n << " failed";
+    }
+    EXPECT_TRUE(fa.live.empty()) << "allocation " << n << " leaked";
+    EXPECT_EQ(fa.bad_frees, 0u);
+    if (done) {
+      break;
+    }
+  }
+  EXPECT_GT(failures, 10u);
 }
 
 } // namespace
