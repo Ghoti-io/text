@@ -56,6 +56,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "css_fndef.h"
 #include "css_style_range.h"
 #include "css_substitute_internal.h"
 
@@ -71,6 +72,10 @@
 #define LIMIT_MAX_BYTES ((size_t)1 << 30)
 #define DEFAULT_MAX_DEPTH ((size_t)100000)
 #define LIMIT_MAX_DEPTH ((size_t)1 << 24)
+#define DEFAULT_MAX_CALL_DEPTH ((size_t)1024)
+#define LIMIT_MAX_CALL_DEPTH ((size_t)1 << 20)
+#define DEFAULT_MAX_FN_DECLARATIONS ((size_t)65536)
+#define LIMIT_MAX_FN_DECLARATIONS ((size_t)1 << 24)
 
 GTEXT_CSS_Substitute_Options gtext_css_substitute_options_default(void) {
   GTEXT_CSS_Substitute_Options o;
@@ -81,6 +86,8 @@ GTEXT_CSS_Substitute_Options gtext_css_substitute_options_default(void) {
   o.max_value_bytes = DEFAULT_MAX_BYTES;
   o.max_substitution_depth = DEFAULT_MAX_DEPTH;
   o.max_element_substituted_bytes = DEFAULT_MAX_ELEMENT_BYTES;
+  o.max_call_depth = DEFAULT_MAX_CALL_DEPTH;
+  o.max_function_declarations = DEFAULT_MAX_FN_DECLARATIONS;
   return o;
 }
 
@@ -108,12 +115,16 @@ static bool fn_name_is(const GTEXT_CSS_String * name, const char * lower) {
 }
 
 typedef enum {
-  K_NONE = 0, K_VAR, K_ENV, K_ATTR, K_IF, K_INHERIT, K_IDENT, K_RANDOM_ITEM, K_RANDOM, K_SIBLING_INDEX, K_SIBLING_COUNT
+  K_NONE = 0, K_VAR, K_ENV, K_ATTR, K_IF, K_INHERIT, K_IDENT, K_RANDOM_ITEM, K_RANDOM, K_SIBLING_INDEX, K_SIBLING_COUNT, K_CALL
 } fn_kind;
 
 static fn_kind kind_of(const GTEXT_CSS_Component_Value * v) {
   if (v->kind != GTEXT_CSS_VALUE_FUNCTION) {
     return K_NONE;
+  }
+  /* Mixins 1, "Using Custom Functions": "A <dashed-function> is a functional notation whose function name starts with two dashes" */
+  if (v->value.length > 2 && v->value.data[0] == '-' && v->value.data[1] == '-') {
+    return K_CALL;
   }
   switch (v->value.length) {
   case 2:
@@ -308,7 +319,8 @@ typedef enum {
   FR_IDENT,
   FR_RANDOM_ITEM,
   FR_RANDOM,
-  FR_TREE
+  FR_TREE,
+  FR_CALL
 } fr_kind;
 
 typedef struct {
@@ -371,6 +383,15 @@ typedef struct {
   const css_compiled_syntax * csyn;         ///< ATTR, mode 4: the syntax.
   bool csyn_temp;                           ///< The syntax is the frame's own.
   bool guarded;                             ///< ATTR: the attribute is in the guard table for this frame.
+  /* the scope the frame reads custom properties in (the element's, or a function's) */
+  struct scope * scope;
+  /* CALL: a custom function being evaluated (Mixins 1, "Evaluating Custom Functions") */
+  const css_fn_def * def;                   ///< The function; NULL until the name is dereferenced.
+  slot_t * cargs;                           ///< The arguments, substituted in the calling context (`nargs` of them).
+  struct scope * sc_args;                   ///< The scope of the argument rule ("Resolve function styles" with the argument rule); released once the body scope has been made.
+  struct scope * sc_body;                   ///< The scope of the body rule.
+  bool in_calls;                            ///< Counted in `sub->ncalls`.
+  bool fguard;                              ///< The function is in the guard table for this frame (its substitution context is guarded).
 } frame_t;
 
 typedef enum {
@@ -379,21 +400,57 @@ typedef enum {
   ENT_DONE
 } ent_state;
 
+/// What an entry is: a custom property the element declares, or, in the scope of a function, a parameter, a local variable (a custom property of the body), or the
+/// `result` descriptor.
+typedef enum {
+  EK_ELEMENT = 0,
+  EK_PARAM,
+  EK_LOCAL,
+  EK_RESULT
+} ent_kind;
+
 typedef struct {
   GTEXT_CSS_String name;
-  size_t item;                              ///< The index in the block of the declaration that counts.
+  size_t item;                              ///< The index in the block of the declaration that counts (the element's); the order of declaration, in a function's scope.
   ent_state state;
   GTEXT_CSS_Custom_Value * value;           ///< DONE: the computed value (retained); NULL is the guaranteed-invalid value.
   long reg;                                 ///< The registered custom property's place in the context's table, or -1.
   size_t frame;                             ///< INPROGRESS: the frame computing it.
+  ent_kind kind;
+  const char * text;                        ///< EK_LOCAL, EK_RESULT: the declared value (borrowed: from the rule, or from the scope's own texts).
+  size_t text_len;
+  size_t param;                             ///< EK_PARAM: its index among the parameters; EK_LOCAL: the parameter of the same name that it hides, or SIZE_MAX.
+  const css_ereg * ereg;                    ///< In a function's scope: the registration of the name there (a parameter's, or `result`'s), or NULL.
 } entry_t;
+
+/// A scope: where `var()` looks a name up. The element's has the custom properties it declares; a function's has its parameters, its local variables and `result`, and a
+/// parent: the scope of its calling context (Mixins 1: the "hypothetical element" "acts as a child of calling context's element", so what it does not declare it
+/// inherits from there).
+typedef struct scope {
+  struct scope * parent;
+  const css_fn_def * fn;                    ///< NULL for the element's.
+  entry_t * entries;                        ///< Sorted by name (bytes); one per name.
+  size_t nentries;
+  css_creg * cregs;                         ///< A function's scope: a registration for each parameter and, at the end, for `result` (the parameter types, "inherits: true"; the return type, "inherits: false").
+  css_ereg * eregs;
+  GTEXT_CSS_Custom_Value ** pvals;          ///< The body's scope: the value each parameter has in the argument styles (retained), which is its registration's initial value.
+  slot_t * args;                            ///< The argument scope: the arguments (borrowed from the CALL frame).
+  size_t nargs;
+  char ** owned;                            ///< Texts made for declarations (serialized `result` values).
+  size_t nowned, capowned;
+} scope_t;
+
+typedef struct {
+  const css_fn_def * def;
+  size_t frame;
+  size_t next;                              ///< Index + 1 of the next node of the bucket.
+} gnode_t;
 
 struct css_sub {
   css_state * st;
   const GTEXT_CSS_Compute_Context * cc;
   GTEXT_Allocator alloc;
-  entry_t * entries;
-  size_t nentries;
+  scope_t root;                             ///< The element's scope.
   frame_t * frames;
   size_t nframes, capframes;
   size_t max_depth;
@@ -415,6 +472,13 @@ struct css_sub {
     size_t frame;
   } * aguards;
   size_t naguards, capaguards;
+  /* custom functions: the calls in progress, and the functions whose substitution context is guarded, in a hash of their addresses (chained through `gnodes`, a stack
+     because frames end in the order they began) */
+  size_t ncalls;
+  size_t max_calls, max_fn_decls;
+  gnode_t * gnodes;
+  size_t ngnodes, capgnodes;
+  size_t * gbuckets;                        ///< Index + 1 of the newest node of each bucket; GUARD_BUCKETS of them, or NULL before the first call.
   /* random values */
   const char * prop;
   size_t prop_len;
@@ -490,9 +554,25 @@ static void slot_clear(slot_t * s) {
 }
 
 static void cond_free(const GTEXT_Allocator * alloc, void * cond);
+static void scope_free(css_sub * sub, scope_t * sc);
+static void guard_pop(css_sub * sub, const css_fn_def * def);
 
 static void frame_release(css_sub * sub, frame_t * f) {
   GTEXT_Allocator a = sub->alloc;
+  if (f->kind == FR_CALL) {
+    if (f->fguard) {
+      guard_pop(sub, f->def);
+    }
+    if (f->in_calls) {
+      sub->ncalls--;
+    }
+    scope_free(sub, f->sc_body);
+    scope_free(sub, f->sc_args);
+    for (size_t i = 0; i < f->nargs; i++) {
+      slot_clear(&f->cargs[i]);
+    }
+    gtext_allocator_free(&a, f->cargs);
+  }
   css_rope_release(f->acc);
   css_rope_release(f->out);
   slot_clear(&f->arrived);
@@ -534,10 +614,13 @@ static frame_t * frame_push(css_sub * sub, fr_kind kind, GTEXT_CSS_Status * stat
     sub->frames = g;
     sub->capframes = cap;
   }
+  /* a frame reads custom properties in the scope of the frame that started it, until it is given another */
+  scope_t * scope = sub->nframes ? sub->frames[sub->nframes - 1].scope : &sub->root;
   frame_t * f = &sub->frames[sub->nframes++];
   memset(f, 0, sizeof *f);
   f->kind = kind;
   f->run_start = SIZE_MAX;
+  f->scope = scope;
   return f;
 }
 
@@ -733,6 +816,7 @@ static fr_kind frame_kind_of(fn_kind k) {
   case K_IDENT: return FR_IDENT;
   case K_RANDOM_ITEM: return FR_RANDOM_ITEM;
   case K_RANDOM: return FR_RANDOM;
+  case K_CALL: return FR_CALL;
   default: return FR_TREE;
   }
 }
@@ -1244,11 +1328,11 @@ static int entry_cmp(const void * x, const void * y) {
   return a->item < b->item ? -1 : a->item > b->item ? 1 : 0;
 }
 
-static entry_t * find_entry(css_sub * sub, const char * name, size_t len) {
-  size_t lo = 0, hi = sub->nentries;
+static entry_t * find_entry(css_sub * sub, scope_t * sc, const char * name, size_t len) {
+  size_t lo = 0, hi = sc->nentries;
   while (lo < hi) {
     const size_t mid = lo + (hi - lo) / 2;
-    entry_t * e = &sub->entries[mid];
+    entry_t * e = &sc->entries[mid];
     const size_t n = len < e->name.length ? len : e->name.length;
     int c = n ? memcmp(name, e->name.data, n) : 0;
     if (c == 0) {
@@ -1287,13 +1371,20 @@ static const GTEXT_CSS_Custom_Value * undeclared_value(css_sub * sub, const char
   return parent_value(sub, name, len, -1);
 }
 
-/// Look a custom property up for the frame `fi`, putting its value in `slot`. 0: it is there (rope or the guaranteed-invalid value); 1: a frame was started that
-/// will deliver it; -1: failure. `*in_progress` says that the property is the one being computed (a `style()` query is false then, and nothing is marked).
-static int lookup_custom(css_sub * sub, size_t fi, int slot, const char * name, size_t len, bool query, bool * in_progress) {
+/// Look a custom property up for the frame `fi`, starting in the scope `sc`, putting its value in `slot`. 0: it is there (rope or the guaranteed-invalid value); 1: a frame
+/// was started that will deliver it; -1: failure. `*in_progress` says that the property is the one being computed (a `style()` query is false then, and nothing is marked).
+/// A name a function's scope does not declare is the calling context's: the scope's parent is asked, up to the element's, and then the element's inherited value.
+static int lookup_in(css_sub * sub, size_t fi, int slot, scope_t * sc, const char * name, size_t len, bool query, bool * in_progress) {
   if (in_progress) {
     *in_progress = false;
   }
-  entry_t * e = find_entry(sub, name, len);
+  entry_t * e = NULL;
+  for (; sc; sc = sc->parent) {
+    e = find_entry(sub, sc, name, len);
+    if (e) {
+      break;
+    }
+  }
   if (!e) {
     slot_set(&sub->frames[fi], slot, undeclared_value(sub, name, len));
     return 0;
@@ -1316,7 +1407,7 @@ static int lookup_custom(css_sub * sub, size_t fi, int slot, const char * name, 
   default:
     break;
   }
-  const size_t ei = (size_t)(e - sub->entries);
+  const size_t ei = (size_t)(e - sc->entries);
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
   /* the stack keeps room for what one more property may nest inside it (a value nests at most as deep as the parser reads, 512 blocks), so that the property
      that is one too many is the guaranteed-invalid value and not a failure of everything */
@@ -1334,8 +1425,26 @@ static int lookup_custom(css_sub * sub, size_t fi, int slot, const char * name, 
     return -1;
   }
   p->entry = ei;
+  p->scope = sc;
   sub->frames[fi].wait_slot = slot;
   return 1;
+}
+
+static int lookup_custom(css_sub * sub, size_t fi, int slot, const char * name, size_t len, bool query, bool * in_progress) {
+  return lookup_in(sub, fi, slot, sub->frames[fi].scope, name, len, query, in_progress);
+}
+
+/// What `inherit()` (and `inherit`, in a function) reads: the value the calling context has for the name. For the element that is its parent's computed value; for a
+/// function's scope it is the scope of the call (the element's own value, or the calling function's), since the function's hypothetical element is a child of that.
+static int inherit_custom(css_sub * sub, size_t fi, int slot, const char * name, size_t len) {
+  scope_t * sc = sub->frames[fi].scope;
+  if (sc->fn) {
+    return lookup_in(sub, fi, slot, sc->parent, name, len, false, NULL);
+  }
+  size_t reg = 0;
+  const bool reged = sub->cc->nregs && css_ctx_find_reg(sub->cc, name, len, &reg);
+  slot_set(&sub->frames[fi], slot, parent_value(sub, name, len, reged ? (long)reg : -1));
+  return 0;
 }
 
 /* ---- var(), inherit() --------------------------------------------------------------------------------------------- */
@@ -1399,9 +1508,13 @@ static int step_var(css_sub * sub, size_t fi) {
     f->phase = 12;
     if (ok == 1) {
       if (inherit) {
-        size_t reg = 0;
-        const bool reged = sub->cc->nregs && css_ctx_find_reg(sub->cc, f->u.n.name, f->u.n.name_len, &reg);
-        slot_set(f, 1, parent_value(sub, f->u.n.name, f->u.n.name_len, reged ? (long)reg : -1));
+        const int r = inherit_custom(sub, fi, 1, f->u.n.name, f->u.n.name_len);
+        if (r < 0) {
+          return STEP_ERROR;
+        }
+        if (r == 1) {
+          return STEP_PUSHED;
+        }
       }
       else {
         const int r = lookup_custom(sub, fi, 1, f->u.n.name, f->u.n.name_len, false, NULL);
@@ -4141,13 +4254,16 @@ static int step_if(css_sub * sub, size_t fi) {
 
 /// The registration of an entry, or NULL.
 static const css_ereg * entry_reg(css_sub * sub, const entry_t * e) {
+  if (e->ereg) {
+    return e->ereg;
+  }
   return e->reg >= 0 ? &sub->cc->regs[e->reg] : NULL;
 }
 
 /// Settle an entry with a value (retained; NULL is the guaranteed-invalid value), and the frame's result.
 static void prop_settle(css_sub * sub, size_t fi, GTEXT_CSS_Custom_Value * v /* taken */) {
   frame_t * f = &sub->frames[fi];
-  entry_t * e = &sub->entries[f->entry];
+  entry_t * e = &f->scope->entries[f->entry];
   gtext_css_custom_value_free(e->value);
   e->value = v;
   e->state = ENT_DONE;
@@ -4223,85 +4339,158 @@ static GTEXT_CSS_Status rope_wide_keyword(css_sub * sub, css_rope * rope, int * 
   return GTEXT_CSS_OK;
 }
 
+static int prop_finish(css_sub * sub, size_t fi);
+
+/// Read the source of a custom property's value (`text`) and start replacing the functions in it: the frame goes on in `prop_finish()` when the value has arrived.
+static int prop_start_seq(css_sub * sub, size_t fi, const char * text, size_t len) {
+  frame_t * f = &sub->frames[fi];
+  entry_t * e = &f->scope->entries[f->entry];
+  css_state * st = sub->st;
+  if (len > sub->max_bytes) {
+    SUB_FAIL(sub, css_st_fail(st, GTEXT_CSS_E_LIMIT_CUSTOM_VALUE, e->name.data, "a custom property value is longer than max_value_bytes"));
+    return STEP_ERROR;
+  }
+  src_t * src = NULL;
+  const GTEXT_CSS_Status status = src_open(&sub->alloc, text, len, NULL, false, &src);
+  if (status != GTEXT_CSS_OK) {
+    SUB_FAIL(sub, status == GTEXT_CSS_E_OOM ? status : css_st_fail(st, status, e->name.data, "the value of a custom property could not be read"));
+    return STEP_ERROR;
+  }
+  f = &sub->frames[fi];
+  src_close(&sub->alloc, f->own_src);
+  f->own_src = src;
+  f->src = src;
+  f->phase = 1;
+  const int r = seq_start(sub, fi, 0, src, src->tree->values, src->tree->value_count, false);
+  if (r < 0) {
+    return STEP_ERROR;
+  }
+  if (r == 1) {
+    sub->frames[sub->nframes - 1].run_from = 0; /* what comes before the first token (a comment) is part of the value */
+    return STEP_PUSHED;
+  }
+  return prop_finish(sub, fi);
+}
+
 static int step_prop(css_sub * sub, size_t fi) {
   frame_t * f = &sub->frames[fi];
-  entry_t * e = &sub->entries[f->entry];
+  scope_t * sc = f->scope;
+  entry_t * e = &sc->entries[f->entry];
   css_state * st = sub->st;
-  GTEXT_CSS_Status status;
   if (f->phase == 0) {
-    GTEXT_CSS_Declaration_Item it;
-    if (!gtext_css_block_item(st->block, e->item, &it)) {
-      SUB_FAIL(sub, css_st_fail(st, GTEXT_CSS_E_INTERNAL, NULL, "the block changed while it was read"));
-      return STEP_ERROR;
-    }
     e->state = ENT_INPROGRESS;
     e->frame = fi;
-    const css_ereg * reg = entry_reg(sub, e);
-    if (it.outcome == GTEXT_CSS_PROP_RESULT_WIDE) {
-      const GTEXT_CSS_Custom_Value * v = NULL;
-      switch (it.wide) {
-      case GTEXT_CSS_WIDE_INITIAL:
-        v = reg ? reg->initial : NULL;
-        break;
-      case GTEXT_CSS_WIDE_INHERIT:
-        v = parent_value(sub, e->name.data, e->name.length, e->reg);
-        break;
-      case GTEXT_CSS_WIDE_UNSET:
-        v = !reg || reg->creg->inherits ? parent_value(sub, e->name.data, e->name.length, e->reg) : reg->initial;
-        break;
-      default:
-        SUB_FAIL(sub, css_st_fail(st, GTEXT_CSS_E_INVALID, "--*", "revert and revert-layer are the cascade's: they are resolved before a style is computed"));
+    const char * text = "";
+    size_t len = 0;
+    if (!sc->fn) {
+      GTEXT_CSS_Declaration_Item it;
+      if (!gtext_css_block_item(st->block, e->item, &it)) {
+        SUB_FAIL(sub, css_st_fail(st, GTEXT_CSS_E_INTERNAL, NULL, "the block changed while it was read"));
         return STEP_ERROR;
       }
-      prop_settle(sub, fi, gtext_css_custom_value_retain(v));
-      return STEP_DONE;
+      const css_ereg * reg = entry_reg(sub, e);
+      if (it.outcome == GTEXT_CSS_PROP_RESULT_WIDE) {
+        const GTEXT_CSS_Custom_Value * v = NULL;
+        switch (it.wide) {
+        case GTEXT_CSS_WIDE_INITIAL:
+          v = reg ? reg->initial : NULL;
+          break;
+        case GTEXT_CSS_WIDE_INHERIT:
+          v = parent_value(sub, e->name.data, e->name.length, e->reg);
+          break;
+        case GTEXT_CSS_WIDE_UNSET:
+          v = !reg || reg->creg->inherits ? parent_value(sub, e->name.data, e->name.length, e->reg) : reg->initial;
+          break;
+        default:
+          SUB_FAIL(sub, css_st_fail(st, GTEXT_CSS_E_INVALID, "--*", "revert and revert-layer are the cascade's: they are resolved before a style is computed"));
+          return STEP_ERROR;
+        }
+        prop_settle(sub, fi, gtext_css_custom_value_retain(v));
+        return STEP_DONE;
+      }
+      const GTEXT_CSS_Value * root = gtext_css_value_set_root(it.set);
+      text = root && root->text.data ? root->text.data : "";
+      len = root && root->text.data ? root->text.length : 0;
     }
-    const GTEXT_CSS_Value * root = gtext_css_value_set_root(it.set);
-    const char * text = root && root->text.data ? root->text.data : "";
-    const size_t len = root && root->text.data ? root->text.length : 0;
-    if (len > sub->max_bytes) {
-      SUB_FAIL(sub, css_st_fail(st, GTEXT_CSS_E_LIMIT_CUSTOM_VALUE, e->name.data, "a custom property value is longer than max_value_bytes"));
-      return STEP_ERROR;
+    else if (e->kind == EK_PARAM) {
+      /* the argument rule: "a value of first-valid(arg value, default value)": the argument if there is one, else the default; a argument that is not a value of the
+         parameter's type is not valid, and the default is tried (prop_finish()) */
+      const css_fn_param * pm = &sc->fn->params[e->param];
+      const slot_t * a = e->param < sc->nargs ? &sc->args[e->param] : NULL;
+      if (a && !a->gi && a->rope) {
+        f->res[0].rope = css_rope_retain(a->rope);
+        f->res[0].set = true;
+        f->mode = 1;
+        f->phase = 1;
+        return prop_finish(sub, fi);
+      }
+      if (!pm->has_default) {
+        prop_settle(sub, fi, NULL);
+        return STEP_DONE;
+      }
+      f->mode = 2;
+      text = pm->default_text ? pm->default_text : "";
+      len = pm->default_len;
     }
-    src_t * src = NULL;
-    status = src_open(&sub->alloc, text, len, NULL, false, &src);
-    if (status != GTEXT_CSS_OK) {
-      SUB_FAIL(sub, status == GTEXT_CSS_E_OOM ? status : css_st_fail(st, status, e->name.data, "the value of a custom property could not be read"));
-      return STEP_ERROR;
+    else {
+      text = e->text ? e->text : "";
+      len = e->text_len;
     }
-    f = &sub->frames[fi];
-    f->own_src = src;
-    f->src = src;
-    f->phase = 1;
-    const int r = seq_start(sub, fi, 0, src, src->tree->values, src->tree->value_count, false);
-    if (r < 0) {
-      return STEP_ERROR;
-    }
-    if (r == 1) {
-      sub->frames[sub->nframes - 1].run_from = 0; /* what comes before the first token (a comment) is part of the value */
-      return STEP_PUSHED;
-    }
-    f = &sub->frames[fi];
+    return prop_start_seq(sub, fi, text, len);
   }
+  return prop_finish(sub, fi);
+}
+
+/// The value of a custom property has arrived (phase 1: its functions are replaced, in `res[0]`), or the value the calling context has for it (phase 2: `inherit` in a
+/// function, in `res[1]`): check it, compute it by its registration's type, and settle the entry.
+static int prop_finish(css_sub * sub, size_t fi) {
+  frame_t * f = &sub->frames[fi];
+  scope_t * sc = f->scope;
+  css_state * st = sub->st;
+  GTEXT_CSS_Status status;
   take_arrived(f);
-  e = &sub->entries[f->entry];
+  entry_t * e = &sc->entries[f->entry];
   const css_ereg * reg = entry_reg(sub, e);
   const bool typed = reg && !reg->creg->syntax->universal;
-  bool gi = f->cyclic || f->res[0].gi || !f->res[0].rope;
+  const bool inherited = f->phase == 2;
+  css_rope * from = inherited ? f->res[1].rope : f->res[0].rope;
+  bool gi = f->cyclic || (inherited ? f->res[1].gi : f->res[0].gi) || !from;
   css_rope * final = NULL;
   const GTEXT_CSS_Custom_Value * initial_cv = typed ? reg->initial : NULL;
-  if (!gi && !charge(sub, f->res[0].rope)) {
+  if (!gi && !inherited && !charge(sub, from)) {
     gi = true;
   }
-  if (!gi) {
+  if (!gi && !inherited && !(sc->fn && e->kind == EK_RESULT)) {
     /* "If a property value, after property replacement, contains only a single CSS-wide keyword (and possibly whitespace/comments), its value is determined as if
        that keyword were its specified value all along." A custom property is a property: `--c: var(--x, unset)` is `--c: unset`. The rolling keywords cannot be
-       resolved here (the cascade is over), and are invalid at computed-value time as they are for any other property. */
+       resolved here (the cascade is over), and are invalid at computed-value time as they are for any other property.
+       In a function (Mixins 1, "Resolve function styles"): initial is the initial value of the registration (a parameter's value in the argument styles), inherit is
+       inherit() of the name, "any other CSS-wide keyword" is the guaranteed-invalid value; on `result` they are all left as they are (handled above). */
     int wide = 0;
-    status = rope_wide_keyword(sub, f->res[0].rope, &wide);
+    status = rope_wide_keyword(sub, from, &wide);
     if (status != GTEXT_CSS_OK) {
       SUB_FAIL(sub, status);
       return STEP_ERROR;
+    }
+    if (wide && sc->fn) {
+      if (wide == GTEXT_CSS_WIDE_INHERIT) {
+        const int r = inherit_custom(sub, fi, 1, e->name.data, e->name.length);
+        if (r < 0) {
+          return STEP_ERROR;
+        }
+        f = &sub->frames[fi];
+        f->phase = 2;
+        if (r == 1) {
+          return STEP_PUSHED;
+        }
+        return prop_finish(sub, fi);
+      }
+      const GTEXT_CSS_Custom_Value * wv = wide == GTEXT_CSS_WIDE_INITIAL && reg ? reg->initial : NULL;
+      if (!wv && wide != GTEXT_CSS_WIDE_INITIAL) {
+        wv = initial_cv;
+      }
+      prop_settle(sub, fi, gtext_css_custom_value_retain(wv));
+      return STEP_DONE;
     }
     if (wide) {
       const GTEXT_CSS_Custom_Value * wv = NULL;
@@ -4328,7 +4517,7 @@ static int step_prop(css_sub * sub, size_t fi) {
     }
   }
   if (!gi) {
-    css_rope * rope = f->res[0].rope;
+    css_rope * rope = from;
     const bool tainted = css_rope_has_taint(rope);
     if (typed) {
       char * text = NULL;
@@ -4387,6 +4576,14 @@ static int step_prop(css_sub * sub, size_t fi) {
     css_rope_release(final);
     final = NULL;
   }
+  if (!final && !f->cyclic && sc->fn && e->kind == EK_PARAM && f->mode == 1 && sc->fn->params[e->param].has_default) {
+    /* first-valid(): the argument was not a valid value of the parameter's type; the default is the next candidate */
+    slot_clear(&f->res[0]);
+    slot_clear(&f->res[1]);
+    f->mode = 2;
+    f->phase = 1;
+    return prop_start_seq(sub, fi, sc->fn->params[e->param].default_text ? sc->fn->params[e->param].default_text : "", sc->fn->params[e->param].default_len);
+  }
   GTEXT_CSS_Custom_Value * v = NULL;
   if (final) {
     v = css_cval_new(&sub->alloc, final);
@@ -4401,6 +4598,588 @@ static int step_prop(css_sub * sub, size_t fi) {
     v = gtext_css_custom_value_retain(initial_cv);
   }
   prop_settle(sub, fi, v);
+  return STEP_DONE;
+}
+
+/* ---- custom functions ------------------------------------------------------------------------------------------- */
+
+/* Mixins 1, "Using Custom Functions" and "Evaluating Custom Functions". A call is a frame (CALL) of the stack the rest of the machine runs on, so a call inside a call inside
+   a call is more frames and not more C calls. It evaluates the arguments in the calling context, dereferences the name, guards the function's substitution context, and
+   then makes two scopes in turn, each of which is "resolve function styles" over a rule applied to a hypothetical element that is a child of the calling context's element:
+   the argument rule (one custom property for each parameter: the argument if it is valid, else the default), and the body rule (the parameters as the argument styles gave
+   them, then the body's local variables and `result`). The scope's parent is the calling context's scope, which is how `var()` finds, in this order, a local variable, a
+   parameter and a custom property at the call site. */
+
+#define GUARD_BUCKETS ((size_t)1024)
+
+static size_t guard_hash(const css_fn_def * def) {
+  uintptr_t h = (uintptr_t)def;
+  h ^= h >> 17;
+  h *= (uintptr_t)0x9E3779B97F4A7C15ULL;
+  return (size_t)(h >> 7) & (GUARD_BUCKETS - 1);
+}
+
+/// The frame of the call that has the function's substitution context guarded, or SIZE_MAX.
+static size_t guard_find(css_sub * sub, const css_fn_def * def) {
+  if (!sub->gbuckets) {
+    return SIZE_MAX;
+  }
+  for (size_t n = sub->gbuckets[guard_hash(def)]; n; n = sub->gnodes[n - 1].next) {
+    sub->work++;
+    if (sub->gnodes[n - 1].def == def) {
+      return sub->gnodes[n - 1].frame;
+    }
+  }
+  return SIZE_MAX;
+}
+
+static GTEXT_CSS_Status guard_push(css_sub * sub, const css_fn_def * def, size_t frame) {
+  GTEXT_Allocator a = sub->alloc;
+  if (!sub->gbuckets) {
+    sub->gbuckets = gtext_allocator_calloc(&a, GUARD_BUCKETS, sizeof *sub->gbuckets);
+    if (!sub->gbuckets) {
+      return GTEXT_CSS_E_OOM;
+    }
+  }
+  if (sub->ngnodes == sub->capgnodes) {
+    const size_t cap = sub->capgnodes ? sub->capgnodes * 2 : 16;
+    if (cap > SIZE_MAX / sizeof *sub->gnodes) {
+      return GTEXT_CSS_E_OOM;
+    }
+    gnode_t * g = gtext_allocator_realloc(&a, sub->gnodes, cap * sizeof *g);
+    if (!g) {
+      return GTEXT_CSS_E_OOM;
+    }
+    sub->gnodes = g;
+    sub->capgnodes = cap;
+  }
+  const size_t h = guard_hash(def);
+  sub->gnodes[sub->ngnodes] = (gnode_t){def, frame, sub->gbuckets[h]};
+  sub->gbuckets[h] = ++sub->ngnodes;
+  return GTEXT_CSS_OK;
+}
+
+/// Unguard the function of the newest guard: the frames end in the order they began, so it is the top node.
+static void guard_pop(css_sub * sub, const css_fn_def * def) {
+  if (sub->ngnodes == 0 || sub->gnodes[sub->ngnodes - 1].def != def) {
+    return;
+  }
+  sub->gbuckets[guard_hash(def)] = sub->gnodes[sub->ngnodes - 1].next;
+  sub->ngnodes--;
+}
+
+static void scope_free(css_sub * sub, scope_t * sc) {
+  if (!sc) {
+    return;
+  }
+  GTEXT_Allocator a = sub->alloc;
+  for (size_t i = 0; i < sc->nentries; i++) {
+    gtext_css_custom_value_free(sc->entries[i].value);
+  }
+  if (sc->pvals) {
+    for (size_t i = 0; i < sc->fn->nparams; i++) {
+      gtext_css_custom_value_free(sc->pvals[i]);
+    }
+  }
+  GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+  so.allocator = &sub->alloc;
+  for (size_t i = 0; i < sc->nowned; i++) {
+    gtext_css_serialize_buffer_free(&so, sc->owned[i]);
+  }
+  gtext_allocator_free(&a, sc->owned);
+  gtext_allocator_free(&a, sc->pvals);
+  gtext_allocator_free(&a, sc->eregs);
+  gtext_allocator_free(&a, sc->cregs);
+  gtext_allocator_free(&a, sc->entries);
+  gtext_allocator_free(&a, sc);
+}
+
+/// The syntax of an untyped parameter: "(defaulting to type(*))".
+static css_syntax kUniversalSyntax = {.universal = true};
+
+/// A scope for the evaluation of `fn`, with a registration for each parameter ("a syntax of the parameter type, an inherit flag of true, and no initial value") and, when the
+/// function has a return type, for `result` ("an inherit flag of false, and no initial value"). NULL on OOM.
+static scope_t * scope_new(css_sub * sub, scope_t * parent, const css_fn_def * fn) {
+  GTEXT_Allocator a = sub->alloc;
+  scope_t * sc = gtext_allocator_calloc(&a, 1, sizeof *sc);
+  if (!sc) {
+    return NULL;
+  }
+  sc->parent = parent;
+  sc->fn = fn;
+  sc->cregs = gtext_allocator_calloc(&a, fn->nparams + 1, sizeof *sc->cregs);
+  sc->eregs = gtext_allocator_calloc(&a, fn->nparams + 1, sizeof *sc->eregs);
+  if (!sc->cregs || !sc->eregs) {
+    scope_free(sub, sc);
+    return NULL;
+  }
+  for (size_t i = 0; i <= fn->nparams; i++) {
+    const css_compiled_syntax * type = i < fn->nparams ? fn->params[i].type : fn->returns;
+    sc->cregs[i].syntax = type ? type->syntax : &kUniversalSyntax;
+    sc->cregs[i].compiled = type ? type->compiled : NULL;
+    sc->cregs[i].inherits = i < fn->nparams;
+    sc->eregs[i].creg = &sc->cregs[i];
+  }
+  return sc;
+}
+
+/// The argument scope of a call: one entry for each parameter.
+static GTEXT_CSS_Status scope_for_arguments(css_sub * sub, frame_t * f, scope_t ** out) {
+  const css_fn_def * fn = f->def;
+  scope_t * sc = scope_new(sub, f->scope, fn);
+  if (!sc) {
+    return GTEXT_CSS_E_OOM;
+  }
+  GTEXT_Allocator a = sub->alloc;
+  sc->entries = gtext_allocator_calloc(&a, fn->nparams ? fn->nparams : 1, sizeof *sc->entries);
+  if (!sc->entries) {
+    scope_free(sub, sc);
+    return GTEXT_CSS_E_OOM;
+  }
+  for (size_t i = 0; i < fn->nparams; i++) {
+    entry_t * e = &sc->entries[i];
+    e->name.data = fn->params[i].name;
+    e->name.length = fn->params[i].name_len;
+    e->item = i;
+    e->reg = -1;
+    e->kind = EK_PARAM;
+    e->param = i;
+    e->ereg = &sc->eregs[i];
+  }
+  qsort(sc->entries, fn->nparams, sizeof *sc->entries, entry_cmp);
+  sc->nentries = fn->nparams;
+  sc->args = f->cargs;
+  sc->nargs = f->nargs;
+  sub->work += fn->nparams;
+  *out = sc;
+  return GTEXT_CSS_OK;
+}
+
+typedef struct {
+  const GTEXT_CSS_Rule * rule;
+  size_t item;
+} body_frame;
+
+/// Whether a conditional group rule of a body applies: it is asked of the environment, as the `media()` and `supports()` of an `if()` are ("Conditional group rules within
+/// @function are processed as normal, acting as if the contents of the rule were present at the conditional group rule's location when the condition is true, or acting as if
+/// nothing exists at that location otherwise"). `*applies` is false for a rule that is not one.
+static GTEXT_CSS_Status body_rule_applies(css_sub * sub, const GTEXT_CSS_Rule * r, bool * applies) {
+  *applies = false;
+  if (r->kind != GTEXT_CSS_RULE_AT) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Condition_Kind kind;
+  if (fn_name_is(&r->name, "media")) {
+    kind = GTEXT_CSS_CONDITION_MEDIA;
+  }
+  else if (fn_name_is(&r->name, "supports")) {
+    kind = GTEXT_CSS_CONDITION_SUPPORTS;
+  }
+  else if (fn_name_is(&r->name, "container")) {
+    kind = sub->st->pseudo ? GTEXT_CSS_CONDITION_CONTAINER_PSEUDO : GTEXT_CSS_CONDITION_CONTAINER;
+  }
+  else {
+    return GTEXT_CSS_OK;
+  }
+  const GTEXT_CSS_Environment * env = &sub->cc->env;
+  if (!env->condition && !env->condition_status) {
+    return css_st_fail(sub->st, GTEXT_CSS_E_UNSUPPORTED, "condition", "a function body has a conditional group rule and the environment has no condition callback to answer it");
+  }
+  GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+  so.allocator = &sub->alloc;
+  char * text = NULL;
+  size_t len = 0;
+  if (r->prelude_count) {
+    const GTEXT_CSS_Status st = gtext_css_serialize_values_buffer(r->prelude, r->prelude_count, &so, &text, &len);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+  }
+  GTEXT_CSS_String arg = {text ? text : "", len};
+  GTEXT_CSS_Tristate answer = GTEXT_CSS_TRI_UNKNOWN;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  if (env->condition_status) {
+    const char * detail = NULL;
+    st = env->condition_status(env->user, kind, &arg, sub->st->element, &answer, &detail);
+    if (st == GTEXT_CSS_E_UNSUPPORTED) {
+      st = css_st_fail(sub->st, st, detail ? detail : "condition", "a conditional group rule of a function body needs something the environment did not give");
+    }
+    else if (st == GTEXT_CSS_E_INVALID || st == GTEXT_CSS_E_GRAMMAR) {
+      st = GTEXT_CSS_OK;   /* the condition could not be read: it is not true */
+      answer = GTEXT_CSS_TRI_UNKNOWN;
+    }
+  }
+  else {
+    answer = env->condition(env->user, kind, &arg, sub->st->element);
+  }
+  gtext_css_serialize_buffer_free(&so, text);
+  *applies = st == GTEXT_CSS_OK && answer == GTEXT_CSS_TRI_TRUE;
+  return st;
+}
+
+/// Remember a text made for a declaration of a scope, to be released with it.
+static GTEXT_CSS_Status scope_own(css_sub * sub, scope_t * sc, char * text) {
+  if (sc->nowned == sc->capowned) {
+    GTEXT_Allocator a = sub->alloc;
+    const size_t cap = sc->capowned ? sc->capowned * 2 : 4;
+    char ** g = gtext_allocator_realloc(&a, sc->owned, cap * sizeof *g);
+    if (!g) {
+      return GTEXT_CSS_E_OOM;
+    }
+    sc->owned = g;
+    sc->capowned = cap;
+  }
+  sc->owned[sc->nowned++] = text;
+  return GTEXT_CSS_OK;
+}
+
+static GTEXT_CSS_Status entries_push(css_sub * sub, entry_t ** v, size_t * n, size_t * cap, const entry_t * e) {
+  if (*n == *cap) {
+    GTEXT_Allocator a = sub->alloc;
+    const size_t c = *cap ? *cap * 2 : 16;
+    if (c > SIZE_MAX / sizeof **v) {
+      return GTEXT_CSS_E_OOM;
+    }
+    entry_t * g = gtext_allocator_realloc(&a, *v, c * sizeof **v);
+    if (!g) {
+      return GTEXT_CSS_E_OOM;
+    }
+    *v = g;
+    *cap = c;
+  }
+  (*v)[(*n)++] = *e;
+  return GTEXT_CSS_OK;
+}
+
+/// The body scope of a call: the parameters (as the argument scope `args` resolved them), the local variables of the body and `result`, the last declaration of each name
+/// winning ("declarations appearing later win over earlier ones"), with a local variable named as a parameter keeping the parameter's registration.
+static GTEXT_CSS_Status scope_for_body(css_sub * sub, frame_t * f, const scope_t * args, scope_t ** out) {
+  const css_fn_def * fn = f->def;
+  GTEXT_Allocator a = sub->alloc;
+  scope_t * sc = scope_new(sub, f->scope, fn);
+  if (!sc) {
+    return GTEXT_CSS_E_OOM;
+  }
+  entry_t * v = NULL;
+  size_t n = 0, cap = 0;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  body_frame * stack = NULL;
+  sc->pvals = gtext_allocator_calloc(&a, fn->nparams ? fn->nparams : 1, sizeof *sc->pvals);
+  if (!sc->pvals) {
+    scope_free(sub, sc);
+    return GTEXT_CSS_E_OOM;
+  }
+  for (size_t i = 0; i < args->nentries; i++) {
+    const entry_t * e = &args->entries[i];
+    sc->pvals[e->param] = gtext_css_custom_value_retain(e->value);
+  }
+  for (size_t i = 0; i < fn->nparams && st == GTEXT_CSS_OK; i++) {
+    sc->eregs[i].initial = sc->pvals[i];   /* "set its initial value to the corresponding value in argument styles" */
+    entry_t e;
+    memset(&e, 0, sizeof e);
+    e.name.data = fn->params[i].name;
+    e.name.length = fn->params[i].name_len;
+    e.item = i;
+    e.reg = -1;
+    e.kind = EK_PARAM;
+    e.param = i;
+    e.ereg = &sc->eregs[i];
+    st = entries_push(sub, &v, &n, &cap, &e);
+  }
+  /* the body, in order; the conditional group rules whose condition holds are entered with a stack of their own */
+  size_t top = 0, scap = 8, ndecl = 0;
+  if (st == GTEXT_CSS_OK && fn->rule) {
+    stack = gtext_allocator_malloc(&a, scap * sizeof *stack);
+    if (!stack) {
+      st = GTEXT_CSS_E_OOM;
+    }
+    else {
+      stack[top++] = (body_frame){fn->rule, 0};
+    }
+  }
+  while (st == GTEXT_CSS_OK && top) {
+    body_frame * bf = &stack[top - 1];
+    if (bf->item >= bf->rule->content_count) {
+      top--;
+      continue;
+    }
+    const GTEXT_CSS_Block_Item * item = &bf->rule->contents[bf->item++];
+    sub->work++;
+    if (item->kind == GTEXT_CSS_ITEM_RULE) {
+      bool applies = false;
+      if (item->rule) {
+        st = body_rule_applies(sub, item->rule, &applies);
+      }
+      if (st == GTEXT_CSS_OK && applies) {
+        if (top >= sub->max_depth) {
+          st = css_st_fail(sub->st, GTEXT_CSS_E_LIMIT_DEPTH, NULL, "conditional group rules of a function body are nested deeper than max_substitution_depth");
+        }
+        else if (top == scap) {
+          body_frame * g = scap > SIZE_MAX / 2 / sizeof *g ? NULL : gtext_allocator_realloc(&a, stack, scap * 2 * sizeof *g);
+          if (!g) {
+            st = GTEXT_CSS_E_OOM;
+          }
+          else {
+            stack = g;
+            scap *= 2;
+          }
+        }
+        if (st == GTEXT_CSS_OK && applies) {
+          stack[top++] = (body_frame){item->rule, 0};
+        }
+      }
+      continue;
+    }
+    for (size_t k = 0; k < item->declaration_count && st == GTEXT_CSS_OK; k++) {
+      const GTEXT_CSS_Declaration * decl = &item->declarations[k];
+      sub->work++;
+      entry_t e;
+      memset(&e, 0, sizeof e);
+      e.reg = -1;
+      e.param = SIZE_MAX;
+      e.item = fn->nparams + ndecl;
+      if (decl->name.length > 2 && decl->name.data[0] == '-' && decl->name.data[1] == '-') {
+        e.kind = EK_LOCAL;
+        e.name = decl->name;
+        e.text = decl->original_text.data ? decl->original_text.data : "";
+        e.text_len = decl->original_text.data ? decl->original_text.length : 0;
+      }
+      else if (fn_name_is(&decl->name, "result") && !decl->important) {
+        e.kind = EK_RESULT;
+        e.name.data = "result";
+        e.name.length = 6;
+        if (decl->substitution_text.data) {
+          e.text = decl->substitution_text.data;
+          e.text_len = decl->substitution_text.length;
+        }
+        else if (decl->value_count) {
+          GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+          so.allocator = &sub->alloc;
+          char * text = NULL;
+          size_t len = 0;
+          st = gtext_css_serialize_values_buffer(decl->value, decl->value_count, &so, &text, &len);
+          if (st == GTEXT_CSS_OK) {
+            st = scope_own(sub, sc, text);
+            if (st != GTEXT_CSS_OK) {
+              gtext_css_serialize_buffer_free(&so, text);
+            }
+          }
+          e.text = text;
+          e.text_len = len;
+        }
+        else {
+          e.text = "";
+        }
+        if (st == GTEXT_CSS_OK && fn->returns) {
+          e.ereg = &sc->eregs[fn->nparams];
+        }
+      }
+      else {
+        continue;   /* an unknown descriptor: ignored */
+      }
+      if (st != GTEXT_CSS_OK) {
+        break;
+      }
+      if (++ndecl > sub->max_fn_decls) {
+        st = css_st_fail(sub->st, GTEXT_CSS_E_LIMIT_CUSTOM_PROPERTIES, fn->name, "the body of a function has more declarations than max_function_declarations");
+        break;
+      }
+      st = entries_push(sub, &v, &n, &cap, &e);
+    }
+  }
+  gtext_allocator_free(&a, stack);
+  if (st != GTEXT_CSS_OK) {
+    gtext_allocator_free(&a, v);
+    scope_free(sub, sc);
+    return st;
+  }
+  qsort(v, n, sizeof *v, entry_cmp);
+  sub->work += n;
+  size_t m = 0;
+  for (size_t i = 0; i < n; i++) {
+    if (i + 1 < n && v[i].name.length == v[i + 1].name.length && memcmp(v[i].name.data, v[i + 1].name.data, v[i].name.length) == 0) {
+      if (v[i].kind == EK_PARAM) {
+        v[i + 1].param = v[i].param;   /* a local variable of a parameter's name keeps its registration: `initial` is the parameter's value */
+        v[i + 1].ereg = v[i].ereg;
+      }
+      continue;
+    }
+    v[m++] = v[i];
+  }
+  for (size_t i = 0; i < m; i++) {
+    if (v[i].kind == EK_PARAM) {
+      v[i].state = ENT_DONE;
+      v[i].value = gtext_css_custom_value_retain(sc->pvals[v[i].param]);
+    }
+  }
+  sc->entries = v;
+  sc->nentries = m;
+  *out = sc;
+  return GTEXT_CSS_OK;
+}
+
+/// Start the entry `*pos` and the ones after it that are not yet resolved, one at a time, in `sc`: returns 1 when one was started, 0 when there are none left, -1 on failure.
+static int call_next_entry(css_sub * sub, size_t fi, scope_t * sc) {
+  frame_t * f = &sub->frames[fi];
+  while (f->pos < sc->nentries && sc->entries[f->pos].state != ENT_UNRESOLVED) {
+    f->pos++;
+  }
+  if (f->pos >= sc->nentries) {
+    return 0;
+  }
+  const size_t ei = f->pos++;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  frame_t * p = frame_push(sub, FR_PROP, &st);
+  if (!p) {
+    SUB_FAIL(sub, st);
+    return -1;
+  }
+  p->scope = sc;
+  p->entry = ei;
+  sub->frames[fi].wait_slot = 2;
+  return 1;
+}
+
+static int step_call(css_sub * sub, size_t fi) {
+  int pre = fn_prelude(sub, fi);
+  if (pre) {
+    return pre;
+  }
+  frame_t * f = &sub->frames[fi];
+  if (f->has_arrived) {
+    take_arrived(f);
+  }
+  if (f->phase == 10) {
+    /* "Let function be the result of dereferencing the dashed function's name as a tree-scoped reference. If no such name exists, return the guaranteed-invalid value." */
+    const GTEXT_CSS_String * nm = &f->fn->value;
+    const css_fn_def * def = sub->cc->functions ? css_function_set_find(sub->cc->functions, nm->data, nm->length, &sub->work) : NULL;
+    if (!def) {
+      fn_finish(sub, fi, NULL, true);
+      return STEP_DONE;
+    }
+    if (sub->ncalls >= sub->max_calls) {
+      SUB_FAIL(sub, css_st_fail(sub->st, GTEXT_CSS_E_LIMIT_DEPTH, def->name, "custom functions are called inside one another deeper than max_call_depth"));
+      return STEP_ERROR;
+    }
+    sub->ncalls++;
+    f->in_calls = true;
+    f->def = def;
+    const GTEXT_CSS_Status st = split_args(sub, f, GTEXT_CSS_TOKEN_COMMA, false);
+    if (st != GTEXT_CSS_OK) {
+      SUB_FAIL(sub, st);
+      return STEP_ERROR;
+    }
+    f = &sub->frames[fi];
+    if (f->nargs == 1 && f->args[0].count == 0) {
+      f->nargs = 0;   /* `--f()` has no arguments, which is not one empty argument */
+    }
+    GTEXT_Allocator a = sub->alloc;
+    f->cargs = gtext_allocator_calloc(&a, f->nargs ? f->nargs : 1, sizeof *f->cargs);
+    if (!f->cargs) {
+      f->nargs = 0;
+      SUB_FAIL(sub, GTEXT_CSS_E_OOM);
+      return STEP_ERROR;
+    }
+    f->phase = 11;
+    f->pos = 0;
+  }
+  if (f->phase == 11) {
+    /* "For each arg in arguments, substitute arbitrary substitution functions in arg, and replace arg with the result." In the calling context, in order. A
+       free-form production {}-wrapped is its contents. */
+    for (;;) {
+      if (f->pos > 0 && f->res[0].set) {
+        f->cargs[f->pos - 1] = f->res[0];
+        memset(&f->res[0], 0, sizeof f->res[0]);
+      }
+      if (f->pos >= f->nargs) {
+        break;
+      }
+      const range_t r = f->args[f->pos++];
+      const GTEXT_CSS_Component_Value * vals = f->vals ? f->vals + r.from : NULL;
+      size_t cnt = r.count;
+      if (cnt == 1 && vals[0].kind == GTEXT_CSS_VALUE_BLOCK && vals[0].type == GTEXT_CSS_TOKEN_OPEN_CURLY) {
+        cnt = vals[0].child_count;
+        vals = vals[0].children;
+      }
+      const int rr = seq_start(sub, fi, 0, f->csrc, vals, cnt, false);
+      if (rr < 0) {
+        return STEP_ERROR;
+      }
+      if (rr == 1) {
+        return STEP_PUSHED;
+      }
+      f = &sub->frames[fi];
+    }
+    f = &sub->frames[fi];
+    /* "If the number of items in arguments is greater than the number of function parameters in custom function, return the guaranteed-invalid value." */
+    if (f->nargs > f->def->nparams) {
+      fn_finish(sub, fi, NULL, true);
+      return STEP_DONE;
+    }
+    /* "Guard substitution context for the remainder of this algorithm. If substitution context is marked as cyclic, return the guaranteed-invalid value." The context
+       is the function itself; one that is already guarded is the call this one is in, and every frame from it to here is in the cycle. */
+    const size_t g = guard_find(sub, f->def);
+    if (g != SIZE_MAX) {
+      mark_cyclic(sub, g);
+      fn_finish(sub, fi, NULL, true);
+      return STEP_DONE;
+    }
+    GTEXT_CSS_Status st = guard_push(sub, f->def, fi);
+    if (st != GTEXT_CSS_OK) {
+      SUB_FAIL(sub, st);
+      return STEP_ERROR;
+    }
+    f->fguard = true;
+    st = scope_for_arguments(sub, f, &f->sc_args);
+    if (st != GTEXT_CSS_OK) {
+      SUB_FAIL(sub, st);
+      return STEP_ERROR;
+    }
+    f->phase = 12;
+    f->pos = 0;
+  }
+  if (f->phase == 12) {
+    /* the argument styles: every parameter, each a custom property of the hypothetical element */
+    const int r = call_next_entry(sub, fi, f->sc_args);
+    if (r < 0) {
+      return STEP_ERROR;
+    }
+    if (r == 1) {
+      return STEP_PUSHED;
+    }
+    f = &sub->frames[fi];
+    const GTEXT_CSS_Status st = scope_for_body(sub, f, f->sc_args, &f->sc_body);
+    if (st != GTEXT_CSS_OK) {
+      SUB_FAIL(sub, st);
+      return STEP_ERROR;
+    }
+    scope_free(sub, f->sc_args);
+    f->sc_args = NULL;
+    f->phase = 13;
+    f->pos = 0;
+  }
+  if (f->phase == 13) {
+    /* the body styles: every local variable, used or not ("--bar() is in a cycle with itself, even though the local variable --x is never referenced"), and result */
+    const int r = call_next_entry(sub, fi, f->sc_body);
+    if (r < 0) {
+      return STEP_ERROR;
+    }
+    if (r == 1) {
+      return STEP_PUSHED;
+    }
+    f = &sub->frames[fi];
+  }
+  /* "If substitution context is marked as a cyclic substitution context, return the guaranteed-invalid value. ... Return the value of the result property in body styles." */
+  css_rope * out = NULL;
+  bool gi = true;
+  if (!f->cyclic) {
+    const entry_t * e = find_entry(sub, f->sc_body, "result", 6);
+    if (e && e->value) {
+      out = css_rope_retain(css_cval_rope(e->value));
+      gi = false;
+    }
+  }
+  fn_finish(sub, fi, out, gi);
   return STEP_DONE;
 }
 
@@ -4420,6 +5199,7 @@ static int step(css_sub * sub, size_t fi) {
   case FR_RANDOM_ITEM: return step_random_item(sub, fi);
   case FR_RANDOM: return step_random(sub, fi);
   case FR_TREE: return step_tree(sub, fi);
+  case FR_CALL: return step_call(sub, fi);
   default:
     SUB_FAIL(sub, GTEXT_CSS_E_INTERNAL);
     return STEP_ERROR;
@@ -4473,12 +5253,14 @@ void css_sub_free(css_sub * sub) {
   while (sub->nframes) {
     frame_pop(sub);
   }
-  for (size_t i = 0; i < sub->nentries; i++) {
-    gtext_css_custom_value_free(sub->entries[i].value);
+  for (size_t i = 0; i < sub->root.nentries; i++) {
+    gtext_css_custom_value_free(sub->root.entries[i].value);
   }
   css_rope_release(sub->empty);
   css_rope_release(sub->comment);
-  gtext_allocator_free(&a, sub->entries);
+  gtext_allocator_free(&a, sub->root.entries);
+  gtext_allocator_free(&a, sub->gnodes);
+  gtext_allocator_free(&a, sub->gbuckets);
   gtext_allocator_free(&a, sub->frames);
   gtext_allocator_free(&a, sub->aguards);
   gtext_allocator_free(&a, sub);
@@ -4524,6 +5306,8 @@ GTEXT_CSS_Status css_sub_new(css_state * st, css_sub ** out) {
   sub->max_element_tokens = clamp_limit64(cc->sub.max_element_substituted_tokens, DEFAULT_MAX_ELEMENT_TOKENS, LIMIT_MAX_ELEMENT_TOKENS);
   sub->max_bytes = clamp_limit(cc->sub.max_value_bytes, DEFAULT_MAX_BYTES, LIMIT_MAX_BYTES);
   sub->max_element_bytes = clamp_limit64(cc->sub.max_element_substituted_bytes, DEFAULT_MAX_ELEMENT_BYTES, LIMIT_MAX_ELEMENT_BYTES);
+  sub->max_calls = clamp_limit(cc->sub.max_call_depth, DEFAULT_MAX_CALL_DEPTH, LIMIT_MAX_CALL_DEPTH);
+  sub->max_fn_decls = clamp_limit(cc->sub.max_function_declarations, DEFAULT_MAX_FN_DECLARATIONS, LIMIT_MAX_FN_DECLARATIONS);
   sub->empty = css_rope_leaf(&a, "", 0, CSS_TC_NONE, CSS_TC_NONE, 0, false);
   sub->comment = css_rope_leaf(&a, "/**/", 4, CSS_TC_SAFE, CSS_TC_SAFE, 0, false);
   if (!sub->empty || !sub->comment) {
@@ -4556,8 +5340,8 @@ GTEXT_CSS_Status css_sub_new(css_state * st, css_sub ** out) {
       }
       entries[m++] = entries[i];
     }
-    sub->entries = entries;
-    sub->nentries = m;
+    sub->root.entries = entries;
+    sub->root.nentries = m;
     st->work += n;
     if (m > max_custom) {
       css_st_fail(st, GTEXT_CSS_E_LIMIT_CUSTOM_PROPERTIES, NULL, "an element declares more custom properties than max_custom_properties");
@@ -4578,8 +5362,8 @@ GTEXT_CSS_Status css_sub_new(css_state * st, css_sub ** out) {
 GTEXT_CSS_Status css_sub_customs(css_sub * sub) {
   css_state * st = sub->st;
   GTEXT_CSS_Computed_Style * style = st->style;
-  for (size_t i = 0; i < sub->nentries; i++) {
-    if (sub->entries[i].state != ENT_UNRESOLVED) {
+  for (size_t i = 0; i < sub->root.nentries; i++) {
+    if (sub->root.entries[i].state != ENT_UNRESOLVED) {
       continue;
     }
     GTEXT_CSS_Status status = GTEXT_CSS_OK;
@@ -4598,8 +5382,8 @@ GTEXT_CSS_Status css_sub_customs(css_sub * sub) {
   }
   /* install them: the registered ones in the style's table, the others in its map */
   GTEXT_Allocator a = sub->alloc;
-  for (size_t i = 0; i < sub->nentries; i++) {
-    entry_t * e = &sub->entries[i];
+  for (size_t i = 0; i < sub->root.nentries; i++) {
+    entry_t * e = &sub->root.entries[i];
     if (e->reg >= 0) {
       const GTEXT_CSS_Status set = css_style_set_regval(style, (size_t)e->reg, e->value);
       if (set != GTEXT_CSS_OK) {

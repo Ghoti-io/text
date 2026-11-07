@@ -33,6 +33,7 @@
 
 #include <string.h>
 
+#include "css_fndef.h"
 #include "css_internal.h"
 #include "cssom_computed_internal.h"
 #include "cssom_doc_internal.h"
@@ -301,6 +302,31 @@ static GTEXT_CSS_Status build_properties(css_core * core, GTEXT_CSS_At_Property_
   return GTEXT_CSS_OK;
 }
 
+/* ---- the functions of the @function rules ----------------------------------------------------------------------------------------------------------- */
+
+static GTEXT_CSS_Status collect_functions_live_fn(css_core * core, void * user, css_sheet * sheet, const css_scope * scope, const void * implicit_root) {
+  (void)scope;
+  (void)implicit_root;
+  bool yes = false;
+  const GTEXT_CSS_Status st = takes_part(core, sheet, &yes);
+  if (st != GTEXT_CSS_OK || !yes) {
+    return st;
+  }
+  return css_sheet_collect_functions(core, sheet, (GTEXT_CSS_Function_Set **)user);
+}
+
+/// The functions the `@function` rules of the sheets that take part define, in cascade order ("rules defined later win within the same layer"). NULL when no sheet defines one.
+static GTEXT_CSS_Status build_functions(css_core * core, GTEXT_CSS_Function_Set ** out) {
+  GTEXT_CSS_Function_Set * set = NULL;
+  const GTEXT_CSS_Status st = walk_live(core, collect_functions_live_fn, &set);
+  if (st != GTEXT_CSS_OK) {
+    gtext_css_function_set_free(set);
+    return st;
+  }
+  *out = set;
+  return GTEXT_CSS_OK;
+}
+
 /* ---- the @keyframes rules ------------------------------------------------------------------------------------------------------------------------- */
 
 static GTEXT_CSS_Status keyframes_live_fn(css_core * core, void * user, css_sheet * sheet, const css_scope * scope, const void * implicit_root) {
@@ -394,20 +420,36 @@ static GTEXT_CSS_Status current(css_core * core, const GTEXT_CSS_Rule_Index ** o
     gtext_css_rule_index_free(fresh);
     return st;
   }
-  /* ... and so are the `@keyframes` rules, which the style of an element samples its animations from */
-  GTEXT_CSS_Atrule_Set * frames = NULL;
-  st = build_keyframes(core, &frames);
+  /* ... and the custom functions of the `@function` rules, which a compute context is made with as it is with the registrations */
+  GTEXT_CSS_Function_Set * fns = NULL;
+  st = build_functions(core, &fns);
   if (st != GTEXT_CSS_OK) {
     gtext_css_at_property_set_free(props);
     gtext_css_rule_index_free(fresh);
     return st;
   }
-  core->counters.property_collects += props != NULL;
-  if (same_properties(core->props, props)) {
-    gtext_css_at_property_set_free(props);   /* nothing a compute context was made with has changed */
+  /* ... and so are the `@keyframes` rules, which the style of an element samples its animations from */
+  GTEXT_CSS_Atrule_Set * frames = NULL;
+  st = build_keyframes(core, &frames);
+  if (st != GTEXT_CSS_OK) {
+    gtext_css_at_property_set_free(props);
+    gtext_css_function_set_free(fns);
+    gtext_css_rule_index_free(fresh);
+    return st;
   }
-  else {
-    css_computed_properties_changed(core, props);
+  core->counters.property_collects += props != NULL;
+  const bool same_props = same_properties(core->props, props);
+  const bool same_fns = css_function_sets_equal(core->fns, fns);
+  if (same_props) {
+    gtext_css_at_property_set_free(props);   /* nothing a compute context was made with has changed */
+    props = core->props;
+  }
+  if (same_fns) {
+    gtext_css_function_set_free(fns);
+    fns = core->fns;
+  }
+  if (!same_props || !same_fns) {
+    css_computed_properties_changed(core, props, fns);   /* a set that is the document's own already stays, and is not freed with the old ones */
   }
   gtext_css_atrule_set_free(core->keyframes);
   core->keyframes = frames;

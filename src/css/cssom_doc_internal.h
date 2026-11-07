@@ -92,6 +92,8 @@ void css_index_teardown(css_core * core);
 /// Read the `@property` rules of a live sheet into `*set` (made on the first rule that can hold one; NULL stays NULL for a sheet that has none), in the document's cascade order
 /// when called for each sheet in turn (cssom_snapshot.c). The sheets it imports are not read.
 GTEXT_CSS_Status css_sheet_collect_properties(css_core * core, css_sheet * sheet, GTEXT_CSS_At_Property_Set ** set);
+/// The same for the `@function` rules (css_custom_function.h): the set owns copies of the rules it defines.
+GTEXT_CSS_Status css_sheet_collect_functions(css_core * core, css_sheet * sheet, GTEXT_CSS_Function_Set ** set);
 /// The same for the `@keyframes` rules (and the group and layer rules that hold them): added to `*set`, made first when it is NULL (cssom_index.c freezes it).
 GTEXT_CSS_Status css_sheet_collect_keyframes(css_core * core, css_sheet * sheet, GTEXT_CSS_Atrule_Set ** set);
 

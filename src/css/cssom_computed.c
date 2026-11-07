@@ -35,6 +35,7 @@
 
 #include <string.h>
 
+#include <ghoti.io/text/css/css_container.h>
 #include "css_internal.h"
 #include "cssom_computed_internal.h"
 #include "cssom_doc_internal.h"
@@ -399,6 +400,7 @@ void css_computed_free(css_core * core) {
   for (size_t i = 0; i < cs->nretired; i++) {
     gtext_css_compute_context_free(cs->retired[i].ctx);
     gtext_css_at_property_set_free(cs->retired[i].props);
+    gtext_css_function_set_free(cs->retired[i].fns);
   }
   gtext_allocator_free(&core->alloc, cs->retired);
   gtext_allocator_free(&core->alloc, (void *)cs->released);
@@ -434,13 +436,16 @@ GTEXT_CSS_Status gtext_cssom_document_set_compute_context(GTEXT_CSSOM_Document *
   return GTEXT_CSS_OK;
 }
 
-void css_computed_properties_changed(css_core * core, GTEXT_CSS_At_Property_Set * props) {
-  GTEXT_CSS_At_Property_Set * old = core->props;
+void css_computed_properties_changed(css_core * core, GTEXT_CSS_At_Property_Set * props, GTEXT_CSS_Function_Set * fns) {
+  GTEXT_CSS_At_Property_Set * old = core->props == props ? NULL : core->props;
+  GTEXT_CSS_Function_Set * old_fns = core->fns == fns ? NULL : core->fns;
   core->props = props;
+  core->fns = fns;
   css_cmps * cs = core->cs;
   if (!cs || core->config.compute_context) {
     /* no context of the document's own has been made, or the caller's is in use and keeps its own registrations: nothing was computed with the old set */
     gtext_css_at_property_set_free(old);
+    gtext_css_function_set_free(old_fns);
     return;
   }
   /* every cached style belongs to the context that made it, and a computed declaration read before holds values computed with the old registrations */
@@ -456,14 +461,17 @@ void css_computed_properties_changed(css_core * core, GTEXT_CSS_At_Property_Set 
          reserved when it was handed out */
       cs->retired[cs->nretired].ctx = cs->own;
       cs->retired[cs->nretired].props = old;
+      cs->retired[cs->nretired].fns = old_fns;
       cs->nretired++;
       old = NULL;
+      old_fns = NULL;
     }
     else {
       gtext_css_compute_context_free(cs->own);
     }
   }
   gtext_css_at_property_set_free(old);
+  gtext_css_function_set_free(old_fns);
   cs->own = NULL;
   cs->own_exported = false;
   cs->ctx = NULL;
@@ -509,6 +517,14 @@ static GTEXT_CSS_Tristate environment_condition(void * user, GTEXT_CSS_Condition
   return gtext_css_conditions_condition(core->conditions, kind, text);
 }
 
+/// The same for the conditional rules of a function body, which can ask for the element the function is called on (the container kinds), with the document's call context (the memo of one
+/// snapshot of the tree), and which fail naming the callback they need.
+static GTEXT_CSS_Status environment_condition_status(void * user, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text, GTEXT_CSS_Element_Handle element, GTEXT_CSS_Tristate * answer,
+    const char ** detail) {
+  css_core * core = user;
+  return gtext_css_conditions_condition_element(core->conditions, kind, text, element, core->cs ? &core->cs->call : NULL, answer, detail);
+}
+
 /// The context in use: the caller's, or one the document makes from the registry, the default environment and the element interface.
 static GTEXT_CSS_Status ensure_context(css_core * core, css_cmps * cs) {
   if (cs->ctx) {
@@ -523,6 +539,7 @@ static GTEXT_CSS_Status ensure_context(css_core * core, css_cmps * cs) {
   co.elements = core->config.element_interface;
   /* the registrations of the document's `@property` rules (cssom_index.c keeps them current with the index; a read makes the index current before it asks for the context) */
   co.property_rules = core->props;
+  co.function_rules = core->fns;
   /* the environment of a context the document makes answers `if(media())` and `if(supports())` with the conditions object the document evaluates with, as it is now
      (the document, not the object, is the `user`, so that an environment change that replaces the object is followed) */
   GTEXT_CSS_Environment env = gtext_css_environment_default();
@@ -532,6 +549,7 @@ static GTEXT_CSS_Status ensure_context(css_core * core, css_cmps * cs) {
   if (!env.condition && !env.user) {
     env.user = core;
     env.condition = environment_condition;
+    env.condition_status = environment_condition_status;
   }
   GTEXT_CSS_Compute_Result res;
   memset(&res, 0, sizeof res);

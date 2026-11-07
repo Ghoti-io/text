@@ -25,7 +25,7 @@
  * @brief Arbitrary substitution functions: `var()`, `env()`, `attr()`, `if()`, `inherit()`, `ident()`, `random-item()`, `random()` and the tree counting
  *   functions, resolved when a style is computed, with the budget that keeps them from being used to amplify a few bytes into billions of tokens.
  *
- * Reference: CSS Values and Units Level 5, Appendix A ("Arbitrary Substitution Functions": substitution contexts, spread syntax, resolving in properties,
+ * Reference: CSS Functions and Mixins Level 1 (`<dashed-function>`s, evaluated here: see the compute context's `function_rules`); CSS Values and Units Level 5, Appendix A ("Arbitrary Substitution Functions": substitution contexts, spread syntax, resolving in properties,
  * invalid substitution, substitution in shorthands, "Safely Handling Overly-Long Substitution") and 8.3 to 8.8, 9 (`if()`, `cycle()`, `var()`, `inherit()`,
  * `attr()`, `ident()`, `random()`, `random-item()`); CSS Custom Properties for Cascading Variables Level 1; CSS Environment Variables Level 1; CSS Conditional
  * Level 5 (`style()`), all as served 2026-10-27. Each rule is quoted in the test that checks it.
@@ -97,6 +97,13 @@ typedef struct {
    *  as text; the cost of reading and parsing it is in the work counter). Default 8 MiB; at most 2^40. A value past it is the guaranteed-invalid value, and counted
    *  in GTEXT_CSS_Compute_Result::substitution_limited. Tokens do not bound this: a value of a few long words is few tokens and many bytes. */
   uint64_t max_element_substituted_bytes;
+  /** Deepest custom functions may be called inside one another (CSS Functions and Mixins 1, 3: a call whose arguments or body call another). Default 1,024; at most 2^20. A call
+   *  one level too deep is GTEXT_CSS_E_LIMIT_DEPTH, as a function nested past `max_substitution_depth` is; nothing is evaluated by the C stack, so the bound is a policy and
+   *  not a guard. A function that calls itself is not deep, it is a cycle (the guaranteed-invalid value). */
+  size_t max_call_depth;
+  /** Most declarations (local variables and `result`) the body of one function may be evaluated with. Default 65,536; at most 2^24. A body with one more is
+   *  GTEXT_CSS_E_LIMIT_CUSTOM_PROPERTIES when the call is evaluated (a body is read when it is called, not when it is defined). */
+  size_t max_function_declarations;
 } GTEXT_CSS_Substitute_Options;
 
 /** @brief The defaults, spelled out. */

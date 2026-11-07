@@ -26,6 +26,7 @@
  */
 
 #include <ghoti.io/text/css/css_condition.h>
+#include <ghoti.io/text/css/css_container.h>
 #include <ghoti.io/text/css/css_media.h>
 #include <ghoti.io/text/css/css_parse.h>
 
@@ -812,9 +813,57 @@ GTEXT_CSS_Status gtext_css_conditions_supports_text(const GTEXT_CSS_Conditions *
   return st;
 }
 
+GTEXT_CSS_Status gtext_css_conditions_condition_element(const GTEXT_CSS_Conditions * c, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text,
+    GTEXT_CSS_Element_Handle element, GTEXT_CSS_Condition_Call * call, GTEXT_CSS_Tristate * answer, const char ** detail) {
+  if (!answer) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  if (detail) {
+    *detail = NULL;
+  }
+  *answer = GTEXT_CSS_TRI_UNKNOWN;
+  if (kind != GTEXT_CSS_CONDITION_CONTAINER && kind != GTEXT_CSS_CONDITION_CONTAINER_PSEUDO) {
+    *answer = gtext_css_conditions_condition(c, kind, text);
+    return GTEXT_CSS_OK;
+  }
+  *answer = GTEXT_CSS_TRI_FALSE;
+  if (!c || !text || !element) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Media_Options o = gtext_css_media_options_default();
+  o.allocator = &c->alloc;
+  GTEXT_CSS_Container_Query * query = NULL;
+  GTEXT_CSS_Status st = gtext_css_container_parse(text->data, text->length, &o, &query, NULL);
+  if (st == GTEXT_CSS_E_OOM) {
+    return st;
+  }
+  if (st != GTEXT_CSS_OK) {
+    return GTEXT_CSS_OK;   /* not a container condition: false, as the rule is invalid */
+  }
+  bool matches = false;
+  GTEXT_CSS_Condition_Call local;
+  gtext_css_condition_call_init(&local);
+  GTEXT_CSS_Condition_Call * use = call ? call : &local;
+  st = gtext_css_conditions_evaluate_container(c, query, element, kind == GTEXT_CSS_CONDITION_CONTAINER_PSEUDO, use, &matches);
+  if (st == GTEXT_CSS_E_UNSUPPORTED && detail) {
+    *detail = use->detail;
+  }
+  gtext_css_media_list_free(query);
+  gtext_css_condition_call_free(&local);
+  if (st == GTEXT_CSS_OK) {
+    *answer = matches ? GTEXT_CSS_TRI_TRUE : GTEXT_CSS_TRI_FALSE;
+  }
+  return st;
+}
+
 static GTEXT_CSS_Tristate hook(void * user, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text, GTEXT_CSS_Element_Handle element) {
-  (void)element;
-  return gtext_css_conditions_condition(user, kind, text);
+  GTEXT_CSS_Tristate answer = GTEXT_CSS_TRI_UNKNOWN;
+  return gtext_css_conditions_condition_element(user, kind, text, element, NULL, &answer, NULL) == GTEXT_CSS_OK ? answer : GTEXT_CSS_TRI_UNKNOWN;
+}
+
+static GTEXT_CSS_Status hook_status(void * user, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text, GTEXT_CSS_Element_Handle element, GTEXT_CSS_Tristate * answer,
+    const char ** detail) {
+  return gtext_css_conditions_condition_element(user, kind, text, element, NULL, answer, detail);
 }
 
 void gtext_css_conditions_environment_hook(const GTEXT_CSS_Conditions * conditions, GTEXT_CSS_Environment * env) {
@@ -822,6 +871,7 @@ void gtext_css_conditions_environment_hook(const GTEXT_CSS_Conditions * conditio
     return;
   }
   env->condition = hook;
+  env->condition_status = hook_status;
   env->user = (void *)conditions;
 }
 

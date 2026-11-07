@@ -453,6 +453,40 @@ GTEXT_CSS_Status css_sheet_collect_properties(css_core * core, css_sheet * sheet
   return st;
 }
 
+/* ---- the @function rules -------------------------------------------------------------------------------------------------------------------------- */
+
+/// Whether a rule of the sheet matters to the reader of `@function` rules (css_custom_function.h): the rule itself (a preserved at-rule), and what matters to `@property`.
+static bool can_hold_function(const css_rule * r) {
+  return r->kind == GTEXT_CSSOM_RULE_PRESERVED || can_hold_property(r);
+}
+
+GTEXT_CSS_Status css_sheet_collect_functions(css_core * core, css_sheet * sheet, GTEXT_CSS_Function_Set ** set) {
+  GTEXT_Allocator a = core->alloc;
+  snap_ctx c;
+  memset(&c, 0, sizeof c);
+  c.core = core;
+  const GTEXT_CSS_Rule ** nodes = NULL;
+  size_t n = 0;
+  GTEXT_CSS_Status st = gather_nodes(core, sheet, can_hold_function, &c, &nodes, &n);
+  if (st == GTEXT_CSS_OK && n > 0) {
+    if (!*set) {
+      GTEXT_CSS_Function_Options o = gtext_css_function_options_default();
+      o.allocator = &a;
+      o.user = core->conditions;
+      o.active_status = gtext_css_conditions_active_rule_status;
+      o.own_rules = true;   /* the trees here are the sheets' and the snapshots', and a context that borrows the set outlives them */
+      st = gtext_css_function_set_new(core->registry, &o, set);
+    }
+    if (st == GTEXT_CSS_OK) {
+      GTEXT_CSS_Function_Result res;
+      st = gtext_css_function_collect_rules(*set, nodes, n, &res);
+    }
+  }
+  gtext_allocator_free(&a, (void *)nodes);
+  ctx_free(&c);
+  return st;
+}
+
 /* ---- the @keyframes rules ------------------------------------------------------------------------------------------------------------------------- */
 
 /// Whether a rule of the sheet matters to the reader of `@keyframes` rules: the rule itself, a group rule it enters, and an `@layer` rule (a statement puts layers in their order, which orders the rules).

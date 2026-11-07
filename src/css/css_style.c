@@ -693,7 +693,7 @@ static GTEXT_CSS_Status style_compute_pass(const GTEXT_CSS_Compute_Context * con
   if (st == GTEXT_CSS_OK) {
     const size_t before = b.work;
     GTEXT_CSS_Compute_Result cres;
-    st = css_compute_style_rolling(context, block, parent_style, element, final ? NULL : &roll, &style, &cres);
+    st = css_compute_style_rolling(context, block, parent_style, element, final ? NULL : &roll, options->pseudo != NULL, &style, &cres);
     if (result) {
       *result = cres;
       result->work += before;

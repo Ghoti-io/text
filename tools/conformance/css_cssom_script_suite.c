@@ -331,6 +331,12 @@ static GTEXT_CSS_Tristate runner_condition(void * user, GTEXT_CSS_Condition_Kind
   return gtext_css_conditions_condition(w->conditions, kind, text);
 }
 
+static GTEXT_CSS_Status runner_condition_status(void * user, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text, GTEXT_CSS_Element_Handle element, GTEXT_CSS_Tristate * answer,
+    const char ** detail) {
+  const world * w = user;
+  return gtext_css_conditions_condition_element(w->conditions, kind, text, element, NULL, answer, detail);
+}
+
 static const GTEXT_CSS_Computed_Style * runner_container_style(void * user, GTEXT_CSS_Element_Handle element) {
   const world * w = user;
   GTEXT_CSS_Container_Interface ci;
@@ -377,6 +383,7 @@ static int world_open(world * w, const char * html, size_t html_len) {
   GTEXT_CSS_Environment cenv = gtext_css_environment_default();
   cenv.user = w;
   cenv.condition = runner_condition;
+  cenv.condition_status = runner_condition_status;
   if (g_palette) {
     cenv.resolve_color = runner_resolve_color;
   }

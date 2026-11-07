@@ -42,6 +42,7 @@
 
 #include <string.h>
 
+#include "css_compute_internal.h"
 #include "css_container_internal.h"
 #include "css_style_range.h"
 
@@ -53,8 +54,13 @@ void css_cq_style_reset(struct GTEXT_CSS_Condition_Call_Internal * ci) {
   (void)ci;
 }
 
-/// The compute context the caller's styles were computed with (the interface's).
+/// The compute context the container's style was computed with: the style knows it, and it is the one that can compute a child of that style (a document replaces its context when
+/// its registrations or functions change, after the interface was handed out). Without a style, the interface's.
 static GTEXT_CSS_Status compute_context(css_cq_ctx * cq, const GTEXT_CSS_Compute_Context ** out) {
+  if (cq->style) {
+    *out = cq->style->cc;
+    return GTEXT_CSS_OK;
+  }
   if (!cq->c->container.compute_context) {
     cq->call->detail = "container.compute_context";
     return GTEXT_CSS_E_UNSUPPORTED;

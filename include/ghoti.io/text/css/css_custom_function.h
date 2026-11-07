@@ -42,7 +42,7 @@
  *
  * The set keeps what the prelude says (the name, the parameters with their types and defaults, the return type) and a pointer to the rule, whose block is the body: the
  * declarations and the conditional group rules among them are read when a call is evaluated, since a condition is a fact of the call. **The trees given to the set must outlive
- * it.**
+ * it**, unless the set was made with `own_rules`, which keeps a copy of each rule it defines.
  *
  * ## Use
  *
@@ -100,6 +100,9 @@ typedef struct {
   size_t max_parameters;              ///< Most parameters of one function. Default 1,024; at most 2^20. One more makes the rule invalid (GTEXT_CSS_FN_BAD_PARAMETER).
   size_t max_diagnostics;             ///< Most diagnostics kept (the rest are counted). Default 1,024; at most 2^20.
   size_t max_rule_depth;              ///< Deepest nesting of rules read. Default 4,096; at most 1,048,576. One more is GTEXT_CSS_E_LIMIT_DEPTH.
+  /** Keep a copy of each rule the set defines (the body is read from it when a call is evaluated), so that the trees given to the set need not outlive it. The copy is the rule
+   *  written by gtext_css_serialize_rule() and read again, so a declaration's value is the one the serializer writes. Default false: the set borrows the trees. */
+  bool own_rules;
 } GTEXT_CSS_Function_Options;
 
 /** @brief The defaults, spelled out. */
@@ -133,7 +136,7 @@ typedef struct {
   bool has_returns;               ///< A return type was written (else it is `type(*)`).
   GTEXT_CSS_String returns;       ///< The return type as a syntax string; empty when there is none.
   bool has_result;                ///< The body has a `result` descriptor (else the function always returns the guaranteed-invalid value).
-  const GTEXT_CSS_Rule * rule;    ///< The rule; its block is the body. Borrowed from the tree.
+  const GTEXT_CSS_Rule * rule;    ///< The rule; its block is the body. Borrowed from the tree (or the set's own copy: GTEXT_CSS_Function_Options::own_rules).
   GTEXT_CSS_Layer_Id layer;       ///< The cascade layer the rule is in.
   size_t sheet;                   ///< Which tree the rule is in.
 } GTEXT_CSS_Function_Info;

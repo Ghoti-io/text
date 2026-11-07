@@ -420,13 +420,13 @@ would call).
 ## `@function` definitions
 
 `css/css_custom_function.h` reads the `@function` rules of stylesheets into the custom functions of CSS Functions and Mixins 1, the way `css/css_at_property.h` reads
-`@property`. **Only the definitions are read: a call (`--name(args)`) is not evaluated yet, and a value that holds one is still the guaranteed-invalid value at
-computed-value time.**
+`@property`. A call (`--name(args)`) in a value is evaluated when a style is computed, if the set is given to the compute context (see "Calling a function" below); without one, a call is the
+guaranteed-invalid value.
 
 ```text
 GTEXT_CSS_Function_Set * set = NULL;
 gtext_css_function_set_new(registry, NULL, &set);          /* options: the allocator, `active` for @media and @supports, limits */
-gtext_css_function_collect(set, tree, NULL);               /* the trees must outlive the set: the body of a rule is read from them */
+gtext_css_function_collect(set, tree, NULL);               /* the trees must outlive the set (unless it was made with `own_rules`): the body of a rule is read from them */
 
 GTEXT_CSS_Function_Info info;
 if (gtext_css_function_find(set, "--double", 8, &info)) {
@@ -438,3 +438,20 @@ A rule is invalid, ignored and reported (`gtext_css_function_diagnostic()`), whe
 and a block, not a function), a parameter is not `--name [<type>] [: <default>]`, a name is a parameter twice, a type is not one syntax component (or `type(...)`),
 or a default is not a value of its type. A declaration of the body that is neither `result` nor a custom property is ignored and reported, and the rule stands.
 Of several rules of one name the one in the stronger cascade layer wins, and the later one within a layer; the loser is reported as `superseded`.
+
+### Calling a function
+
+Give the set to the compute context as `GTEXT_CSS_Compute_Options::function_rules` (borrowed; it must outlive the context and not change while the context is used). A
+`<dashed-function>` in a property or in a custom property is then replaced, as `var()` is, by the `result` of the function of that name, evaluated as CSS Functions and Mixins 1 says:
+the arguments are replaced in the calling context (a `{ ... }` argument is one argument and its braces are not part of it; one that is the guaranteed-invalid value selects the
+parameter's default; a value that is not of the parameter's type is not valid and the default is tried), more arguments than parameters is the guaranteed-invalid value, and then the body
+is resolved as a second scope that is a child of the calling context's: `var()` finds a local variable, then a parameter, then a custom property at the call site (and, in a function
+called from a function, the callers' locals and parameters). `initial` on a local variable is the parameter's value, `inherit` is `inherit()` of the name, and any other CSS-wide keyword is
+the guaranteed-invalid value; on `result` they are left alone. A function that is already being evaluated, however far up, is a cycle: every call in it is the guaranteed-invalid value.
+A name no rule defines is the guaranteed-invalid value. A conditional group rule in a body (`@media`, `@supports`, `@container`) applies when the environment says so
+(`GTEXT_CSS_Environment::condition_status`, else `condition`; `@container` is asked of the element the function is called on, as if its ancestors were the hypothetical element's). A
+body is read when it is called, so the declarations of a body are bounded per call (`max_function_declarations`), as is the depth of calls inside calls (`max_call_depth`, a status
+and not a stack: a call is a frame of the same explicit stack as `var()`).
+
+A document (`css_cssom_computed.h`) collects the `@function` rules of its sheets that take part, in cascade order, as it does the `@property` rules, and the compute context it makes is
+made again only when the functions change.

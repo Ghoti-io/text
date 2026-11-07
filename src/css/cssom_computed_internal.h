@@ -139,6 +139,7 @@ typedef struct css_cmps {
 typedef struct css_retired {
   GTEXT_CSS_Compute_Context * ctx;
   GTEXT_CSS_At_Property_Set * props;
+  GTEXT_CSS_Function_Set * fns;
 } css_retired;
 
 /// The session, made on first use; NULL on memory.
@@ -161,9 +162,10 @@ void css_computed_teardown(css_core * core);
 /// The document handle is gone: tear the computed state down now, or when the read that is running (one of whose callbacks released the handle) ends.
 void css_computed_teardown_soon(css_core * core);
 
-/// The registrations of the `@property` rules of the sheets changed (cssom_index.c, when it builds an index): `props` (taken; NULL for none) replaces `core->props`. The compute context the
-/// document made with the old ones, the styles of the cache and the computed declarations read before are dropped; a caller's compute context keeps its own registrations.
-void css_computed_properties_changed(css_core * core, GTEXT_CSS_At_Property_Set * props);
+/// The registrations of the `@property` rules of the sheets, or the functions of their `@function` rules, changed (cssom_index.c, when it builds an index): `props` and `fns` (taken; NULL for
+/// none) replace `core->props` and `core->fns`. The compute context the document made with the old ones, the styles of the cache and the computed declarations read before are dropped;
+/// a caller's compute context keeps its own registrations and functions.
+void css_computed_properties_changed(css_core * core, GTEXT_CSS_At_Property_Set * props, GTEXT_CSS_Function_Set * fns);
 
 /// The session's memory (at the last release of the core).
 void css_computed_free(css_core * core);

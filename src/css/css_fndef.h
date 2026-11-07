@@ -60,10 +60,19 @@ typedef struct css_fn_def {
   size_t nparams;
   css_compiled_syntax * returns;   ///< The return type, compiled; NULL when there is none (`type(*)`).
   bool has_result;                 ///< The body has a `result` descriptor.
-  const GTEXT_CSS_Rule * rule;     ///< The rule; its block is the body. Borrowed.
+  const GTEXT_CSS_Rule * rule;     ///< The rule; its block is the body. Borrowed from the tree given to the set, or the set's own copy (`own_tree`).
+  GTEXT_CSS_Id rule_id;            ///< The rule's id and span in the tree it was read from (kept for the diagnostics, since `rule` may be a copy).
+  GTEXT_CSS_Span rule_span;
+  char * own_text;                 ///< The text the copy was read from (for telling whether a rule changed), when there is a copy.
+  size_t own_len;
+  GTEXT_CSS_Tree * own_tree;       ///< The copy of the rule that `rule` is in, when the set was asked to own its rules (GTEXT_CSS_Function_Options::own_rules).
   uint32_t layer;                  ///< GTEXT_CSS_Layer_Id.
   size_t sheet;
 } css_fn_def;
+
+/// Whether two sets define the same functions the same way: the same names in the same layers with the same rules (the text of the rules the sets own, else the rules themselves) and
+/// the same diagnostics counted. A NULL set defines none.
+bool css_function_sets_equal(const GTEXT_CSS_Function_Set * x, const GTEXT_CSS_Function_Set * y);
 
 /// The function of a name, or NULL. `work` (may be NULL) counts the probes.
 const css_fn_def * css_function_set_find(const GTEXT_CSS_Function_Set * set, const char * name, size_t length, size_t * work);

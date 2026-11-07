@@ -184,6 +184,7 @@ struct GTEXT_CSS_Compute_Context {
   struct css_ereg * regs;                   ///< The registered custom properties in effect, sorted by name (bytes); the caller's win over a stylesheet's.
   size_t nregs;
   GTEXT_CSS_Substitute_Options sub;         ///< The limits of substitution, with the defaults applied.
+  const GTEXT_CSS_Function_Set * functions; ///< The custom functions the context was made with (borrowed), or NULL.
   const GTEXT_CSS_At_Property_Set * rules;  ///< The `@property` rules' registrations the context was made with (borrowed), or NULL.
   GCU_MUTEX_T syntax_lock;                  ///< Guards the cache below.
   bool syntax_lock_made;
@@ -299,6 +300,7 @@ typedef struct {
   bool probing;                   ///< Making the initial values: reads of the style are not traps.
   bool in_registered;             ///< The value of a registered custom property is being computed: `currentcolor` in it is the element's color, in a mix too (Properties and Values 1).
   bool used_context;              ///< Set when a value was computed from something that varies by element (the initial values' dependence).
+  bool pseudo;                    ///< The style is a pseudo-element's, `element` its originating element (a conditional rule of a function body asks its container query from the element itself).
   css_roll_set * roll;            ///< Where a declaration that came to a rolling keyword is recorded (css_compute_style_rolling()); NULL: such a declaration is invalid at computed-value time.
   bool range_invalid;             ///< A calculation of the value being computed was outside the range of a slot that does not clamp (CV_REJECT_RANGE): the value is invalid at computed-value time (compute_value()).
   GTEXT_CSS_Status status;
@@ -310,7 +312,7 @@ bool css_st_roll(css_state * st, GTEXT_CSS_Property_Id property, const char * na
 
 /// gtext_css_compute_style() that records, in `roll`, the properties whose substituted value is a rolling keyword (each as invalid, for this pass) instead of leaving them only invalid.
 GTEXT_CSS_Status css_compute_style_rolling(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Computed_Style * parent,
-    GTEXT_CSS_Element_Handle element, css_roll_set * roll, GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * result);
+    GTEXT_CSS_Element_Handle element, css_roll_set * roll, bool pseudo, GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * result);
 
 /// Replace the candidate at `index` of a candidate set that is not sealed with the CSS-wide keyword `kind` (a rolling one: the cascade then walks back from it as it does from a
 /// declaration of that keyword). GTEXT_CSS_E_INVALID for an index past the end or a sealed set.

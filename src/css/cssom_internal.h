@@ -156,6 +156,7 @@ struct css_core {
   struct GTEXT_CSSOM_Media_Query_List * mql_head, * mql_tail;   ///< The live media query lists in creation order (weak).
   size_t nmql;
   unsigned import_depth;               ///< Import callbacks running above this point.
+  GTEXT_CSS_Function_Set * fns;        ///< The custom functions that the `@function` rules of the sheets in `index` define (cssom_index.c), or NULL when there are none. Owned, with copies of the rules; a compute context the document made borrows it.
   GTEXT_CSS_At_Property_Set * props;   ///< The registrations that the `@property` rules of the sheets in `index` make (cssom_index.c), or NULL when no sheet has a rule that can hold one. Owned; a compute context the document made borrows it.
   GTEXT_CSS_Atrule_Set * keyframes;     ///< The `@keyframes` rules of the sheets in `index` (cssom_index.c), by name, or NULL when no sheet has one. Owned; a style computed for `getComputedStyle()` samples its animations from it.
   /* getComputedStyle() (cssom_computed.c) */

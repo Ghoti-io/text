@@ -48,11 +48,12 @@ struct Defs {
     return true;
   }
 
-  explicit Defs(const std::vector<std::string> & sheets, bool with_active = true, const GTEXT_Allocator * alloc = nullptr) {
+  explicit Defs(const std::vector<std::string> & sheets, bool with_active = true, const GTEXT_Allocator * alloc = nullptr, bool own_rules = false) {
     reg::Builder b;
     EXPECT_EQ(b.freeze(registry), GTEXT_CSS_OK);
     GTEXT_CSS_Function_Options o = gtext_css_function_options_default();
     o.allocator = alloc;
+    o.own_rules = own_rules;
     if (with_active) {
       o.active = always;
     }
@@ -70,6 +71,13 @@ struct Defs {
       GTEXT_CSS_Function_Result res;
       status = gtext_css_function_collect(set, tree, &res);
     }
+  }
+  /// Free the trees the set was given, as a caller that does not keep them would (the set then must not read them).
+  void release_trees() {
+    for (GTEXT_CSS_Tree * t : trees) {
+      gtext_css_tree_free(t);
+    }
+    trees.clear();
   }
   Defs(const Defs &) = delete;
   Defs & operator=(const Defs &) = delete;
@@ -316,4 +324,52 @@ TEST(CssFunctionSet, EveryAllocationFailureIsAllOrNothing) {
     EXPECT_TRUE(fa.live.empty()) << "allocation " << n << " left something held";
   }
   EXPECT_GT(failed, 5u);
+}
+
+/* A set made with own_rules keeps a copy of each rule it defines, so the trees it was given need not outlive it: this is what the document does with the live sheets, whose rules are
+   edited and removed while a compute context that borrows the set is in use. */
+TEST(CssFunctionSet, AnOwningSetReadsItsBodiesAfterTheTreesAreFreed) {
+  Defs d({"@function --f(--a: 1) returns <number> { --x: 2; result: var(--a) var(--x); @media (width > 1px) { --y: 3 } } @function --g() {}"}, true, nullptr, true);
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  d.release_trees();
+  GTEXT_CSS_Function_Info info;
+  ASSERT_TRUE(gtext_css_function_find(d.set, "--f", 3, &info));
+  ASSERT_NE(info.rule, nullptr);
+  ASSERT_EQ(info.rule->content_count, 2u);
+  ASSERT_EQ(info.rule->contents[0].kind, GTEXT_CSS_ITEM_DECLARATIONS);
+  ASSERT_EQ(info.rule->contents[0].declaration_count, 2u);
+  EXPECT_EQ(std::string(info.rule->contents[0].declarations[0].name.data, info.rule->contents[0].declarations[0].name.length), "--x");
+  EXPECT_EQ(std::string(info.rule->contents[0].declarations[1].name.data, info.rule->contents[0].declarations[1].name.length), "result");
+  EXPECT_EQ(info.rule->contents[1].kind, GTEXT_CSS_ITEM_RULE);
+  EXPECT_TRUE(info.has_result);
+  EXPECT_EQ(d.reasons(), "");
+}
+
+TEST(CssFunctionSet, EveryAllocationFailureOfAnOwningSetIsAllOrNothing) {
+  const std::string css = "@function --a(--x <length>: 1px) returns <length> { result: 1px; --l: 2px; @media (width > 1px) { result: 3px } } @function --a(--z) { result: 2px } @function --b() {}";
+  FaultAllocator fa;
+  size_t total = 0;
+  {
+    fa.arm(0);
+    Defs d({css}, true, &fa.alloc, true);
+    ASSERT_EQ(d.status, GTEXT_CSS_OK);
+    EXPECT_EQ(d.count(), 2u);
+    total = fa.calls;
+  }
+  EXPECT_TRUE(fa.live.empty());
+  ASSERT_GT(total, 10u);
+  size_t failed = 0;
+  for (size_t n = 1; n <= total; n++) {
+    fa.arm(n);
+    {
+      Defs d({css}, true, &fa.alloc, true);
+      if (fa.failed) {
+        failed++;
+        EXPECT_EQ(d.status, GTEXT_CSS_E_OOM) << "allocation " << n;
+      }
+    }
+    fa.disarm();
+    EXPECT_TRUE(fa.live.empty()) << "allocation " << n << " left something held";
+  }
+  EXPECT_GT(failed, 10u);
 }

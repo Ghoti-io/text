@@ -84,6 +84,7 @@
 
 #include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/css/css_at_property.h>
+#include <ghoti.io/text/css/css_custom_function.h>
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_custom.h>
 #include <ghoti.io/text/css/css_element.h>
@@ -218,6 +219,9 @@ typedef struct {
                                      ///< `user` must outlive the context. NULL: a computation that needs one is GTEXT_CSS_E_UNSUPPORTED, naming the callback. (gtext_css_compute_element() is
                                      ///< given a table of its own and uses that.)
   const GTEXT_CSS_At_Property_Set * property_rules; ///< The registrations that `@property` rules made (css_at_property.h), or NULL. Borrowed: it must outlive the context and not change.
+  const GTEXT_CSS_Function_Set * function_rules; ///< The custom functions that `@function` rules define (css_custom_function.h), or NULL: a `<dashed-function>` call is then the guaranteed-invalid value, as one
+                                     ///< of a name no rule defines is. Borrowed: it must outlive the context and not change while the context is used, and so must the trees whose rules it holds. A
+                                     ///< function body is read when it is called, and a conditional group rule in it is asked of the environment's `condition` callback (css_element.h).
   bool has_root_scheme;              ///< Whether `root_scheme` is given. False (the default): the page's color scheme is the used scheme of the topmost style of the chain (the root).
   GTEXT_CSS_Color_Scheme root_scheme; ///< For a subtree computed without its ancestors: the used color scheme of the page, which an element with `color-scheme: normal` (or none) uses
                                      ///< (Color Adjust 1: "the element color scheme is the same as the page color scheme"). Read only when `has_root_scheme`. A topmost style that declares a scheme of its own uses its own.

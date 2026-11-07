@@ -121,6 +121,8 @@ void css_fn_def_free(css_fn_def * d) {
   gtext_allocator_free(&a, d->params);
   css_compiled_syntax_free(d->returns);
   gtext_allocator_free(&a, d->name);
+  gtext_css_tree_free(d->own_tree);
+  gtext_allocator_free(&a, d->own_text);
   gtext_allocator_free(&a, d);
 }
 
@@ -156,7 +158,7 @@ const char * gtext_css_function_reason_name(GTEXT_CSS_Function_Reason reason) {
   }
 }
 
-static GTEXT_CSS_Status diagnose(GTEXT_CSS_Function_Set * s, GTEXT_CSS_Function_Reason reason, const char * name, size_t name_len, const GTEXT_CSS_Rule * rule,
+static GTEXT_CSS_Status diagnose_id(GTEXT_CSS_Function_Set * s, GTEXT_CSS_Function_Reason reason, const char * name, size_t name_len, GTEXT_CSS_Id rule,
     const GTEXT_CSS_Span * span, const char * message) {
   s->total++;
   if (s->ndiags >= s->opt.max_diagnostics) {
@@ -183,11 +185,16 @@ static GTEXT_CSS_Status diagnose(GTEXT_CSS_Function_Set * s, GTEXT_CSS_Function_
   d->reason = reason;
   d->name = copy;
   d->name_len = name_len;
-  d->rule = rule->id;
+  d->rule = rule;
   d->span = *span;
   d->sheet = s->sheets ? s->sheets - 1 : 0;
   d->message = message;
   return GTEXT_CSS_OK;
+}
+
+static GTEXT_CSS_Status diagnose(GTEXT_CSS_Function_Set * s, GTEXT_CSS_Function_Reason reason, const char * name, size_t name_len, const GTEXT_CSS_Rule * rule,
+    const GTEXT_CSS_Span * span, const char * message) {
+  return diagnose_id(s, reason, name, name_len, rule->id, span, message);
 }
 
 size_t gtext_css_function_diagnostic_total(const GTEXT_CSS_Function_Set * s) {
@@ -772,6 +779,92 @@ static const char * const kMessages[] = {
   [GTEXT_CSS_FN_BAD_RETURNS] = "Only [ returns <css-type> ]? may follow the parameters: the rule is invalid.",
 };
 
+/// A growing text for the copy of a rule.
+typedef struct {
+  const GTEXT_Allocator * alloc;
+  char * data;
+  size_t len, cap;
+} cbuf;
+
+static GTEXT_Markup_Status cbuf_write(void * user, const char * bytes, size_t n) {
+  cbuf * b = user;
+  if (b->len + n + 1 > b->cap) {
+    size_t cap = b->cap ? b->cap : 256;
+    while (cap < b->len + n + 1) {
+      cap *= 2;
+    }
+    GTEXT_Allocator a = *b->alloc;
+    char * g = gtext_allocator_realloc(&a, b->data, cap);
+    if (!g) {
+      return GTEXT_MARKUP_E_OOM;
+    }
+    b->data = g;
+    b->cap = cap;
+  }
+  memcpy(b->data + b->len, bytes, n);
+  b->len += n;
+  b->data[b->len] = '\0';
+  return GTEXT_MARKUP_OK;
+}
+
+/// Replace the borrowed rule of a definition with a copy the definition owns: the rule written and read again.
+static GTEXT_CSS_Status own_rule(GTEXT_CSS_Function_Set * s, css_fn_def * d) {
+  cbuf b = {&s->alloc, NULL, 0, 0};
+  GTEXT_Markup_Sink sink = {cbuf_write, &b};
+  GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+  so.allocator = &s->alloc;
+  GTEXT_CSS_Status st = gtext_css_serialize_rule(d->rule, false, &so, &sink);
+  if (st == GTEXT_CSS_E_WRITE) {
+    st = GTEXT_CSS_E_OOM;
+  }
+  if (st == GTEXT_CSS_OK) {
+    GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+    po.allocator = &s->alloc;
+    po.count_errors_only = true;
+    GTEXT_CSS_Tree * tree = NULL;
+    st = gtext_css_parse_rule(b.data ? b.data : "", b.len, &po, &tree, NULL);
+    if (st == GTEXT_CSS_OK && (tree->syntax_error != GTEXT_CSS_SYNTAX_NONE || tree->rule_count != 1)) {
+      gtext_css_tree_free(tree);
+      st = GTEXT_CSS_E_INTERNAL;
+    }
+    if (st == GTEXT_CSS_OK) {
+      d->own_tree = tree;
+      d->rule = &tree->rules[0];
+      d->own_text = b.data;
+      d->own_len = b.len;
+      return GTEXT_CSS_OK;
+    }
+  }
+  GTEXT_Allocator a = s->alloc;
+  gtext_allocator_free(&a, b.data);
+  return st;
+}
+
+bool css_function_sets_equal(const GTEXT_CSS_Function_Set * x, const GTEXT_CSS_Function_Set * y) {
+  if (x == y) {
+    return true;
+  }
+  const size_t nx = x ? x->ndefs : 0, ny = y ? y->ndefs : 0;
+  if (nx != ny || (x ? x->total : 0) != (y ? y->total : 0)) {
+    return false;
+  }
+  for (size_t i = 0; i < nx; i++) {
+    const css_fn_def * a = x->defs[i], * b = y->defs[i];
+    if (a->name_len != b->name_len || memcmp(a->name, b->name, a->name_len) != 0 || a->layer != b->layer) {
+      return false;
+    }
+    if (a->own_text || b->own_text) {
+      if (a->own_len != b->own_len || !a->own_text || !b->own_text || memcmp(a->own_text, b->own_text, a->own_len) != 0) {
+        return false;
+      }
+    }
+    else if (a->rule != b->rule) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static GTEXT_CSS_Status handle_function(GTEXT_CSS_Function_Set * s, const GTEXT_CSS_Rule * rule, GTEXT_CSS_Layer_Id layer, bool * defined) {
   s->work++;
   if (defined) {
@@ -797,6 +890,15 @@ static GTEXT_CSS_Status handle_function(GTEXT_CSS_Function_Set * s, const GTEXT_
   }
   d->layer = layer;
   d->sheet = s->sheets ? s->sheets - 1 : 0;
+  d->rule_id = rule->id;
+  d->rule_span = rule->span;
+  if (s->opt.own_rules) {
+    st = own_rule(s, d);
+    if (st != GTEXT_CSS_OK) {
+      css_fn_def_free(d);
+      return st;
+    }
+  }
   bool found = false;
   const size_t at = search(s, d->name, d->name_len, &found, &s->work);
   if (!found && s->ndefs >= s->opt.max_functions) {
@@ -812,9 +914,8 @@ static GTEXT_CSS_Status handle_function(GTEXT_CSS_Function_Set * s, const GTEXT_
       css_fn_def_free(d);
       return st;
     }
-    const GTEXT_CSS_Rule * lost = held->rule;
     s->defs[at] = d;
-    st = diagnose(s, GTEXT_CSS_FN_SUPERSEDED, held->name, held->name_len, lost, &lost->span,
+    st = diagnose_id(s, GTEXT_CSS_FN_SUPERSEDED, held->name, held->name_len, held->rule_id, &held->rule_span,
         "\"If more than one @function exists for a given name, then the rule in the stronger cascade layer wins, and rules defined later win within the same layer.\"");
     css_fn_def_free(held);
     if (defined) {

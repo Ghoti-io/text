@@ -1,0 +1,12 @@
+# tools/css/plant-function.py: planted defects of the evaluation of custom functions, each seen to fail. Columns (tab separated): name, file under src/css/, the text (exactly once, \n is a line feed), what replaces it, the test programs that must fail (comma separated, a key of PROGRAMS in the script: eval is test-css-function-eval.cpp, doc is test-cssom-function.cpp).
+function-cycle-not-guarded	css_substitute.c	    if (g != SIZE_MAX) {\n      mark_cyclic(sub, g);	    if (0 && g != SIZE_MAX) {\n      mark_cyclic(sub, g);	eval
+function-default-ignored	css_substitute.c	      if (!pm->has_default) {\n        prop_settle(sub, fi, NULL);	      if (1 || !pm->has_default) {\n        prop_settle(sub, fi, NULL);	eval
+function-body-cannot-see-the-call-site	css_substitute.c	  const css_fn_def * fn = f->def;\n  GTEXT_Allocator a = sub->alloc;\n  scope_t * sc = scope_new(sub, f->scope, fn);	  const css_fn_def * fn = f->def;\n  GTEXT_Allocator a = sub->alloc;\n  scope_t * sc = scope_new(sub, NULL, fn);	eval
+function-extra-arguments-accepted	css_substitute.c	    if (f->nargs > f->def->nparams) {	    if (0 && f->nargs > f->def->nparams) {	eval
+function-conditional-rule-always-applies	css_substitute.c	  *applies = st == GTEXT_CSS_OK && answer == GTEXT_CSS_TRI_TRUE;	  *applies = st == GTEXT_CSS_OK;	doc
+function-local-does-not-shadow-a-parameter	css_substitute.c	      e.item = fn->nparams + ndecl;	      e.item = 0;	eval
+function-return-type-ignored	css_substitute.c	          e.ereg = &sc->eregs[fn->nparams];	          e.ereg = NULL;	eval
+function-guard-not-released	css_substitute.c	    if (f->fguard) {\n      guard_pop(sub, f->def);\n    }	    if (0 && f->fguard) {\n      guard_pop(sub, f->def);\n    }	eval
+function-brace-argument-keeps-its-braces	css_substitute.c	        cnt = vals[0].child_count;\n        vals = vals[0].children;	        cnt = cnt + 0;	eval
+function-inherit-reads-its-own-scope	css_substitute.c	    return lookup_in(sub, fi, slot, sc->parent, name, len, false, NULL);	    return lookup_in(sub, fi, slot, sc, name, len, false, NULL);	eval
+function-rules-not-given-to-the-document-context	cssom_computed.c	  co.function_rules = core->fns;	  co.function_rules = NULL;	doc

@@ -45,6 +45,7 @@ ROOT = os.path.dirname(HERE)
 SRC_DIRS = ["src/css", "src", "src/html", "src/markup", "src/encoding", "src/xml"]
 LISTS = [
     ("tools/conformance/CSS_ANIMATION_PLANTS", "nfoc"),
+    ("tools/conformance/CSS_FUNCTION_PLANTS", "nfoc"),
     ("tools/conformance/CSS_ATRULES_PLANTS", "nfoc"),
     ("tools/conformance/CSS_COLOR_PLANTS", "nfoc"),
     ("tools/conformance/CSS_COMPUTED_PLANTS", "nfoc"),

@@ -398,7 +398,12 @@ typedef enum {
 /** @brief The kind of test of an `if()` condition that only the caller can answer. */
 typedef enum {
   GTEXT_CSS_CONDITION_MEDIA = 0, ///< `media( <media-feature> | <media-condition> )`
-  GTEXT_CSS_CONDITION_SUPPORTS   ///< `supports( [ <ident> : <declaration-value> ] | <supports-condition> )`
+  GTEXT_CSS_CONDITION_SUPPORTS,  ///< `supports( [ <ident> : <declaration-value> ] | <supports-condition> )`
+  /** The prelude of an `@container` rule in the body of a custom function, asked for the element the function is called on: the query container is chosen among that
+   *  element's ancestors, not the element (Mixins 1: "all values which would normally refer to the element being styled instead refer to calling context's root element"). */
+  GTEXT_CSS_CONDITION_CONTAINER,
+  /** As GTEXT_CSS_CONDITION_CONTAINER for a pseudo-element: `element` is its originating element, which is a candidate container. */
+  GTEXT_CSS_CONDITION_CONTAINER_PSEUDO
 } GTEXT_CSS_Condition_Kind;
 
 /** @brief The answer to a condition in three-valued logic (CSS Values 5, Appendix B). */
@@ -468,6 +473,12 @@ typedef struct {
   /** The random base value (0 up to but not including 1) of a key, when the caller wants to decide it (reproducibly across runs, say). Returns false for no
    *  opinion: the seed decides. */
   bool (*random_base)(void * user, const GTEXT_CSS_Random_Key * key, double * base);
+  /** As `condition`, for a caller that can say why it cannot answer: used by the conditional group rules of a custom function's body (`@media`, `@supports`, `@container`; the container kinds
+   *  are asked for the element the function is called on) in preference to `condition`. Returns GTEXT_CSS_OK with `*answer`, or a status: GTEXT_CSS_E_UNSUPPORTED (with `*detail`, a static
+   *  name of the callback the answer needs, `container.size`) fails the computation naming it, as a missing callback does everywhere else; GTEXT_CSS_E_OOM and the limits fail it; any other
+   *  status is an answer of unknown. Appended after the fields above. */
+  GTEXT_CSS_Status (*condition_status)(void * user, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text, GTEXT_CSS_Element_Handle element, GTEXT_CSS_Tristate * answer,
+      const char ** detail);
 } GTEXT_CSS_Environment;
 
 /** The size of GTEXT_CSS_Environment through its `resolve_url` field, which is the one a caller who sets that field has. */

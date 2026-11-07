@@ -94,6 +94,11 @@ class World {
   std::function<bool(const GTEXT_CSS_Random_Key *, double *)> random_base;
   reg::Owned registry;
   GTEXT_CSS_At_Property_Set * rules = nullptr;
+  /// Stylesheets whose `@function` rules are collected into `fn_set`, which the context is given as its `function_rules` (build() reads them).
+  std::vector<std::string> function_sheets;
+  GTEXT_CSS_Function_Set * fn_set = nullptr;
+  std::vector<GTEXT_CSS_Tree *> fn_trees;
+  GTEXT_CSS_Function_Options fn_options = gtext_css_function_options_default();
   GTEXT_CSS_Compute_Context * ctx = nullptr;
   GTEXT_CSS_Status ctx_status = GTEXT_CSS_E_INTERNAL;
   GTEXT_CSS_Compute_Result ctx_result{};
@@ -110,6 +115,10 @@ class World {
   ~World() {
     gtext_css_compute_context_free(ctx);
     gtext_css_at_property_set_free(rules);
+    gtext_css_function_set_free(fn_set);
+    for (GTEXT_CSS_Tree * t : fn_trees) {
+      gtext_css_tree_free(t);
+    }
   }
 
   /// Register custom properties, freeze, add the stylesheets' rules, make the context. Call once.
@@ -132,6 +141,28 @@ class World {
     GTEXT_CSS_Status st = b.freeze(registry);
     if (st != GTEXT_CSS_OK) {
       return st;
+    }
+    if (!function_sheets.empty()) {
+      fn_options.allocator = options.allocator;
+      fn_options.active = [](void *, const GTEXT_CSS_Rule *) { return true; };
+      st = gtext_css_function_set_new(registry.r, &fn_options, &fn_set);
+      if (st != GTEXT_CSS_OK) {
+        return st;
+      }
+      for (const std::string & css : function_sheets) {
+        GTEXT_CSS_Tree * tree = nullptr;
+        st = gtext_css_parse_stylesheet(css.data(), css.size(), nullptr, &tree, nullptr);
+        if (st != GTEXT_CSS_OK) {
+          return st;
+        }
+        fn_trees.push_back(tree);
+        GTEXT_CSS_Function_Result res;
+        st = gtext_css_function_collect(fn_set, tree, &res);
+        if (st != GTEXT_CSS_OK) {
+          return st;
+        }
+      }
+      options.function_rules = fn_set;
     }
     if (!sheets.empty()) {
       st = gtext_css_at_property_set_new(registry.r, nullptr, &rules);

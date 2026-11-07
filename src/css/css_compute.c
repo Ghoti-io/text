@@ -726,6 +726,7 @@ GTEXT_CSS_Status gtext_css_compute_context_new(const GTEXT_CSS_Registry * regist
   cc->options.elements = NULL;
   cc->sub = cc->options.substitute;
   cc->rules = cc->options.property_rules;
+  cc->functions = cc->options.function_rules;
   if (GCU_MUTEX_CREATE(cc->syntax_lock) != 0) {
     gtext_css_compute_context_free(cc);
     return result_done(result, GTEXT_CSS_E_INVALID);
@@ -2054,23 +2055,23 @@ static GTEXT_CSS_Status run_pipeline(css_state * st) {
 /* ---- computing ---------------------------------------------------------------------------------------- */
 
 static GTEXT_CSS_Status compute_style_with(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block,
-    const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Element_Interface * iface, css_roll_set * roll, GTEXT_CSS_Computed_Style ** out,
-    GTEXT_CSS_Compute_Result * result);
+    const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Element_Interface * iface, css_roll_set * roll, bool pseudo,
+    GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * result);
 
 GTEXT_CSS_Status gtext_css_compute_style(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block,
     const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, GTEXT_CSS_Computed_Style ** out,
     GTEXT_CSS_Compute_Result * result) {
-  return compute_style_with(context, block, parent, element, context && context->has_iface ? &context->iface : NULL, NULL, out, result);
+  return compute_style_with(context, block, parent, element, context && context->has_iface ? &context->iface : NULL, NULL, false, out, result);
 }
 
 GTEXT_CSS_Status css_compute_style_rolling(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Computed_Style * parent,
-    GTEXT_CSS_Element_Handle element, css_roll_set * roll, GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * result) {
-  return compute_style_with(context, block, parent, element, context && context->has_iface ? &context->iface : NULL, roll, out, result);
+    GTEXT_CSS_Element_Handle element, css_roll_set * roll, bool pseudo, GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * result) {
+  return compute_style_with(context, block, parent, element, context && context->has_iface ? &context->iface : NULL, roll, pseudo, out, result);
 }
 
 static GTEXT_CSS_Status compute_style_with(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block,
-    const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Element_Interface * iface, css_roll_set * roll, GTEXT_CSS_Computed_Style ** out,
-    GTEXT_CSS_Compute_Result * result) {
+    const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Element_Interface * iface, css_roll_set * roll, bool pseudo,
+    GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * result) {
   result_clear(result);
   if (!context || !out) {
     return result_done(result, GTEXT_CSS_E_INVALID);
@@ -2088,6 +2089,7 @@ static GTEXT_CSS_Status compute_style_with(const GTEXT_CSS_Compute_Context * con
   st.element = element;
   st.iface = iface;
   st.roll = roll;
+  st.pseudo = pseudo;
   GTEXT_CSS_Computed_Style * style = style_new(context);
   GTEXT_Allocator a = context->alloc;
   if (!style) {
@@ -2191,7 +2193,7 @@ GTEXT_CSS_Status gtext_css_compute_element(const GTEXT_CSS_Compute_Context * con
     GTEXT_CSS_Computed_Style * cur = NULL;
     GTEXT_CSS_Compute_Result r;
     if (st == GTEXT_CSS_OK) {
-      st = compute_style_with(context, block, prev, chain[i], iface, NULL, &cur, &r);
+      st = compute_style_with(context, block, prev, chain[i], iface, NULL, false, &cur, &r);
       work += r.work;
       if (st != GTEXT_CSS_OK && result) {
         *result = r;

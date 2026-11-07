@@ -356,6 +356,19 @@ GTEXT_API void gtext_css_media_list_dependencies(const GTEXT_CSS_Media_List * li
 GTEXT_API GTEXT_CSS_Tristate gtext_css_conditions_condition(const GTEXT_CSS_Conditions * conditions, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text);
 
 /**
+ * @brief gtext_css_conditions_condition() that knows the element, so that it can answer the container kinds (GTEXT_CSS_CONDITION_CONTAINER and _PSEUDO: the prelude of an `@container`
+ *   rule of a custom function's body, asked for the element the function is called on), and says why when it cannot: the shape of GTEXT_CSS_Environment::condition_status with the
+ *   conditions object (and, with it, the call context) as the caller's `user`.
+ *
+ * @param call NULL, or the caller's context (the cache of container resolution).
+ * @param answer Receives the answer; unknown for a text that is not a condition. Not NULL.
+ * @param detail Receives, with GTEXT_CSS_E_UNSUPPORTED, the name of the callback the query needed (`container.size`); NULL if not wanted.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_UNSUPPORTED; GTEXT_CSS_E_OOM and the limits of container resolution.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_conditions_condition_element(const GTEXT_CSS_Conditions * conditions, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text,
+    GTEXT_CSS_Element_Handle element, GTEXT_CSS_Condition_Call * call, GTEXT_CSS_Tristate * answer, const char ** detail);
+
+/**
  * @brief Make an environment of the computed-value layer answer `if(media(...))` through this evaluator: fills `condition` and `user`.
  *
  * The text of the callback is parsed as a media query list on each call and the parse is not cached; the text is bounded by its length. `user` is the
