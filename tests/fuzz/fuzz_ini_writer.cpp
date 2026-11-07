@@ -69,6 +69,31 @@ struct Group {
   std::vector<Entry> entries;
 };
 
+/**
+ * The @p nth group of the document whose header names @p name.
+ *
+ * By name through gtext_ini_document_group() for every name but the empty one.
+ * The empty name is the **preamble** for that lookup (`[]` then `k=v` with no
+ * preamble answers nothing for `("", "k")`, measured against the reference
+ * and pinned in tests/test-ini.cpp), so a `[]` group the DOM accepted and the
+ * writer wrote is a real group that no lookup by name reaches. The harness
+ * asked for it and so cannot lose it, and it finds it the way a caller must:
+ * by position, among the groups that are not the preamble.
+ */
+const GTEXT_INI_Group * find_group(const GTEXT_INI_Document * doc,
+    const std::string & name, size_t nth) {
+  if (!name.empty()) return gtext_ini_document_group(doc, name.c_str());
+  const size_t n = gtext_ini_document_group_count(doc);
+  for (size_t i = 0; i < n; i++) {
+    const GTEXT_INI_Group * g = gtext_ini_document_group_at(doc, i);
+    if (gtext_ini_group_is_preamble(g)) continue;
+    size_t len = 0;
+    gtext_ini_group_name(g, &len);
+    if (len == 0 && nth-- == 0) return g;
+  }
+  return nullptr;
+}
+
 } // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
@@ -167,8 +192,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     // Every group the DOM accepted must come back, with its entries. Looked up
     // by name rather than by index, because a writer is allowed to order the
     // preamble and the groups as it sees fit.
+    size_t empty_seen = 0;
     for (const Group & g : shadow) {
-      const GTEXT_INI_Group * got = gtext_ini_document_group(back, g.name.c_str());
+      const GTEXT_INI_Group * got =
+          find_group(back, g.name, g.name.empty() ? empty_seen++ : 0);
       if (!got) {
         std::fprintf(stderr, "group lost: %zu bytes\n", g.name.size());
         fail("a group the DOM accepted did not survive the round trip", out);

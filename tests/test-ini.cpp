@@ -3535,6 +3535,47 @@ TEST(IniWin32, TheEmptyGroupNameParsesAndIsUnreachableByName) {
   refused("[]\nk=v\n", GTEXT_INI_E_BAD_GROUP, cp());
 }
 
+TEST(IniWin32, AnEmptyGroupBuiltInTheDomIsWrittenAndComesBackAsAGroupNoNameReaches) {
+  /*
+   * The fuzz_ini_writer finding "a group the DOM accepted did not survive the
+   * round trip" (output `[]\r\n`) was the harness's model and not the writer:
+   * add_group("") is accepted, the writer writes `[]`, the parse reads a group
+   * back - and a lookup by the empty name answers the preamble, so it was never
+   * going to find it. The group is there, by position, with its entry.
+   */
+  GTEXT_INI_Parse_Options popts = gtext_ini_parse_options_default();
+  popts.dialect = w32();
+  GTEXT_INI_Document * built = gtext_ini_new(&popts);
+  ASSERT_NE(built, nullptr);
+  GTEXT_INI_Group * g = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(built, "", &g), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_group_set(g, "k", "v", 1), GTEXT_INI_OK);
+  const std::string out = written(built);
+  gtext_ini_free(built);
+  EXPECT_NE(out.find("[]"), std::string::npos);
+
+  GTEXT_INI_Document * back = ok(out.c_str(), w32());
+  ASSERT_NE(back, nullptr);
+  size_t found = 0;
+  for (size_t i = 0; i < gtext_ini_document_group_count(back); i++) {
+    const GTEXT_INI_Group * got = gtext_ini_document_group_at(back, i);
+    if (gtext_ini_group_is_preamble(got)) continue;
+    size_t len = 99;
+    gtext_ini_group_name(got, &len);
+    EXPECT_EQ(len, 0u);
+    size_t vlen = 0;
+    const char * v = gtext_ini_group_get(got, "k", &vlen);
+    ASSERT_NE(v, nullptr);
+    EXPECT_EQ(std::string(v, vlen), "v");
+    found++;
+  }
+  EXPECT_EQ(found, 1u);
+  /* ...and the name still reaches only the preamble, which is the measured
+   * rule the test above pins. */
+  EXPECT_EQ(gtext_ini_document_group(back, ""), nullptr);
+  gtext_ini_free(back);
+}
+
 TEST(IniWin32, TheFirstSeparatorSplitsTheLineAndTheKeyIsOpen) {
   struct Case { const char * text; const char * key; const char * value; };
   for (const Case & c : {
