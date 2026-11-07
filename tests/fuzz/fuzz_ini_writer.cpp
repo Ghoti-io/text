@@ -66,6 +66,8 @@ struct Entry {
 };
 struct Group {
   std::string name;
+  /** The name a lookup answers to: for git the folded `section.subsection`, because `[a.V]` is the group `a.v` and is reachable by no other spelling (git does the same; documentation/formats/ini.md), and the header spelling for every other dialect. */
+  std::string canon;
   std::vector<Entry> entries;
 };
 
@@ -81,9 +83,9 @@ struct Group {
  * by position, among the groups that are not the preamble.
  */
 const GTEXT_INI_Group * find_group(const GTEXT_INI_Document * doc,
-    const std::string & name, size_t & nth) {
+    const std::string & name, const std::string & canon, size_t & nth) {
   if (!name.empty()) {
-    const GTEXT_INI_Group * g = gtext_ini_document_group(doc, name.c_str());
+    const GTEXT_INI_Group * g = gtext_ini_document_group(doc, canon.c_str());
     if (g) return g;
     // a name of blanks only is trimmed to the empty name by a dialect that trims (`[\t]` is `[]`), and the lookup trims the query the same way: the same group
     // that no lookup by name reaches
@@ -158,7 +160,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
           && g) {
         current = g;
         current_name = a;
-        shadow.push_back(Group{a, {}});
+        size_t clen = 0;
+        const char * cn = gtext_ini_group_canonical_name(g, &clen);
+        shadow.push_back(Group{a, cn ? std::string(cn, clen) : a, {}});
       }
     }
     else {
@@ -230,7 +234,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
         }
       }
       else {
-        got = find_group(back, g.name, empty_seen);
+        got = find_group(back, g.name, g.canon, empty_seen);
       }
       if (!got) {
         std::fprintf(stderr, "group lost: %zu bytes\n", g.name.size());

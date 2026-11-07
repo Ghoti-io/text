@@ -1140,6 +1140,40 @@ TEST(IniGit, SectionAndKeyFoldButAQuotedSubsectionDoesNot) {
   gtext_ini_free(doc);
 }
 
+TEST(IniGit, AGroupAddedWithADottedHeaderIsReachableOnlyByItsFoldedNameAfterAWriteAndARead) {
+  /* `add_group()` takes the header spelling, so `a.V` is the old-style header
+   * `[a.V]`, whose subsection git folds: measured, a file holding `[a.V]` and
+   * `[a "V"]` answers `a.v.k` for the first and `a.V.k` for the second and
+   * refuses `a.V.k` for the first (the fuzz finding was `.V`: the writer wrote
+   * `[.V]`, the reader folded it, and a lookup by the spelling that was added
+   * found nothing - the same as git, so the harness's model was wrong, not the
+   * library). The quoted spelling keeps its case. */
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = git();
+  GTEXT_INI_Document * doc = gtext_ini_new(&opts);
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * g = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(doc, ".V", &g), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_group_set(g, "k", "1", 1), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "a \"V\"", &g), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_group_set(g, "k", "2", 1), GTEXT_INI_OK);
+  size_t len = 0;
+  const char * canon =
+      gtext_ini_group_canonical_name(gtext_ini_document_group_at(doc, 0), &len);
+  ASSERT_EQ(take(canon, len), ".v");
+  const std::string out = written(doc);
+  EXPECT_EQ(out, "[.V]\nk=1\n[a \"V\"]\nk=2\n");
+  GTEXT_INI_Document * back =
+      gtext_ini_parse(out.data(), out.size(), &opts, nullptr);
+  ASSERT_NE(back, nullptr);
+  EXPECT_EQ(raw(back, ".v", "k"), "1");
+  EXPECT_EQ(raw(back, ".V", "k"), "<absent>");
+  EXPECT_EQ(raw(back, "a.V", "k"), "2");
+  EXPECT_EQ(raw(back, "a.v", "k"), "<absent>");
+  gtext_ini_free(back);
+  gtext_ini_free(doc);
+}
+
 TEST(IniGit, ASubsectionMayHoldBytesTheSectionNameMayNot) {
   /* Any byte but a terminator, `]` and `[` included, and a backslash *drops* -
    * so `\t` here is the letter t, while `\t` in a value one line later is a tab.
