@@ -372,10 +372,10 @@ computed-background-position-written-from-the-longhands	cssom_decl.c	  else if (
 a-pending-longhand-left-out-stops-a-shorthand	css_shorthand_serialize.c	!= (uint32_t)(i + 1) || left_out(c, it)) {	!= (uint32_t)(i + 1)) {	decl,seeds
 every-pending-longhand-counts-as-left-out	css_shorthand_serialize.c	  return c->pending_state[it->shorthand] == 2;	  return true;	decl
 property-rules-not-given-to-the-context	cssom_computed.c	  co.property_rules = core->props;	  co.property_rules = NULL;	atproperty
-registrations-never-seen-to-change	cssom_index.c	  if (same_properties(core->props, props)) {	  if (1) {	atproperty
-disabled-sheet-registers	cssom_index.c	  (void)implicit_root;\n  bool yes = false;\n  const GTEXT_CSS_Status st = takes_part(core, sheet, &yes);\n  if (st != GTEXT_CSS_OK || !yes) {	  (void)implicit_root;\n  bool yes = false;\n  const GTEXT_CSS_Status st = takes_part(core, sheet, &yes);\n  if (st != GTEXT_CSS_OK) {	atproperty
+registrations-never-seen-to-change	cssom_index.c	  const bool same_props = same_properties(core->props, props);	  const bool same_props = true;	atproperty
+disabled-sheet-registers	cssom_index.c	  if (st != GTEXT_CSS_OK || !yes) {\n    return st;\n  }\n  return css_sheet_collect_properties(	  if (st != GTEXT_CSS_OK) {\n    return st;\n  }\n  return css_sheet_collect_properties(	atproperty
 layer-order-ignored-by-property-rules	css_at_property.c	    if (held && layer_compare(s, layer, held->layer) < 0) {	    if (held && 0) {	atproperty
-registered-set-leaks-when-the-index-fails	cssom_index.c	  if (st != GTEXT_CSS_OK) {\n    gtext_css_rule_index_free(fresh);\n    return st;\n  }\n  /* ... and so are the `@keyframes` rules	  if (st != GTEXT_CSS_OK) {\n    return st;\n  }\n  /* ... and so are the `@keyframes` rules	atproperty
+registered-set-leaks-when-the-index-fails	cssom_index.c	  if (st != GTEXT_CSS_OK) {\n    gtext_css_rule_index_free(fresh);\n    return st;\n  }\n  /* ... and the custom functions	  if (st != GTEXT_CSS_OK) {\n    return st;\n  }\n  /* ... and the custom functions	atproperty
 math-result-outside-the-range-is-clamped-for-text-combine	css_compute_algo.c	run_build(st, id, src, CV_REJECT_RANGE, build_text_combine, m, out)	run_build(st, id, src, 0, build_text_combine, m, out)	completion
 later-shorthand-replaces-an-important-one-kept-as-written	css_block.c	  if (st == GTEXT_CSS_OK && superseded && keep_important && !important && block->items[superseded - 1].important) {	  if (0) {	decl
 shorthand-formed-from-longhands-beside-the-one-kept-as-written	css_shorthand_serialize.c	        present = !(block->items[i].opaque && !block->items[i].dead && block->items[i].property == (GTEXT_CSS_Property_Id)id);	        present = present;	decl
