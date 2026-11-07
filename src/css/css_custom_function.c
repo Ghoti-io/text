@@ -1102,7 +1102,9 @@ GTEXT_CSS_Status css_apply_prelude_read(const GTEXT_Allocator * alloc, const GTE
           gtext_allocator_free((GTEXT_Allocator *)alloc, list);
           return GTEXT_CSS_OK;
         }
-        list[n].values += p;
+        if (q > p) {
+          list[n].values += p;   /* never an offset of zero from the NULL an empty block has */
+        }
         list[n].count = q - p;
       }
       n++;
