@@ -157,6 +157,8 @@ cycle through the font-relative units of a registered property (`--len: 2em` for
 | `random(...)`, `sibling-index()`, `sibling-count()` | `random_base`, and the element interface's `sibling_index` and `sibling_count` | `GTEXT_CSS_E_UNSUPPORTED` naming the callback |
 | `cycle(a, b, c)` | the property's value in the parent: the one after the match, wrapping | |
 
+An `attr()` whose type was written and does not read (`type(<url>)`, which Values 5 makes invalid as a syntax, or a token that is no keyword, unit or `type()`) is a failure, and its result with no fallback is the guaranteed-invalid value; an `attr()` with no type at all has the empty string for it, as "FAILURE: If second arg is null, and syntax was omitted, return an empty CSS <string>" says.
+
 `attr()` is **tainted**: what it makes cannot become a URL ("attr() may not be used to make a URL"), so a `url()` or `image()` made from it is invalid at
 computed-value time. A function written directly after `...` (`max(var(--list)...)`) is replaced first and the arguments are divided on what it gave.
 An argument grammar that is not met is a parse error: `var(--a,!)`, `var(--a,;)` and `var(--a) !important !important` are invalid declarations, and the one

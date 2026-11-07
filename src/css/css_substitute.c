@@ -2516,11 +2516,13 @@ static int attr_read_args(css_sub * sub, size_t fi, const css_rope * r) {
   bool pct = false;
   const css_compiled_syntax * csyn = NULL;
   bool csyn_temp = false;
+  bool type_written = false;   /* an <attr-type> follows the name, whether or not it is one */
   if (ok) {
     while (i < n && is_ws(&v[i])) {
       i++;
     }
     if (i < n) {
+      type_written = true;
       if (v[i].kind == GTEXT_CSS_VALUE_FUNCTION && fn_name_is(&v[i].value, "type")) {
         dbuf text;
         dbuf_init(&text, &sub->alloc);
@@ -2615,8 +2617,15 @@ static int attr_read_args(css_sub * sub, size_t fi, const css_rope * r) {
     f->csyn_temp = csyn_temp;
     result = 1;
   }
-  else if (csyn_temp) {
-    css_compiled_syntax_free((css_compiled_syntax *)csyn);
+  else {
+    if (csyn_temp) {
+      css_compiled_syntax_free((css_compiled_syntax *)csyn);
+    }
+    if (type_written) {
+      /* "FAILURE: If second arg is null, and syntax was omitted, return an empty CSS <string>. If second arg is null, return the guaranteed-invalid value." A type that was written and does not
+         parse (`type(<url>)`: "For this purpose, <url> is invalid as a <syntax-single-component>", a stray token) is not an omitted one. */
+      sub->frames[fi].mode = 4;
+    }
   }
   gtext_css_tree_free(t);
   return result;

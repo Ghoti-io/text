@@ -355,6 +355,19 @@ TEST(CssCustom, AttrRawStringIsAStringWithoutParsing) {
   EXPECT_EQ(a.custom("--s: attr(nope raw-string)", "--s"), "<gi>");
 }
 
+// Values 5, attr(): "For this purpose, <url> is invalid as a <syntax-single-component>", and the algorithm ends "FAILURE: If second arg is null, and syntax was omitted, return an empty CSS
+// <string>. If second arg is null, return the guaranteed-invalid value." The type was written, so it was not omitted, and a type that does not parse (a <url>, a stray token) is a failure with
+// the guaranteed-invalid value as its result, not the empty string that an attr() with no type has (the pinned page css-values/attr-parse-url.html; Chromium passes it, Firefox reads the URL).
+TEST(CssCustom, AnAttrWhoseTypeDoesNotParseIsTheGuaranteedInvalidValue) {
+  AttrWorld a({{"u", "url(\"https://example.test/a.png\")"}, {"n", "5"}});
+  EXPECT_EQ(a.custom("--s: attr(u type(<url>))", "--s"), "<gi>");
+  EXPECT_EQ(a.custom("--s: attr(u type(<url> | <color>))", "--s"), "<gi>");
+  EXPECT_EQ(a.custom("--s: attr(n number extra)", "--s"), "<gi>") << "a token after the type";
+  EXPECT_EQ(a.custom("--s: attr(n 7)", "--s"), "<gi>") << "a type that is no keyword, unit or type()";
+  EXPECT_EQ(a.custom("--s: attr(u type(<url>), x)", "--s"), "x") << "the fallback of a failure is the second argument";
+  EXPECT_EQ(a.custom("--s: attr(nope)", "--s"), "\"\"") << "no type: the empty string";
+}
+
 TEST(CssCustom, AttrTypeOfASyntax) {
   AttrWorld a({{"w", "10px"}, {"c", "red"}, {"x", "10"}});
   EXPECT_EQ(a.value("width: attr(w type(<length>))", "width"), "10px");
