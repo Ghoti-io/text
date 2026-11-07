@@ -124,7 +124,16 @@ TEST_F(CssomDocumentFuzzSeeds, EverySeedHoldsEveryProperty) {
   RecordProperty("replay_seconds", std::to_string(seconds));
   const char * slow_env = std::getenv("GTEXT_TEST_SLOWDOWN");   // a known slow host (an emulator, Valgrind, a sanitizer) multiplies the bound, as the other seed replays do
   const double slow = slow_env && std::atof(slow_env) >= 1.0 && std::atof(slow_env) <= 1000.0 ? std::atof(slow_env) : 1.0;
-  EXPECT_LT(seconds, 120.0 * slow) << files.size() << " seeds took " << seconds << " s";
+  // The bound is 6.2 times what 300 seeds cost in the release build (19.3 s measured, one test on a quiet 12-thread host). ASan+UBSan costs 6.5 times that (124.8 s measured,
+  // alone, in the same image: a bound of 120 s failed by 5 s on a quiet host, so it was never a signal), and ThreadSanitizer more. A sanitized build multiplies the bound by 3,
+  // which leaves it the same 2.9 times above the measured cost as the release bound is above its own. GTEXT_TEST_SLOWDOWN multiplies it further, as it does for the
+  // other replays.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+  constexpr double kSanitizer = 3.0;
+#else
+  constexpr double kSanitizer = 1.0;
+#endif
+  EXPECT_LT(seconds, 120.0 * slow * kSanitizer) << files.size() << " seeds took " << seconds << " s";
 }
 
 } // namespace
