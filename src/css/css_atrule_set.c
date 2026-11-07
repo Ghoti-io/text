@@ -503,11 +503,11 @@ GTEXT_CSS_Status gtext_css_atrule_set_add_rules(GTEXT_CSS_Atrule_Set * s, const 
 
 /* ---- freezing -------------------------------------------------------------------------------------------------------------------------- */
 
-static const entry * g_ents;
-
+/// Orders the entries of a set by the cascade: by layer rank, then by the order they were found in. It sorts pointers to the entries so that it needs nothing but its two arguments
+/// (a comparator that reads the set from a file-scope variable is a data race between two threads that freeze two sets).
 static int cascade_cmp(const void * a, const void * b) {
-  const entry * x = &g_ents[*(const size_t *)a];
-  const entry * y = &g_ents[*(const size_t *)b];
+  const entry * x = *(const entry * const *)a;
+  const entry * y = *(const entry * const *)b;
   if (x->rank != y->rank) {
     return x->rank < y->rank ? -1 : 1;
   }
@@ -788,14 +788,19 @@ GTEXT_CSS_Status gtext_css_atrule_set_freeze(GTEXT_CSS_Atrule_Set * s) {
   if (!s->sorted) {
     return GTEXT_CSS_E_OOM;
   }
-  for (size_t i = 0; i < s->n; i++) {
-    s->sorted[i] = i;
-  }
-  g_ents = s->ents;
   if (s->n) {
-    if (s->n) {
-    qsort(s->sorted, s->n, sizeof *s->sorted, cascade_cmp);
-  }
+    const entry ** by = gtext_allocator_malloc(&s->alloc, s->n * sizeof *by);
+    if (!by) {
+      return GTEXT_CSS_E_OOM;
+    }
+    for (size_t i = 0; i < s->n; i++) {
+      by[i] = &s->ents[i];
+    }
+    qsort(by, s->n, sizeof *by, cascade_cmp);
+    for (size_t i = 0; i < s->n; i++) {
+      s->sorted[i] = (size_t)(by[i] - s->ents);
+    }
+    gtext_allocator_free(&s->alloc, by);
   }
   for (size_t p = 0; p < s->n; p++) {
     s->ents[s->sorted[p]].pos = p;
