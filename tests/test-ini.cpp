@@ -3616,6 +3616,36 @@ TEST(IniWin32, AnEmptyGroupBuiltInTheDomIsWrittenAndComesBackAsAGroupNoNameReach
   gtext_ini_free(back);
 }
 
+TEST(IniWin32, AGroupNameWithACarriageReturnAtAnEndIsRefusedOnTheWayIn) {
+  /*
+   * The fuzz_ini_writer finding `7c 00 00 fd 0d 44 fd ff 0c` (win32, add_group of CR D 0xFD 0xFF FF) was the library's. A carriage return is a blank in this dialect (`k\v=\fv`
+   * is a measured case, and the trim of a name skips one), and the check for a line terminator looked at the trimmed span only, so a name that began or ended with a carriage return
+   * was taken and written as `[<CR>D]`, a line the reader ends at the carriage return: the group was never there to find. A form feed or a vertical tab at an end is a blank that is
+   * written and read back as itself (measured with this test).
+   */
+  GTEXT_INI_Parse_Options popts = gtext_ini_parse_options_default();
+  popts.dialect = w32();
+  GTEXT_INI_Document * doc = gtext_ini_new(&popts);
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * g = nullptr;
+  for (const char * bad : {"\rD", "D\r", "\r", "\rD\xfd\xff\f", "D\rE", "D\n", "\nD"}) {
+    EXPECT_EQ(gtext_ini_document_add_group(doc, bad, &g), GTEXT_INI_E_BAD_GROUP) << "refused";
+  }
+  for (const char * good : {"\fA", "B\f", "\vC", " D ", "E F"}) {
+    EXPECT_EQ(gtext_ini_document_add_group(doc, good, &g), GTEXT_INI_OK) << good;
+  }
+  const std::string out = written(doc);
+  gtext_ini_free(doc);
+  GTEXT_INI_Document * back = ok(out.c_str(), w32());
+  ASSERT_NE(back, nullptr);
+  size_t groups = 0;
+  for (size_t i = 0; i < gtext_ini_document_group_count(back); i++) {
+    groups += gtext_ini_group_is_preamble(gtext_ini_document_group_at(back, i)) ? 0 : 1;
+  }
+  EXPECT_EQ(groups, 5u) << "every group the DOM accepted is in what it wrote";
+  gtext_ini_free(back);
+}
+
 TEST(IniWin32, TheFirstSeparatorSplitsTheLineAndTheKeyIsOpen) {
   struct Case { const char * text; const char * key; const char * value; };
   for (const Case & c : {

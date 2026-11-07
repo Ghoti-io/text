@@ -1153,7 +1153,10 @@ bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
     while (begin < stop && gtext_ini_is_space(dialect, name[begin])) begin++;
     while (stop > begin && gtext_ini_is_space(dialect, name[stop - 1])) stop--;
     if (begin == stop && !dialect->allow_empty_group_name) return false;
-    for (size_t i = begin; i < stop; i++) {
+    /* the whole span, not the trimmed one: a carriage return is a blank here (the trim above skips one at either end), and a name that began or ended with one would be
+       written as `[<CR>D]` or `[D<CR>]`, which the reader takes as the end of a line, and no group of that name would be there to find (the writer harness's
+       `7c 00 00 fd 0d 44 fd ff 0c`) */
+    for (size_t i = 0; i < len; i++) {
       if (name[i] == '\n' || name[i] == '\r') return false;
     }
     return true;
