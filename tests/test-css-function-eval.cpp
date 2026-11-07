@@ -128,6 +128,13 @@ TEST(CssFunctionEval, TheLaterResultWins) {
   EXPECT_EQ(custom_of(w, "--r: --mypi()", "--r"), "3.14");
 }
 
+TEST(CssFunctionEval, AFunctionWithNothingInItIsGuaranteedInvalid) {
+  // No parameter and no declaration: there is no array of entries to sort (UBSan: a null pointer passed to qsort), and the function, being valid, has no result.
+  FnWorld w("@function --empty() {}");
+  EXPECT_EQ(custom_of(w, "--r: --empty()", "--r"), "<gi>");
+  EXPECT_EQ(custom_of(w, "--r: --empty(1)", "--r"), "<gi>");
+}
+
 TEST(CssFunctionEval, AFunctionWithoutResultIsAlwaysGuaranteedInvalid) {
   // "If no result descriptor exists, the function is valid, but always returns the guaranteed-invalid value."
   FnWorld w("@function --none() { --x: 1; }");

@@ -4993,7 +4993,9 @@ static GTEXT_CSS_Status scope_for_body(css_sub * sub, frame_t * f, const scope_t
     scope_free(sub, sc);
     return st;
   }
-  qsort(v, n, sizeof *v, entry_cmp);
+  if (n) {
+    qsort(v, n, sizeof *v, entry_cmp);   /* a function with no parameter and no declaration has no array to sort */
+  }
   sub->work += n;
   size_t m = 0;
   for (size_t i = 0; i < n; i++) {
