@@ -836,7 +836,13 @@ TEST(CssProperty, ASubstitutionFunctionThatIsNotSyntacticallyValidMakesTheValueI
   EXPECT_EQ(parse(r, "top", "env(test -1, green)"), "invalid");
   EXPECT_EQ(parse(r, "top", "env(1px)"), "invalid");
   EXPECT_EQ(parse(r, "top", "env(test 1px)"), "invalid");
-  EXPECT_EQ(parse(r, "top", "env(var(--n) 0, 1px)"), "pending:env(var(--n) 0, 1px)") << "a name made by a substitution is judged when it is substituted";
+  // a substitution function is no <custom-ident> and no <integer>: both pinned browsers drop all of these at parse time (Chromium 156.0.8078.47, Firefox 158.0.1)
+  EXPECT_EQ(parse(r, "top", "env(var(--n) 0, 1px)"), "invalid");
+  EXPECT_EQ(parse(r, "top", "env(env(test))"), "invalid");
+  EXPECT_EQ(parse(r, "top", "env(attr(data-x type(*)), blue)"), "invalid");
+  EXPECT_EQ(parse(r, "top", "env(test var(--n))"), "invalid");
+  EXPECT_EQ(parse(r, "top", "env(test, env(env(x)))"), "invalid") << "a fallback is read for its functions too";
+  EXPECT_EQ(parse(r, "top", "env(test, var(--n))"), "pending:env(test, var(--n))");
   // Cascade 4, on `all`: "It only accepts the CSS-wide keywords." A substitution may yield one, so `all: var(--x)` is pending (a browser takes it) and is
   // invalid at computed-value time unless it does.
   EXPECT_EQ(parse(r, "all", "var(--x)"), "pending:var(--x)");

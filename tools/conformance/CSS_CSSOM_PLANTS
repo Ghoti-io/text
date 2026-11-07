@@ -421,3 +421,11 @@ pseudo-content-every-pseudo	css_style.c	  return (s->name.length == 6 && memcmp(
 if-bang-branch-accepted	css_substitute.c	          if (is_tok(v, GTEXT_CSS_TOKEN_DELIM) && v->delim == '!') {	          if (0 && is_tok(v, GTEXT_CSS_TOKEN_DELIM) && v->delim == '!') {	custom
 rule-inset-written-short	css_shorthand_serialize.c	    if (!texteq(cs, ce) || !texteq(cs, js) || !texteq(cs, je)) {	    if (!texteq(cs, js) || !texteq(ce, je)) {	shorthand,computed
 rule-shorthand-list-not-split	css_shorthand.c	  if (split_gap_rule(x, sh, root, ids, nl, txt, status)) {	  if (0 && split_gap_rule(x, sh, root, ids, nl, txt, status)) {	shorthand,computed
+placeholder-needs-a-value	css_markup.c	attr(el, "placeholder", &ph)) {	attr(el, "placeholder", &ph) && ph.value_length) {	match
+contrast-resolved-before-it-is-used	css_color_compute.c	st = eval_leaf(&w, kid, true, &v, &ok);	st = eval_leaf(&w, kid, f->c->kind != GTEXT_CSS_COLOR_CONTRAST, &v, &ok);	computed,colorrelative
+env-name-may-be-a-function	css_property.c	if (c->kind != GTEXT_CSS_VALUE_TOKEN) {\n      return false;	if (c->kind != GTEXT_CSS_VALUE_TOKEN) {\n      return c->kind == GTEXT_CSS_VALUE_FUNCTION;	property
+registered-url-taint-ignored	css_substitute.c	if (matched && tainted && m.set) {	if (0 && matched && tainted && m.set) {	computed
+moved-style-keeps-its-sheet	cssom_markup.c	->implicit_root != (const void *)gtext_markup_node_parent(e->element)) {	->implicit_root != (const void *)gtext_markup_node_parent(e->element) && 0) {	markup
+contents-chain-forgotten	css_compute_algo.c	parent_makes_items = st->parent->item_container;	parent_makes_items = false;	computed
+root-contents-stays-contents	css_compute_algo.c	if (nw == 1 && strcmp(words[0], "contents") == 0 && st->parent == NULL) {	if (0) {	computed
+resolved-legacy-color-without-commas	cssom_resolved.c	if (v.legacy && (strncmp(buf, "rgb(", 4) == 0	if (0 && v.legacy && (strncmp(buf, "rgb(", 4) == 0	computed

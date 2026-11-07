@@ -731,7 +731,7 @@ GTEXT_CSS_Status css_color_compute(css_color_ctx * ctx, const GTEXT_CSS_Color * 
         continue;
       }
       css_cc_value v;
-      st = eval_leaf(&w, kid, f->c->kind != GTEXT_CSS_COLOR_CONTRAST, &v, &ok);
+      st = eval_leaf(&w, kid, true, &v, &ok);
       if (st == GTEXT_CSS_OK && ok && !push_value(&w, &v)) {
         st = w.status;
       }

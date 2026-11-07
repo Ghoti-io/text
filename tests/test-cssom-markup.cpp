@@ -350,6 +350,26 @@ TEST(CssomMarkup, AMovedElementIsANewSheetAndTheOthersAreKept) {
   for (auto * s : {ka, kb, kc, na, nb, nc, nb2}) gtext_cssom_sheet_release(s);
 }
 
+// The Cascade page scope-implicit-sibling-mutations.html: an `@scope` with no prelude is scoped to the parent its style element had when the sheet was made, so a style element moved
+// under another parent is a new sheet even when the order of the sheets does not change (the HTML Standard removes the sheet of a removed style and makes one on insertion).
+TEST(CssomMarkup, AStyleMovedUnderAnotherParentKeepingTheOrderIsANewSheetScopedToTheNewParent) {
+  Mk m("<!DOCTYPE html><html><head></head><body><div id=l><style id=a>@scope{:scope{color:red}}</style></div><div id=r><style id=b>b{}</style></div></body></html>");
+  ASSERT_EQ(m.sync(), GTEXT_CSS_OK);
+  EXPECT_EQ(m.value("#l", "color"), "red");
+  EXPECT_NE(m.value("#r", "color"), "red");
+  GTEXT_CSSOM_Sheet * before = m.sheet(m.el("#a"));
+  GTEXT_Markup_Node * a = m.el("#a");
+  detach(a);
+  ASSERT_EQ(gtext_markup_insert_before(m.el("#r"), a, m.el("#b")), GTEXT_MARKUP_OK);   // a is still before b: the order of the sheets is the same
+  ASSERT_EQ(m.sync(), GTEXT_CSS_OK);
+  GTEXT_CSSOM_Sheet * after = m.sheet(m.el("#a"));
+  EXPECT_NE(before, after) << "a moved element is a new sheet";
+  EXPECT_EQ(m.value("#r", "color"), "red");
+  EXPECT_NE(m.value("#l", "color"), "red");
+  gtext_cssom_sheet_release(before);
+  gtext_cssom_sheet_release(after);
+}
+
 TEST(CssomMarkup, ANewStyleIsPutWhereTheTreeSaysAndAnInsertedOneInTheMiddleDoesNotDisturbTheRest) {
   Mk m;
   ASSERT_EQ(m.sync(), GTEXT_CSS_OK);

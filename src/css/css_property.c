@@ -392,8 +392,9 @@ static bool random_item_syntax(const GTEXT_CSS_Component_Value * fn) {
 
 /**
  * The argument grammar of env() (Environment Variables 1): "env( <custom-ident> <integer [0,∞]>* , <declaration-value>? )". The part before the first top-level
- * comma is a name and then indexes, each a non-negative integer. A name or an index made by a substitution function is not known until the value is substituted, so
- * a first argument with one in it is not judged here.
+ * comma is a name and then indexes, each a non-negative integer. A substitution function is neither: Chromium 156.0.8078.47 and Firefox 158.0.1 both drop a declaration with
+ * `env(var(--n))`, `env(attr(x type(*)))`, `env(env(test))` or `env(test var(--n))` at parse time (the Environment Variables page syntax.tentative.html asks for
+ * `env(env(test))`), where `var(--n)` itself is kept.
  */
 static bool env_name_syntax(const GTEXT_CSS_Component_Value * fn) {
   bool seen_name = false;
@@ -406,7 +407,7 @@ static bool env_name_syntax(const GTEXT_CSS_Component_Value * fn) {
       continue;
     }
     if (c->kind != GTEXT_CSS_VALUE_TOKEN) {
-      return c->kind == GTEXT_CSS_VALUE_FUNCTION && css_is_substitution_name(&c->value); /* a substitution function: judged when substituted */
+      return false;   /* a function or a block is no <custom-ident> and no <integer>: `env(var(--n))`, `env(env(test))`, `env(test attr(x))` are not valid, in both pinned browsers */
     }
     if (!seen_name) {
       if (c->type != GTEXT_CSS_TOKEN_IDENT) {

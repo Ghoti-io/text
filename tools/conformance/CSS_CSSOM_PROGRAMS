@@ -11,3 +11,6 @@ animation	test-cssom-animation.cpp
 functionset	test-css-function-set.cpp
 custom	test-css-custom.cpp
 shorthand	test-css-shorthand.cpp
+colorrelative	test-css-color-relative.cpp
+property	test-css-property.cpp
+markup	test-cssom-markup.cpp

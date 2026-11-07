@@ -238,6 +238,7 @@ struct GTEXT_CSS_Computed_Style {
   size_t n;                            ///< Properties.
   GTEXT_CSS_Value_Set ** vals;         ///< A set (retained) for every property; NULL where none.
   GTEXT_CSS_Flow flow;
+  bool item_container;                 ///< The children of the element are items of a flex or grid container: it is one, or it is `display: contents` and so are its parent's (Display 3: it has no box, its children are its container's items).
   struct css_cmap * custom;           ///< The unregistered custom properties (css_cmap.h): the parent's map with this element's declarations set, shared with it where nothing is declared.
   struct css_regvals * regvals;       ///< The registered ones (shared with the parent's style, or the context's, until this one declares one): a value for each of the context's `nregs`, NULL for the guaranteed-invalid value. NULL when the context has none.
   css_root_info root;

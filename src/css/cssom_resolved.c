@@ -340,6 +340,37 @@ static bool has_kids(const GTEXT_CSS_Value * v) {
   return v->children && v->child_count > 0;
 }
 
+/// A color of the legacy syntax (`rgb()`, `hsl()`) as it is serialized: commas between the channels and the alpha after a comma in `rgba()` / `hsla()`, where the computed color
+/// text (css_color_value_text()) writes the modern `rgb(r g b / a)`. `text` is `n` bytes; the result is NUL-terminated in `out` (at least 2 * n + 4 bytes), and its length returned.
+static size_t legacy_color_text(const char * text, size_t n, char * out) {
+  size_t o = 0;
+  const bool alpha = memchr(text, '/', n) != NULL;
+  size_t i = 0;
+  while (i < n && text[i] != '(') {
+    out[o++] = text[i++];
+  }
+  if (alpha) {
+    out[o++] = 'a';
+  }
+  while (i < n) {
+    if (text[i] == ' ' && i + 2 < n && text[i + 1] == '/' && text[i + 2] == ' ') {
+      out[o++] = ',';
+      out[o++] = ' ';
+      i += 3;
+    }
+    else if (text[i] == ' ') {
+      out[o++] = ',';
+      out[o++] = ' ';
+      i++;
+    }
+    else {
+      out[o++] = text[i++];
+    }
+  }
+  out[o] = '\0';
+  return o;
+}
+
 /// A color node as its used value: a new node with the text of the used color.
 static GTEXT_CSS_Status use_color_leaf(rctx * r, css_vb * vb, const GTEXT_CSS_Value * src, GTEXT_CSS_Value * out, bool * changed) {
   const GTEXT_CSS_Color * c = src->color;
@@ -380,6 +411,14 @@ static GTEXT_CSS_Status use_color_leaf(rctx * r, css_vb * vb, const GTEXT_CSS_Va
       if (done) {
         rl = css_color_value_text(&v, buf, NULL);
         rep = buf;
+        if (v.legacy && (strncmp(buf, "rgb(", 4) == 0 || strncmp(buf, "hsl(", 4) == 0)) {
+          char legacy[2 * CSS_CC_TEXT_MAX + 8];
+          const size_t ll = legacy_color_text(buf, rl, legacy);
+          if (ll < sizeof buf) {
+            memcpy(buf, legacy, ll + 1);
+            rl = ll;
+          }
+        }
       }
     }
   }

@@ -178,9 +178,10 @@ TEST(CssColorContrast, WhiteOrBlackWhicheverHasTheMoreContrast) {
     }
   }
   EXPECT_EQ(checked, 216u);
-  // `currentcolor` is the element's color
-  EXPECT_EQ(computed("color: white", "background-color: contrast-color(currentcolor)", "background-color"), "rgb(0, 0, 0)");
-  EXPECT_EQ(computed("color: black", "background-color: contrast-color(currentcolor)", "background-color"), "rgb(255, 255, 255)");
+  // `currentcolor` inside contrast-color() stays the keyword in the computed value, as it does in a mix: the value is the element's color only when it is used, and an element that
+  // inherits the property takes the function and resolves it against its own color (the Color page contrast-color-currentcolor-inherited.html; both pinned browsers)
+  EXPECT_EQ(computed("color: white", "background-color: contrast-color(currentcolor)", "background-color"), "contrast-color(currentcolor)");
+  EXPECT_EQ(computed("color: black", "background-color: contrast-color(currentcolor)", "background-color"), "contrast-color(currentcolor)");
 }
 
 /* Values 4, 10.13 and Color 4, 15.4: a calculation in a channel is resolved against the environment (a container length through the callback), NaN is zero. */

@@ -698,6 +698,30 @@ static GTEXT_CSS_Status algo_display(css_state * st, const GTEXT_CSS_Value_Set *
   if (nw == 1 && strcmp(words[0], "contents") == 0 && svg_contents_is_none(st)) {
     return emit_keyword(st, "none", out);
   }
+  /* whether the children of this element are items of a flex or grid container (Display 3: an element with `display: contents` generates no box, so its children are the items
+     of the container above it, through any number of them), remembered in the style for the children's blockification below */
+  bool parent_makes_items = false;
+  if (st->parent) {
+    parent_makes_items = st->parent->item_container;
+    if (!parent_makes_items && cc->pid[CSS_P_DISPLAY]) {
+      const char * pw[3] = {NULL, NULL, NULL};
+      size_t pn = 0;
+      if (display_words(gtext_css_value_set_root(st->parent->vals[cc->pid[CSS_P_DISPLAY] - 1]), pw, &pn)) {
+        for (size_t i = 0; i < pn; i++) {
+          parent_makes_items = parent_makes_items || strcmp(pw[i], "flex") == 0 || strcmp(pw[i], "inline-flex") == 0 || strcmp(pw[i], "grid") == 0 ||
+              strcmp(pw[i], "inline-grid") == 0;
+        }
+      }
+    }
+  }
+  {
+    bool container = false;
+    for (size_t i = 0; i < nw; i++) {
+      container = container || strcmp(words[i], "flex") == 0 || strcmp(words[i], "inline-flex") == 0 || strcmp(words[i], "grid") == 0 ||
+          strcmp(words[i], "inline-grid") == 0;
+    }
+    st->style->item_container = container || (nw == 1 && strcmp(words[0], "contents") == 0 && parent_makes_items);
+  }
   /* blockification (Display 3, 2.7): a floated, absolutely positioned or root box, and a flex or grid item */
   bool blockify = st->parent == NULL;
   if (!blockify && cc->pid[CSS_P_FLOAT]) {
@@ -708,16 +732,7 @@ static GTEXT_CSS_Status algo_display(css_state * st, const GTEXT_CSS_Value_Set *
     const GTEXT_CSS_Value * p = css_st_root(st, cc->pid[CSS_P_POSITION]);
     blockify = kw(p, "absolute") || kw(p, "fixed");
   }
-  if (!blockify && st->parent && cc->pid[CSS_P_DISPLAY]) {
-    const char * pw[3] = {NULL, NULL, NULL};
-    size_t pn = 0;
-    if (display_words(gtext_css_value_set_root(st->parent->vals[cc->pid[CSS_P_DISPLAY] - 1]), pw, &pn)) {
-      for (size_t i = 0; i < pn; i++) {
-        blockify = blockify || strcmp(pw[i], "flex") == 0 || strcmp(pw[i], "inline-flex") == 0 || strcmp(pw[i], "grid") == 0 ||
-            strcmp(pw[i], "inline-grid") == 0;
-      }
-    }
-  }
+  blockify = blockify || parent_makes_items;
   /* the model: outer (0 inline, 1 block, 2 run-in), inner, list-item */
   enum { OUT_NONE = -1, OUT_INLINE = 0, OUT_BLOCK = 1, OUT_RUNIN = 2 };
   static const char * const inner_words[] = {"flow", "flow-root", "table", "flex", "grid", "ruby", "math"};
@@ -773,6 +788,10 @@ static GTEXT_CSS_Status algo_display(css_state * st, const GTEXT_CSS_Value_Set *
     }
   }
   if (other) {
+    /* the root element is blockified, and `contents` generates no box to be one: it computes to `block` there and nowhere else (a floated, positioned or item `contents` stays) */
+    if (nw == 1 && strcmp(words[0], "contents") == 0 && st->parent == NULL) {
+      return emit_keyword(st, "block", out);
+    }
     /* Display 3, 2.7: "If a layout-internal box is blockified, its inner display type converts to flow so that it becomes a block container." */
     static const char * const layout_internal[] = {"table-row-group", "table-header-group", "table-footer-group", "table-row", "table-cell",
         "table-column-group", "table-column", "table-caption", "ruby-base", "ruby-text", "ruby-base-container", "ruby-text-container"};

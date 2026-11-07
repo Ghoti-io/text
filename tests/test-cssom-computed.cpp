@@ -391,6 +391,60 @@ TEST(CssomComputed, ARuleShorthandIsWrittenFromAlignedListsOfItsLonghands) {
   EXPECT_EQ(m.value("#b", "column-rule"), "");
 }
 
+/* Color 5: contrast-color(currentcolor) is the keyword until it is used; the inner element inherits the function and resolves it against its own color (the Color page
+ * contrast-color-currentcolor-inherited.html: black outer gives white, and a white inner that inherits it gives black). */
+TEST(CssomComputed, AnInheritedContrastColorOfCurrentcolorIsResolvedAgainstTheInheritingElement) {
+  Cs m("<!DOCTYPE html><html><head><style>#a{color:black;background-color:contrast-color(currentcolor)} #b{color:white;background-color:inherit}"
+       "#c{color:black;background-color:color-mix(in srgb,currentcolor,red)} #d{color:white;background-color:inherit}</style></head>"
+       "<body><div id=a><div id=b></div></div><div id=c><div id=d></div></div></body></html>");
+  EXPECT_EQ(m.value("#a", "background-color"), "rgb(255, 255, 255)");
+  EXPECT_EQ(m.value("#b", "background-color"), "rgb(0, 0, 0)");
+  EXPECT_EQ(m.value("#c", "background-color"), "color(srgb 0.5 0 0)");
+  EXPECT_EQ(m.value("#d", "background-color"), "color(srgb 1 0.5 0.5)");
+}
+
+/* Values 5, attr() security: "Using an attr()-tainted value as or in a <url> makes a declaration invalid at computed-value time", the substitution value being tainted as a whole when an
+ * attr() took part in it, here by naming the property (the Variables page variable-reference-name-substitution-attr-taint.html): a registered <url> property given such a value is its
+ * initial value, and the same value without the attr() is the url. */
+TEST(CssomComputed, ARegisteredUrlPropertyGivenAnAttrTaintedValueIsItsInitialValue) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "@property --u { syntax: \"<url>\"; inherits: false; initial-value: url(\"https://x.test/initial.png\"); }"
+       "#a{--image:url(\"https://x.test/404.png\");--u:var(attr(data-n type(*)))}"
+       "#b{--image:url(\"https://x.test/404.png\");--u:var(--image)}"
+       "#c{--image:url(\"https://x.test/404.png\");--r:var(attr(data-n type(*)))}"
+       "</style></head><body><div id=a data-n=\"--image\"></div><div id=b data-n=\"--image\"></div><div id=c data-n=\"--image\"></div></body></html>");
+  EXPECT_EQ(m.value("#a", "--u"), "url(\"https://x.test/initial.png\")");
+  EXPECT_EQ(m.value("#b", "--u"), "url(\"https://x.test/404.png\")");
+  EXPECT_EQ(m.value("#c", "--r"), "url(\"https://x.test/404.png\")") << "an unregistered custom property is not a url context";
+}
+
+/* Display 3, 2.7: the children of a grid or flex container are blockified, and an element with `display: contents` generates no box, so what it has as children are the container's
+ * items (the Display pages display-contents-blockify-dynamic.html and display-contents-computed-style.html; Chromium 156.0.8078.47 and Firefox 158.0.1 agree on all of this): the
+ * grandchild of a grid whose child is `display: contents` is blockified, through any number of them, a `contents` itself stays `contents` (under a grid, a float, absolutely positioned),
+ * and the root element, which is blockified, computes `contents` to `block`. */
+TEST(CssomComputed, TheChildrenOfADisplayContentsElementAreItemsOfTheContainerAboveIt) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#g{display:grid} #c1{display:contents} #c2{display:contents} #s1{display:inline} #s2{display:inline-block}"
+       "#b{display:block} #bc{display:contents} #bs{display:inline-block}"
+       "#fl{display:contents;float:left} #ab{display:contents;position:absolute}"
+       "</style></head><body>"
+       "<div id=g><div id=c1><div id=c2><span id=s1></span><button id=s2></button></div></div></div>"
+       "<div id=b><div id=bc><button id=bs></button></div></div><div id=fl></div><div id=ab></div></body></html>");
+  EXPECT_EQ(m.value("#c1", "display"), "contents");
+  EXPECT_EQ(m.value("#c2", "display"), "contents");
+  EXPECT_EQ(m.value("#s1", "display"), "block");
+  EXPECT_EQ(m.value("#s2", "display"), "block");
+  EXPECT_EQ(m.value("#bs", "display"), "inline-block");
+  EXPECT_EQ(m.value("#fl", "display"), "contents");
+  EXPECT_EQ(m.value("#ab", "display"), "contents");
+}
+
+TEST(CssomComputed, TheRootElementIsBlockifiedAndDisplayContentsOnItComputesToBlock) {
+  Cs m("<!DOCTYPE html><html><head><style>html{display:contents} body{display:contents}</style></head><body><p id=p>x</p></body></html>");
+  EXPECT_EQ(m.value("html", "display"), "block");
+  EXPECT_EQ(m.value("body", "display"), "contents");
+}
+
 TEST(CssomComputed, ANewObjectEachCallAndTheSameValuesInEachWhileNothingMoves) {
   Cs m(kPage);
   Decl a = m.computed("#a");

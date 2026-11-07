@@ -3416,6 +3416,53 @@ GTEXT_CSS_Status css_registered_rope(css_state * st, const GTEXT_Allocator * all
   return status;
 }
 
+/// Whether a matched value holds a <url>, or a function that takes one (`image-set()`, `src()` ...), anywhere in it. Walked with a stack of its own: a value nests as deep as
+/// the parser allows, and the call stack is not the place to follow it.
+static GTEXT_CSS_Status value_holds_url(css_sub * sub, const GTEXT_CSS_Value * root, bool * found) {
+  *found = false;
+  if (!root) {
+    return GTEXT_CSS_OK;
+  }
+  size_t cap = 16, len = 0;
+  const GTEXT_CSS_Value ** stack = gtext_allocator_malloc(&sub->alloc, cap * sizeof *stack);
+  if (!stack) {
+    return GTEXT_CSS_E_OOM;
+  }
+  stack[len++] = root;
+  while (len && !*found) {
+    const GTEXT_CSS_Value * v = stack[--len];
+    if (v->kind == GTEXT_CSS_VAL_URL) {
+      *found = true;
+      break;
+    }
+    if (v->kind == GTEXT_CSS_VAL_FUNCTION && v->text.data) {
+      static const char * const names[] = {"url", "src", "image", "image-set", "-webkit-image-set", "cross-fade", "-webkit-cross-fade", "element", "paint"};
+      size_t nl = 0;
+      while (nl < v->text.length && v->text.data[nl] != '(') {
+        nl++;
+      }
+      const GTEXT_CSS_String head = {v->text.data, nl};
+      for (size_t k = 0; k < sizeof names / sizeof *names; k++) {
+        *found = *found || css_ascii_ieq(&head, names[k]);
+      }
+    }
+    for (size_t c = 0; c < v->child_count && !*found; c++) {
+      if (len == cap) {
+        const GTEXT_CSS_Value ** g = gtext_allocator_realloc(&sub->alloc, stack, cap * 2 * sizeof *g);
+        if (!g) {
+          gtext_allocator_free(&sub->alloc, stack);
+          return GTEXT_CSS_E_OOM;
+        }
+        stack = g;
+        cap *= 2;
+      }
+      stack[len++] = &v->children[c];
+    }
+  }
+  gtext_allocator_free(&sub->alloc, stack);
+  return GTEXT_CSS_OK;
+}
+
 static GTEXT_CSS_Status compute_typed(css_sub * sub, const css_creg * creg, const char * text, size_t len, bool tainted, css_rope ** out, bool * cycle) {
   *out = NULL;
   *cycle = false;
@@ -3438,6 +3485,22 @@ static GTEXT_CSS_Status compute_typed(css_sub * sub, const css_creg * creg, cons
   if (st != GTEXT_CSS_OK) {
     gtext_css_tree_free(tree);
     return (st == GTEXT_CSS_E_OOM || st == GTEXT_CSS_E_INTERNAL) ? st : GTEXT_CSS_OK; /* the answer is not known: not a value */
+  }
+  if (matched && tainted && m.set) {
+    /* "Using an attr()-tainted value as or in a <url> makes a declaration invalid at computed-value time", and the substitution value is tainted as a whole (Values 5,
+       attr() security): a registered property of a syntax with a <url> in it, given a tainted value that holds one, is its initial value */
+    bool url = false;
+    st = value_holds_url(sub, gtext_css_value_set_root(m.set), &url);
+    if (st != GTEXT_CSS_OK) {
+      gtext_css_value_set_free(m.set);
+      gtext_css_tree_free(tree);
+      return st;
+    }
+    if (url) {
+      gtext_css_value_set_free(m.set);
+      gtext_css_tree_free(tree);
+      return GTEXT_CSS_OK;   /* *out stays NULL: not a value of the syntax */
+    }
   }
   if (matched) {
     unsigned need = 0;

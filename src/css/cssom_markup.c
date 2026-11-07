@@ -695,6 +695,15 @@ static GTEXT_CSS_Status refresh_entry(GTEXT_CSSOM_Markup_Binding * b, mentry * e
   if (e->state == ENTRY_NEEDS) {
     return build_entry(b, e, at, hint, outcome);
   }
+  if (e->sheet && ((const css_sheet *)(const void *)e->sheet)->implicit_root != (const void *)gtext_markup_node_parent(e->element)) {
+    /* the element was moved under another parent: the HTML Standard removes the sheet of a removed style element and makes one on insertion, and the implicit scope root
+       of an `@scope` with no prelude is the parent the sheet was made under (the Cascade page scope-implicit-sibling-mutations.html moves a style between siblings) */
+    GTEXT_CSS_Status moved = take_out(b, e, outcome);
+    if (moved != GTEXT_CSS_OK) {
+      return moved;
+    }
+    return build_entry(b, e, at, hint, outcome);
+  }
   const char * text = NULL;
   size_t length = 0;
   GTEXT_CSS_Status st = e->link ? link_fingerprint(b, e->element, &text, &length) : style_text(b, e->element, &text, &length);

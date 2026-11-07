@@ -652,7 +652,9 @@ static uint64_t derive_state(struct GTEXT_CSS_Markup_Adapter * a, Node * el) {
     }
     st |= rw ? GTEXT_CSS_STATE_READ_WRITE : GTEXT_CSS_STATE_READ_ONLY;
     GTEXT_Markup_Attribute ph;
-    if (((input && text_like(type)) || strcmp(local, "textarea") == 0) && attr(el, "placeholder", &ph) && ph.value_length) {
+    if (((input && text_like(type)) || strcmp(local, "textarea") == 0) && attr(el, "placeholder", &ph)) {
+      /* the attribute alone, however short its value: `placeholder` and `placeholder=""` show a placeholder as `placeholder="x"` does (the Selectors page placeholder-shown.html; both
+         pinned browsers answer true for the three, for a text-like input, a password and a number input, and a textarea with no content) */
       bool empty;
       if (input) {
         GTEXT_Markup_Attribute v;

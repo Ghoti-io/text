@@ -275,6 +275,16 @@ TEST_F(CssMatch, LinkStatesWithVisitedNeverMatching) {
   EXPECT_EQ(all(d, ":focus, :active, :target, :focus-within"), "");
 }
 
+// The Selectors page placeholder-shown.html: a placeholder attribute with no value, or with the empty string, shows a placeholder as one with text does (both pinned browsers match all
+// three for a text-like input, and a textarea with no content), and a value or content stops it. A checkbox has no placeholder to show.
+TEST_F(CssMatch, AnEmptyPlaceholderAttributeStillShowsAPlaceholder) {
+  Doc o;
+  ASSERT_TRUE(o.html("<!DOCTYPE html><input id=\"a\" type=\"text\" placeholder><input id=\"b\" type=\"text\" placeholder=\"\"><input id=\"c\" type=\"text\" placeholder=\"x\">"
+                     "<input id=\"d\" type=\"text\"><input id=\"e\" type=\"text\" placeholder=\"\" value=\"v\"><textarea id=\"f\" placeholder=\"\"></textarea>"
+                     "<textarea id=\"g\" placeholder=\"\">x</textarea><input id=\"h\" type=\"checkbox\" placeholder=\"\"><input id=\"i\" type=\"password\" placeholder=\"\">"));
+  EXPECT_EQ(all(o, ":placeholder-shown"), "a b c f i");
+}
+
 TEST_F(CssMatch, FormStatesFromTheAttributes) {
   EXPECT_EQ(all(d, ":checked"), "i1");
   EXPECT_EQ(all(d, "input:disabled"), "i2 i4") << "i4 is in a disabled fieldset; i3 is in its first legend, which is exempt";
