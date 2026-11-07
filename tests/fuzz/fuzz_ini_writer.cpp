@@ -192,8 +192,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       gtext_ini_sink_buffer_data(&sink), gtext_ini_sink_buffer_size(&sink));
 
   if (st == GTEXT_INI_OK && !shadow.empty()) {
+    // `crlf` is an option of the writer and not of the tree (tests/test-ini.cpp, IniWrite.CrlfIsAnOptionOfTheWriterNotOfTheTree), and a dialect that does not accept a CR
+    // before an LF (Desktop Entry: "Desktop Entry §3 specifies linefeed") cannot read what it was asked to write; the reader is told to accept it, which changes nothing
+    // else about the dialect.
+    GTEXT_INI_Parse_Options back_opts = popts;
+    if (wopts.crlf) back_opts.dialect.accept_crlf = true;
     GTEXT_INI_Document * back =
-        gtext_ini_parse(out.data(), out.size(), &popts, nullptr);
+        gtext_ini_parse(out.data(), out.size(), &back_opts, nullptr);
     if (!back) {
       fail("the writer reported OK and wrote bytes that do not parse back "
            "under the same dialect",
