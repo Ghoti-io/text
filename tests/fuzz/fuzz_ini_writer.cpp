@@ -146,7 +146,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     const uint8_t op = data[i++];
     const size_t len = (i < size) ? (data[i++] % 8u) : 0u;
     const size_t have = (size - i < len) ? (size - i) : len;
-    const std::string a((const char *)(data + i), have);
+    // the DOM takes a C string, so a NUL ends the name or the key it is given (the shadow records what the DOM was handed, not the bytes that were drawn)
+    const std::string drawn((const char *)(data + i), have);
+    const std::string a(drawn.c_str());
     i += have;
 
     if ((op & 1) == 0) {
