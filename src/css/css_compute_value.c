@@ -799,6 +799,69 @@ static GTEXT_CSS_Status leaf(cv_walk * w, const GTEXT_CSS_Value * src, GTEXT_CSS
   return GTEXT_CSS_OK;
 }
 
+/// Whether a value is a calculation or a dimension of the resolution type: a resolution that an `<image-set-option>` has.
+static bool is_resolution_value(const GTEXT_CSS_Value * v) {
+  return (v->flags & GTEXT_CSS_VFLAG_MATH) || (v->kind == GTEXT_CSS_VAL_DIMENSION && gtext_css_unit_type(v->unit) == GTEXT_CSS_UNIT_TYPE_RESOLUTION);
+}
+
+/// An `<image-set-option>` (a space list of an image and, in a list of its own, a resolution and a type()) with no resolution: "If not specified, it behaves as 1x" (Images 4,
+/// 2.4), and the computed value of a resolution is in `dppx`, so the computed option holds `1dppx` where the author wrote none, as both pinned browsers (Chromium
+/// 156.0.8078.47, Firefox 158.0.1) write `image-set("a")` computed as `image-set(url("a") 1dppx)`. The new node goes after the image, ahead of a type().
+static GTEXT_CSS_Status image_set_give_resolution(cv_walk * w, GTEXT_CSS_Value * option, bool * changed) {
+  const size_t n = option->child_count;
+  if (n < 1 || n > 2) {
+    return GTEXT_CSS_OK;
+  }
+  const GTEXT_CSS_Value * kids = option->children;
+  if (n == 2) {
+    if (is_resolution_value(&kids[1])) {
+      return GTEXT_CSS_OK;
+    }
+    if (kids[1].kind != GTEXT_CSS_VAL_LIST) {
+      return GTEXT_CSS_OK;
+    }
+    for (size_t i = 0; i < kids[1].child_count; i++) {
+      if (is_resolution_value(&kids[1].children[i])) {
+        return GTEXT_CSS_OK;
+      }
+    }
+  }
+  GTEXT_CSS_Value dim;
+  memset(&dim, 0, sizeof dim);
+  dim.kind = GTEXT_CSS_VAL_DIMENSION;
+  dim.number = 1.0;
+  dim.unit = GTEXT_CSS_UNIT_DPPX;
+  GTEXT_CSS_Value * nk = css_vb_values(&w->vb, 2);
+  GTEXT_CSS_Value * inner = css_vb_values(&w->vb, n == 2 ? kids[1].child_count + 1 : 1);
+  if (!nk || !inner) {
+    return w->vb.status != GTEXT_CSS_OK ? w->vb.status : GTEXT_CSS_E_OOM;
+  }
+  GTEXT_CSS_Value list = n == 2 ? kids[1] : *option;
+  inner[0] = dim;
+  if (n == 2) {
+    memcpy(inner + 1, kids[1].children, kids[1].child_count * sizeof *inner);
+    list.child_count = kids[1].child_count + 1;
+  }
+  else {
+    list.child_count = 1;
+  }
+  list.children = inner;
+  nk[0] = kids[0];
+  nk[1] = list;
+  option->children = nk;
+  option->child_count = 2;
+  *changed = true;
+  return GTEXT_CSS_OK;
+}
+
+static bool is_image_set_function(const GTEXT_CSS_Value * v) {
+  if (v->kind != GTEXT_CSS_VAL_FUNCTION || !v->text.data) {
+    return false;
+  }
+  const GTEXT_CSS_String name = {v->text.data, v->text.length};
+  return css_ascii_ieq(&name, "image-set") || css_ascii_ieq(&name, "-webkit-image-set");
+}
+
 static bool has_children(const GTEXT_CSS_Value * v) {
   if ((v->flags & GTEXT_CSS_VFLAG_MATH) && v->math) {
     return false;
@@ -927,7 +990,7 @@ static GTEXT_CSS_Status by_type_impl(css_state * st, const GTEXT_CSS_Value_Set *
       }
       /* a node whose children are all done */
       GTEXT_CSS_Value done = *f->src;
-      const bool node_changed = f->changed;
+      bool node_changed = f->changed;
       if (node_changed) {
         done.children = f->kids;
         if (done.kind == GTEXT_CSS_VAL_RATIO && done.child_count == 2 && done.children[0].kind == GTEXT_CSS_VAL_NUMBER && done.children[1].kind == GTEXT_CSS_VAL_NUMBER) {
@@ -937,6 +1000,13 @@ static GTEXT_CSS_Status by_type_impl(css_state * st, const GTEXT_CSS_Value_Set *
           done.flags &= ~(uint32_t)GTEXT_CSS_VFLAG_MATH;
           done.children = NULL;
           done.child_count = 0;
+        }
+      }
+      if (nframes >= 3 && done.kind == GTEXT_CSS_VAL_LIST && done.separator == GTEXT_CSS_SEP_SPACE && frames[nframes - 2].src->kind == GTEXT_CSS_VAL_LIST &&
+          frames[nframes - 2].src->separator == GTEXT_CSS_SEP_COMMA && is_image_set_function(frames[nframes - 3].src)) {
+        status = image_set_give_resolution(&w, &done, &node_changed);
+        if (status != GTEXT_CSS_OK) {
+          break;
         }
       }
       nframes--;

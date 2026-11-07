@@ -262,6 +262,20 @@ TEST(CssImageCompute, ListsAndOtherImagesAreKept) {
   });
 }
 
+// Images 4, 2.4: an <image-set-option> with no resolution "behaves as 1x", and a resolution is computed in dppx, so the computed option holds `1dppx` where there was none
+// (Chromium 156.0.8078.47 and Firefox 158.0.1 both compute `image-set("a")` to `image-set(url("a") 1dppx)`; the Variables page ...attr-taint.html expects it through a var()).
+// The specified value still writes `1x` there. The resolution goes after the image and ahead of a type().
+TEST(CssImageCompute, AnImageSetOptionWithNoResolutionHasOneDppx) {
+  // the typed computed value (the canonical text, which writes a string as a url(), is the declaration object's: test-cssom-computed.cpp)
+  expect_all({
+      {"background-image", "image-set(\"a.png\")", "image-set(\"a.png\" 1dppx)"},
+      {"background-image", "image-set(\"a.png\" 1x)", "image-set(\"a.png\" 1dppx)"},
+      {"background-image", "image-set(\"a.png\", url(b.png) 2x, url(c.png) type(\"image/png\"))",
+          "image-set(\"a.png\" 1dppx, url(\"b.png\") 2dppx, url(\"c.png\") 1dppx type(\"image/png\"))"},
+      {"background-image", "image-set(url(c.png) type(\"image/png\"))", "image-set(url(\"c.png\") 1dppx type(\"image/png\"))"},
+  });
+}
+
 // Filter Effects 1 (served 2026-10-30), 6.2: "Omitted values are included and compute to their defaults."; 6.1: "the default value for omitted values for grayscale(), sepia()
 // and invert() is 1", blur() "Default value when omitted is 0px.", "Values of amount over 100% are allowed but UAs must clamp the values to 1", "Negative values are not allowed."
 TEST(CssFilterCompute, OmittedArgumentsAreTheirDefaults) {

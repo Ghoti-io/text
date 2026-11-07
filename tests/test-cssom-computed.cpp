@@ -445,6 +445,18 @@ TEST(CssomComputed, TheRootElementIsBlockifiedAndDisplayContentsOnItComputesToBl
   EXPECT_EQ(m.value("body", "display"), "contents");
 }
 
+/* Images 4, 2.4: "If not specified, it behaves as 1x", and the computed value of a resolution is in dppx: `image-set("a")` computes to `image-set(url("a") 1dppx)` in both pinned
+ * browsers, where the specified value is written with `1x` (the Variables page ...attr-taint.html expects the computed form through a var()). */
+TEST(CssomComputed, AnImageSetOptionWithNoResolutionComputesToOneDppx) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#a{background-image:image-set(\"a.png\")} #b{background-image:image-set(url(b.png) type(\"image/png\"), \"c.png\" 2x)}"
+       "#c{--n:--image;--image:image-set(\"a.png\");background-image:var(var(--n))}"
+       "</style></head><body><div id=a></div><div id=b></div><div id=c></div></body></html>");
+  EXPECT_EQ(m.value("#a", "background-image"), "image-set(url(\"a.png\") 1dppx)");
+  EXPECT_EQ(m.value("#b", "background-image"), "image-set(url(\"b.png\") 1dppx type(\"image/png\"), url(\"c.png\") 2dppx)");
+  EXPECT_EQ(m.value("#c", "background-image"), "image-set(url(\"a.png\") 1dppx)");
+}
+
 TEST(CssomComputed, ANewObjectEachCallAndTheSameValuesInEachWhileNothingMoves) {
   Cs m(kPage);
   Decl a = m.computed("#a");

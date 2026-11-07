@@ -429,3 +429,4 @@ moved-style-keeps-its-sheet	cssom_markup.c	->implicit_root != (const void *)gtex
 contents-chain-forgotten	css_compute_algo.c	parent_makes_items = st->parent->item_container;	parent_makes_items = false;	computed
 root-contents-stays-contents	css_compute_algo.c	if (nw == 1 && strcmp(words[0], "contents") == 0 && st->parent == NULL) {	if (0) {	computed
 resolved-legacy-color-without-commas	cssom_resolved.c	if (v.legacy && (strncmp(buf, "rgb(", 4) == 0	if (0 && v.legacy && (strncmp(buf, "rgb(", 4) == 0	computed
+image-set-option-without-resolution	css_compute_value.c	  if (n < 1 || n > 2) {	  if (1) {	computed,shapecompute
