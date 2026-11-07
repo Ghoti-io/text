@@ -82,6 +82,14 @@ struct Group {
  * asked for it and so cannot lose it, and it finds it the way a caller must:
  * by position, among the groups that are not the preamble.
  */
+/** The name a lookup answers to once a dialect that trims has read it back: the blanks around it are gone (`[\t.]` and `[.]` are two headers of one name). */
+std::string trimmed_name(bool trims, std::string name) {
+  if (!trims) return name;
+  const size_t b = name.find_first_not_of(" \t\v\f");
+  if (b == std::string::npos) return std::string();
+  return name.substr(b, name.find_last_not_of(" \t\v\f") - b + 1);
+}
+
 const GTEXT_INI_Group * find_group(const GTEXT_INI_Document * doc,
     const std::string & name, const std::string & canon, size_t & nth) {
   if (!name.empty()) {
@@ -219,18 +227,21 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       const Group & g = shadow[gi];
       // A dialect that keeps a repeated header as a group of its own (win32: "a key in a second `[a]` is retrievable by no name at all", pinned in tests/test-ini.cpp)
       // answers a lookup by name with the first, so the second is found as the group it is: the one with its spelling at its place among the groups of that spelling.
+      // The header is the same by the name it is read back as, not its spelling: win32 trims the blanks around a name, so `[\t.]` and `[.]` are two headers of one name.
+      const bool trims = popts.dialect.trim_group_name;
+      const std::string read_as = trimmed_name(trims, g.canon);
       size_t same_before = 0;
       for (size_t k = 0; k < gi; k++) {
-        if (shadow[k].name == g.name) same_before++;
+        if (trimmed_name(trims, shadow[k].canon) == read_as) same_before++;
       }
       const GTEXT_INI_Group * got = nullptr;
-      if (same_before > 0 && !popts.dialect.merge_duplicate_groups && !g.name.empty()) {
+      if (same_before > 0 && !popts.dialect.merge_duplicate_groups && !read_as.empty()) {   // a blank name is found by its place among the blank ones, below
         size_t skip = same_before;
         for (size_t k = 0; k < gtext_ini_document_group_count(back) && !got; k++) {
           const GTEXT_INI_Group * cand = gtext_ini_document_group_at(back, k);
           size_t len = 0;
-          const char * nm = gtext_ini_group_name(cand, &len);
-          if (!gtext_ini_group_is_preamble(cand) && std::string(nm, len) == g.name && skip-- == 0) got = cand;
+          const char * nm = gtext_ini_group_canonical_name(cand, &len);
+          if (!gtext_ini_group_is_preamble(cand) && trimmed_name(trims, std::string(nm ? nm : "", len)) == read_as && skip-- == 0) got = cand;
         }
       }
       else {
