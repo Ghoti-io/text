@@ -2340,6 +2340,24 @@ TEST(IniSystemd, TheContinuationSkipsACommentBlockAndStopsAtABlankLine) {
   gtext_ini_free(doc);
 }
 
+TEST(IniWrite, AKeyThatTheParserWouldReadAsAnotherThingIsRefusedOnTheWayIn) {
+  /* fuzz_ini_writer: `;B` in an EditorConfig group was accepted and written as `;B=`, a comment. A blank at an end of a key is stripped by the parser, and a `[` at the start
+   * of the line makes a header. */
+  GTEXT_INI_Parse_Options popts = gtext_ini_parse_options_default();
+  popts.dialect = gtext_ini_dialect_editorconfig();
+  GTEXT_INI_Document * doc = gtext_ini_new(&popts);
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * g = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "*", &g), GTEXT_INI_OK);
+  for (const char * bad : {";B", "#B", " B", "B ", "[B", "\tB"}) {
+    EXPECT_EQ(gtext_ini_group_set(g, bad, "v", 1), GTEXT_INI_E_BAD_KEY) << bad;
+  }
+  EXPECT_EQ(gtext_ini_group_set(g, "B;", "v", 1), GTEXT_INI_OK);
+  EXPECT_EQ(gtext_ini_group_set(g, "B C", "v", 1), GTEXT_INI_OK);
+  EXPECT_EQ(gtext_ini_group_set(g, "B[1]", "v", 1), GTEXT_INI_OK);
+  gtext_ini_free(doc);
+}
+
 TEST(IniSystemd, AGroupNameWithALineTerminatorIsRefusedBecauseNoFileSpellsIt) {
   /* fuzz_ini_writer: `add_group("\n\v")` was accepted, and the writer wrote `[`, a line end, a vertical tab and `]` over two lines, which parse back as no such group. */
   GTEXT_INI_Parse_Options popts = gtext_ini_parse_options_default();

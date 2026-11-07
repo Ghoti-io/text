@@ -491,11 +491,24 @@ static GTEXT_INI_Status ini_entry_init(GTEXT_INI_Group * group,
   return ok ? GTEXT_INI_OK : GTEXT_INI_E_OOM;
 }
 
+/**
+ * Whether a key that the dialect's grammar accepts also reads back as itself once it is written: the parser strips the blanks at either end of a key, reads a line that
+ * begins with a comment character as a comment and one that begins with `[` as a header (the libFuzzer run of the writer's harness found `;B` written as a comment in an
+ * EditorConfig file). The parser accepts such text for what it reads it as; a key given to the DOM is refused, since the writer writes it as it is.
+ */
+static bool ini_key_reads_back(const GTEXT_INI_Dialect * dialect, const char * key, size_t len) {
+  if (!len || dialect->name_style == GTEXT_INI_NAMES_GIT || dialect->name_style == GTEXT_INI_NAMES_DESKTOP_ENTRY) {
+    return true;   /* an empty key is the dialect's to allow (win32), and these two have a character class that excludes all of it */
+  }
+  if (gtext_ini_is_space(dialect, key[0]) || gtext_ini_is_space(dialect, key[len - 1])) return false;
+  return !(key[0] == '[' || (key[0] == '#' && dialect->comment_hash) || (key[0] == ';' && dialect->comment_semicolon));
+}
+
 GTEXT_INI_Status gtext_ini_group_set(GTEXT_INI_Group * group, const char * key,
     const char * value, size_t value_len) {
   if (!group || !key || (!value && value_len)) return GTEXT_INI_E_INVALID;
   size_t key_len = strlen(key);
-  if (!gtext_ini_key_ok(&group->doc->dialect, key, key_len)) {
+  if (!gtext_ini_key_ok(&group->doc->dialect, key, key_len) || !ini_key_reads_back(&group->doc->dialect, key, key_len)) {
     return GTEXT_INI_E_BAD_KEY;
   }
   size_t index = ini_find_nth(group, key, key_len, 0);
@@ -520,7 +533,7 @@ GTEXT_INI_Status gtext_ini_group_add(GTEXT_INI_Group * group, const char * key,
     const char * value, size_t value_len) {
   if (!group || !key || (!value && value_len)) return GTEXT_INI_E_INVALID;
   size_t key_len = strlen(key);
-  if (!gtext_ini_key_ok(&group->doc->dialect, key, key_len)) {
+  if (!gtext_ini_key_ok(&group->doc->dialect, key, key_len) || !ini_key_reads_back(&group->doc->dialect, key, key_len)) {
     return GTEXT_INI_E_BAD_KEY;
   }
   if (group->doc->dialect.dupkey == GTEXT_INI_DUPKEY_ERROR &&
