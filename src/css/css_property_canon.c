@@ -2683,7 +2683,14 @@ static bool image_function(cb * out, sp f, unsigned depth) {
   top_split(&args, inner.p, inner.n, ',');
   cb tmp = {out->a, NULL, 0, 0, false, &out->fail};
   bool changed = false;
-  cb_put(&tmp, f.p, name.n + 1);
+  if (ieq(name, "-webkit-image-set")) {
+    /* Images 4, Appendix A: "-webkit-image-set() ... is turned into image-set() during parsing" */
+    cb_puts(&tmp, "image-set(");
+    changed = true;
+  }
+  else {
+    cb_put(&tmp, f.p, name.n + 1);
+  }
   for (size_t i = 0; !args.fail && i < args.n; i++) {
     if (i) {
       cb_puts(&tmp, ", ");

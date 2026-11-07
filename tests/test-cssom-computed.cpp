@@ -507,6 +507,15 @@ TEST(CssomComputed, AnAllThatASubstitutionMakesARevertLayerRollsEveryPropertyBac
   EXPECT_EQ(m.value("#d", "margin-left"), "4px") << "a later declaration of the property is not rolled back";
 }
 
+/* Images 4, Appendix A (pinned): "Implementations must accept -webkit-image-set() as a parse-time alias of image-set()", "turned into image-set() during parsing"; both browsers
+ * write `-webkit-image-set("a")` computed as `image-set(url("a") 1dppx)`. */
+TEST(CssomComputed, AWebkitImageSetIsAnImageSet) {
+  Cs m("<!DOCTYPE html><html><head><style>#a{background-image:-webkit-image-set(\"a.png\")} #b{background-image:-webkit-image-set(url(b.png) 2x, \"c.png\")}"
+       "</style></head><body><div id=a></div><div id=b></div></body></html>");
+  EXPECT_EQ(m.value("#a", "background-image"), "image-set(url(\"a.png\") 1dppx)");
+  EXPECT_EQ(m.value("#b", "background-image"), "image-set(url(\"b.png\") 2dppx, url(\"c.png\") 1dppx)");
+}
+
 TEST(CssomComputed, ANewObjectEachCallAndTheSameValuesInEachWhileNothingMoves) {
   Cs m(kPage);
   Decl a = m.computed("#a");

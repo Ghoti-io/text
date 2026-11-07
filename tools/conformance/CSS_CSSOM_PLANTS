@@ -435,3 +435,4 @@ roll-of-a-custom-property-not-recorded	css_substitute.c	if (!css_st_roll(st, 0, 
 rolled-candidate-not-replaced	css_style.c	st = css_candidates_roll(b.set, picks->v[i].index, picks->v[i].kind);	st = GTEXT_CSS_OK;	computed
 revert-layer-read-as-revert	css_substitute.c	{"revert-layer", GTEXT_CSS_WIDE_REVERT_LAYER}	{"revert-layer", GTEXT_CSS_WIDE_REVERT}	computed
 only-one-pass-for-a-chain-of-rolls	css_style.c	pass >= MAX_ROLL_PASSES, &again	pass >= 1, &again	computed
+webkit-image-set-keeps-its-name	css_property_canon.c	  if (ieq(name, "-webkit-image-set")) {\n    /* Images 4, Appendix A	  if (0 && ieq(name, "-webkit-image-set")) {\n    /* Images 4, Appendix A	computed

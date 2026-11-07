@@ -124,17 +124,16 @@ TEST(CssShapeCompute, RadiusGrammar) {
   EXPECT_EQ(root_computed("shape-outside: circle(-10px)", "shape-outside"), "none");
 }
 
-// Images 4 writes <radial-size> as an extent pair or a length-percentage pair and no mixed pair, and the Shapes page basic-shape-circle-ellipse-serialization.html
-// reads `ellipse(farthest-side 10px at center)` as valid; both pinned browsers (Chromium 156.0.8078.47, Firefox 158.0.1) accept the mixed pair and write it back
-// as given. The ellipse takes each of its two radii as an extent or a length-percentage; a circle, which takes one component, still refuses the pair.
-TEST(CssShapeCompute, AnEllipseRadiusPairMayMixAnExtentAndALengthPercentage) {
+// Shapes 1 (pinned): "<ellipse()> = ellipse( <radial-size>? [ at <position> ]? )", and Images 4 (pinned): "<radial-size> = <radial-extent>{1,2} | <length-percentage [0,inf]>{1,2}",
+// a pair of extents or a pair of lengths and no mixed pair, so `ellipse(farthest-side 10px at center)` is invalid (both pinned browsers accept it, and the Shapes page
+// basic-shape-circle-ellipse-serialization.html reads it as valid: two served-text lines). The library follows the text.
+TEST(CssShapeCompute, AnEllipseRadiusPairIsTwoExtentsOrTwoLengthPercentagesAndNeverAMixOfThem) {
   expect_all({
-      {"shape-outside", "ellipse(farthest-side 10px at center)", "ellipse(farthest-side 10px at 50% 50%)"},
-      {"shape-outside", "ellipse(10% closest-corner at 50% 50%)", "ellipse(10% closest-corner at 50% 50%)"},
-      {"shape-outside", "ellipse(closest-side 10%)", "ellipse(closest-side 10%)"},
+      {"shape-outside", "ellipse(closest-side farthest-corner at 50% 50%)", "ellipse(closest-side farthest-corner at 50% 50%)"},
+      {"shape-outside", "ellipse(10% 20px)", "ellipse(10% 20px)"},
   });
-  EXPECT_EQ(root_computed("shape-outside: ellipse(closest-side 10px 5px)", "shape-outside"), "none");
-  EXPECT_EQ(root_computed("shape-outside: ellipse(closest-side -1px)", "shape-outside"), "none");
+  EXPECT_EQ(root_computed("shape-outside: ellipse(farthest-side 10px at center)", "shape-outside"), "none");
+  EXPECT_EQ(root_computed("shape-outside: ellipse(10% closest-corner)", "shape-outside"), "none");
   EXPECT_EQ(root_computed("shape-outside: circle(closest-side 10px)", "shape-outside"), "none");
 }
 
