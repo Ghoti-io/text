@@ -46,6 +46,11 @@ extern "C" {
 GTEXT_CSS_Status css_rule_typed(css_core * core, const css_rule * rule, bool shallow, GTEXT_CSS_Atrule ** out);
 /// A style rule's selector list as `selectorText` writes it, appended to `out`.
 GTEXT_CSS_Status css_rule_selector_text(css_rule * rule, tbuf * out);
+
+/// What a rule of CSS Functions and Mixins 1 says besides its text (cssom_mixin.c): the name of a mixin or of an `@apply` (serialized as an identifier), and whether a mixin accepts a contents
+/// block (`true` or `false`).
+typedef enum { CSS_MIXIN_ATTR_NAME = 0, CSS_MIXIN_ATTR_CONTENTS } css_mixin_attr;
+GTEXT_CSS_Status css_mixin_attribute(css_rule * rule, css_mixin_attr which, tbuf * out);
 /// Where the rule stands, for reading a rule of its kind again (cssom_insert.c). `synthetic` backs `ctx->parent_node` for a rule that is in no list.
 void css_rule_own_ctx(const css_rule * rule, css_insert_ctx * ctx, GTEXT_CSSOM_Rule_Kind * parent_kind, GTEXT_CSS_Rule * synthetic);
 

@@ -84,6 +84,35 @@ GTEXT_CSS_Status css_function_prelude_valid(const GTEXT_CSS_Registry * registry,
 /// Free a definition.
 void css_fn_def_free(css_fn_def * def);
 
+/// The prelude of a `@mixin` rule, read as CSS Functions and Mixins 1 has it: `@mixin [<function-token> <function-parameter>#? ) | <ident-token> ] { <block-contents> }`, where the name
+/// "must start with two dashes", the identifier form "is equivalent to a function token followed by an empty parameter list", "If the mixin parameters contain the same
+/// <custom-property-name> more than once, then the @mixin rule is invalid", and "If a mixin parameter has both a default value and a parameter type then the default value must parse
+/// successfully according to that parameter type's syntax. Otherwise, the @mixin rule is invalid." There is no `returns`, and a rule with no block is not a rule. `*valid` says whether the
+/// prelude is one; when it is and `def` is not NULL, `*def` is the definition (its `rule` is the node given; free it with css_fn_def_free()). GTEXT_CSS_OK, or GTEXT_CSS_E_OOM.
+GTEXT_CSS_Status css_mixin_prelude_read(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * alloc, const GTEXT_CSS_Rule * rule, css_fn_def ** def, bool * valid);
+
+/// The type of a parameter as CSSOM writes it ("serialize a CSS type": the syntax string of a single syntax component, else `type(` and the syntax string and `)`), and whether that type is
+/// the universal syntax definition (which "serialize a function parameter" leaves out). Not NUL-terminated by the length; `*text` is owned by the parameter. A parameter with no type has none.
+bool css_fn_param_css_type(const css_fn_param * p, const char ** text, size_t * length, bool * wrapped, bool * universal);
+
+/// An `@apply` prelude, read: `@apply [ <dashed-ident> | <dashed-function> ] [ { <declaration-list> } ]?;` where `<dashed-function> = --*( <declaration-value>#? )`. The arguments are ranges
+/// of the prelude's component values, trimmed of white space, and an argument that is one `{}` block is that block's contents ("a `{}` argument is its contents").
+typedef struct {
+  const GTEXT_CSS_Component_Value * values;
+  size_t count;
+  bool braced;                     ///< The argument was written as a `{}` block (so it may hold commas).
+} css_apply_arg;
+
+typedef struct {
+  GTEXT_CSS_String name;           ///< `--name`, as written (borrowed from the rule).
+  css_apply_arg * args;            ///< `nargs` arguments, owned.
+  size_t nargs;
+} css_apply_prelude;
+
+/// Read the prelude of an `@apply` rule. `*valid` says whether it is one; when it is, `*out` is filled (free it with css_apply_prelude_free()). GTEXT_CSS_OK or GTEXT_CSS_E_OOM.
+GTEXT_CSS_Status css_apply_prelude_read(const GTEXT_Allocator * alloc, const GTEXT_CSS_Rule * rule, css_apply_prelude * out, bool * valid);
+void css_apply_prelude_free(const GTEXT_Allocator * alloc, css_apply_prelude * p);
+
 #ifdef __cplusplus
 }
 #endif

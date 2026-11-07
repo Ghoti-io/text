@@ -1,7 +1,7 @@
 # tools/css/gen-atrule-tables.py: the scope ledger of the at-rules of the pin. Columns: at-rule, kind, parses, validates, serializes, applies, typed, preserved, wpt, note.
 # Every column but `wpt` is copied from atrule_kinds.tsv; `wpt` (the WPT vectors scored) is kept by the scorer (tools/conformance/run-css-atrules.sh) and may not go from 1 to 0; none may regress.
 @-webkit-keyframes	KEYFRAMES	1	1	1	1	1	0	0	the alias of @keyframes in the compatibility data
-@apply	PRESERVED	1	0	1	0	0	1	0	Mixins: preserved, inactive
+@apply	APPLY	1	0	1	0	0	1	0	Mixins 1, The @apply rule: valid only in the body of a style rule or a nested group rule (and so in a mixin body, which is read as one); recognized and inactive
 @bottom-center	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
 @bottom-left	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
 @bottom-left-corner	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
@@ -10,7 +10,7 @@
 @charset	CHARSET	1	1	1	1	1	0	0	decoded by the tokenizer and parser
 @color-profile	COLOR_PROFILE	1	1	1	0	1	0	0	typed data for color; conversion is color's
 @container	CONTAINER	1	1	1	1	0	0	0	a conditional group rule evaluated for an element (css_container.h)
-@contents	PRESERVED	1	0	1	0	0	1	0	Mixins: preserved, inactive
+@contents	CONTENTS	1	0	1	0	0	1	0	Mixins 1, The @contents rule: valid anywhere in a mixin body (the `mixin` place), invalid and ignored elsewhere; recognized and inactive
 @counter-style	COUNTER_STYLE	1	1	1	0	1	0	0	typed and resolved (css_counter_style.h); counter text generation is not here
 @custom-media	CUSTOM_MEDIA	1	1	1	1	0	0	0	collected by the conditions object (css_condition.h)
 @custom-selector	PRESERVED	1	0	1	0	0	1	0	no engine ships it and no consumer asks: preserved, inactive
@@ -27,12 +27,12 @@
 @left-top	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
 @location	PRESERVED	1	0	1	0	0	1	0	Navigation: preserved, inactive
 @media	MEDIA	1	1	1	1	0	0	0	a conditional group rule: the sheet keeps its condition as a node
-@mixin	PRESERVED	1	0	1	0	0	1	0	Mixins: preserved, inactive
+@mixin	MIXIN	1	0	1	0	0	1	0	Mixins 1, The @mixin rule: valid where @keyframes is (never in a style rule); the body is read as a style rule's is; recognized and inactive, nothing applies it yet
 @namespace	NAMESPACE	1	1	1	1	1	0	0	applied by the style sheet compiler; a typed view here
 @navigation	PRESERVED	1	0	1	0	0	1	0	Navigation: preserved, inactive
 @page	PAGE	1	1	1	1	1	0	0	selectors, descriptors, page properties and margin rules; matching and collection in css_page.h
 @position-try	POSITION_TRY	1	1	1	1	1	0	0	a dashed name and the position declarations the draft allows
-@private	PRESERVED	1	0	1	0	0	1	0	Mixins: preserved, inactive
+@private	PRESERVED	1	0	1	0	0	1	0	Mixins 1, Private Custom Properties: only valid nested as a child of a style rule or a nested group rule; no CSSOM interface is in the pinned IDL; recognized and inactive
 @property	PROPERTY	1	1	1	1	1	0	0	applied by css_at_property.h; a typed view here
 @right-bottom	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page
 @right-middle	PAGE_MARGIN	1	1	1	1	1	0	0	a margin rule of a page

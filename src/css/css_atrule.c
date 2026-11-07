@@ -78,6 +78,9 @@ static const char * const kind_names[GTEXT_CSS_ATRULE_KIND_COUNT] = {
   [GTEXT_CSS_ATRULE_KEYFRAME] = "keyframe",
   [GTEXT_CSS_ATRULE_VIEW_TRANSITION] = "view-transition",
   [GTEXT_CSS_ATRULE_POSITION_TRY] = "position-try",
+  [GTEXT_CSS_ATRULE_MIXIN] = "mixin",
+  [GTEXT_CSS_ATRULE_APPLY] = "apply",
+  [GTEXT_CSS_ATRULE_CONTENTS] = "contents",
   [GTEXT_CSS_ATRULE_PRESERVED] = "preserved",
 };
 
@@ -1863,9 +1866,14 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   /* the place */
   if (row) {
     static const uint8_t bit[] = {CSS_AR_P_TOP, CSS_AR_P_GROUP, CSS_AR_P_STYLE, CSS_AR_P_PAGE, CSS_AR_P_FEATURE_VALUES, CSS_AR_P_MIXIN};
-    if (!(row->parents & bit[(int)parent])) {
+    /* "Outside of a mixin body, the @contents rule is invalid and ignored": the rows that list the mixin place are valid anywhere inside one, at any depth */
+    if (!((row->parents & bit[(int)parent]) || (o.in_mixin && (row->parents & CSS_AR_P_MIXIN)))) {
       cx.valid = false;
       diag(&cx, GTEXT_CSS_ATRULE_DIAG_INVALID_RULE, rule->span, "the at-rule is not valid in this place");
+    }
+    else if (kind == GTEXT_CSS_ATRULE_LAYER && o.in_mixin) {
+      cx.valid = false;
+      diag(&cx, GTEXT_CSS_ATRULE_DIAG_INVALID_RULE, rule->span, "CSS Functions and Mixins 1, The Mixin Body: \"@layer is not valid within a mixin body\"");
     }
     else if (kind == GTEXT_CSS_ATRULE_LAYER && !rule->has_block && parent == GTEXT_CSS_ATRULE_PARENT_STYLE) {
       /* CSS Cascade 5: an `@layer` statement is not a rule of a style rule's block (both browsers drop it there); a block is */
@@ -2037,6 +2045,9 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   case GTEXT_CSS_ATRULE_WHEN:
   case GTEXT_CSS_ATRULE_ELSE:
   case GTEXT_CSS_ATRULE_CUSTOM_MEDIA:
+  case GTEXT_CSS_ATRULE_MIXIN:
+  case GTEXT_CSS_ATRULE_APPLY:
+  case GTEXT_CSS_ATRULE_CONTENTS:
   case GTEXT_CSS_ATRULE_PRESERVED:
   case GTEXT_CSS_ATRULE_UNKNOWN:
   default:
@@ -2138,6 +2149,29 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
       bad_prelude = true;
       prelude_why = "CSS Functions and Mixins 1, @function: the name is a function token that begins with two dashes, each parameter is --name with an optional type and default, and nothing follows but returns <type>; the rule has a block";
     }
+  }
+  if (!bad_prelude && kind == GTEXT_CSS_ATRULE_MIXIN) {
+    /* `@mixin` is kept as written too (the definitions are read from the tree), but a rule whose prelude is not one is not a rule */
+    bool valid = false;
+    cx.st = css_mixin_prelude_read(cx.registry, &a->alloc, rule, NULL, &valid);
+    if (cx.st == GTEXT_CSS_OK && !valid) {
+      bad_prelude = true;
+      prelude_why = "CSS Functions and Mixins 1, @mixin: the name is a function token or an identifier that begins with two dashes, each parameter is --name with an optional type and default (a default must parse as the type, no name twice), and the rule has a block";
+    }
+  }
+  if (!bad_prelude && kind == GTEXT_CSS_ATRULE_APPLY) {
+    bool valid = false;
+    css_apply_prelude ap;
+    cx.st = css_apply_prelude_read(&a->alloc, rule, &ap, &valid);
+    css_apply_prelude_free(&a->alloc, &ap);
+    if (cx.st == GTEXT_CSS_OK && !valid) {
+      bad_prelude = true;
+      prelude_why = "CSS Functions and Mixins 1, @apply: the prelude is a <dashed-ident> or a <dashed-function> (--*( <declaration-value>#? )), and nothing else";
+    }
+  }
+  if (!bad_prelude && kind == GTEXT_CSS_ATRULE_CONTENTS && !only_ws(p, pn)) {
+    bad_prelude = true;
+    prelude_why = "CSS Functions and Mixins 1, @contents: \"@contents [ { <declaration-list> } ]?\" has no prelude";
   }
   if (cx.st != GTEXT_CSS_OK) {
     atrule_destroy(a);
@@ -2622,6 +2656,7 @@ static bool atrule_validity_rule(void * user, const GTEXT_CSS_Parent * parent, c
   }
   GTEXT_CSS_Atrule_Options o = gtext_css_atrule_options_default();
   o.parent = where;
+  o.in_mixin = !parent->top_level && parent->in_mixin;
   GTEXT_CSS_Atrule * a = NULL;
   GTEXT_CSS_Atrule_Result res;
   const GTEXT_CSS_Status st = gtext_css_atrule_parse(v->registry, rule, &o, &a, &res);

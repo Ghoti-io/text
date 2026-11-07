@@ -579,7 +579,8 @@ typedef struct {
   bool relative;                   ///< A style rule's prelude read here is a relative selector list: some enclosing rule, at any depth, is a style rule or an `@scope`
                                    ///< (the standard's nesting context, which `nested` is not: every rule in a block is `nested`).
   bool in_scope;                   ///< The nearest enclosing style rule or `@scope`, at any depth, is an `@scope`.
-  bool in_style_rule;              ///< Some enclosing rule, at any depth, is a style rule (a rule that is valid only outside one is not valid here).
+  bool in_style_rule;              ///< Some enclosing rule, at any depth, is a style rule or the body of a `@mixin` (a rule that is valid only outside one is not valid here).
+  bool in_mixin;                   ///< Some enclosing rule, at any depth, is a `@mixin` (CSS Functions and Mixins 1: `@contents` is valid only in a mixin body, `@layer` is not valid in one).
 } GTEXT_CSS_Parent;
 
 /**

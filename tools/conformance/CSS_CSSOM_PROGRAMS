@@ -15,3 +15,4 @@ colorrelative	test-css-color-relative.cpp
 property	test-css-property.cpp
 markup	test-cssom-markup.cpp
 shapecompute	test-css-shape-compute.cpp
+mixin	test-cssom-mixin.cpp

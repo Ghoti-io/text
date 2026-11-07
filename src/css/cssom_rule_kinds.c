@@ -68,7 +68,9 @@ GTEXT_CSSOM_Rule_Kind css_kind_of_node(const GTEXT_CSS_Rule * node, GTEXT_CSSOM_
 void css_child_walk_init(css_child_walk * walk, GTEXT_CSSOM_Rule_Kind parent_kind, const GTEXT_CSS_Rule * node, bool nested) {
   walk->node = node;
   walk->parent_kind = parent_kind;
-  walk->nested = nested;
+  /* the body of a mixin, the contents block an `@apply` passes and the fallback block of an `@contents` are each "treated as a nested declarations rule" (CSS Functions and Mixins 1), so
+     the declarations in them are CSSNestedDeclarations rules and the rules in them are read as nested ones */
+  walk->nested = nested || parent_kind == GTEXT_CSSOM_RULE_MIXIN || parent_kind == GTEXT_CSSOM_RULE_APPLY || parent_kind == GTEXT_CSSOM_RULE_CONTENTS;
   walk->index = 0;
 }
 

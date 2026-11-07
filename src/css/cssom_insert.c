@@ -81,7 +81,11 @@ static void place_for_rule(css_rule * target, place * pl) {
   for (css_rule * x = target; x; x = owner_rule(x)) {
     pl->depth++;
     top = x;
-    if (x->kind == GTEXT_CSSOM_RULE_STYLE) {
+    if (x->kind == GTEXT_CSSOM_RULE_MIXIN) {
+      pl->ctx.in_mixin = true;
+    }
+    if (x->kind == GTEXT_CSSOM_RULE_STYLE || x->kind == GTEXT_CSSOM_RULE_MIXIN) {
+      /* the body of a mixin is read as a style rule's is, and its nested selectors are relative ones */
       pl->ctx.in_style = true;
       if (!nearest_seen) {
         pl->ctx.relative = true;
@@ -134,6 +138,7 @@ void css_rule_own_ctx(const css_rule * rule, css_insert_ctx * ctx, GTEXT_CSSOM_R
   ctx->top = !rule->nested;
   ctx->in_style = rule->nested;
   ctx->relative = rule->nested;
+  ctx->in_mixin = rule->kind == GTEXT_CSSOM_RULE_CONTENTS;   /* the only kind that is valid in a mixin and nowhere else; what else was in the mixin is no longer known */
   if (rule->nested) {
     *parent_kind = GTEXT_CSSOM_RULE_STYLE;
   }
@@ -395,7 +400,7 @@ static GTEXT_CSS_Status insert_text(place * pl, const char * text, size_t length
   /* the constraints of the place: a rule that CSS does not allow here (an `@import` in a grouping rule, an `@font-face` in a style rule) */
   if (!keyframe && !declarations_rule) {
     const bool style_like = kind == GTEXT_CSSOM_RULE_STYLE;
-    if (style_like ? pl->place == CSSOM_PARENT_PAGE : !(css_kind(kind)->parents & pl->place)) {
+    if (style_like ? pl->place == CSSOM_PARENT_PAGE : !((css_kind(kind)->parents & pl->place) || (pl->ctx.in_mixin && (css_kind(kind)->parents & CSSOM_PARENT_MIXIN)))) {
       st = GTEXT_CSS_E_HIERARCHY;
       goto fail;
     }
@@ -643,7 +648,7 @@ GTEXT_CSS_Status gtext_cssom_sheet_remove_rule(GTEXT_CSSOM_Sheet * sheet, size_t
   return gtext_cssom_sheet_delete_rule(sheet, index, outcome);
 }
 
-/// Whether the rule has a list that `insertRule` and `deleteRule` act on: a style rule, a grouping rule (a `@layer` with a block), an `@page`.
+/// Whether the rule has a list that `insertRule` and `deleteRule` act on: a style rule, a grouping rule (a `@layer` with a block), an `@page`, a `@mixin`, an `@apply` or `@contents` with a block (CSSMixinRule, CSSApplyBlockRule and CSSContentsBlockRule are CSSGroupingRules).
 static bool is_grouping(const css_rule * rule) {
   switch ((GTEXT_CSSOM_Rule_Kind)rule->kind) {
   case GTEXT_CSSOM_RULE_STYLE:
@@ -657,7 +662,11 @@ static bool is_grouping(const css_rule * rule) {
   case GTEXT_CSSOM_RULE_PAGE:
     return true;
   case GTEXT_CSSOM_RULE_LAYER:
+  case GTEXT_CSSOM_RULE_APPLY:
+  case GTEXT_CSSOM_RULE_CONTENTS:
     return rule->has_block;
+  case GTEXT_CSSOM_RULE_MIXIN:
+    return true;
   default:
     return false;
   }

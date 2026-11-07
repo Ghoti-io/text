@@ -165,7 +165,8 @@ enum {
 enum {
   CTX_RELATIVE = 1, ///< Some enclosing rule is a style rule or an `@scope`.
   CTX_SCOPE = 2,    ///< The nearest of those is an `@scope`.
-  CTX_STYLE = 4     ///< Some enclosing rule is a style rule.
+  CTX_STYLE = 4,    ///< Some enclosing rule is a style rule (or the body of a `@mixin`, which is read as one).
+  CTX_MIXIN = 8     ///< Some enclosing rule is a `@mixin`.
 };
 
 /// A frame of the rule machine: the base context of an entry point, or a rule's block.
@@ -815,6 +816,7 @@ static GTEXT_CSS_Parent parent_of(parser * p, bool nested) {
     parent.relative = (f->context & CTX_RELATIVE) != 0;
     parent.in_scope = (f->context & CTX_SCOPE) != 0;
     parent.in_style_rule = (f->context & CTX_STYLE) != 0;
+    parent.in_mixin = (f->context & CTX_MIXIN) != 0;
   }
   else {
     parent.top_level = true;
@@ -906,10 +908,15 @@ static bool push_block_frame(parser * p, const GTEXT_CSS_Rule * rule, bool neste
   f->kind = RF_BLOCK;
   f->context = inherited;
   if (rule->kind == GTEXT_CSS_RULE_QUALIFIED) {
-    f->context = (uint8_t)((inherited & CTX_STYLE) | CTX_STYLE | CTX_RELATIVE);   /* a style rule: the nearest is not a scope */
+    f->context = (uint8_t)((inherited & (CTX_STYLE | CTX_MIXIN)) | CTX_STYLE | CTX_RELATIVE);   /* a style rule: the nearest is not a scope */
   }
   else if (rule->kind == GTEXT_CSS_RULE_AT && rule->name.length == 5 && css_ascii_ieq(&rule->name, "scope")) {
-    f->context = (uint8_t)((inherited & CTX_STYLE) | CTX_RELATIVE | CTX_SCOPE);
+    f->context = (uint8_t)((inherited & (CTX_STYLE | CTX_MIXIN)) | CTX_RELATIVE | CTX_SCOPE);
+  }
+  else if (rule->kind == GTEXT_CSS_RULE_AT && rule->name.length == 5 && css_ascii_ieq(&rule->name, "mixin")) {
+    /* CSS Functions and Mixins 1, "The Mixin Body": "The body of a mixin is parsed as a nested declarations rule; it accepts properties, conditional group rules, and nested style rules,
+       just like an ordinary style rule would." The nearest enclosing rule that selects is the style rule the mixin is applied in, so a selector inside is a relative one. */
+    f->context = (uint8_t)(CTX_STYLE | CTX_RELATIVE | CTX_MIXIN);
   }
   f->nested = nested;
   f->discard = discard;

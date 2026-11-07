@@ -55,7 +55,7 @@ typedef struct {
   unsigned parents;
 } cssom_kind_row;
 
-#define CSSOM_KIND_ROW_COUNT 29
+#define CSSOM_KIND_ROW_COUNT 32
 static const cssom_kind_row cssom_kind_rows[CSSOM_KIND_ROW_COUNT] = {
   {"unknown", "", 0, 0u, 0u},
   {"charset", "", 0, 0u, 1u},
@@ -83,7 +83,10 @@ static const cssom_kind_row cssom_kind_rows[CSSOM_KIND_ROW_COUNT] = {
   {"keyframe", "CSSKeyframeRule", 8, 17u, 0u},
   {"view-transition", "CSSViewTransitionRule", 0, 97u, 3u},
   {"position-try", "CSSPositionTryRule", 0, 97u, 3u},
-  {"preserved", "", 0, 65u, 23u},
+  {"mixin", "CSSMixinRule", 0, 67u, 3u},
+  {"apply", "CSSApplyBlockRule,CSSApplyStatementRule", 0, 3u, 4u},
+  {"contents", "CSSContentsBlockRule,CSSContentsStatementRule", 0, 3u, 16u},
+  {"preserved", "", 0, 65u, 7u},
   {"style", "CSSStyleRule", 1, 83u, 0u},
   {"nested-declarations", "CSSNestedDeclarations", 0, 81u, 0u},
 };

@@ -963,6 +963,164 @@ GTEXT_CSS_Status css_function_prelude_valid(const GTEXT_CSS_Registry * registry,
   return st;
 }
 
+bool css_fn_param_css_type(const css_fn_param * p, const char ** text, size_t * length, bool * wrapped, bool * universal) {
+  if (!p->type) {
+    return false;
+  }
+  *text = p->type->text;
+  *length = p->type->len;
+  *universal = p->type->syntax->universal;
+  *wrapped = p->type->syntax->universal || p->type->syntax->ncomps != 1;
+  return true;
+}
+
+GTEXT_CSS_Status css_mixin_prelude_read(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * alloc, const GTEXT_CSS_Rule * rule, css_fn_def ** def, bool * valid) {
+  *valid = false;
+  if (def) {
+    *def = NULL;
+  }
+  if (!rule || !rule->has_block) {
+    return GTEXT_CSS_OK;
+  }
+  size_t a = 0, b = rule->prelude_count;
+  trim(rule->prelude, &a, &b);
+  if (a == b) {
+    return GTEXT_CSS_OK;
+  }
+  const GTEXT_CSS_Component_Value * first = &rule->prelude[a];
+  css_fn_def * d = NULL;
+  if (first->kind == GTEXT_CSS_VALUE_TOKEN && first->type == GTEXT_CSS_TOKEN_IDENT) {
+    /* the identifier form: "equivalent to a function token followed by an empty parameter list" */
+    if (b - a != 1 || !css_creg_name_ok(first->value.data, first->value.length)) {
+      return GTEXT_CSS_OK;
+    }
+    d = gtext_allocator_calloc((GTEXT_Allocator *)alloc, 1, sizeof *d);
+    if (!d) {
+      return GTEXT_CSS_E_OOM;
+    }
+    d->alloc = *alloc;
+    d->name = copy_n(alloc, first->value.data, first->value.length);
+    if (!d->name) {
+      gtext_allocator_free((GTEXT_Allocator *)alloc, d);
+      return GTEXT_CSS_E_OOM;
+    }
+    d->name_len = first->value.length;
+    d->rule = rule;
+  }
+  else {
+    GTEXT_CSS_Function_Options opt = gtext_css_function_options_default();
+    opt.allocator = alloc;
+    GTEXT_CSS_Function_Set * s = NULL;
+    GTEXT_CSS_Status st = gtext_css_function_set_new(registry, &opt, &s);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+    pre_verdict verdict = PRE_BAD_PRELUDE;
+    st = read_prelude(s, rule, &d, &verdict);
+    gtext_css_function_set_free(s);
+    if (st != GTEXT_CSS_OK) {
+      css_fn_def_free(d);
+      return st;
+    }
+    /* there is no `returns` in a mixin: "save that it lacks a return type" */
+    if (!d || verdict != PRE_OK || d->returns) {
+      css_fn_def_free(d);
+      return GTEXT_CSS_OK;
+    }
+  }
+  *valid = true;
+  if (def) {
+    *def = d;
+  }
+  else {
+    css_fn_def_free(d);
+  }
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status css_apply_prelude_read(const GTEXT_Allocator * alloc, const GTEXT_CSS_Rule * rule, css_apply_prelude * out, bool * valid) {
+  *valid = false;
+  memset(out, 0, sizeof *out);
+  if (!rule) {
+    return GTEXT_CSS_OK;
+  }
+  size_t a = 0, b = rule->prelude_count;
+  trim(rule->prelude, &a, &b);
+  if (a == b) {
+    return GTEXT_CSS_OK;
+  }
+  const GTEXT_CSS_Component_Value * first = &rule->prelude[a];
+  if (b - a != 1 || !css_creg_name_ok(first->value.data, first->value.length)) {
+    return GTEXT_CSS_OK;
+  }
+  if (first->kind == GTEXT_CSS_VALUE_TOKEN && first->type == GTEXT_CSS_TOKEN_IDENT) {
+    /* "A <dashed-ident> passes no arguments. (That is, @apply --foo; is identical to @apply --foo();)" */
+    out->name = first->value;
+    *valid = true;
+    return GTEXT_CSS_OK;
+  }
+  if (first->kind != GTEXT_CSS_VALUE_FUNCTION) {
+    return GTEXT_CSS_OK;
+  }
+  const GTEXT_CSS_Component_Value * args = first->children;
+  size_t pa = 0, pb = first->child_count;
+  trim(args, &pa, &pb);
+  size_t count = 0;
+  if (pa < pb) {
+    count = 1;
+    for (size_t i = pa; i < pb; i++) {
+      count += args[i].kind == GTEXT_CSS_VALUE_TOKEN && args[i].type == GTEXT_CSS_TOKEN_COMMA;
+    }
+  }
+  css_apply_arg * list = NULL;
+  if (count) {
+    list = gtext_allocator_calloc((GTEXT_Allocator *)alloc, count, sizeof *list);
+    if (!list) {
+      return GTEXT_CSS_E_OOM;
+    }
+    size_t from = pa, n = 0;
+    for (size_t i = pa; i <= pb; i++) {
+      if (i < pb && !(args[i].kind == GTEXT_CSS_VALUE_TOKEN && args[i].type == GTEXT_CSS_TOKEN_COMMA)) {
+        continue;
+      }
+      size_t x = from, y = i;
+      trim(args, &x, &y);
+      if (!declaration_value(args, x, y)) {
+        gtext_allocator_free((GTEXT_Allocator *)alloc, list);
+        return GTEXT_CSS_OK;
+      }
+      list[n].values = args + x;
+      list[n].count = y - x;
+      if (y - x == 1 && args[x].kind == GTEXT_CSS_VALUE_BLOCK && args[x].type == GTEXT_CSS_TOKEN_OPEN_CURLY) {
+        list[n].values = args[x].children;
+        list[n].count = args[x].child_count;
+        list[n].braced = true;
+        size_t p = 0, q = list[n].count;
+        trim(list[n].values, &p, &q);
+        /* the contents of a `{}` argument are a declaration value as well ("!important invalidates mixin argument `{red !important}`", the pinned page important.html); they may be empty */
+        if (q > p && !declaration_value(list[n].values, p, q)) {
+          gtext_allocator_free((GTEXT_Allocator *)alloc, list);
+          return GTEXT_CSS_OK;
+        }
+        list[n].values += p;
+        list[n].count = q - p;
+      }
+      n++;
+      from = i + 1;
+    }
+  }
+  out->name = first->value;
+  out->args = list;
+  out->nargs = count;
+  *valid = true;
+  return GTEXT_CSS_OK;
+}
+
+void css_apply_prelude_free(const GTEXT_Allocator * alloc, css_apply_prelude * p) {
+  gtext_allocator_free((GTEXT_Allocator *)alloc, p->args);
+  memset(p, 0, sizeof *p);
+}
+
 /* ---- the walk ----------------------------------------------------------------------------------------- */
 
 typedef struct {

@@ -155,6 +155,12 @@ typedef struct {
 
 const css_kind_info * css_kind(GTEXT_CSSOM_Rule_Kind kind);
 
+/// Whether a kind is two interfaces by the form it is written in: `@layer` (a block, or a statement of names), `@apply` and `@contents` (a block of contents or fallback rules, or a
+/// statement). Only the block form has `cssRules`.
+static inline bool css_kind_has_forms(GTEXT_CSSOM_Rule_Kind kind) {
+  return kind == GTEXT_CSSOM_RULE_LAYER || kind == GTEXT_CSSOM_RULE_APPLY || kind == GTEXT_CSSOM_RULE_CONTENTS;
+}
+
 /// The media query list of a sheet, an `@import` rule or an `@media` rule as it was read, where that is not the canonical text it is stored as: a `<general-enclosed>` that the end of the
 /// input closed (`screen and (`) is stored closed (`screen and ()`), because the prelude of a rule must read back as the list it came from, and read back as it was written. `text[i]` is
 /// query `i` of the canonical text as it was read, or NULL where the canonical query is that (cssom_media.c).
@@ -168,7 +174,7 @@ struct GTEXT_CSSOM_Rule {
   css_obj obj;
   uint8_t kind;                    ///< GTEXT_CSSOM_Rule_Kind.
   uint8_t source_kind;             ///< GTEXT_CSSOM_Source_Kind.
-  bool has_block;                  ///< `@layer`: the rule has a block.
+  bool has_block;                  ///< `@layer`, `@apply` and `@contents` (css_kind_has_forms()): the rule has a block.
   bool nested;                     ///< The nested flag: the rule is inside a style rule, at any depth.
   uint64_t version;
   /* the treap node: the rule is in the list `list` */
@@ -305,7 +311,8 @@ typedef struct {
   const GTEXT_CSS_Rule * parent_node;    ///< The syntax node of the rule whose list it is (its name and prelude), or NULL for a sheet and for a style rule without one.
   bool relative;                         ///< Some enclosing rule, at any depth, is a style rule or an `@scope` (the place's own rule included).
   bool in_scope;                         ///< The nearest of those is an `@scope`.
-  bool in_style;                         ///< Some enclosing rule is a style rule (the nested flag).
+  bool in_style;                         ///< Some enclosing rule is a style rule (the nested flag) or a `@mixin`, whose body is read as one.
+  bool in_mixin;                         ///< Some enclosing rule is a `@mixin` (the place's own rule included).
   bool at_in_place;                      ///< An at-rule of the text is read in the place, not as a rule of a style sheet (the margin rules of an `@page`).
   const css_ns_env * ns;                 ///< The namespaces its selectors are read in.
 } css_insert_ctx;

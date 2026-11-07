@@ -36,6 +36,9 @@ keyframes	CSSKeyframesRule	7	keyframes	none	yes	yes	name and keyframe blocks
 keyframe	CSSKeyframeRule	8	none	properties	yes	no	a member of the cssRules of its @keyframes rule only (appendRule makes one)
 view-transition	CSSViewTransitionRule	0	none	descriptors	yes	yes	types and navigation
 position-try	CSSPositionTryRule	0	none	descriptors	yes	yes	name and a block of position declarations
+mixin	CSSMixinRule	0	rules	none	yes	yes	name, getParameters() and contents; the body is a nested-declarations rule's: the declarations are CSSNestedDeclarations rules, and the rules are the ones a style rule may hold
+apply	CSSApplyBlockRule,CSSApplyStatementRule	0	rules	none	yes	no	one kind: the block form has cssRules (the contents block), the statement form has none; both have name and getArguments(); valid only inside a style rule or a mixin, so never inserted at the top of a sheet or in a group
+contents	CSSContentsBlockRule,CSSContentsStatementRule	0	rules	none	yes	no	one kind: the block form has cssRules (the fallback block), the statement form has none; valid only inside a mixin body
 preserved	-	0	none	none	yes	yes	recognized and inactive (@function, @mixin ...), exposed generically
 style	CSSStyleRule	1	rules	properties	yes	yes	selectorText, style, and the rules nested in it
 nested-declarations	CSSNestedDeclarations	0	none	properties	yes	yes	the declarations that follow a nested rule; insertRule of a declaration block into a style rule makes one

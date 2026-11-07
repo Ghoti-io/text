@@ -56,7 +56,7 @@ GTEXT_CSS_Status css_own_prepare(css_rule * rule, const char * text, size_t leng
   }
   const GTEXT_CSS_Rule * node = &tree->rules[0];
   const GTEXT_CSSOM_Rule_Kind kind = css_kind_of_node(node, parent_kind, parent_kind == GTEXT_CSSOM_RULE_UNKNOWN);
-  if (kind != (GTEXT_CSSOM_Rule_Kind)rule->kind || (kind == GTEXT_CSSOM_RULE_LAYER && node->has_block != rule->has_block)) {
+  if (kind != (GTEXT_CSSOM_Rule_Kind)rule->kind || (css_kind_has_forms(kind) && node->has_block != rule->has_block)) {
     gtext_css_tree_free(tree);
     *invalid = true;
     return GTEXT_CSS_OK;
@@ -459,7 +459,9 @@ typedef enum {
   SRC_SCOPE_END,
   SRC_CONTAINER_NAME,
   SRC_CONTAINER_QUERY,
-  SRC_MARGIN_NAME
+  SRC_MARGIN_NAME,
+  SRC_MIXIN_NAME,    ///< CSS Functions and Mixins 1: the name of a mixin or of an `@apply`, serialized as an identifier.
+  SRC_MIXIN_CONTENTS ///< `CSSMixinRule.contents`: whether the mixin accepts a contents block.
 } attr_src;
 
 typedef struct {
@@ -517,6 +519,9 @@ static const attr_row attr_rows[] = {
   A(COLOR_PROFILE, "renderingIntent", SRC_DESC, "rendering-intent", false),
   A(COLOR_PROFILE, "components", SRC_DESC, "components", false),
   A(PAGE_MARGIN, "name", SRC_MARGIN_NAME, NULL, false),
+  A(MIXIN, "name", SRC_MIXIN_NAME, NULL, false),
+  A(MIXIN, "contents", SRC_MIXIN_CONTENTS, NULL, false),
+  A(APPLY, "name", SRC_MIXIN_NAME, NULL, false),
 };
 #undef A
 
@@ -627,6 +632,9 @@ static GTEXT_CSS_Status attr_value(css_rule * rule, const attr_row * row, tbuf *
   *is_null = false;
   if (row->src == SRC_MARGIN_NAME) {
     return tb_put(out, rule->node->name.data, rule->node->name.length) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  }
+  if (row->src == SRC_MIXIN_NAME || row->src == SRC_MIXIN_CONTENTS) {
+    return css_mixin_attribute(rule, row->src == SRC_MIXIN_NAME ? CSS_MIXIN_ATTR_NAME : CSS_MIXIN_ATTR_CONTENTS, out);
   }
   GTEXT_CSS_Atrule * a = NULL;
   GTEXT_CSS_Status st = css_rule_typed(core, rule, row->src != SRC_DESC, &a);

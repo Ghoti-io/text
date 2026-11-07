@@ -91,7 +91,10 @@ typedef enum {
   GTEXT_CSS_ATRULE_KEYFRAME,      ///< One block of `@keyframes`: its offsets and its declarations.
   GTEXT_CSS_ATRULE_VIEW_TRANSITION, ///< `@view-transition`.
   GTEXT_CSS_ATRULE_POSITION_TRY,  ///< `@position-try`.
-  GTEXT_CSS_ATRULE_PRESERVED,     ///< Recognized and inactive: `@function`, `@mixin`, `@contents`, `@apply`, `@private`, `@custom-selector`, `@navigation`, `@location`, `@supports-condition`.
+  GTEXT_CSS_ATRULE_MIXIN,         ///< `@mixin`: a name, parameters and a body that is read as a style rule's is. Recognized and inactive: nothing applies it yet.
+  GTEXT_CSS_ATRULE_APPLY,         ///< `@apply`: a mixin's name, its arguments, and a block of contents when it has one. Recognized and inactive.
+  GTEXT_CSS_ATRULE_CONTENTS,      ///< `@contents`: where a mixin takes the block an `@apply` passes, with a fallback block when it has one. Recognized and inactive.
+  GTEXT_CSS_ATRULE_PRESERVED,     ///< Recognized and inactive: `@function`, `@private`, `@custom-selector`, `@navigation`, `@location`, `@supports-condition`.
   GTEXT_CSS_ATRULE_KIND_COUNT     ///< The number of kinds; not a kind.
 } GTEXT_CSS_Atrule_Kind;
 
@@ -122,6 +125,7 @@ typedef struct {
   GTEXT_CSS_Atrule_Parent parent;     ///< Where the rule is read (the default is the top level of a style sheet); a rule the place does not allow is invalid.
   const char * source;                ///< The text the spans of the rule's component values are byte offsets into, when the caller still has it (NULL for none). With it the queries of an `@media`, `@import` or `@container` prelude that keep their text as it was written (a `<general-enclosed>`: `( a )`) are available from gtext_css_atrule_prelude_read().
   size_t source_length;               ///< The length of `source`.
+  bool in_mixin;                      ///< Some rule above this one, at any depth, is a `@mixin`: `@contents` is valid here, and `@layer` is not (CSS Functions and Mixins 1, "The Mixin Body").
 } GTEXT_CSS_Atrule_Options;
 
 /** @brief The defaults, spelled out. */

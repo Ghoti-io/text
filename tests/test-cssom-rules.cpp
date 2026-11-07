@@ -41,10 +41,10 @@ namespace {
 
 /* ---- the kinds ---------------------------------------------------------------------------------------------------------------------------------- */
 
-// The kinds table has a row for each of the 27 kinds of the at-rule enumeration (css_atrule.h) and for the style rule and the nested-declarations rule, in the order of the enumeration, and a
+// The kinds table has a row for each of the 30 kinds of the at-rule enumeration (css_atrule.h) and for the style rule and the nested-declarations rule, in the order of the enumeration, and a
 // kind has the name of its at-rule kind.
-TEST(CssomRuleKinds, TheTableHasTwentyNineRowsInTheOrderOfTheEnumeration) {
-  ASSERT_EQ(static_cast<int>(GTEXT_CSSOM_RULE_KIND_COUNT), 29);
+TEST(CssomRuleKinds, TheTableHasThirtyTwoRowsInTheOrderOfTheEnumeration) {
+  ASSERT_EQ(static_cast<int>(GTEXT_CSSOM_RULE_KIND_COUNT), 32);
   for (int k = 0; k < GTEXT_CSS_ATRULE_KIND_COUNT; k++) {
     EXPECT_STREQ(gtext_cssom_rule_kind_name(static_cast<GTEXT_CSSOM_Rule_Kind>(k)), gtext_css_atrule_kind_name(static_cast<GTEXT_CSS_Atrule_Kind>(k))) << k;
   }

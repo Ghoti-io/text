@@ -57,8 +57,21 @@ typedef struct {
   bool single;
   bool at_in_place;                   ///< An at-rule of the text is read in the place (the margin rules of an `@page`), not as a rule of a style sheet.
   const GTEXT_CSS_Parent * top;       ///< The parent the rule at the top of the text has: the rule it is inserted into.
-  bool seed_relative, seed_scope, seed_style;   ///< What the rules of the text that have no style rule or `@scope` above them in the text are in.
+  bool seed_relative, seed_scope, seed_style, seed_mixin;   ///< What the rules of the text that have no style rule or `@scope` above them in the text are in.
 } cvalidity;
+
+/// Whether an at-rule is valid or not by the place it is in, and so is read there when it is inserted: `@apply`, `@private` and `@contents` are valid in some rule bodies and nowhere else ("The
+/// @apply rule is only valid in the body of a style rule or nested group rule; using it in any other context causes it to be invalid and ignored", "Outside of a mixin body, the @contents
+/// rule is invalid and ignored"), and `@layer` is invalid in a mixin body. Read as a rule of a style sheet they would all be invalid, and could be inserted nowhere.
+static bool depends_on_place(const GTEXT_CSS_Rule * rule, const GTEXT_CSS_Parent * top) {
+  if (rule->name.length == 5 && css_ascii_ieq(&rule->name, "apply")) {
+    return true;
+  }
+  if ((rule->name.length == 7 && css_ascii_ieq(&rule->name, "private")) || (rule->name.length == 8 && css_ascii_ieq(&rule->name, "contents"))) {
+    return true;
+  }
+  return top && top->in_mixin && rule->name.length == 5 && css_ascii_ieq(&rule->name, "layer");
+}
 
 /// The parent as the validity of the rule is decided in: the context an inserted rule is placed in stands behind the text's own.
 static GTEXT_CSS_Parent effective_parent(const cvalidity * v, const GTEXT_CSS_Parent * p, const GTEXT_CSS_Rule * rule) {
@@ -68,7 +81,7 @@ static GTEXT_CSS_Parent effective_parent(const cvalidity * v, const GTEXT_CSS_Pa
   if (p->top_level) {
     /* the standard's "parse a rule" reads an at-rule as a rule of a style sheet, whatever the place it is inserted at (the place's constraints are HierarchyRequestError, after); a
        style rule is read in the place, because its selectors are (a relative selector is valid in a style rule and not in a style sheet) */
-    if (rule->kind == GTEXT_CSS_RULE_AT && !v->at_in_place) {
+    if (rule->kind == GTEXT_CSS_RULE_AT && !v->at_in_place && !depends_on_place(rule, v->top)) {
       GTEXT_CSS_Parent sheet_top;
       memset(&sheet_top, 0, sizeof sheet_top);
       sheet_top.top_level = true;
@@ -82,6 +95,7 @@ static GTEXT_CSS_Parent effective_parent(const cvalidity * v, const GTEXT_CSS_Pa
     e.in_scope = v->seed_scope;
   }
   e.in_style_rule = e.in_style_rule || v->seed_style;
+  e.in_mixin = e.in_mixin || v->seed_mixin;
   return e;
 }
 
@@ -557,6 +571,7 @@ GTEXT_CSS_Status css_parse_inserted(css_core * core, const css_insert_ctx * ctx,
   top.relative = ctx->relative;
   top.in_scope = ctx->in_scope;
   top.in_style_rule = ctx->in_style;
+  top.in_mixin = ctx->in_mixin;
   cvalidity v;
   memset(&v, 0, sizeof v);
   v.core = core;
@@ -566,6 +581,7 @@ GTEXT_CSS_Status css_parse_inserted(css_core * core, const css_insert_ctx * ctx,
   v.seed_relative = ctx->relative;
   v.seed_scope = ctx->in_scope;
   v.seed_style = ctx->in_style;
+  v.seed_mixin = ctx->in_mixin;
   v.imports_open = true;
   v.ns_open = true;
   v.selector = gtext_css_selector_options_default();

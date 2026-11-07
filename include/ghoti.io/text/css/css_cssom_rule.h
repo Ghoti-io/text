@@ -124,6 +124,9 @@ typedef enum {
   GTEXT_CSSOM_RULE_KEYFRAME = GTEXT_CSS_ATRULE_KEYFRAME,
   GTEXT_CSSOM_RULE_VIEW_TRANSITION = GTEXT_CSS_ATRULE_VIEW_TRANSITION,
   GTEXT_CSSOM_RULE_POSITION_TRY = GTEXT_CSS_ATRULE_POSITION_TRY,
+  GTEXT_CSSOM_RULE_MIXIN = GTEXT_CSS_ATRULE_MIXIN,
+  GTEXT_CSSOM_RULE_APPLY = GTEXT_CSS_ATRULE_APPLY,
+  GTEXT_CSSOM_RULE_CONTENTS = GTEXT_CSS_ATRULE_CONTENTS,
   GTEXT_CSSOM_RULE_PRESERVED = GTEXT_CSS_ATRULE_PRESERVED,
   GTEXT_CSSOM_RULE_STYLE = GTEXT_CSS_ATRULE_KIND_COUNT,   ///< A style rule: a selector list, declarations, and rules nested in it.
   GTEXT_CSSOM_RULE_NESTED_DECLARATIONS,                   ///< The declarations that follow a nested rule (CSS Nesting).
@@ -289,6 +292,8 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_condition_text(GTEXT_CSSOM_Rule * ru
  * | `@position-try` | `name` |
  * | `@color-profile` | `name`, `src`, `renderingIntent`, `components` | |
  * | margin rules | `name` (`top-left`) |
+ * | `@mixin` | `name` (serialized as an identifier), `contents` (`true` or `false`: whether a `@contents` is inside); `getParameters()` is gtext_cssom_mixin_get_parameters() |
+ * | `@apply` | `name`; `getArguments()` is gtext_cssom_apply_get_arguments() |
  *
  * An attribute that a rule does not have holds the empty string, or null (`*is_null`) where the IDL says nullable. @return GTEXT_CSS_E_UNSUPPORTED for a name the kind does not have.
  */
@@ -304,6 +309,55 @@ GTEXT_API bool gtext_cssom_rule_has_attribute(const GTEXT_CSSOM_Rule * rule, con
  */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_set_attribute(GTEXT_CSSOM_Rule * rule, const char * name, size_t name_length, const char * value, size_t value_length,
     GTEXT_CSSOM_Outcome * outcome);
+
+/* ---- CSS Functions and Mixins 1: getParameters() and getArguments() --------------------------------------------------------------------------- */
+
+/** @brief One parameter of a `@mixin` (the dictionary `FunctionParameter` of the IDL). The strings are in the block of the list they are in, NUL-terminated and not shared. */
+typedef struct {
+  const char * name;            ///< `--name`, serialized as an identifier.
+  size_t name_length;
+  const char * type;            ///< The syntax string of the type (`<length>+`, `<length> | <color>`), `*` when there is none.
+  size_t type_length;
+  bool has_default;             ///< A default was written (the dictionary's `defaultValue` is null when it was not).
+  const char * default_value;   ///< The default as it was written, trimmed; empty when there is none.
+  size_t default_length;
+} GTEXT_CSSOM_Function_Parameter;
+
+/** @brief The parameters of a mixin, in order. `block` is what to release, with gtext_cssom_buffer_free(): the items and every string they point to are in it. */
+typedef struct {
+  const GTEXT_CSSOM_Function_Parameter * items;   ///< NULL when there are none.
+  size_t count;
+  void * block;
+} GTEXT_CSSOM_Function_Parameters;
+
+/** @brief One string of a list. */
+typedef struct {
+  const char * text;
+  size_t length;
+} GTEXT_CSSOM_String_Item;
+
+/** @brief A list of strings in one block (as GTEXT_CSSOM_Function_Parameters). */
+typedef struct {
+  const GTEXT_CSSOM_String_Item * items;   ///< NULL when there are none.
+  size_t count;
+  void * block;
+} GTEXT_CSSOM_String_List;
+
+/**
+ * @brief `CSSMixinRule.getParameters()`: "Returns function parameters associated with the mixin, excluding any '@contents' parameter."
+ *
+ * @param rule A `@mixin` rule. Not NULL.
+ * @param out Receives the parameters; written only on success. Release `out->block` with gtext_cssom_buffer_free(). Not NULL.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_UNSUPPORTED (a rule that is not a `@mixin`); GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_mixin_get_parameters(GTEXT_CSSOM_Rule * rule, GTEXT_CSSOM_Function_Parameters * out);
+
+/**
+ * @brief `CSSApplyBlockRule.getArguments()` and `CSSApplyStatementRule.getArguments()`: "Returns a sequence of arguments as strings, each item serialized as if it had been the specified value
+ *   of a custom property" (an argument written as a `{}` block is its contents).
+ * @return As gtext_cssom_mixin_get_parameters(), for an `@apply` rule.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_apply_get_arguments(GTEXT_CSSOM_Rule * rule, GTEXT_CSSOM_String_List * out);
 
 /* ---- CSSFontFeatureValuesMap ----------------------------------------------------------------------------------------------------------------- */
 

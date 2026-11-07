@@ -133,7 +133,7 @@ GTEXT_CSS_Status css_rule_create(css_core * core, GTEXT_CSSOM_Rule_Kind kind, cs
   css_obj_init(&r->obj, core, GTEXT_CSSOM_OBJECT_RULE, 1, 0, sizeof *r, rule_destroy);
   r->kind = (uint8_t)kind;
   r->source_kind = GTEXT_CSSOM_SOURCE_PARSED;
-  r->has_block = kind == GTEXT_CSSOM_RULE_LAYER && node && node->has_block;
+  r->has_block = css_kind_has_forms(kind) && node && node->has_block;
   r->nested = nested;
   r->size = 1;
   r->rules.owner = &r->obj;
@@ -228,6 +228,12 @@ const char * gtext_cssom_rule_interface_name(const GTEXT_CSSOM_Rule * rule) {
   if (rule->kind == GTEXT_CSSOM_RULE_LAYER) {
     return rule->has_block ? "CSSLayerBlockRule" : "CSSLayerStatementRule";
   }
+  if (rule->kind == GTEXT_CSSOM_RULE_APPLY) {
+    return rule->has_block ? "CSSApplyBlockRule" : "CSSApplyStatementRule";
+  }
+  if (rule->kind == GTEXT_CSSOM_RULE_CONTENTS) {
+    return rule->has_block ? "CSSContentsBlockRule" : "CSSContentsStatementRule";
+  }
   return name[0] ? name : "CSSRule";
 }
 
@@ -270,7 +276,7 @@ const GTEXT_CSSOM_Rule_List * gtext_cssom_rule_css_rules(const GTEXT_CSSOM_Rule 
   if (!(flags & CSS_KIND_LIST_ANY)) {
     return NULL;
   }
-  if (rule->kind == GTEXT_CSSOM_RULE_LAYER && !rule->has_block) {
+  if (css_kind_has_forms((GTEXT_CSSOM_Rule_Kind)rule->kind) && !rule->has_block) {
     return NULL;
   }
   return &rule->rules;

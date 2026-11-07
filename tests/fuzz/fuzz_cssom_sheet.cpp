@@ -149,8 +149,11 @@ const char * const kInit[] = {"a{color:red} b > c{margin:1px 2px} @media print{d
     "x{y{color:red}} @font-face{font-family:A;src:url(a.woff2)} @page{margin:1px} @supports (display:grid){e{}}", "", "z{color:blue;margin:0}"};
 const char * const kRules[] = {"a{color:red}", "b > c{margin:1px 2px}", "@media print{d{width:1px}}", "@supports (display:grid){e{}}", "@keyframes k{from{opacity:0}to{opacity:1}}",
     "@font-face{font-family:A;src:url(a.woff2)}", "@counter-style n{system:cyclic;symbols:a b}", "@page{margin:1px}", "x{y{color:red}}", "@layer l{f{}}", "a{", "", "a{}b{}", "}",
-    "@media{", "bogus rule", "@import url(a.css);", "g{margin:1px;margin-top:2px}", "h:is(a,b){}", "@media screen{}"};
-const char * const kSheets[] = {"a{} b{c{}}", "@import 'x.css'; d{}", "", "@media print{e{}} @keyframes k{50%{opacity:1}}", "@counter-style c{symbols:a b} @page{size:a3}", "p{q{r{}}}"};
+    "@media{", "bogus rule", "@import url(a.css);", "g{margin:1px;margin-top:2px}", "h:is(a,b){}", "@media screen{}",
+    // CSS Functions and Mixins 1: a mixin with parameters and contents, one with a nested rule that applies another, and the three that are not rules of a sheet
+    "@mixin --m(--a <length>: 1px, --b){color:var(--a);@media print{@contents{color:red}}}", "@mixin --n{& b{@apply --m(1px, {a, b}){color:blue}}}", "@mixin --x{@layer l{} @contents;}",
+    "@apply --m;", "@contents;", "@mixin m(){}"};
+const char * const kSheets[] = {"a{} b{c{}}", "@import 'x.css'; d{}", "", "@media print{e{}} @keyframes k{50%{opacity:1}}", "@counter-style c{symbols:a b} @page{size:a3}", "p{q{r{}}}", "@mixin --m(--a){@contents; color:var(--a)} p{@apply --m(1px){color:red} q{@apply --m;}}"};
 const char * const kSelectors[] = {"d > e", "a, b", "", "a >", "1a", ":bogus", "x y z", ".k:not(.l)", "a{}b", "&", "> c", "*", "h1,h2,h3"};
 const char * const kNames[] = {"color", "margin", "margin-top", "width", "bogus", "--v", "background"};
 const char * const kValues[] = {"red", "1px", "", "nonsense", "1px 2px", "blue !important", "var(--x)"};

@@ -34,6 +34,7 @@
 #include <string.h>
 
 #include "css_atrule_internal.h"
+#include "css_fndef.h"
 #include "css_internal.h"
 #include "css_shorthand_internal.h"
 #include "css_sheet_internal.h"
@@ -398,8 +399,121 @@ static bool has_children(const css_rule * rule) {
 
 typedef enum {
   FORM_DONE = 0,   ///< The rule is fully written.
-  FORM_KIDS        ///< Its opening is written and the rules inside it follow, and then a newline and `}`.
+  FORM_KIDS,       ///< Its opening is written and the rules inside it follow, and then a newline and `}`.
+  FORM_KIDS_INLINE ///< Its opening is written and the rules inside it follow, each after a SPACE, and then a SPACE and `}` (the rules of CSS Functions and Mixins 1).
 } form;
+
+/* ---- the rules of CSS Functions and Mixins 1 ---------------------------------------------------------------------------------------------------- */
+
+/// "serialize an identifier" on a name, written into `w`.
+static GTEXT_CSS_Status write_identifier(sw * w, const char * name, size_t length) {
+  const GTEXT_Markup_Sink sink = sw_sink(w);
+  const GTEXT_CSS_Status st = css_serialize_identifier_text(name, length, false, &sink);
+  return w->st != GTEXT_CSS_OK ? w->st : st;
+}
+
+/// "serialize a function parameter": the name, a SPACE and the type unless there is none or it is the universal syntax, and a colon, a SPACE and the default when there is one.
+static GTEXT_CSS_Status write_parameter(sw * w, const css_fn_param * p) {
+  GTEXT_CSS_Status st = write_identifier(w, p->name, p->name_len);
+  const char * type = NULL;
+  size_t type_length = 0;
+  bool wrapped = false, universal = false;
+  if (st == GTEXT_CSS_OK && css_fn_param_css_type(p, &type, &type_length, &wrapped, &universal) && !universal) {
+    emitz(w, " ");
+    if (wrapped) {
+      emitz(w, "type(");
+    }
+    emit(w, type, type_length);
+    if (wrapped) {
+      emitz(w, ")");
+    }
+  }
+  if (st == GTEXT_CSS_OK && p->has_default) {
+    emitz(w, ": ");
+    emit(w, p->default_text, p->default_len);
+  }
+  return st != GTEXT_CSS_OK ? st : w->st;
+}
+
+/// "serialize a function argument": the argument serialized as the specified value of a custom property would be, in braces and spaces when it has a top-level comma or a top-level `{`.
+static GTEXT_CSS_Status write_argument(sw * w, const css_apply_arg * a) {
+  bool wrap = false;
+  for (size_t i = 0; i < a->count && !wrap; i++) {
+    const GTEXT_CSS_Component_Value * v = &a->values[i];
+    wrap = (v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_COMMA) || (v->kind == GTEXT_CSS_VALUE_BLOCK && v->type == GTEXT_CSS_TOKEN_OPEN_CURLY);
+  }
+  GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+  so.allocator = &w->core->alloc;
+  char * text = NULL;
+  size_t length = 0;
+  GTEXT_CSS_Status st = a->count ? gtext_css_serialize_values_buffer(a->values, a->count, &so, &text, &length) : GTEXT_CSS_OK;
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (wrap) {
+    emitz(w, "{ ");
+  }
+  emit(w, text, length);
+  if (wrap) {
+    emitz(w, " }");
+  }
+  gtext_css_serialize_buffer_free(&so, text);
+  return w->st;
+}
+
+/// `@mixin --name(<parameters>)`: the opening of a mixin without its brace.
+static GTEXT_CSS_Status write_mixin_header(sw * w, css_rule * rule) {
+  css_fn_def * def = NULL;
+  bool valid = false;
+  GTEXT_CSS_Status st = css_mixin_prelude_read(w->core->registry, &w->core->alloc, rule->node, &def, &valid);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (!valid || !def) {
+    return GTEXT_CSS_E_INTERNAL;   /* a rule is a mixin only when its prelude is one */
+  }
+  emitz(w, "@mixin ");
+  st = write_identifier(w, def->name, def->name_len);
+  if (st == GTEXT_CSS_OK && def->nparams > 0) {
+    emitz(w, "(");
+    for (size_t i = 0; i < def->nparams && st == GTEXT_CSS_OK; i++) {
+      if (i) {
+        emitz(w, ", ");
+      }
+      st = write_parameter(w, &def->params[i]);
+    }
+    emitz(w, ")");
+  }
+  css_fn_def_free(def);
+  return st != GTEXT_CSS_OK ? st : w->st;
+}
+
+/// `@apply --name(<arguments>)`: "serialize an @apply prelude", with the `@apply ` before it.
+static GTEXT_CSS_Status write_apply_header(sw * w, css_rule * rule) {
+  css_apply_prelude ap;
+  bool valid = false;
+  GTEXT_CSS_Status st = css_apply_prelude_read(&w->core->alloc, rule->node, &ap, &valid);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (!valid) {
+    return GTEXT_CSS_E_INTERNAL;
+  }
+  emitz(w, "@apply ");
+  st = write_identifier(w, ap.name.data, ap.name.length);
+  if (st == GTEXT_CSS_OK && ap.nargs > 0) {
+    emitz(w, "(");
+    for (size_t i = 0; i < ap.nargs && st == GTEXT_CSS_OK; i++) {
+      if (i) {
+        emitz(w, ", ");
+      }
+      st = write_argument(w, &ap.args[i]);
+    }
+    emitz(w, ")");
+  }
+  css_apply_prelude_free(&w->core->alloc, &ap);
+  return st != GTEXT_CSS_OK ? st : w->st;
+}
 
 /// The prelude of an `@scope` inside a style rule: its root list is relative, so it is written with its `&` (`(& .a) to (.b)`); the limit list is written as it was.
 static GTEXT_CSS_Status write_nested_scope_prelude(sw * w, css_rule * rule, bool * handled) {
@@ -575,6 +689,35 @@ static GTEXT_CSS_Status open_rule(sw * w, css_rule * rule, form * out) {
       emitz(w, "\n}");
     }
     return w->st;
+  case GTEXT_CSSOM_RULE_MIXIN:
+  case GTEXT_CSSOM_RULE_APPLY:
+  case GTEXT_CSSOM_RULE_CONTENTS:
+    /* CSS Functions and Mixins 1, "serialize a CSSMixinRule" and the three that follow it: `@mixin` and the parameters, `{`, a SPACE, the rules inside each after the one before it with a SPACE
+       between (an empty string is left out), a SPACE and `}`. The draft writes no SPACE before the `{` of a mixin (the other three have it, as `@function` does): it is written here. */
+    if (rule->kind == GTEXT_CSSOM_RULE_MIXIN) {
+      st = write_mixin_header(w, rule);
+    }
+    else if (rule->kind == GTEXT_CSSOM_RULE_APPLY) {
+      st = write_apply_header(w, rule);
+    }
+    else {
+      emitz(w, "@contents");
+    }
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+    if (!rule->has_block && rule->kind != GTEXT_CSSOM_RULE_MIXIN) {
+      emitz(w, ";");
+      return w->st;
+    }
+    emitz(w, " {");
+    if (has_children(rule)) {
+      *out = FORM_KIDS_INLINE;
+    }
+    else {
+      emitz(w, "  }");
+    }
+    return w->st;
   case GTEXT_CSSOM_RULE_LAYER:
     if (rule->has_block) {
       st = write_group_header(w, rule);
@@ -721,6 +864,7 @@ static GTEXT_CSS_Status open_rule(sw * w, css_rule * rule, form * out) {
 typedef struct {
   css_rule * rule;
   css_rule * next;
+  bool inl;          ///< The rules inside are written after a SPACE each and closed by a SPACE and `}` (FORM_KIDS_INLINE).
 } sframe;
 
 /// Write a rule and the rules inside it, with an explicit stack.
@@ -738,7 +882,7 @@ static GTEXT_CSS_Status write_rule(sw * w, css_rule * top) {
       if (st != GTEXT_CSS_OK) {
         break;
       }
-      if (f == FORM_KIDS) {
+      if (f == FORM_KIDS || f == FORM_KIDS_INLINE) {
         if (sp == cap) {
           sframe * grown = gtext_allocator_realloc(&a, stack, (cap ? cap * 2 : 16) * sizeof *grown);
           if (!grown) {
@@ -750,6 +894,7 @@ static GTEXT_CSS_Status write_rule(sw * w, css_rule * top) {
         }
         stack[sp].rule = pending;
         stack[sp].next = next_written(css_rule_list_first(&pending->rules));
+        stack[sp].inl = f == FORM_KIDS_INLINE;
         sp++;
       }
       pending = NULL;
@@ -760,7 +905,7 @@ static GTEXT_CSS_Status write_rule(sw * w, css_rule * top) {
     }
     sframe * f = &stack[sp - 1];
     if (!f->next) {
-      emitz(w, "\n}");
+      emitz(w, f->inl ? " }" : "\n}");
       sp--;
       if (w->st != GTEXT_CSS_OK) {
         st = w->st;
@@ -770,7 +915,7 @@ static GTEXT_CSS_Status write_rule(sw * w, css_rule * top) {
     }
     pending = f->next;
     f->next = next_written(css_rule_list_next(pending));
-    emitz(w, "\n  ");
+    emitz(w, f->inl ? " " : "\n  ");
   }
   gtext_allocator_free(&a, stack);
   return st != GTEXT_CSS_OK ? st : w->st;

@@ -84,7 +84,7 @@ static GTEXT_CSS_Status dump_rule(const css_rule * r, size_t depth, const GTEXT_
   if (st == GTEXT_CSS_OK) {
     st = puts_(sink, css_kind((GTEXT_CSSOM_Rule_Kind)r->kind)->name);
   }
-  if (st == GTEXT_CSS_OK && r->kind == GTEXT_CSSOM_RULE_LAYER) {
+  if (st == GTEXT_CSS_OK && css_kind_has_forms((GTEXT_CSSOM_Rule_Kind)r->kind)) {
     st = puts_(sink, r->has_block ? " block" : " statement");
   }
   if (st == GTEXT_CSS_OK) {
