@@ -132,4 +132,15 @@ TEST(CssomFunction, ASheetOfStyleRulesAloneBuildsNoFunctionContextAgain) {
   gtext_cssom_sheet_release(sh);
 }
 
+// CSS Functions and Mixins 1 defines how a mixin is applied, and nothing here applies one yet: the rules are recognized and inactive. The body of a mixin is not a rule of the sheet's cascade
+// ("div" below is not styled by the rule inside the mixin), an @apply changes no style, and a mixin with an @apply or @contents inside it does not break the sheet around it.
+TEST(CssomFunction, AMixinAndAnApplyChangeNoStyleYet) {
+  Cs m(page("@mixin --m(--c <color>: red) { div { color: red } & { color: blue } @contents; } #a { color: green; @apply --m(blue) { color: pink } } div { margin-top: 3px } #b { @apply --m; }", "<div id=a>x</div><div id=b>y</div>"));
+  EXPECT_EQ(m.value("#a", "color"), "rgb(0, 128, 0)");
+  EXPECT_EQ(m.value("#a", "margin-top"), "3px") << "the rule inside the mixin is no rule of the sheet, the one after it is";
+  EXPECT_EQ(m.value("#b", "color"), "canvastext");
+  EXPECT_EQ(m.value("#b", "margin-top"), "3px");
+}
+
+
 }  // namespace
