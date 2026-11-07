@@ -211,9 +211,27 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     // by name rather than by index, because a writer is allowed to order the
     // preamble and the groups as it sees fit.
     size_t empty_seen = 0;
-    for (const Group & g : shadow) {
-      const GTEXT_INI_Group * got =
-          find_group(back, g.name, empty_seen);
+    for (size_t gi = 0; gi < shadow.size(); gi++) {
+      const Group & g = shadow[gi];
+      // A dialect that keeps a repeated header as a group of its own (win32: "a key in a second `[a]` is retrievable by no name at all", pinned in tests/test-ini.cpp)
+      // answers a lookup by name with the first, so the second is found as the group it is: the one with its spelling at its place among the groups of that spelling.
+      size_t same_before = 0;
+      for (size_t k = 0; k < gi; k++) {
+        if (shadow[k].name == g.name) same_before++;
+      }
+      const GTEXT_INI_Group * got = nullptr;
+      if (same_before > 0 && !popts.dialect.merge_duplicate_groups && !g.name.empty()) {
+        size_t skip = same_before;
+        for (size_t k = 0; k < gtext_ini_document_group_count(back) && !got; k++) {
+          const GTEXT_INI_Group * cand = gtext_ini_document_group_at(back, k);
+          size_t len = 0;
+          const char * nm = gtext_ini_group_name(cand, &len);
+          if (!gtext_ini_group_is_preamble(cand) && std::string(nm, len) == g.name && skip-- == 0) got = cand;
+        }
+      }
+      else {
+        got = find_group(back, g.name, empty_seen);
+      }
       if (!got) {
         std::fprintf(stderr, "group lost: %zu bytes\n", g.name.size());
         fail("a group the DOM accepted did not survive the round trip", out);
