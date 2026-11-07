@@ -211,6 +211,9 @@ const void * element_of(uint8_t o0) {
   return (o0 & 8) ? &the_element : nullptr;
 }
 
+// The custom functions of the sheet that mode 2 is checking, given to the computation of the declarations after it (null for every other mode).
+const GTEXT_CSS_Function_Set * g_functions = nullptr;
+
 GTEXT_CSS_Compute_Options options_of(uint8_t o0, const GTEXT_Allocator * alloc, const GTEXT_CSS_At_Property_Set * rules) {
   GTEXT_CSS_Compute_Options o = gtext_css_compute_options_default();
   if (o0 & 8) {
@@ -218,6 +221,7 @@ GTEXT_CSS_Compute_Options options_of(uint8_t o0, const GTEXT_Allocator * alloc, 
   }
   o.allocator = alloc;
   o.property_rules = rules;
+  o.function_rules = g_functions;
   if (o0 & 4) {
     o.substitute.max_substituted_tokens = kSmallTokens;
     o.substitute.max_element_substituted_tokens = kSmallElement;
@@ -729,10 +733,26 @@ void check_rules(const std::string & sheet, const std::string & rest, uint8_t o0
     }
   }
   if (kept) {
-    // the rules, used: the declarations after the sheet compute with them
+    // the rules, used: the declarations after the sheet compute with them, and with the custom functions its `@function` rules define (bit 4 of o0 makes the set keep
+    // copies of the rules): a call is held to the same properties as everything else here
     const std::vector<Decl> decls = declarations(rest);
     if (!decls.empty()) {
+      GTEXT_CSS_Function_Options fo = gtext_css_function_options_default();
+      fo.active = [](void *, const GTEXT_CSS_Rule *) { return true; };
+      fo.own_rules = (o0 & 16) != 0;
+      GTEXT_CSS_Function_Set * fns = nullptr;
+      GTEXT_CSS_Status fst = gtext_css_function_set_new(registry(), &fo, &fns);
+      if (fst == GTEXT_CSS_OK) {
+        GTEXT_CSS_Function_Result fres;
+        fst = gtext_css_function_collect(fns, tree, &fres);
+      }
+      if (!allowed_status(fst)) {
+        fail("a status collecting @function rules must not return", gtext_css_status_string(fst), input);
+      }
+      g_functions = fst == GTEXT_CSS_OK ? fns : nullptr;
       check_compute({}, decls, false, o0, 0, sheet.size() + rest.size(), kept, input);
+      g_functions = nullptr;
+      gtext_css_function_set_free(fns);
     }
   }
   gtext_css_at_property_set_free(kept);
