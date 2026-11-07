@@ -124,6 +124,20 @@ TEST(CssShapeCompute, RadiusGrammar) {
   EXPECT_EQ(root_computed("shape-outside: circle(-10px)", "shape-outside"), "none");
 }
 
+// Images 4 writes <radial-size> as an extent pair or a length-percentage pair and no mixed pair, and the Shapes page basic-shape-circle-ellipse-serialization.html
+// reads `ellipse(farthest-side 10px at center)` as valid; both pinned browsers (Chromium 156.0.8078.47, Firefox 158.0.1) accept the mixed pair and write it back
+// as given. The ellipse takes each of its two radii as an extent or a length-percentage; a circle, which takes one component, still refuses the pair.
+TEST(CssShapeCompute, AnEllipseRadiusPairMayMixAnExtentAndALengthPercentage) {
+  expect_all({
+      {"shape-outside", "ellipse(farthest-side 10px at center)", "ellipse(farthest-side 10px at 50% 50%)"},
+      {"shape-outside", "ellipse(10% closest-corner at 50% 50%)", "ellipse(10% closest-corner at 50% 50%)"},
+      {"shape-outside", "ellipse(closest-side 10%)", "ellipse(closest-side 10%)"},
+  });
+  EXPECT_EQ(root_computed("shape-outside: ellipse(closest-side 10px 5px)", "shape-outside"), "none");
+  EXPECT_EQ(root_computed("shape-outside: ellipse(closest-side -1px)", "shape-outside"), "none");
+  EXPECT_EQ(root_computed("shape-outside: circle(closest-side 10px)", "shape-outside"), "none");
+}
+
 // Motion 1, ray(): "<angle> values are interpreted as bearing angles"; the computed angle is in degrees, the default size and the position as percentages.
 TEST(CssShapeCompute, RayIsDegreesThenSizeContainAndPosition) {
   expect_all({

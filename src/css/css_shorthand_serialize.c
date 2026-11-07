@@ -679,20 +679,19 @@ static int keyword_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, c
     if (!cs || !ce || !js || !je) {
       return 2;
     }
+    /* One value when the four are the same, else all four with the slash: CSS Gaps 1 gives the grammar and "Omitted values are filled in as follows", and the Gaps pages
+     * read the filled-in form (`10px 20px` is `10px 20px / 10px 20px`, `10px / 20px` is `10px 10px / 20px 20px`) from Chromium, the one pinned browser that implements the
+     * property (Firefox 158.0.1 answers "" for it); the short forms `10px 20px` and `10px / 20px` were this writer's own. */
     tbuf b;
     tb_init(&b, &c->alloc);
     tb_puts(&b, cs);
-    if (!texteq(cs, ce)) {
+    if (!texteq(cs, ce) || !texteq(cs, js) || !texteq(cs, je)) {
       tb_puts(&b, " ");
       tb_puts(&b, ce);
-    }
-    if (!texteq(cs, js) || !texteq(ce, je)) {
       tb_puts(&b, " / ");
       tb_puts(&b, js);
-      if (!texteq(js, je)) {
-        tb_puts(&b, " ");
-        tb_puts(&b, je);
-      }
+      tb_puts(&b, " ");
+      tb_puts(&b, je);
     }
     out->text = tb_take(&b, NULL);
     return out->text ? 1 : 2;
@@ -772,6 +771,150 @@ static int keyword_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, c
   return 0;
 }
 
+/// The top-level items of `text` (separated by commas outside parentheses), as [start, end) spans of at most `max`; the count, which may be above `max`.
+typedef struct {
+  const char * p;
+  size_t n;
+} gspan;
+
+static size_t gap_split(const char * text, size_t len, gspan * out, size_t max) {
+  size_t count = 0, depth = 0, start = 0;
+  for (size_t i = 0; i <= len; i++) {
+    const char ch = i < len ? text[i] : ',';
+    if (ch == '(') {
+      depth++;
+    }
+    else if (ch == ')' && depth) {
+      depth--;
+    }
+    else if (ch == ',' && depth == 0) {
+      size_t a = start, b = i;
+      while (a < b && text[a] == ' ') a++;
+      while (b > a && text[b - 1] == ' ') b--;
+      if (count < max) {
+        out[count].p = text + a;
+        out[count].n = b - a;
+      }
+      count++;
+      start = i + 1;
+    }
+  }
+  return count;
+}
+
+#define GAP_ITEMS 32u
+
+/// What one item of a rule longhand's list is: a single value (kind 0), an integer repeater (1, `count` set), an auto repeater (2); `inner` holds the repeater's values.
+typedef struct {
+  int kind;
+  gspan count;
+  gspan inner[GAP_ITEMS];
+  size_t ninner;
+  gspan whole;
+  bool bad;
+} gap_item;
+
+static void gap_item_of(gspan it, gap_item * out) {
+  memset(out, 0, sizeof *out);
+  out->whole = it;
+  if (it.n > 8 && memcmp(it.p, "repeat(", 7) == 0 && it.p[it.n - 1] == ')') {
+    gspan parts[GAP_ITEMS + 1];
+    const size_t np = gap_split(it.p + 7, it.n - 8, parts, GAP_ITEMS + 1);
+    if (np < 2 || np > GAP_ITEMS + 1) {
+      out->bad = true;
+      return;
+    }
+    out->count = parts[0];
+    out->kind = parts[0].n == 4 && memcmp(parts[0].p, "auto", 4) == 0 ? 2 : 1;
+    out->ninner = np - 1;
+    for (size_t k = 1; k < np; k++) {
+      out->inner[k - 1] = parts[k];
+    }
+  }
+}
+
+/// CSS Gaps 1, "Serialization": the `column-rule` / `row-rule` shorthands are written from a list of widths, styles and colors only if the three are "repeater aligned" (the same
+/// number of items; at each index all non-repeat values, all integer repeaters or all auto repeaters; equal integers; the same number of values in each repeat()), and are
+/// the empty string otherwise. Each item is then `<width> <style> <color>`, and a repeater is `repeat(N, ...)` of such items.
+/// 0: the longhands are not lists (the generic writer is right); 1: `out` holds the text; 2: they are lists that are not aligned (no text).
+static int gap_rule_text(sctx * c, const directs * d, const lhv * v, stext * out) {
+  const lhv * part[3] = {NULL, NULL, NULL};
+  for (size_t i = 0; i < d->nlong; i++) {
+    for (size_t k = 0; k < 3; k++) {
+      static const char * const names[2][3] = {{"column-rule-width", "column-rule-style", "column-rule-color"}, {"row-rule-width", "row-rule-style", "row-rule-color"}};
+      if (nm(c, d->ids[i], names[0][k]) || nm(c, d->ids[i], names[1][k])) {
+        part[k] = &v[i];
+      }
+    }
+  }
+  if (!part[0] || !part[1] || !part[2] || !part[0]->text || !part[1]->text || !part[2]->text) {
+    return 0;
+  }
+  gspan items[3][GAP_ITEMS];
+  size_t count[3];
+  bool list = false;
+  for (size_t k = 0; k < 3; k++) {
+    count[k] = gap_split(part[k]->text, strlen(part[k]->text), items[k], GAP_ITEMS);
+    list = list || count[k] != 1 || strstr(part[k]->text, "repeat(") != NULL;
+  }
+  if (!list) {
+    return 0;
+  }
+  if (count[0] != count[1] || count[0] != count[2] || count[0] > GAP_ITEMS) {
+    return 2;
+  }
+  tbuf b;
+  tb_init(&b, &c->alloc);
+  for (size_t i = 0; i < count[0]; i++) {
+    gap_item it[3];
+    for (size_t k = 0; k < 3; k++) {
+      gap_item_of(items[k][i], &it[k]);
+      if (it[k].bad) {
+        tb_free(&b);
+        return 2;
+      }
+    }
+    if (it[0].kind != it[1].kind || it[0].kind != it[2].kind) {
+      tb_free(&b);
+      return 2;
+    }
+    if (it[0].kind == 1) {
+      for (size_t k = 1; k < 3; k++) {
+        if (it[k].count.n != it[0].count.n || memcmp(it[k].count.p, it[0].count.p, it[0].count.n) != 0) {
+          tb_free(&b);
+          return 2;
+        }
+      }
+    }
+    if (it[0].kind != 0 && (it[0].ninner != it[1].ninner || it[0].ninner != it[2].ninner)) {
+      tb_free(&b);
+      return 2;
+    }
+    if (i) {
+      tb_puts(&b, ", ");
+    }
+    if (it[0].kind == 0) {
+      for (size_t k = 0; k < 3; k++) {
+        if (k) tb_puts(&b, " ");
+        tb_put(&b, it[k].whole.p, it[k].whole.n);
+      }
+      continue;
+    }
+    tb_puts(&b, "repeat(");
+    tb_put(&b, it[0].count.p, it[0].count.n);
+    for (size_t j = 0; j < it[0].ninner; j++) {
+      tb_puts(&b, ", ");
+      for (size_t k = 0; k < 3; k++) {
+        if (k) tb_puts(&b, " ");
+        tb_put(&b, it[k].inner[j].p, it[k].inner[j].n);
+      }
+    }
+    tb_puts(&b, ")");
+  }
+  out->text = tb_take(&b, NULL);
+  return out->text ? 1 : 2;
+}
+
 static bool any_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, const lhv * v, stext * out) {
   const slash_rule * sr = NULL;
   for (size_t i = 0; i < sizeof slash_rules / sizeof *slash_rules; i++) {
@@ -782,6 +925,12 @@ static bool any_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, cons
   const int keyword = keyword_text(c, sh, d, v, out);
   if (keyword) {
     return keyword == 1;
+  }
+  if (nm(c, sh, "column-rule") || nm(c, sh, "row-rule")) {
+    const int gap = gap_rule_text(c, d, v, out);
+    if (gap) {
+      return gap == 1;
+    }
   }
   size_t perm[MAX_DIRECT * 2];
   const int all_initial_at = serial_order(c, sh, d, d->nlong, perm);

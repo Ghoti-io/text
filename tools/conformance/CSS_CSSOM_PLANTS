@@ -419,3 +419,5 @@ substitution-text-never-kept	css_parser.c	      if (found && !css_filtered_text(
 pseudo-content-normal-stays-normal	css_style.c	  if (st == GTEXT_CSS_OK && is_before_after(options->pseudo)) {	  if (st == GTEXT_CSS_OK && 0 && is_before_after(options->pseudo)) {	computed
 pseudo-content-every-pseudo	css_style.c	  return (s->name.length == 6 && memcmp(s->name.data, "before", 6) == 0) ||	  return s->name.length > 0 || (s->name.length == 6 && memcmp(s->name.data, "before", 6) == 0) ||	computed
 if-bang-branch-accepted	css_substitute.c	          if (is_tok(v, GTEXT_CSS_TOKEN_DELIM) && v->delim == '!') {	          if (0 && is_tok(v, GTEXT_CSS_TOKEN_DELIM) && v->delim == '!') {	custom
+rule-inset-written-short	css_shorthand_serialize.c	    if (!texteq(cs, ce) || !texteq(cs, js) || !texteq(cs, je)) {	    if (!texteq(cs, js) || !texteq(ce, je)) {	shorthand,computed
+rule-shorthand-list-not-split	css_shorthand.c	  if (split_gap_rule(x, sh, root, ids, nl, txt, status)) {	  if (0 && split_gap_rule(x, sh, root, ids, nl, txt, status)) {	shorthand,computed

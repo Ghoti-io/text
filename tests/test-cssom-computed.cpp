@@ -364,6 +364,33 @@ TEST(CssomComputed, AShorthandIsWrittenFromTheResolvedLonghands) {
   EXPECT_EQ(origin(d.d, "bogus"), "absent");
 }
 
+/* CSS Gaps 1 (pinned): "This shorthand property sets column-rule-visibility-items and row-rule-visibility-items to the same value." and "Omitted values are filled in as follows". The
+ * bidirectional shorthands are written from the column and row longhands, and are the empty string when the two differ (the Gaps page gap-decorations-bidirectional-shorthands.html;
+ * the pin's data listed only the column longhand of rule-visibility-items, so the shorthand read as whichever column value there was). */
+TEST(CssomComputed, TheBidirectionalGapShorthandsAreWrittenFromBothAxesAndEmptyWhenTheyDiffer) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#a{column-rule-visibility-items:around;row-rule-visibility-items:between;"
+       "column-rule-inset-cap-start:10px;row-rule-inset-cap-start:10px;column-rule-inset-cap-end:5px;row-rule-inset-cap-end:5px;"
+       "column-rule-inset-junction-start:10px;row-rule-inset-junction-start:10px;column-rule-inset-junction-end:5px;row-rule-inset-junction-end:5px}"
+       "#b{column-rule-visibility-items:around;row-rule-visibility-items:around;column-rule-inset:3px;row-rule-inset:3px}"
+       "</style></head><body><p id=a>x</p><p id=b>y</p></body></html>");
+  EXPECT_EQ(m.value("#a", "rule-visibility-items"), "");
+  EXPECT_EQ(m.value("#b", "rule-visibility-items"), "around");
+  EXPECT_EQ(m.value("#a", "rule-inset"), "10px 5px / 10px 5px");
+  EXPECT_EQ(m.value("#a", "column-rule-inset"), "10px 5px / 10px 5px");
+  EXPECT_EQ(m.value("#b", "rule-inset"), "3px");
+}
+
+/* Gaps 1 "Serialization": the rule shorthands are written from lists that are "repeater aligned" (the Gaps page gap-decorations-rule-shorthand-from-longhands.tentative.html). */
+TEST(CssomComputed, ARuleShorthandIsWrittenFromAlignedListsOfItsLonghands) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#a{column-rule-width:repeat(auto,5px);column-rule-style:repeat(auto,solid);column-rule-color:repeat(auto,rgb(255,0,0))}"
+       "#b{column-rule-width:repeat(auto,thin,medium);column-rule-style:solid;column-rule-color:repeat(8,red,blue)}"
+       "</style></head><body><p id=a>x</p><p id=b>y</p></body></html>");
+  EXPECT_EQ(m.value("#a", "column-rule"), "repeat(auto, 5px solid rgb(255, 0, 0))");
+  EXPECT_EQ(m.value("#b", "column-rule"), "");
+}
+
 TEST(CssomComputed, ANewObjectEachCallAndTheSameValuesInEachWhileNothingMoves) {
   Cs m(kPage);
   Decl a = m.computed("#a");

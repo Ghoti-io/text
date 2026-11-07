@@ -31,6 +31,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "css_grid_text.h"
 #include "css_shorthand_internal.h"
@@ -1151,6 +1152,167 @@ static size_t index_of(xctx * x, const GTEXT_CSS_Property_Id * ids, size_t nl, c
   return nl;
 }
 
+/// Gaps 1, `column-rule` and `row-rule`: `<gap-rule-list> | <gap-auto-rule-list>`, a comma list of `<line-width> || <line-style> || <color>` items and
+/// `repeat(<integer> | auto, <gap-rule>#)`, set as three lists, one per longhand. These are the pieces of one text, split at the commas and spaces outside parentheses.
+static bool gap_top_level(const char * s, size_t n, size_t * at, size_t max, char sep) {
+  size_t depth = 0, count = 0, start = 0;
+  for (size_t i = 0; i <= n; i++) {
+    const char ch = i < n ? s[i] : sep;
+    if (ch == '(') {
+      depth++;
+    }
+    else if (ch == ')' && depth) {
+      depth--;
+    }
+    else if (ch == sep && depth == 0) {
+      if (i > start || sep == ',') {
+        if (count + 2 > max - 1) {
+          return false;
+        }
+        at[count++] = start;
+        at[count++] = i;
+      }
+      start = i + 1;
+    }
+  }
+  at[max - 1] = count / 2;
+  return true;
+}
+
+/// Which longhand a token of a `<gap-rule>` belongs to: 0 width, 1 style, 2 color.
+static int gap_token_slot(const char * t, size_t n) {
+  static const char * const styles[] = {"none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"};
+  for (size_t k = 0; k < sizeof styles / sizeof *styles; k++) {
+    if (strlen(styles[k]) == n && strncasecmp(styles[k], t, n) == 0) {
+      return 1;
+    }
+  }
+  static const char * const widths[] = {"thin", "medium", "thick", "calc(", "min(", "max(", "clamp("};
+  for (size_t k = 0; k < sizeof widths / sizeof *widths; k++) {
+    const size_t wl = strlen(widths[k]);
+    if ((widths[k][wl - 1] == '(' ? n >= wl : n == wl) && strncasecmp(widths[k], t, wl) == 0) {
+      return 0;
+    }
+  }
+  if (n && ((t[0] >= '0' && t[0] <= '9') || t[0] == '.' || t[0] == '+' || t[0] == '-')) {
+    return 0;
+  }
+  return 2;
+}
+
+/// One `<gap-rule>` as its three parts (width, style, color), each a span of the text; a part left out is the longhand's initial value.
+static void gap_rule_parts(const char * s, size_t n, const char ** part, size_t * len) {
+  static const char * const initial[3] = {"medium", "none", "currentcolor"};
+  for (size_t k = 0; k < 3; k++) {
+    part[k] = initial[k];
+    len[k] = strlen(initial[k]);
+  }
+  size_t at[34];
+  if (!gap_top_level(s, n, at, 34, ' ')) {
+    return;
+  }
+  const size_t nt = at[33];
+  for (size_t i = 0; i < nt; i++) {
+    const char * t = s + at[2 * i];
+    const size_t tn = at[2 * i + 1] - at[2 * i];
+    const int slot = gap_token_slot(t, tn);
+    part[slot] = t;
+    len[slot] = tn;
+  }
+}
+
+static bool split_gap_rule(xctx * x, GTEXT_CSS_Property_Id sh, const GTEXT_CSS_Value * root, const GTEXT_CSS_Property_Id * ids, size_t nl, char ** txt,
+    GTEXT_CSS_Status * status) {
+  const bool column = name_is(x->registry, sh, "column-rule");
+  if (!root || (!column && !name_is(x->registry, sh, "row-rule"))) {
+    return false;
+  }
+  const char * const names[2][3] = {{"column-rule-width", "column-rule-style", "column-rule-color"}, {"row-rule-width", "row-rule-style", "row-rule-color"}};
+  size_t slot[3];
+  for (size_t k = 0; k < 3; k++) {
+    slot[k] = index_of(x, ids, nl, names[column ? 0 : 1][k]);
+    if (slot[k] == nl) {
+      return false;
+    }
+  }
+  char * text = text_of(x, root);
+  if (!text) {
+    *status = GTEXT_CSS_E_OOM;
+    return true;
+  }
+  const size_t tn = strlen(text);
+  size_t items[66];
+  if (!gap_top_level(text, tn, items, 66, ',') || (items[65] == 1 && strncmp(text, "repeat(", 7) != 0)) {
+    gtext_allocator_free(&x->alloc, text);
+    return false;   /* one item that is no repeater: a single `<gap-rule>`, which the generic split reads */
+  }
+  tbuf b[3];
+  for (size_t k = 0; k < 3; k++) {
+    tb_init(&b[k], &x->alloc);
+  }
+  for (size_t i = 0; i < items[65]; i++) {
+    const char * it = text + items[2 * i];
+    size_t in = items[2 * i + 1] - items[2 * i];
+    while (in && *it == ' ') {
+      it++;
+      in--;
+    }
+    while (in && it[in - 1] == ' ') {
+      in--;
+    }
+    for (size_t k = 0; k < 3 && i; k++) {
+      tb_puts(&b[k], ", ");
+    }
+    if (in > 8 && strncmp(it, "repeat(", 7) == 0 && it[in - 1] == ')') {
+      size_t parts[66];
+      if (!gap_top_level(it + 7, in - 8, parts, 66, ',') || parts[65] < 2) {
+        *status = GTEXT_CSS_E_UNSUPPORTED;
+        goto done;
+      }
+      for (size_t k = 0; k < 3; k++) {
+        tb_puts(&b[k], "repeat(");
+        tb_put(&b[k], it + 7 + parts[0], parts[1] - parts[0]);
+      }
+      for (size_t j = 1; j < parts[65]; j++) {
+        const char * pt[3];
+        size_t pl[3];
+        const char * q = it + 7 + parts[2 * j];
+        size_t qn = parts[2 * j + 1] - parts[2 * j];
+        while (qn && *q == ' ') {
+          q++;
+          qn--;
+        }
+        gap_rule_parts(q, qn, pt, pl);
+        for (size_t k = 0; k < 3; k++) {
+          tb_puts(&b[k], ", ");
+          tb_put(&b[k], pt[k], pl[k]);
+        }
+      }
+      for (size_t k = 0; k < 3; k++) {
+        tb_puts(&b[k], ")");
+      }
+    }
+    else {
+      const char * pt[3];
+      size_t pl[3];
+      gap_rule_parts(it, in, pt, pl);
+      for (size_t k = 0; k < 3; k++) {
+        tb_put(&b[k], pt[k], pl[k]);
+      }
+    }
+  }
+  for (size_t k = 0; k < 3; k++) {
+    txt[slot[k]] = x_take(x, &b[k]);
+  }
+  *status = txt[slot[0]] && txt[slot[1]] && txt[slot[2]] ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+done:
+  for (size_t k = 0; k < 3; k++) {
+    tb_free(&b[k]);
+  }
+  gtext_allocator_free(&x->alloc, text);
+  return true;
+}
+
 /// Shorthands that are the generic assignment plus keywords that stand for values of several longhands: `white-space: pre` and the others of
 /// its four legacy keywords (Text 4, `white-space`), `text-spacing: none` and `auto`. True when the value was one of them (and `txt` is filled).
 static bool split_keyword_shorthand(xctx * x, GTEXT_CSS_Property_Id sh, const GTEXT_CSS_Value * root, const GTEXT_CSS_Property_Id * ids, size_t nl,
@@ -1181,6 +1343,9 @@ static bool split_keyword_shorthand(xctx * x, GTEXT_CSS_Property_Id sh, const GT
     txt[ifb] = dup_text(x, rest[0] ? rest : "none");
     gtext_allocator_free(&x->alloc, text);
     *status = txt[io] && txt[ifb] ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+    return true;
+  }
+  if (split_gap_rule(x, sh, root, ids, nl, txt, status)) {
     return true;
   }
   leaves_t l;

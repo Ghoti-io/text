@@ -345,6 +345,35 @@ TEST(CssShorthandExpand, WhiteSpaceKeywordsStandForTwoLonghands) {
   EXPECT_EQ(items_of(Block(R(), "text-spacing: none")), "text-spacing-trim=space-all; text-autospace=no-autospace");
 }
 
+// CSS Gaps 1 (pinned, "Serialization"): "column-rule: 1px solid red, 2px dashed green, 3px dotted blue;" breaks down to "column-rule-width: 1px, 2px, 3px;
+// column-rule-style: solid, dashed, dotted; column-rule-color: red, green, blue;", and "Which serialize back to the same original shorthand value, because the longhands are
+// repeater aligned"; a list that is not aligned makes the shorthand serialize "as an empty string". Each example below is one of the draft's.
+TEST(CssShorthandExpand, ARuleShorthandWithAListSetsThreeLists) {
+  EXPECT_EQ(items_of(Block(R(), "column-rule: 1px solid red, 2px dashed green, 3px dotted blue")),
+      "column-rule-width=1px, 2px, 3px; column-rule-style=solid, dashed, dotted; column-rule-color=red, green, blue");
+  EXPECT_EQ(items_of(Block(R(), "column-rule: 1px solid red, repeat(2, 2px dashed green)")),
+      "column-rule-width=1px, repeat(2, 2px); column-rule-style=solid, repeat(2, dashed); column-rule-color=red, repeat(2, green)");
+  EXPECT_EQ(items_of(Block(R(), "row-rule: repeat(auto, 1px solid red, 2px dashed green)")),
+      "row-rule-width=repeat(auto, 1px, 2px); row-rule-style=repeat(auto, solid, dashed); row-rule-color=repeat(auto, red, green)");
+  EXPECT_EQ(items_of(Block(R(), "column-rule: 2px, solid")),
+      "column-rule-width=2px, medium; column-rule-style=none, solid; column-rule-color=currentcolor, currentcolor");
+}
+
+TEST(CssShorthandBlock, ARuleShorthandOfAlignedListsIsWrittenAndOfMisalignedListsIsEmpty) {
+  EXPECT_EQ(through("column-rule: 1px solid red, 2px dashed green, 3px dotted blue"), "column-rule: 1px solid red, 2px dashed green, 3px dotted blue;");
+  EXPECT_EQ(through("column-rule: 1px solid red, repeat(2, 2px dashed green)"), "column-rule: 1px solid red, repeat(2, 2px dashed green);");
+  EXPECT_EQ(through("column-rule: repeat(auto, 1px solid red, 2px dashed green)"), "column-rule: repeat(auto, 1px solid red, 2px dashed green);");
+  // not aligned: the auto repeaters hold different numbers of values; a repeater against a single value; different repeat counts
+  EXPECT_EQ(through("column-rule: repeat(auto, 1px solid red, 2px dashed green); column-rule-width: repeat(auto, 3px, 4px, 5px)"),
+      "column-rule-style: repeat(auto, solid, dashed); column-rule-color: repeat(auto, red, green); column-rule-width: repeat(auto, 3px, 4px, 5px);");
+  EXPECT_EQ(through("column-rule: repeat(2, 1px solid red, 2px dashed green); column-rule-style: dashed, dotted, solid"),
+      "column-rule-width: repeat(2, 1px, 2px); column-rule-color: repeat(2, red, green); column-rule-style: dashed, dotted, solid;");
+  EXPECT_EQ(through("column-rule: repeat(2, 1px solid red, 2px dashed green); column-rule-color: repeat(4, red, cyan)"),
+      "column-rule-width: repeat(2, 1px, 2px); column-rule-style: repeat(2, solid, dashed); column-rule-color: repeat(4, red, cyan);");
+  // a single item is as it was
+  EXPECT_EQ(through("column-rule: 1px solid red"), "column-rule: 1px solid red;");
+}
+
 TEST(CssShorthandExpand, RuleInsetsAreACapAndAJunctionOfAStartAndAnEnd) {
   EXPECT_EQ(items_of(Block(R(), "column-rule-inset: 1px")),
       "column-rule-inset-cap-start=1px; column-rule-inset-cap-end=1px; column-rule-inset-junction-start=1px; column-rule-inset-junction-end=1px");
@@ -603,8 +632,12 @@ TEST(CssShorthandBlock, TheKeywordShorthandsComeBackAsTheirKeywords) {
   EXPECT_EQ(through("text-box: trim-both cap alphabetic"), "text-box: cap alphabetic;");
   EXPECT_EQ(through("text-box: none cap alphabetic"), "text-box: none cap alphabetic;");
   EXPECT_EQ(through("text-align: justify-all"), "text-align: justify-all;");
-  EXPECT_EQ(through("column-rule-inset: 1px 2px / 1px 2px"), "column-rule-inset: 1px 2px;");
-  EXPECT_EQ(through("row-rule-inset: 1px 2px / 3px"), "row-rule-inset: 1px 2px / 3px;");
+  // CSS Gaps 1: one value when the four are the same, else the filled-in form with the slash (the Gaps pages, from Chromium, which implements the property)
+  EXPECT_EQ(through("column-rule-inset: 1px 2px / 1px 2px"), "column-rule-inset: 1px 2px / 1px 2px;");
+  EXPECT_EQ(through("column-rule-inset: 1px 1px / 1px"), "column-rule-inset: 1px;");
+  EXPECT_EQ(through("column-rule-inset: 1px 2px"), "column-rule-inset: 1px 2px / 1px 2px;");
+  EXPECT_EQ(through("column-rule-inset: 1px / 2px"), "column-rule-inset: 1px 1px / 2px 2px;");
+  EXPECT_EQ(through("row-rule-inset: 1px 2px / 3px"), "row-rule-inset: 1px 2px / 3px 3px;");
   EXPECT_EQ(through("text-decoration-skip: none"), "text-decoration-skip: none;");
   EXPECT_EQ(through("text-decoration-skip: auto"), "text-decoration-skip: auto;");
 }
