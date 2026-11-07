@@ -81,15 +81,26 @@ struct Group {
  * by position, among the groups that are not the preamble.
  */
 const GTEXT_INI_Group * find_group(const GTEXT_INI_Document * doc,
-    const std::string & name, size_t nth) {
-  if (!name.empty()) return gtext_ini_document_group(doc, name.c_str());
+    const std::string & name, size_t & nth) {
+  if (!name.empty()) {
+    const GTEXT_INI_Group * g = gtext_ini_document_group(doc, name.c_str());
+    if (g) return g;
+    // a name of blanks only is trimmed to the empty name by a dialect that trims (`[\t]` is `[]`), and the lookup trims the query the same way: the same group
+    // that no lookup by name reaches
+    if (name.find_first_not_of(" \t\v\f") != std::string::npos) return nullptr;
+  }
   const size_t n = gtext_ini_document_group_count(doc);
+  size_t skip = nth;
   for (size_t i = 0; i < n; i++) {
     const GTEXT_INI_Group * g = gtext_ini_document_group_at(doc, i);
     if (gtext_ini_group_is_preamble(g)) continue;
     size_t len = 0;
-    gtext_ini_group_name(g, &len);
-    if (len == 0 && nth-- == 0) return g;
+    const char * nm = gtext_ini_group_name(g, &len);
+    const bool blank = len == 0 || std::string(nm, len).find_first_not_of(" \t\v\f") == std::string::npos;
+    if (blank && skip-- == 0) {
+      nth++;
+      return g;
+    }
   }
   return nullptr;
 }
@@ -195,7 +206,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     size_t empty_seen = 0;
     for (const Group & g : shadow) {
       const GTEXT_INI_Group * got =
-          find_group(back, g.name, g.name.empty() ? empty_seen++ : 0);
+          find_group(back, g.name, empty_seen);
       if (!got) {
         std::fprintf(stderr, "group lost: %zu bytes\n", g.name.size());
         fail("a group the DOM accepted did not survive the round trip", out);
