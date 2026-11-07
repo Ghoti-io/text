@@ -500,6 +500,13 @@ static bool ini_key_reads_back(const GTEXT_INI_Dialect * dialect, const char * k
   if (!len || dialect->name_style == GTEXT_INI_NAMES_GIT || dialect->name_style == GTEXT_INI_NAMES_DESKTOP_ENTRY) {
     return true;   /* an empty key is the dialect's to allow (win32), and these two have a character class that excludes all of it */
   }
+  /* a line terminator is in a key only as the end of a continuation line (systemd), as a group name holds one: a backslash before it, a carriage return between for CR LF */
+  for (size_t i = 0; i < len; i++) {
+    if (key[i] != '\n' && key[i] != '\r') continue;
+    const bool after_backslash = i > 0 && key[i - 1] == '\\';
+    const bool after_cr = key[i] == '\n' && i > 1 && key[i - 1] == '\r' && key[i - 2] == '\\';
+    if (!after_backslash && !after_cr) return false;
+  }
   if (gtext_ini_is_space(dialect, key[0]) || gtext_ini_is_space(dialect, key[len - 1])) return false;
   return !(key[0] == '[' || (key[0] == '#' && dialect->comment_hash) || (key[0] == ';' && dialect->comment_semicolon));
 }

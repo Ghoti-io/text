@@ -2352,6 +2352,15 @@ TEST(IniWrite, AKeyThatTheParserWouldReadAsAnotherThingIsRefusedOnTheWayIn) {
   for (const char * bad : {";B", "#B", " B", "B ", "[B", "\tB"}) {
     EXPECT_EQ(gtext_ini_group_set(g, bad, "v", 1), GTEXT_INI_E_BAD_KEY) << bad;
   }
+  GTEXT_INI_Parse_Options sopts = gtext_ini_parse_options_default();
+  sopts.dialect = gtext_ini_dialect_systemd();
+  GTEXT_INI_Document * sd = gtext_ini_new(&sopts);
+  ASSERT_NE(sd, nullptr);
+  GTEXT_INI_Group * sg = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(sd, "Service", &sg), GTEXT_INI_OK);
+  EXPECT_EQ(gtext_ini_group_set(sg, "\n", "v", 1), GTEXT_INI_E_BAD_KEY) << "a bare line end is two lines";
+  EXPECT_EQ(gtext_ini_group_set(sg, "Env\\\nironment", "v", 1), GTEXT_INI_OK) << "a continuation is a spelling of a key";
+  gtext_ini_free(sd);
   EXPECT_EQ(gtext_ini_group_set(g, "B;", "v", 1), GTEXT_INI_OK);
   EXPECT_EQ(gtext_ini_group_set(g, "B C", "v", 1), GTEXT_INI_OK);
   EXPECT_EQ(gtext_ini_group_set(g, "B[1]", "v", 1), GTEXT_INI_OK);
