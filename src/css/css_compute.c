@@ -1259,6 +1259,53 @@ static GTEXT_CSS_Status tainted_url(css_state * st, const GTEXT_CSS_Value * root
   return GTEXT_CSS_OK;
 }
 
+void css_roll_set_free(const GTEXT_Allocator * alloc, css_roll_set * set) {
+  if (!set) {
+    return;
+  }
+  GTEXT_Allocator a = *alloc;
+  for (size_t i = 0; i < set->n; i++) {
+    gtext_allocator_free(&a, set->v[i].name);
+  }
+  gtext_allocator_free(&a, set->v);
+  memset(set, 0, sizeof *set);
+}
+
+bool css_st_roll(css_state * st, GTEXT_CSS_Property_Id property, const char * name, size_t name_length, GTEXT_CSS_Wide_Keyword kind) {
+  css_roll_set * set = st->roll;
+  if (!set) {
+    return true;
+  }
+  for (size_t i = 0; i < set->n; i++) {
+    const css_roll_request * r = &set->v[i];
+    if (r->property == property && r->name_length == name_length && (name_length == 0 || memcmp(r->name, name, name_length) == 0)) {
+      return true;   /* asked for already: one candidate is replaced once */
+    }
+  }
+  GTEXT_Allocator a = st->cc->alloc;
+  if (set->n == set->cap) {
+    const size_t cap = set->cap ? set->cap * 2 : 4;
+    css_roll_request * grown = gtext_allocator_realloc(&a, set->v, cap * sizeof *grown);
+    if (!grown) {
+      css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL);
+      return false;
+    }
+    set->v = grown;
+    set->cap = cap;
+  }
+  char * copy = NULL;
+  if (name_length) {
+    copy = gtext_allocator_malloc(&a, name_length);
+    if (!copy) {
+      css_st_fail(st, GTEXT_CSS_E_OOM, NULL, NULL);
+      return false;
+    }
+    memcpy(copy, name, name_length);
+  }
+  set->v[set->n++] = (css_roll_request){property, copy, name_length, kind};
+  return true;
+}
+
 /// A parsed value, applied to the property: a typed value is computed as any is; a CSS-wide keyword is "determined as if that keyword were its specified value all
 /// along"; anything else is invalid at computed-value time. (`revert` and its kin cannot be resolved here, the cascade being over: they are taken as `unset`.)
 static GTEXT_CSS_Status apply_parsed(css_state * st, GTEXT_CSS_Property_Id id, const GTEXT_CSS_Property_Outcome outcome, GTEXT_CSS_Wide_Keyword wide,
@@ -1269,6 +1316,9 @@ static GTEXT_CSS_Status apply_parsed(css_state * st, GTEXT_CSS_Property_Id id, c
   case GTEXT_CSS_PROP_RESULT_WIDE:
     if (wide == GTEXT_CSS_WIDE_INITIAL || wide == GTEXT_CSS_WIDE_INHERIT || wide == GTEXT_CSS_WIDE_UNSET) {
       return from_wide(st, id, wide, out);
+    }
+    if ((wide == GTEXT_CSS_WIDE_REVERT || wide == GTEXT_CSS_WIDE_REVERT_LAYER || wide == GTEXT_CSS_WIDE_REVERT_RULE) && !css_st_roll(st, id, NULL, 0, wide)) {
+      return st->status;
     }
     return invalid_at_computed_time(st, id, out);
   default:
@@ -2004,17 +2054,22 @@ static GTEXT_CSS_Status run_pipeline(css_state * st) {
 /* ---- computing ---------------------------------------------------------------------------------------- */
 
 static GTEXT_CSS_Status compute_style_with(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block,
-    const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Computed_Style ** out,
+    const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Element_Interface * iface, css_roll_set * roll, GTEXT_CSS_Computed_Style ** out,
     GTEXT_CSS_Compute_Result * result);
 
 GTEXT_CSS_Status gtext_css_compute_style(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block,
     const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, GTEXT_CSS_Computed_Style ** out,
     GTEXT_CSS_Compute_Result * result) {
-  return compute_style_with(context, block, parent, element, context && context->has_iface ? &context->iface : NULL, out, result);
+  return compute_style_with(context, block, parent, element, context && context->has_iface ? &context->iface : NULL, NULL, out, result);
+}
+
+GTEXT_CSS_Status css_compute_style_rolling(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Computed_Style * parent,
+    GTEXT_CSS_Element_Handle element, css_roll_set * roll, GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * result) {
+  return compute_style_with(context, block, parent, element, context && context->has_iface ? &context->iface : NULL, roll, out, result);
 }
 
 static GTEXT_CSS_Status compute_style_with(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block,
-    const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Element_Interface * iface, GTEXT_CSS_Computed_Style ** out,
+    const GTEXT_CSS_Computed_Style * parent, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Element_Interface * iface, css_roll_set * roll, GTEXT_CSS_Computed_Style ** out,
     GTEXT_CSS_Compute_Result * result) {
   result_clear(result);
   if (!context || !out) {
@@ -2032,6 +2087,7 @@ static GTEXT_CSS_Status compute_style_with(const GTEXT_CSS_Compute_Context * con
   st.parent = parent;
   st.element = element;
   st.iface = iface;
+  st.roll = roll;
   GTEXT_CSS_Computed_Style * style = style_new(context);
   GTEXT_Allocator a = context->alloc;
   if (!style) {
@@ -2135,7 +2191,7 @@ GTEXT_CSS_Status gtext_css_compute_element(const GTEXT_CSS_Compute_Context * con
     GTEXT_CSS_Computed_Style * cur = NULL;
     GTEXT_CSS_Compute_Result r;
     if (st == GTEXT_CSS_OK) {
-      st = compute_style_with(context, block, prev, chain[i], iface, &cur, &r);
+      st = compute_style_with(context, block, prev, chain[i], iface, NULL, &cur, &r);
       work += r.work;
       if (st != GTEXT_CSS_OK && result) {
         *result = r;

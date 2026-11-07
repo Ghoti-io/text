@@ -4157,8 +4157,8 @@ static void prop_settle(css_sub * sub, size_t fi, GTEXT_CSS_Custom_Value * v /* 
   f->out_gi = v == NULL || f->cyclic;
 }
 
-/// Whether a substituted value is only a CSS-wide keyword (white space and comments around it are nothing): GTEXT_CSS_WIDE_* in `*wide`, or 0. The rolling
-/// keywords answer GTEXT_CSS_WIDE_REVERT (all three: they are alike here).
+/// Whether a substituted value is only a CSS-wide keyword (white space and comments around it are nothing): GTEXT_CSS_WIDE_* in `*wide`, or 0. The rolling keywords
+/// answer their own (GTEXT_CSS_WIDE_REVERT, _REVERT_LAYER, _REVERT_RULE).
 static GTEXT_CSS_Status rope_wide_keyword(css_sub * sub, css_rope * rope, int * wide) {
   *wide = 0;
   if (!rope || css_rope_bytes(rope) > 128) {
@@ -4210,7 +4210,7 @@ static GTEXT_CSS_Status rope_wide_keyword(css_sub * sub, css_rope * rope, int * 
   }
   static const struct { const char * word; int kind; } words[] = {
       {"initial", GTEXT_CSS_WIDE_INITIAL}, {"inherit", GTEXT_CSS_WIDE_INHERIT}, {"unset", GTEXT_CSS_WIDE_UNSET},
-      {"revert", GTEXT_CSS_WIDE_REVERT}, {"revert-layer", GTEXT_CSS_WIDE_REVERT}, {"revert-rule", GTEXT_CSS_WIDE_REVERT}};
+      {"revert", GTEXT_CSS_WIDE_REVERT}, {"revert-layer", GTEXT_CSS_WIDE_REVERT_LAYER}, {"revert-rule", GTEXT_CSS_WIDE_REVERT_RULE}};
   for (size_t k = 0; k < sizeof words / sizeof words[0]; k++) {
     const size_t wl = strlen(words[k].word);
     const GTEXT_CSS_String candidate = {text + i, e - i};
@@ -4315,6 +4315,12 @@ static int step_prop(css_sub * sub, size_t fi) {
         wv = reg->initial;
       }
       else {
+        /* revert, revert-layer, revert-rule: the cascade is over, so the declaration is asked to be rolled back by whoever ran it (css_compute_style_rolling()), and the
+           property is invalid at computed-value time for this pass */
+        if (!css_st_roll(st, 0, e->name.data, e->name.length, (GTEXT_CSS_Wide_Keyword)wide)) {
+          SUB_FAIL(sub, st->status);
+          return STEP_ERROR;
+        }
         wv = typed ? initial_cv : NULL;
       }
       prop_settle(sub, fi, gtext_css_custom_value_retain(wv));

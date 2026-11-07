@@ -41,7 +41,8 @@ const char * kHtml =
     "div{color:red;margin-top:7px;--k:1px solid red} p{width:50px;background-color:currentcolor;box-shadow:1px 2px 3px currentcolor, 4px 5px blue;animation-duration:auto}"
     "p::before{color:blue} .x{color:color-mix(in srgb, currentcolor, blue)}"
     "@keyframes k{from{height:10px;--c:1px;color:red}to{height:90px;--c:9px;color:blue}} #b{animation:k 10s linear -5s paused;--c:5px;margin-left:var(--c)}"
-    "</style></head><body><div id=d><p id=a class=x>x</p><p id=b>y</p></div></body></html>";
+    "@layer ra{#r{--rp:9px;--rr:ok;margin-left:3px;padding-left:var(--rp)}} @layer rb{#r{margin-left:var(--nope,revert-layer);--rr:var(--nope,revert-layer);padding-left:var(--nope,revert-layer)}}"
+    "</style></head><body><div id=d><p id=a class=x>x</p><p id=b>y</p></div><div id=r></div></body></html>";
 
 /// Every name and value of a declaration, as one text.
 std::string everything(GTEXT_CSSOM_Decl * d, GTEXT_CSS_Status * status) {
@@ -192,6 +193,10 @@ void sweep(const Scenario & sc) {
 
 TEST(CssomComputedOom, ReadingAnElement) {
   sweep({"element", "#a", nullptr, false, false});
+}
+
+TEST(CssomComputedOom, ReadingAnElementWhoseDeclarationsRollBackAfterTheirFunctionsWereReplaced) {
+  sweep({"rolled back", "#r", nullptr, false, false});
 }
 
 TEST(CssomComputedOom, ReadingAPseudoElement) {

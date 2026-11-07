@@ -118,6 +118,11 @@ scenario("third-element", cs="font-size: 10px; fill: red", gs="fill: inherit; fo
 scenario("third-element-inherits", 1, ps="--a: 4px; stroke-width: var(--a)", cs="--b: 2px", gs="stroke-width: calc(var(--a) + var(--b))", ga="fill=currentColor")
 scenario("third-element-entries", cs="fill: red", ga="fill=blue", en="0\x01|stroke: red\n0\x02|stroke: green")
 
+# a declaration whose functions are replaced and which then comes to a rolling keyword is rolled back and the element computed again (css_style.c, style_compute_pass)
+scenario("entries-revert-layer-fallback", en="0\x01|--v: 4px; fill: red; stroke-width: var(--v)\n0\x02|fill: var(--nope, revert-layer); stroke-width: var(--nope, revert-layer); --v: var(--nope, revert-layer)")
+scenario("entries-revert-rule-fallback", en="0|fill: red; --v: 4px\n1|fill: var(--nope, revert-rule); stroke-width: var(--v, revert-rule)\n2|fill: var(--nope, revert-rule); --v: var(--nope, revert-rule)")
+scenario("entries-revert-chain", en="0\x01|fill: red\n0\x02|fill: var(--a, revert-layer)\n0\x03|fill: var(--b, revert-layer)\n0\x04|fill: var(--c, revert-layer)")
+
 FAULTS = (1, 2, 3, 5, 9, 17, 33, 65)
 
 

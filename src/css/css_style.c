@@ -541,9 +541,57 @@ static GTEXT_CSS_Status style_roll_back(void * user, const char * name, size_t n
   return st;
 }
 
-GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * context, GTEXT_CSS_Element_Handle element,
+/// The candidates of the set that a pass replaced with a rolling keyword for the next (a declaration whose functions were replaced and came to `revert`, `revert-layer` or
+/// `revert-rule`: the cascade was over when that was known, so the cascade is run again with the declaration replaced by the keyword, which it rolls back from by its own
+/// rules, and the element is computed again). The index is the candidate's place in the set, which collecting the same sources again gives the same.
+typedef struct {
+  size_t index;
+  GTEXT_CSS_Wide_Keyword kind;
+} style_pick;
+
+typedef struct {
+  style_pick * v;
+  size_t n, cap;
+} style_picks;
+
+/// How many times a computation is made again for the declarations that roll back (each pass takes one more step down the layers a chain of them goes through).
+#define MAX_ROLL_PASSES 8u
+
+/// The picks the requests of a pass add: `*added` says whether any is new.
+static GTEXT_CSS_Status style_add_picks(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Cascaded * cascaded, const css_roll_set * roll, style_picks * picks, bool * added) {
+  *added = false;
+  GTEXT_Allocator a = context->alloc;
+  for (size_t i = 0; i < roll->n; i++) {
+    GTEXT_CSS_Cascade_Entry entry;
+    if (!gtext_css_cascaded_find(cascaded, roll->v[i].property, roll->v[i].name, roll->v[i].name_length, &entry)) {
+      continue;
+    }
+    bool have = false;
+    for (size_t k = 0; k < picks->n && !have; k++) {
+      have = picks->v[k].index == entry.index;
+    }
+    if (have) {
+      continue;
+    }
+    if (picks->n == picks->cap) {
+      const size_t cap = picks->cap ? picks->cap * 2 : 4;
+      style_pick * grown = gtext_allocator_realloc(&a, picks->v, cap * sizeof *grown);
+      if (!grown) {
+        return GTEXT_CSS_E_OOM;
+      }
+      picks->v = grown;
+      picks->cap = cap;
+    }
+    picks->v[picks->n++] = (style_pick){entry.index, roll->v[i].kind};
+    *added = true;
+  }
+  return GTEXT_CSS_OK;
+}
+
+static GTEXT_CSS_Status style_compute_pass(const GTEXT_CSS_Compute_Context * context, GTEXT_CSS_Element_Handle element,
     const GTEXT_CSS_Computed_Style * parent_style, const GTEXT_CSS_Style_Entry * entries, size_t count, const GTEXT_CSS_Style_Options * options,
-    GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * result) {
+    style_picks * picks, bool final, bool * again, GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * result) {
+  *again = false;
   if (result) {
     memset(result, 0, sizeof *result);
     result->message = gtext_css_status_string(GTEXT_CSS_OK);
@@ -587,6 +635,13 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
   GTEXT_CSS_Cascaded * cascaded = NULL;
   GTEXT_CSS_Declaration_Block * block = NULL;
   GTEXT_CSS_Computed_Style * style = NULL;
+  for (size_t i = 0; st == GTEXT_CSS_OK && i < picks->n; i++) {
+    /* a declaration that an earlier pass found to be a rolling keyword once its functions were replaced */
+    st = css_candidates_roll(b.set, picks->v[i].index, picks->v[i].kind);
+    if (st != GTEXT_CSS_OK) {
+      fail(&b, st, NULL, 0, "a declaration could not be replaced by the keyword it came to");
+    }
+  }
   if (st == GTEXT_CSS_OK) {
     GTEXT_CSS_Cascade_Options cascade;
     memset(&cascade, 0, sizeof cascade);
@@ -633,10 +688,12 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
       block = animated;
     }
   }
+  css_roll_set roll;
+  memset(&roll, 0, sizeof roll);
   if (st == GTEXT_CSS_OK) {
     const size_t before = b.work;
     GTEXT_CSS_Compute_Result cres;
-    st = gtext_css_compute_style(context, block, parent_style, element, &style, &cres);
+    st = css_compute_style_rolling(context, block, parent_style, element, final ? NULL : &roll, &style, &cres);
     if (result) {
       *result = cres;
       result->work += before;
@@ -645,7 +702,21 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
       (void)before;
     }
   }
-  if (st == GTEXT_CSS_OK && is_before_after(options->pseudo)) {
+  if (st == GTEXT_CSS_OK && roll.n) {
+    /* the declarations that rolled back: the cascade is run again without them, and this style, made with them invalid, is dropped */
+    bool added = false;
+    st = style_add_picks(context, cascaded, &roll, picks, &added);
+    if (st != GTEXT_CSS_OK) {
+      fail(&b, st, NULL, 0, "the declarations to roll back could not be listed");
+    }
+    else if (added) {
+      *again = true;
+      gtext_css_computed_free(style);
+      style = NULL;
+    }
+  }
+  css_roll_set_free(&context->alloc, &roll);
+  if (st == GTEXT_CSS_OK && !*again && is_before_after(options->pseudo)) {
     st = content_normal_is_none(context, style);
     if (st != GTEXT_CSS_OK) {
       gtext_css_computed_free(style);
@@ -653,7 +724,7 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
       fail(&b, st, NULL, 0, "the computed content could not be made");
     }
   }
-  if (st == GTEXT_CSS_OK && options->highlight) {
+  if (st == GTEXT_CSS_OK && !*again && options->highlight) {
     st = highlight_inherit(context, block, style, options->highlight_parent, parent_style);
     if (st != GTEXT_CSS_OK) {
       gtext_css_computed_free(style);
@@ -663,7 +734,7 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
   }
   gtext_css_block_free(block);
   gtext_css_candidates_free(b.set);
-  if (st != GTEXT_CSS_OK) {
+  if (st != GTEXT_CSS_OK || *again) {
     gtext_css_cascaded_free(cascaded);
     for (size_t i = 0; i < b.ndiag; i++) {
       gtext_allocator_free(&context->alloc, b.diag[i].name_copy);
@@ -679,6 +750,26 @@ GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * conte
   style->diag_total = b.diag_total;
   *out = style;
   return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_css_style_compute(const GTEXT_CSS_Compute_Context * context, GTEXT_CSS_Element_Handle element,
+    const GTEXT_CSS_Computed_Style * parent_style, const GTEXT_CSS_Style_Entry * entries, size_t count, const GTEXT_CSS_Style_Options * options,
+    GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * result) {
+  style_picks picks;
+  memset(&picks, 0, sizeof picks);
+  GTEXT_CSS_Status st;
+  for (unsigned pass = 1;; pass++) {
+    bool again = false;
+    st = style_compute_pass(context, element, parent_style, entries, count, options, &picks, pass >= MAX_ROLL_PASSES, &again, out, result);
+    if (st != GTEXT_CSS_OK || !again) {
+      break;
+    }
+  }
+  if (picks.v) {
+    GTEXT_Allocator a = context->alloc;
+    gtext_allocator_free(&a, picks.v);
+  }
+  return st;
 }
 
 /* ---- reads -------------------------------------------------------------------------------------- */

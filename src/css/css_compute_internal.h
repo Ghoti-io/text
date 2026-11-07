@@ -258,6 +258,23 @@ typedef struct {
   size_t ncycle;
 } css_short_result;
 
+/// A declaration whose functions were replaced and whose value then came to `revert`, `revert-layer` or `revert-rule` ("if a property value, after property replacement, contains only
+/// a single CSS-wide keyword, its value is determined as if that keyword were its specified value all along", Values 5). The cascade is over by then, so a computation that was
+/// asked to (css_compute_style_rolling()) records the property and goes on with the value invalid, and whoever ran the cascade rolls the declaration back and computes again.
+typedef struct {
+  GTEXT_CSS_Property_Id property;      ///< A longhand, or 0 for a custom property.
+  char * name;                         ///< A custom property's name as written (owned); NULL otherwise.
+  size_t name_length;
+  GTEXT_CSS_Wide_Keyword kind;         ///< GTEXT_CSS_WIDE_REVERT, GTEXT_CSS_WIDE_REVERT_LAYER or GTEXT_CSS_WIDE_REVERT_RULE.
+} css_roll_request;
+
+typedef struct css_roll_set {
+  css_roll_request * v;
+  size_t n, cap;
+} css_roll_set;
+
+void css_roll_set_free(const GTEXT_Allocator * alloc, css_roll_set * set);
+
 typedef struct {
   const GTEXT_CSS_Compute_Context * cc;
   const GTEXT_CSS_Environment * env;   ///< The environment the values are computed in (the context's, or one in the other color scheme while the initial values are made).
@@ -282,10 +299,22 @@ typedef struct {
   bool probing;                   ///< Making the initial values: reads of the style are not traps.
   bool in_registered;             ///< The value of a registered custom property is being computed: `currentcolor` in it is the element's color, in a mix too (Properties and Values 1).
   bool used_context;              ///< Set when a value was computed from something that varies by element (the initial values' dependence).
+  css_roll_set * roll;            ///< Where a declaration that came to a rolling keyword is recorded (css_compute_style_rolling()); NULL: such a declaration is invalid at computed-value time.
   bool range_invalid;             ///< A calculation of the value being computed was outside the range of a slot that does not clamp (CV_REJECT_RANGE): the value is invalid at computed-value time (compute_value()).
   GTEXT_CSS_Status status;
   size_t work;
 } css_state;
+
+/// Record that the declaration of `property` (a longhand; 0 and a name for a custom property) came to the rolling keyword `kind`. False (and the failure set) when memory is short.
+bool css_st_roll(css_state * st, GTEXT_CSS_Property_Id property, const char * name, size_t name_length, GTEXT_CSS_Wide_Keyword kind);
+
+/// gtext_css_compute_style() that records, in `roll`, the properties whose substituted value is a rolling keyword (each as invalid, for this pass) instead of leaving them only invalid.
+GTEXT_CSS_Status css_compute_style_rolling(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Declaration_Block * block, const GTEXT_CSS_Computed_Style * parent,
+    GTEXT_CSS_Element_Handle element, css_roll_set * roll, GTEXT_CSS_Computed_Style ** out, GTEXT_CSS_Compute_Result * result);
+
+/// Replace the candidate at `index` of a candidate set that is not sealed with the CSS-wide keyword `kind` (a rolling one: the cascade then walks back from it as it does from a
+/// declaration of that keyword). GTEXT_CSS_E_INVALID for an index past the end or a sealed set.
+GTEXT_CSS_Status css_candidates_roll(GTEXT_CSS_Candidates * set, size_t index, GTEXT_CSS_Wide_Keyword kind);
 
 /// Fail a computation: sets the result (status, property, name, detail) once. Returns the status.
 GTEXT_CSS_Status css_st_fail(css_state * st, GTEXT_CSS_Status status, const char * name, const char * detail);

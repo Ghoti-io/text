@@ -221,6 +221,18 @@ static void entry_fill(const GTEXT_CSS_Candidates * s, const cand * c, size_t in
   e->index = index;
 }
 
+GTEXT_CSS_Status css_candidates_roll(GTEXT_CSS_Candidates * set, size_t index, GTEXT_CSS_Wide_Keyword kind) {
+  if (!set || index >= set->count || gcu_atomic_int_load(&set->sealed)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  cand * c = &set->items[index];
+  gtext_css_value_set_free(c->set);
+  c->set = NULL;
+  c->outcome = (uint8_t)GTEXT_CSS_PROP_RESULT_WIDE;
+  c->wide = (uint8_t)kind;
+  return GTEXT_CSS_OK;
+}
+
 bool gtext_css_candidates_entry(const GTEXT_CSS_Candidates * set, size_t index, GTEXT_CSS_Cascade_Entry * out) {
   if (!set || !out || index >= set->count) {
     return false;

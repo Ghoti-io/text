@@ -430,3 +430,8 @@ contents-chain-forgotten	css_compute_algo.c	parent_makes_items = st->parent->ite
 root-contents-stays-contents	css_compute_algo.c	if (nw == 1 && strcmp(words[0], "contents") == 0 && st->parent == NULL) {	if (0) {	computed
 resolved-legacy-color-without-commas	cssom_resolved.c	if (v.legacy && (strncmp(buf, "rgb(", 4) == 0	if (0 && v.legacy && (strncmp(buf, "rgb(", 4) == 0	computed
 image-set-option-without-resolution	css_compute_value.c	  if (n < 1 || n > 2) {	  if (1) {	computed,shapecompute
+roll-of-a-longhand-not-recorded	css_compute.c	wide == GTEXT_CSS_WIDE_REVERT_RULE) && !css_st_roll(st, id, NULL, 0, wide)) {	wide == GTEXT_CSS_WIDE_REVERT_RULE) && 0 && !css_st_roll(st, id, NULL, 0, wide)) {	computed
+roll-of-a-custom-property-not-recorded	css_substitute.c	if (!css_st_roll(st, 0, e->name.data, e->name.length, (GTEXT_CSS_Wide_Keyword)wide)) {	if (0) {	computed
+rolled-candidate-not-replaced	css_style.c	st = css_candidates_roll(b.set, picks->v[i].index, picks->v[i].kind);	st = GTEXT_CSS_OK;	computed
+revert-layer-read-as-revert	css_substitute.c	{"revert-layer", GTEXT_CSS_WIDE_REVERT_LAYER}	{"revert-layer", GTEXT_CSS_WIDE_REVERT}	computed
+only-one-pass-for-a-chain-of-rolls	css_style.c	pass >= MAX_ROLL_PASSES, &again	pass >= 1, &again	computed

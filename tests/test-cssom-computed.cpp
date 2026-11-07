@@ -445,6 +445,45 @@ TEST(CssomComputed, TheRootElementIsBlockifiedAndDisplayContentsOnItComputesToBl
   EXPECT_EQ(m.value("body", "display"), "contents");
 }
 
+/* Values 5: "If a property value, after property replacement, contains only a single CSS-wide keyword ..., its value is determined as if that keyword were its specified value
+ * all along", and `revert-layer` and `revert-rule` are CSS-wide keywords (Cascade 5), so `var(--unknown, revert-layer)` rolls the cascade back as `revert-layer` written there
+ * would (the Variables pages revert-layer-in-fallback.html and revert-rule-in-fallback.html: Chromium 156.0.8078.47 passes them, Firefox 158.0.1 answers FAIL for the custom
+ * property and the shorthand). The rolled back declaration is the one the cascade would have chosen without the substituted one and what its layer / rule holds. */
+TEST(CssomComputed, ARevertLayerThatASubstitutionMakesRollsTheCascadeBack) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "@layer { #child { --x: PASS; margin: 1px; padding-left: 1px; } }"
+       "@layer { #parent { --x: FAIL; margin: -1px; padding-left: -1px; }"
+       "        #child { --x: var(--unknown, revert-layer); margin: var(--unknown, revert-layer); padding-left: var(--unknown, revert-layer); } }"
+       "</style></head><body><div id=parent><div id=child></div></div></body></html>");
+  EXPECT_EQ(m.value("#child", "--x"), "PASS");
+  EXPECT_EQ(m.value("#child", "margin"), "1px");
+  EXPECT_EQ(m.value("#child", "margin-left"), "1px");
+  EXPECT_EQ(m.value("#child", "padding-left"), "1px");
+}
+
+TEST(CssomComputed, ARevertRuleThatASubstitutionMakesRollsBackToTheRuleBeforeIt) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#child { --x: PASS; margin: 1px; padding-left: 1px; }"
+       "#parent { --x: FAIL; margin: -1px; padding-left: -1px; }"
+       "#child { --x: var(--unknown, revert-rule); margin: var(--unknown, revert-rule); padding-left: var(--unknown, revert-rule); }"
+       "</style></head><body><div id=parent><div id=child></div></div></body></html>");
+  EXPECT_EQ(m.value("#child", "--x"), "PASS");
+  EXPECT_EQ(m.value("#child", "margin"), "1px");
+  EXPECT_EQ(m.value("#child", "padding-left"), "1px");
+}
+
+TEST(CssomComputed, ARolledBackDeclarationMayRollBackAgainOrHoldAFunction) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "@layer a { #c { --y: 7px; margin-left: 3px; padding-left: var(--y); } }"
+       "@layer b { #c { padding-left: var(--nope, revert-layer); margin-left: var(--nope, revert-layer); } }"
+       "@layer c { #c { padding-left: var(--nope, revert-layer); margin-left: var(--nope, revert-layer); } }"
+       "@layer d { #lonely { margin-left: var(--nope, revert-layer); } }"
+       "</style></head><body><div id=c></div><div id=lonely></div></body></html>");
+  EXPECT_EQ(m.value("#c", "margin-left"), "3px") << "two layers roll back, to the third";
+  EXPECT_EQ(m.value("#c", "padding-left"), "7px") << "the declaration it rolls back to holds a var()";
+  EXPECT_EQ(m.value("#lonely", "margin-left"), "0px") << "nothing is left to roll back to: the property is unset, which is its initial value";
+}
+
 /* Images 4, 2.4: "If not specified, it behaves as 1x", and the computed value of a resolution is in dppx: `image-set("a")` computes to `image-set(url("a") 1dppx)` in both pinned
  * browsers, where the specified value is written with `1x` (the Variables page ...attr-taint.html expects the computed form through a var()). */
 TEST(CssomComputed, AnImageSetOptionWithNoResolutionComputesToOneDppx) {
@@ -455,6 +494,17 @@ TEST(CssomComputed, AnImageSetOptionWithNoResolutionComputesToOneDppx) {
   EXPECT_EQ(m.value("#a", "background-image"), "image-set(url(\"a.png\") 1dppx)");
   EXPECT_EQ(m.value("#b", "background-image"), "image-set(url(\"b.png\") 1dppx type(\"image/png\"), url(\"c.png\") 2dppx)");
   EXPECT_EQ(m.value("#c", "background-image"), "image-set(url(\"a.png\") 1dppx)");
+}
+
+TEST(CssomComputed, AnAllThatASubstitutionMakesARevertLayerRollsEveryPropertyBack) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "@layer { #c { margin-left: 2px; color: rgb(0, 128, 0); } }"
+       "@layer { #c { margin-left: 9px; color: red; all: var(--nope, revert-layer); } }"
+       "@layer { #d { margin-left: 9px; all: var(--nope, revert-rule); margin-left: 4px; } }"
+       "</style></head><body><div id=c></div><div id=d></div></body></html>");
+  EXPECT_EQ(m.value("#c", "margin-left"), "2px");
+  EXPECT_EQ(m.value("#c", "color"), "rgb(0, 128, 0)");
+  EXPECT_EQ(m.value("#d", "margin-left"), "4px") << "a later declaration of the property is not rolled back";
 }
 
 TEST(CssomComputed, ANewObjectEachCallAndTheSameValuesInEachWhileNothingMoves) {
