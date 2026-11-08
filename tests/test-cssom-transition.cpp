@@ -42,12 +42,12 @@ struct Tr {
   GTEXT_CSSOM_Transition_Tracker * tracker = nullptr;
   const GTEXT_Allocator * alloc_;
   Cs m;
-  explicit Tr(const std::string & html, bool hooks = true, const GTEXT_Allocator * alloc = nullptr)
-      : alloc_(alloc), m(html, [this, hooks](GTEXT_CSSOM_Config & c) {
+  explicit Tr(const std::string & html, bool hooks = true, const GTEXT_Allocator * alloc = nullptr, bool version = true)
+      : alloc_(alloc), m(html, [this, hooks, version](GTEXT_CSSOM_Config & c) {
           iface.size = sizeof iface;
           iface.user = this;
           iface.transitions = &Tr::sets;
-          iface.transition_version = &Tr::ver;
+          iface.transition_version = version ? &Tr::ver : nullptr;   /* the document copies the interface when it is made: a hook cleared afterwards is still called */
           if (hooks) {
             c.layout = &iface;
           }
@@ -210,8 +210,7 @@ TEST(CssomTransition, TheAfterChangeStyleHasNoTransitions) {
 
 /* A layout that gives transitions and no version keeps no style across reads: the answer follows the tracker's time at every read. */
 TEST(CssomTransition, WithoutAVersionNoStyleIsKept) {
-  Tr t(page(kBox));
-  t.iface.transition_version = nullptr;
+  Tr t(page(kBox), true, nullptr, false);
   t.at(0);
   t.flush("#t");
   t.set_class("#t", "on");
@@ -219,6 +218,23 @@ TEST(CssomTransition, WithoutAVersionNoStyleIsKept) {
   EXPECT_EQ(t.width("#t"), "100px");
   t.at(500);
   EXPECT_EQ(t.width("#t"), "150px");
+}
+
+/* The same for a live style object kept across the reads: it refreshes itself at each read (a style kept for the object would be valid again, the tree being unchanged), and with no version
+   the time is not part of what it was valid for. */
+TEST(CssomTransition, WithoutAVersionALiveStyleObjectIsNotValidAcrossAMoveOfTheTime) {
+  Tr t(page(kBox), true, nullptr, false);
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  Decl d = t.m.computed("#t");
+  ASSERT_NE(d.d, nullptr);
+  EXPECT_EQ(get(d.d, "width"), "100px");
+  t.at(500);
+  EXPECT_EQ(get(d.d, "width"), "150px");
+  t.at(1000);
+  EXPECT_EQ(get(d.d, "width"), "200px");
 }
 
 
