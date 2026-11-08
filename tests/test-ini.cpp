@@ -5609,6 +5609,13 @@ TEST(IniValue, WhatEscapeReturnsIsWhatTheReaderDecodesAndTheWriterWritesAndWhatI
       {gtext_ini_dialect_desktop_entry(), "a\nb", true, "a\\nb"},
       {cp(), "a\nb", true, "a\nb"},
       {cp(), "a \nb", false, ""},
+      /* a blank at the end of a value, for a dialect that trims it and has `\s` (systemd) */
+      {sd(), "a ", true, "a\\s"},
+      /* a backslash at the end of a value continues the line in systemd, so it is spelled by number, as a pair would be a backslash on the line all the same */
+      {sd(), "a\\", true, "a\\x5c"},
+      {sd(), "a\\b", true, "a\\\\b"},
+      /* a text that needs the quotes (a blank at the start, which git has no escape for) and a line feed besides: the quoted form spells the line feed */
+      {git(), " a\nb", true, "\" a\\nb\""},
   };
   for (Case c : cases) {
     char * out = nullptr;

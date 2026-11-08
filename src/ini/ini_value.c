@@ -1195,18 +1195,30 @@ static GTEXT_INI_Status ini_encoding_serves(const GTEXT_INI_Dialect * dialect,
 static GTEXT_INI_Status ini_encode_escaped(const GTEXT_INI_Dialect * dialect,
     const GTEXT_Allocator * alloc, const char * text, size_t text_len,
     char ** out, size_t * out_len) {
-  char * buf = gtext_allocator_malloc(alloc, text_len * 2 + 1);
+  char * buf = gtext_allocator_malloc(alloc, text_len * 2 + 4);
   if (!buf) return GTEXT_INI_E_OOM;
   size_t w = 0;
   for (size_t i = 0; i < text_len; i++) {
     char c = text[i];
+    /*
+     * A backslash that is the last byte of a value continues the line in a dialect that joins lines by one, whether it stands alone or ends an escaped pair (`\\`):
+     * a dialect with numeric escapes (systemd) spells it by number, which is not a backslash on the line.
+     */
+    if (c == '\\' && i + 1 == text_len && dialect->numeric_escapes &&
+        dialect->continuation != GTEXT_INI_CONTINUATION_NONE) {
+      memcpy(buf + w, "\\x5c", 4);
+      w += 4;
+      continue;
+    }
     /*
      * A leading space has to be escaped and an interior one does not: §3.3
      * discards the run after `=`, so a value that begins with a space would
      * read back shorter. Everything else here has no other spelling at all.
      */
     bool must = (c == '\n' || c == '\r' || c == '\t' || c == '\\') ||
-                (c == ' ' && i == 0);
+                (c == ' ' && i == 0) ||
+                /* the last blank of a value is trimmed by a dialect that trims, and the escape for it is not a blank, so it stays (systemd's `\s`) */
+                (c == ' ' && i + 1 == text_len && dialect->trim_trailing_space);
     if (!must) {
       buf[w++] = c;
       continue;
@@ -1241,7 +1253,7 @@ static GTEXT_INI_Status ini_encode_as_is(const GTEXT_Allocator * alloc,
   return GTEXT_INI_OK;
 }
 
-/** The text in double quotes, with a backslash before each quote and backslash in it, for a dialect whose values may be quoted. */
+/** The text in double quotes, with a backslash before each quote and backslash in it and the escape for a line feed, for a dialect whose values may be quoted. */
 static GTEXT_INI_Status ini_encode_quoted(const GTEXT_INI_Dialect * dialect,
     const GTEXT_Allocator * alloc, const char * text, size_t text_len,
     char ** out, size_t * out_len) {
@@ -1252,12 +1264,20 @@ static GTEXT_INI_Status ini_encode_quoted(const GTEXT_INI_Dialect * dialect,
   buf[w++] = '"';
   for (size_t i = 0; i < text_len; i++) {
     char c = text[i];
-    if (c == '"' || c == '\\') {
-      if (!ini_escape_allowed(dialect, c)) {
+    /* inside quotes the escape set spells what the line cannot hold: a line feed and a tab (git: `\n`, `\t`), as well as the two bytes that end or escape the quote */
+    char letter = c == '"' || c == '\\' ? c : c == '\n' ? 'n' : c == '\t' ? 't' : 0;
+    if (letter) {
+      if (!ini_escape_allowed(dialect, letter)) {
+        if (c == '\t') {
+          buf[w++] = c;   /* a tab is only a byte inside quotes, and need not be spelled */
+          continue;
+        }
         gtext_allocator_free(alloc, buf);
         return GTEXT_INI_E_UNREPRESENTABLE;
       }
       buf[w++] = '\\';
+      buf[w++] = letter;
+      continue;
     }
     buf[w++] = c;
   }

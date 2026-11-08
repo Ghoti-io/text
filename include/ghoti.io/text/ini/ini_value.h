@@ -98,10 +98,14 @@ GTEXT_API GTEXT_INI_Status gtext_ini_unescape(
  * gtext_ini_unescape() decodes to the text and that gtext_ini_write() writes,
  * because both are asked: the escape set's spelling where the dialect has one,
  * the bytes as they are where the dialect carries them (a configparser value of
- * several lines), and the quoted form where it quotes (git). A blank at the end
- * of a value for a dialect that trims and does not quote, bytes that are not
- * UTF-8 for a dialect that decodes UTF-8, and a quote that the dialect has no
- * backslash for have no spelling and are refused.
+ * several lines), and the quoted form where it quotes (git, which also spells a
+ * line feed and a tab inside the quotes). A backslash that ends a value is spelled
+ * by number where the dialect has numeric escapes (systemd: a trailing backslash
+ * continues the line), and a blank that ends one with `\s` where the dialect trims
+ * it and has the escape. A blank at the end of a value for a dialect that trims
+ * and has neither that nor quotes (EditorConfig, Win32), bytes that are not UTF-8
+ * for a dialect that decodes UTF-8, and a quote that the dialect has no backslash
+ * for have no spelling and are refused.
  *
  * @param dialect The dialect. Must not be NULL.
  * @param text The bytes to encode.
