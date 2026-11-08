@@ -86,6 +86,20 @@ bool same_value(const GTEXT_INI_Dialect & dialect, const char * read, size_t rea
   return a == b;
 }
 
+/** Whether two keys are one key to the dialect: a dialect that folds case (git, EditorConfig, configparser) takes `A` and `a` for one, and set() replaces it (ASCII only: so does the library). */
+bool same_key(bool folds, const std::string & x, const std::string & y) {
+  if (x.size() != y.size()) return false;
+  for (size_t k = 0; k < x.size(); k++) {
+    unsigned char p = (unsigned char)x[k], q = (unsigned char)y[k];
+    if (folds) {
+      if (p >= 'A' && p <= 'Z') p = (unsigned char)(p - 'A' + 'a');
+      if (q >= 'A' && q <= 'Z') q = (unsigned char)(q - 'A' + 'a');
+    }
+    if (p != q) return false;
+  }
+  return true;
+}
+
 /** One entry the harness asked for and the DOM accepted. */
 struct Entry {
   std::string key;
@@ -211,7 +225,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
         // set() replaces, so the shadow must replace too rather than append.
         bool replaced = false;
         for (Entry & e : shadow.back().entries) {
-          if (e.key == a) {
+          if (same_key(popts.dialect.fold_case, e.key, a)) {
             e.value = v;
             replaced = true;
             break;
