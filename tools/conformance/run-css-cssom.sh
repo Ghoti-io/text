@@ -331,6 +331,9 @@ expect script-timeline-unlisted "which needs a timeline, and is not listed" env 
 expect script-timeline-ceiling "above the ceiling" env CSSOM_RUNNER_TIMELINE=none CSS_CSSOM_SCRIPT_MAX_TIMELINE=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
 # the transitions: the run in which the runner keeps no tracker starts nothing, so the pages that pass only because a transition ran fail, and they are not listed
 expect script-transitions-off "UNEXPLAINED FAILURES" env CSSOM_RUNNER_TRANSITIONS=none python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
+# the register that carries where it was read from: a test that asserts on a value read at the top of its page, before the test, needs the layout that read needed; without that the tests of
+# the pages that read a used value outside a test are scored on the computed value that stands in for it
+expect script-taint-off "UNEXPLAINED FAILURES" env CSSOM_RUNNER_TAINT=none python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
 # the replay of the programs in the browsers: another program, a replayed test that is not the page's, a program with no replay, another generator, no record
 mkdir -p "$scratch/replay-vec"
 cp "$vectors"/* "$scratch/replay-vec/"

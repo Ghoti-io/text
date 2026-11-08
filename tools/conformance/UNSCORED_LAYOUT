@@ -395,6 +395,8 @@ css/css-pseudo/first-line-allowed-properties.html#106	margin	the library has no 
 css/css-pseudo/first-line-allowed-properties.html#107	padding	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
 css/css-pseudo/first-line-allowed-properties.html#110	transform	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
 css/css-sizing/min-width-max-width-precedence.html#0	width	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
+css/css-tables/caption-writing-mode-001.html#0	margin-left	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
+css/css-tables/caption-writing-mode-001.html#1	margin-top	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
 css/css-text/word-spacing/word-spacing-computed-001.html#11	needs the ch of a layout	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
 css/css-transforms/2d-rotate-js.html#0	transform	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)
 css/css-transforms/2d-transform-inline-js.html#0	transform	the library has no layout: the used value of this property is not computed here (gtext_cssom_computed_origin() says ABSENT_LAYOUT)

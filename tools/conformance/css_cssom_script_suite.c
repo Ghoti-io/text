@@ -151,9 +151,14 @@ static void value_free(value * v) {
 }
 
 
+/* A register holds a value and where it came from: a register that a read of a property whose used value needs a layout (or that an animation targets, with no time) filled is
+ * tainted with that property, and a test that asserts on it needs that layout, wherever the read was made. The page of a script test often reads a style at its top level and asserts on
+ * the answer in the test that follows (`let v = getComputedStyle(e).marginLeft; test(() => assert_equals(v, "40px"))`): the read is before the test, so the test is the one to be told. */
 typedef struct {
   char * name;
   value v;
+  char * layout;     /* the property whose used value needs a layout, or NULL */
+  char * timeline;   /* the property an animation targets that has no time, or NULL */
 } reg;
 
 /* ---- the world ---------------------------------------------------------------------------------------------------------------------------- */
@@ -482,6 +487,8 @@ static void world_close(world * w) {
   free(w->lists);
   for (size_t i = 0; i < w->nregs; i++) {
     free(w->regs[i].name);
+    free(w->regs[i].layout);
+    free(w->regs[i].timeline);
     value_free(&w->regs[i].v);
   }
   free(w->elems);
@@ -585,6 +592,9 @@ static void put_reg(world * w, const char * name, value v) {
   if (r) {
     value_free(&r->v);
     r->v = v;
+    free(r->layout);
+    free(r->timeline);
+    r->layout = r->timeline = NULL;
     return;
   }
   if (w->nregs == w->capregs) {
@@ -593,6 +603,8 @@ static void put_reg(world * w, const char * name, value v) {
   }
   w->regs[w->nregs].name = dups(name);
   w->regs[w->nregs].v = v;
+  w->regs[w->nregs].layout = NULL;
+  w->regs[w->nregs].timeline = NULL;
   w->nregs++;
 }
 
@@ -755,19 +767,77 @@ static char * idl_to_css(const char * s, size_t n) {
   return out;
 }
 
-static void note_layout(testrun * t, style * s, const char * css_name) {
-  if (!s->computed || (t->layout && t->timeline)) {
+/* A read of `css_name` into the register `reg_name`: the test being run is told when the value is one that needs a layout or a timeline, and so is the register, which tells the test that asserts on it
+ * later (note_taint()). */
+static void note_layout(world * w, testrun * t, style * s, const char * css_name, const char * reg_name) {
+  if (!s->computed) {
     return;
   }
   GTEXT_CSSOM_Origin origin = GTEXT_CSSOM_ORIGIN_COMPUTED;
   bool found = false;
-  if (gtext_cssom_computed_origin(s->decl, css_name, strlen(css_name), &origin, &found) == GTEXT_CSS_OK && found && origin == GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT && !t->layout) {
-    t->layout = 1;
-    t->layout_property = dups(css_name);
+  if (gtext_cssom_computed_origin(s->decl, css_name, strlen(css_name), &origin, &found) != GTEXT_CSS_OK || !found) {
+    return;
   }
-  if (found && origin == GTEXT_CSSOM_ORIGIN_ABSENT_TIMELINE && !t->timeline) {
+  reg * r = reg_name ? find_reg(w, reg_name) : NULL;
+  if (origin == GTEXT_CSSOM_ORIGIN_ABSENT_LAYOUT) {
+    if (!t->layout) {
+      t->layout = 1;
+      t->layout_property = dups(css_name);
+    }
+    if (r && !r->layout) {
+      r->layout = dups(css_name);
+    }
+  }
+  if (origin == GTEXT_CSSOM_ORIGIN_ABSENT_TIMELINE) {
+    if (!t->timeline) {
+      t->timeline = 1;
+      t->timeline_property = dups(css_name);
+    }
+    if (r && !r->timeline) {
+      r->timeline = dups(css_name);
+    }
+  }
+}
+
+/* An operand that is a register read before the test: what it was read from is what the test needs. */
+static int g_taint = 1;   /* CSSOM_RUNNER_TAINT=none: a register carries nothing of where it was read from (the control that shows the taint is what credits no test of a layout) */
+
+static void note_taint(world * w, testrun * t, const char * operand_field) {
+  if (!g_taint || !operand_field || operand_field[0] != 'r' || operand_field[1] != ':') {
+    return;
+  }
+  const reg * r = find_reg(w, operand_field + 2);
+  if (!r) {
+    return;
+  }
+  if (r->layout && !t->layout) {
+    t->layout = 1;
+    t->layout_property = dups(r->layout);
+  }
+  if (r->timeline && !t->timeline) {
     t->timeline = 1;
-    t->timeline_property = dups(css_name);
+    t->timeline_property = dups(r->timeline);
+  }
+}
+
+/* A register made from others (cmp, not) is as tainted as they are. */
+static void inherit_taint(world * w, const char * dest, const char * a, const char * b) {
+  reg * d = find_reg(w, dest);
+  if (!d) {
+    return;
+  }
+  const char * from[2] = {a, b};
+  for (int i = 0; i < 2; i++) {
+    if (!from[i] || from[i][0] != 'r' || from[i][1] != ':') {
+      continue;
+    }
+    const reg * r = find_reg(w, from[i] + 2);
+    if (r && r->layout && !d->layout) {
+      d->layout = dups(r->layout);
+    }
+    if (r && r->timeline && !d->timeline) {
+      d->timeline = dups(r->timeline);
+    }
   }
 }
 
@@ -2424,7 +2494,7 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
         return status_failure("getPropertyValue", st);
       }
       put_reg(w, o->f[1], take_string(w, out, n));
-      note_layout(t, s, o->f[3]);
+      note_layout(w, t, s, o->f[3], o->f[1]);
     }
     else if (strcmp(name, "sprio") == 0) {
       const char * p = NULL;
@@ -2456,7 +2526,7 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
       }
       put_reg(w, o->f[1], take_string(w, out, n));
       char * css = idl_to_css(o->f[3], o->l[3]);
-      note_layout(t, s, css);
+      note_layout(w, t, s, css, o->f[1]);
       free(css);
     }
     return NULL;
@@ -2707,6 +2777,7 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
     const int negate = strcmp(o->f[2], "ne") == 0 || strcmp(o->f[2], "lne") == 0;
     const int r = negate ? !eq : eq;
     put_reg(w, o->f[1], val('b', r ? "true" : "false", r ? 4 : 5));
+    inherit_taint(w, o->f[1], o->f[3], o->f[4]);
     value_free(&a);
     value_free(&b);
     return NULL;
@@ -2720,6 +2791,7 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
     }
     const int truthy = a.kind == 'b' ? strcmp(a.s, "true") == 0 : a.kind == 's' ? a.n > 0 : a.kind == 'n' ? strtod(a.s, NULL) != 0 : 0;
     put_reg(w, o->f[1], val('b', truthy ? "false" : "true", truthy ? 5 : 4));
+    inherit_taint(w, o->f[1], o->f[2], NULL);
     value_free(&a);
     return NULL;
   }
@@ -2740,6 +2812,9 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
         return fmt("%s: an operand the program did not make", name);
       }
       nv++;
+    }
+    for (size_t i = 1; i + 1 < o->n; i++) {
+      note_taint(w, t, o->f[i]);
     }
     const char * msg = o->n > 1 ? o->f[o->n - 1] : "";
     char * result = NULL;
@@ -2900,6 +2975,8 @@ static int program_open(program * p, size_t extent) {
     }
     for (size_t i = 0; i < ow->nregs; i++) {
       put_reg(nw, ow->regs[i].name, val(ow->regs[i].v.kind, ow->regs[i].v.s, ow->regs[i].v.n));
+      nw->regs[nw->nregs - 1].layout = ow->regs[i].layout ? dups(ow->regs[i].layout) : NULL;
+      nw->regs[nw->nregs - 1].timeline = ow->regs[i].timeline ? dups(ow->regs[i].timeline) : NULL;
     }
     g_doc = nw->doc;
     for (size_t i = 0; i < ow->nstyles; i++) {
@@ -2995,6 +3072,10 @@ int main(void) {
   const char * tl = getenv("CSSOM_RUNNER_TIMELINE");
   if (tl && strcmp(tl, "none") == 0) {
     g_timeline = 0;
+  }
+  const char * taint = getenv("CSSOM_RUNNER_TAINT");
+  if (taint && strcmp(taint, "none") == 0) {
+    g_taint = 0;
   }
   const char * ua = getenv("CSSOM_RUNNER_UA");
   if (ua && strcmp(ua, "none") == 0) {
