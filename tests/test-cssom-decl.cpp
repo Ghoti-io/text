@@ -865,6 +865,24 @@ TEST(CssomDecl, ALonghandWithAVarOverAShorthandsLonghandsIsWrittenInTheOrderTheB
   EXPECT_EQ(text_of(d.d), "margin-top: var(--x); margin-right: 1px; margin-bottom: 1px; margin-left: 1px;");
 }
 
+// found by the libFuzzer run of fuzz_cssom_sheet on the tree of the transitions (reproducer-setproperty-pending-longhands.seed), again a fault of the harness's model: the same block, now with the whole
+// shorthand set to var() first. The four longhands then hold a value that is pending substitution, which the declaration block writes as an empty value (`margin-right: ;`), and a later setProperty()
+// of one of them changes it where it is: it stays last when the block held it last. The text of the block does not say the order, so a model that rebuilds the block from the text puts it first.
+TEST(CssomDecl, ALonghandSetOverPendingLonghandsKeepsTheSlotItHeld) {
+  Doc doc;
+  Decl d(doc);
+  ASSERT_EQ(set_text(d.d, "margin: 1px; margin-top: 2px").st, GTEXT_CSS_OK);
+  ASSERT_EQ(set(d.d, "margin", "var(--x)").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin: var(--x);");
+  ASSERT_EQ(set(d.d, "margin-top", "1px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin-right: ; margin-bottom: ; margin-left: ; margin-top: 1px;") << "the slot of margin-top is the last one, where the parsed list put it";
+  // the block made from the shorthand alone holds them in the order of the shorthand, and the longhand stays first
+  ASSERT_EQ(set_text(d.d, "margin: 1px").st, GTEXT_CSS_OK);
+  ASSERT_EQ(set(d.d, "margin", "var(--x)").st, GTEXT_CSS_OK);
+  ASSERT_EQ(set(d.d, "margin-top", "1px").st, GTEXT_CSS_OK);
+  EXPECT_EQ(text_of(d.d), "margin-top: 1px; margin-right: ; margin-bottom: ; margin-left: ;");
+}
+
 /* ---- cssText: the shorthand form, and what stands between the longhands ----------------------------------------------------------------- */
 
 // CSSOM, "serialize into a shorthand form": "If any of the intermixed properties in decls between used longhands belong to the same logical property group as a longhand in used
