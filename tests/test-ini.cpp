@@ -5649,3 +5649,24 @@ TEST(IniValue, WhatEscapeReturnsIsWhatTheReaderDecodesAndTheWriterWritesAndWhatI
     gtext_ini_free(doc);
   }
 }
+
+TEST(IniGit, AQuoteFlushesTheBlankBeforeItSoABlankBeforeAnEmptyPairOfQuotesIsNotTrailing) {
+  /* Found by reading what the writer wrote through `git config` (git 2.47.3) and comparing it with this module's decoding of the same bytes, over every value of up to five bytes from
+   * `a`, `b`, a blank, a tab, a quote, a backslash, `#` and `;`: 37,449 values, three of them different. git's parse_value() adds the pending run of blanks to the value before it looks at
+   * what the next byte is, a quote included, so a blank before a pair of quotes is not at the end of the value. Each line below is what `git config --get` printed for it. */
+  const std::vector<std::pair<std::string, std::string>> cases = {
+      {"x \"\"", "x "}, {"x \"\" ", "x "}, {"x \" \"", "x  "}, {"\"\" x", "x"}, {"x \"\" y", "x  y"}, {"x \"\"  ", "x "}, {"\"\"", ""}, {" \"\"", ""},
+  };
+  for (const auto & c : cases) {
+    GTEXT_INI_Document * doc = ok("[g]\nk=" + c.first + "\n", git());
+    ASSERT_NE(doc, nullptr) << c.first;
+    const std::string stored = raw(doc, "g", "k");
+    const GTEXT_INI_Dialect d = git();
+    char * out = nullptr;
+    size_t n = 0;
+    ASSERT_EQ(gtext_ini_unescape(&d, stored.data(), stored.size(), nullptr, &out, &n), GTEXT_INI_OK) << c.first;
+    EXPECT_EQ(std::string(out, n), c.second) << c.first;
+    gtext_ini_string_free(nullptr, out);
+    gtext_ini_free(doc);
+  }
+}

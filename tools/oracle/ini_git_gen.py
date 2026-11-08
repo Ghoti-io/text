@@ -70,6 +70,7 @@ AXES = (
     "two-quoted-runs",
     "quoted-protects-comment",
     "quoted-empty",
+    "blank-before-quote",
     "escape-tab",
     "escape-newline",
     "escape-backspace",
@@ -272,6 +273,11 @@ class Gen:
         if pick < 0.42:
             axes.add(self.mark("quoted-empty"))
             return '""'
+        if pick < 0.44:
+            # git adds the pending blanks to the value before it looks at the next byte, a quote included, so a blank before a pair of quotes is not trailing:
+            # `x ""` is `x `. Found by reading what the writer wrote through git, which this generator had no document for.
+            axes.add(self.mark("blank-before-quote"))
+            return 'x ""'
         if pick < 0.45:
             axes.add(self.mark("inline-comment-hash"))
             return "%s # trailing" % (self.word() or "x")

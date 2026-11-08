@@ -717,6 +717,13 @@ GTEXT_INI_Status gtext_ini_scan_value(const GTEXT_INI_Dialect * dialect,
        * includes the closing one - a span ending just after the last *inner*
        * byte would re-scan as an unterminated run.
        */
+      /*
+       * **A quote flushes the blanks before it**, which is git's rule and is not what a trailing-blank rule suggests: `parse_value()` adds the pending run of
+       * blanks to the value before it looks at what the byte is, so `x ""` is `x ` (a blank before an empty pair of quotes is not at the end of the value),
+       * and so is `x " "`'s first blank. Found by reading what the writer wrote through `git config` itself and comparing with this module's decoding (git
+       * 2.47.3).
+       */
+      kept = w;
       quote = !quote;
       content = i + 1;
       i++;

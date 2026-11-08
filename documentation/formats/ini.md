@@ -237,7 +237,12 @@ plausible implementation goes wrong and none of the four is in the manual page:
    first: `k = false   \` keeps its three trailing spaces, and the same value
    without the backslash does not. It took a document carrying a trailing-space
    value *and* a continuation for the differential to show it, which is why it
-   appeared at 20,000 generated documents and not at 500.
+   appeared at 20,000 generated documents and not at 500. **A quote fixes it too**:
+   `parse_value()` adds the pending blanks to the value before it looks at the byte
+   that follows them, so `k = x ""` is `x ` (with the blank) and `k = x " "` is `x`
+   and two blanks. Found by reading what the writer wrote through `git config`
+   (2.47.3) over every value of up to five bytes from eight (37,449 of them) and
+   comparing it with this module's decoding of the same bytes.
 3. **git's whitespace is not C's.** git carries its own ctype table in which
    `\v` and `\f` are control characters rather than space, so a trailing `\v`
    stays in the value and a leading one is a syntax error rather than skipped
