@@ -119,13 +119,12 @@ std::string trimmed_name(bool trims, std::string name) {
 
 const GTEXT_INI_Group * find_group(const GTEXT_INI_Document * doc,
     const std::string & name, const std::string & canon, size_t & nth) {
-  if (!name.empty()) {
-    const GTEXT_INI_Group * g = gtext_ini_document_group(doc, canon.c_str());
-    if (g) return g;
-    // a name of blanks only is trimmed to the empty name by a dialect that trims (`[\t]` is `[]`), and the lookup trims the query the same way: the same group
-    // that no lookup by name reaches
-    if (name.find_first_not_of(" \t\v\f") != std::string::npos) return nullptr;
+  if (name.find_first_not_of(" \t\v\f") != std::string::npos) {
+    return gtext_ini_document_group(doc, canon.c_str());
   }
+  // The empty name, and a name of blanks only: a dialect that trims reads `[\t]` as `[]`, and the lookup trims the query the same way, so no lookup by name reaches the group; a dialect
+  // that does not trim keeps `[\f\f]` as the name it is, but it is one of the blank groups all the same, and an exact lookup of it would not count the place it holds among them (the `[]`
+  // written after it is then found as the first). So both are found by place, below.
   const size_t n = gtext_ini_document_group_count(doc);
   size_t skip = nth;
   for (size_t i = 0; i < n; i++) {
