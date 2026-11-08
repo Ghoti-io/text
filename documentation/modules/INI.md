@@ -362,7 +362,9 @@ parsed.
 **The writer refuses a value it cannot spell** rather than emitting one that
 reads back differently. A value containing a newline, or beginning with a space,
 is ::GTEXT_INI_E_UNREPRESENTABLE (so is a group with a localized key and no
-bare key, under a dialect that requires one); gtext_ini_escape() is the fix:
+bare key, under a dialect that requires one); gtext_ini_escape() is the fix for
+a value, and it returns an encoding the writer writes or reports that the
+dialect has none:
 
 ```c
 char * escaped = NULL;

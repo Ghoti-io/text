@@ -110,26 +110,11 @@ containing a line terminator, or whose first byte is a space, is reported as
 ::GTEXT_INI_E_UNREPRESENTABLE rather than emitted - the first would end the line
 early and the second would come back shorter, because §3.3 discards the run
 after `=`. The caller's fix is gtext_ini_escape(), which spells both, and which
-itself reports ::GTEXT_INI_E_UNREPRESENTABLE under a dialect whose escape set
-cannot.
-
-Either the writer refuses or the bytes it writes read back, and the sweep of the test suite holds it to that
-for every dialect, every option of the write and every way of building a document
-(tests/test-ini-sweep.cpp, which shares its oracle with the fuzzer of the writer). What it
-refuses, besides the values above:
-
-- **A group with a localized key and no bare key**, under a dialect that requires one (Desktop
-  Entry §5; the generic dialect too): the parser refuses such a document, and an entry made with
-  gtext_ini_group_set() is accepted whatever the group holds because the bare key may come after
-  it, so the check is made when the document is written. `desktop-file-validate` reports the same
-  file: `key "Name[de]" ... is a localized key, but there is no non-localized key "Name"`.
-- **A key that begins with a byte-order mark, when it would be the first bytes of the output**,
-  under a dialect that skips one (a reader strips it there and the key comes back without it). A
-  document that carries its own byte-order mark has written it first, and a key that is not first
-  is data.
-- A group name or a key with a line feed or a carriage return in it, under every dialect, is
-  refused by gtext_ini_document_add_group() and gtext_ini_group_set() when it is made, not by the
-  writer (see their documentation).
+itself reports ::GTEXT_INI_E_UNREPRESENTABLE under a dialect that has no spelling for the text
+(an escape set without the letter, no quotes to carry a blank at the end of a value, bytes that
+are not UTF-8 for a dialect that decodes UTF-8). What gtext_ini_escape() returns is an encoding
+that gtext_ini_unescape() decodes to the text **and** that the writer writes, because it asks
+both; it does not return one that either would refuse.
 
 Either the writer refuses or the bytes it writes read back, and the sweep of the test suite holds it to that
 for every dialect, every option of the write and every way of building a document

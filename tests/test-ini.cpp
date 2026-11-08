@@ -5588,3 +5588,57 @@ TEST(IniConfigParser, AValueSetInTheTreeWithABlankBeforeALineEndIsRefusedBecause
   gtext_ini_free(back);
   gtext_ini_free(doc);
 }
+
+TEST(IniValue, WhatEscapeReturnsIsWhatTheReaderDecodesAndTheWriterWritesAndWhatItCannotSpellItRefuses) {
+  /* The sweep of the value codec: gtext_ini_escape() knew the escape set of one dialect and nothing of the others, so it returned `"` unchanged for git (an unbalanced quote), a blank at the
+   * end for EditorConfig and Win32 (which trim it and have no quotes), and a byte that is not UTF-8 for Desktop Entry (which decodes UTF-8). It now asks the two functions the encoding has
+   * to satisfy, gtext_ini_unescape() and the writer's own test of a value. */
+  struct Case {
+    GTEXT_INI_Dialect dialect;
+    std::string text;
+    bool spellable;
+    std::string encoding;   /* when spellable and not empty */
+  };
+  const std::vector<Case> cases = {
+      {git(), "a \"b\" ; c", true, "\"a \\\"b\\\" ; c\""},
+      {git(), "plain", true, "plain"},
+      {git(), " lead", true, "\" lead\""},   /* git has no escape for a space, and quotes carry it */
+      {ec(), "a ", false, ""},
+      {ec(), "a b", true, "a b"},
+      {gtext_ini_dialect_desktop_entry(), "\xff", false, ""},
+      {gtext_ini_dialect_desktop_entry(), "a\nb", true, "a\\nb"},
+      {cp(), "a\nb", true, "a\nb"},
+      {cp(), "a \nb", false, ""},
+  };
+  for (Case c : cases) {
+    char * out = nullptr;
+    size_t len = 0;
+    const GTEXT_INI_Status status = gtext_ini_escape(&c.dialect, c.text.data(), c.text.size(), nullptr, &out, &len);
+    if (!c.spellable) {
+      EXPECT_EQ(status, GTEXT_INI_E_UNREPRESENTABLE) << c.text;
+      EXPECT_EQ(out, nullptr);
+      continue;
+    }
+    ASSERT_EQ(status, GTEXT_INI_OK) << c.text;
+    const std::string encoded(out, len);
+    gtext_ini_string_free(nullptr, out);
+    EXPECT_EQ(encoded, c.encoding) << c.text;
+    char * decoded = nullptr;
+    size_t decoded_len = 0;
+    ASSERT_EQ(gtext_ini_unescape(&c.dialect, encoded.data(), encoded.size(), nullptr, &decoded, &decoded_len), GTEXT_INI_OK) << c.text;
+    EXPECT_EQ(std::string(decoded, decoded_len), c.text);
+    gtext_ini_string_free(nullptr, decoded);
+    /* and the writer takes it, and what it writes decodes to the text */
+    GTEXT_INI_Document * doc = built(c.dialect, {{"k", encoded}});
+    std::string bytes;
+    ASSERT_EQ(write_status(doc, gtext_ini_write_options_default(), &bytes), GTEXT_INI_OK) << c.text;
+    GTEXT_INI_Document * back = ok(bytes, c.dialect);
+    ASSERT_NE(back, nullptr) << bytes;
+    const std::string stored = raw(back, "G", "k");
+    ASSERT_EQ(gtext_ini_unescape(&c.dialect, stored.data(), stored.size(), nullptr, &decoded, &decoded_len), GTEXT_INI_OK) << c.text;
+    EXPECT_EQ(std::string(decoded, decoded_len), c.text);
+    gtext_ini_string_free(nullptr, decoded);
+    gtext_ini_free(back);
+    gtext_ini_free(doc);
+  }
+}

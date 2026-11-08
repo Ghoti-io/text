@@ -271,6 +271,13 @@ GTEXT_INTERNAL_API size_t gtext_ini_key_base_len(const char * key, size_t len);
  */
 GTEXT_INTERNAL_API size_t gtext_ini_group_unlocalized_key_missing(const GTEXT_INI_Group * group);
 
+/**
+ * Whether a value would read back as itself once written, which is what the writer asks of every value it emits and what gtext_ini_escape() asks of an encoding.
+ * See the definition for the three ways it would not.
+ */
+GTEXT_INTERNAL_API bool gtext_ini_value_writable(const GTEXT_INI_Dialect * dialect,
+    const char * value, size_t value_len, char next, bool verbatim);
+
 /** Append an entry to a group without any duplicate or charset check. */
 GTEXT_INTERNAL_API ini_entry * gtext_ini_group_push(GTEXT_INI_Group * group);
 

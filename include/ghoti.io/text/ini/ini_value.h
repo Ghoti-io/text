@@ -91,10 +91,17 @@ GTEXT_API GTEXT_INI_Status gtext_ini_unescape(
  * backslash, or a leading space - a dialect with no quoting has no other way
  * to spell those.
  *
- * Reports ::GTEXT_INI_E_UNREPRESENTABLE when the dialect's escape set cannot
- * spell a byte that must be escaped, rather than emitting it raw. A dialect
+ * Reports ::GTEXT_INI_E_UNREPRESENTABLE when the dialect has no spelling for the
+ * text, rather than emitting one that reads back as something else. A dialect
  * with no escapes therefore refuses a value containing a newline, which is
- * correct: there is no such document.
+ * correct: there is no such document. What it returns is an encoding that
+ * gtext_ini_unescape() decodes to the text and that gtext_ini_write() writes,
+ * because both are asked: the escape set's spelling where the dialect has one,
+ * the bytes as they are where the dialect carries them (a configparser value of
+ * several lines), and the quoted form where it quotes (git). A blank at the end
+ * of a value for a dialect that trims and does not quote, bytes that are not
+ * UTF-8 for a dialect that decodes UTF-8, and a quote that the dialect has no
+ * backslash for have no spelling and are refused.
  *
  * @param dialect The dialect. Must not be NULL.
  * @param text The bytes to encode.
