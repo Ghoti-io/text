@@ -13,6 +13,10 @@
  * comments; the entries come before and after others, because a rule can depend on the byte that follows a value. The comparison is the model's, shared with the
  * fuzzer, so the two cannot disagree about what the writer owes.
  *
+ * The document model has no setter for a comment: a comment reaches the writer only in a document that was read, and is written back with it. That entry point is the document
+ * sweep below, which parses texts made of comment, header, entry and continuation lines in three line endings and writes each document back as it is, normalized, without its
+ * comments and with CRLF; the value codec (gtext_ini_escape(), the producer of a value for set()) is the sweep after it.
+ *
  * A failure is printed as the dialect, the options and the steps that make it, so it can be pasted into a test. The table is a population and not a proof: the
  * assertions below it say how many of its cases the model accepted, wrote and compared in each dialect, so that a sweep that has gone blind (every case refused, a
  * dialect the table does not reach) fails and does not pass.
