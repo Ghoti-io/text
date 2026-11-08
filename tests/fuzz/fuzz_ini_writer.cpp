@@ -235,6 +235,38 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
         if (trimmed_name(trims, shadow[k].canon) == read_as) same_before++;
       }
       const GTEXT_INI_Group * got = nullptr;
+      if (popts.dialect.merge_duplicate_groups && !read_as.empty()) {
+        // A dialect that merges repeated headers ("A duplicate group is accepted, and a lookup merges the two": ini.h; documentation/formats/ini.md) keeps the groups apart in the
+        // tree and merges them in the lookup by name, gtext_ini_document_get(), which is where the promise is made: a key set in the second `[a]` is read through the document and
+        // not through the first group object. What the lookup answers for a key that two of the groups hold is the dialect's repeated-key rule (the last occurrence for last-wins and
+        // for collect, the first otherwise), so the harness expects the value of that occurrence among the groups of the name, in the order it added them.
+        got = find_group(back, g.name, g.canon, empty_seen);
+        if (!got) {
+          std::fprintf(stderr, "group lost: %zu bytes\n", g.name.size());
+          fail("a group the DOM accepted did not survive the round trip", out);
+        }
+        const bool last = popts.dialect.dupkey == GTEXT_INI_DUPKEY_LAST_WINS || popts.dialect.dupkey == GTEXT_INI_DUPKEY_COLLECT;
+        for (const Entry & e : g.entries) {
+          const std::string * want = nullptr;
+          for (size_t k = 0; k < shadow.size(); k++) {
+            if (trimmed_name(trims, shadow[k].canon) != read_as) continue;
+            for (const Entry & other : shadow[k].entries) {
+              if (other.key == e.key && (last || !want)) want = &other.value;
+            }
+          }
+          size_t len = 0;
+          const char * v = gtext_ini_document_get(back, g.canon.c_str(), e.key.c_str(), &len);
+          if (!v) {
+            std::fprintf(stderr, "key lost in group %s\n", g.name.c_str());
+            fail("a key the DOM accepted did not survive the round trip", out);
+          }
+          if (len != want->size() || (len && std::memcmp(v, want->data(), len) != 0)) {
+            std::fprintf(stderr, "value changed: wrote %zu bytes, read %zu\n", want->size(), len);
+            fail("a value changed across the round trip", out);
+          }
+        }
+        continue;
+      }
       if (same_before > 0 && !popts.dialect.merge_duplicate_groups && !read_as.empty()) {   // a blank name is found by its place among the blank ones, below
         size_t skip = same_before;
         for (size_t k = 0; k < gtext_ini_document_group_count(back) && !got; k++) {

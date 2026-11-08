@@ -1174,6 +1174,42 @@ TEST(IniGit, AGroupAddedWithADottedHeaderIsReachableOnlyByItsFoldedNameAfterAWri
   gtext_ini_free(doc);
 }
 
+TEST(IniGeneric, AKeyInASecondRepeatedGroupIsReadThroughTheDocumentAndNotThroughTheFirstGroup) {
+  /* The fuzz finding of the writer harness: `[\xf0]`, `[\xf0]`, `|D=` in the generic dialect, which merges repeated headers ("A duplicate group is accepted, and a
+   * lookup merges the two"). The tree keeps the two groups apart, so that a rewrite reproduces the document; the merge is the lookup by name,
+   * gtext_ini_document_get(). The first group object holds no key, and gtext_ini_document_group() answers it: the harness read the key through that object and so
+   * lost it, which was its model's error and not the library's. */
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = gtext_ini_dialect_generic();
+  ASSERT_TRUE(opts.dialect.merge_duplicate_groups);
+  GTEXT_INI_Document * doc = gtext_ini_new(&opts);
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * g = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "\xf0", &g), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "\xf0", &g), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_group_set(g, "|D", "", 0), GTEXT_INI_OK);
+  GTEXT_INI_Write_Options wo = gtext_ini_write_options_default();
+  wo.normalize = true;
+  GTEXT_INI_Sink sink;
+  ASSERT_EQ(gtext_ini_sink_buffer(&sink), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_write(doc, &sink, &wo), GTEXT_INI_OK);
+  const std::string out(gtext_ini_sink_buffer_data(&sink), gtext_ini_sink_buffer_size(&sink));
+  gtext_ini_sink_buffer_free(&sink);
+  EXPECT_EQ(out, "[\xf0]\n[\xf0]\n|D=\n");
+  GTEXT_INI_Document * back = gtext_ini_parse(out.data(), out.size(), &opts, nullptr);
+  ASSERT_NE(back, nullptr);
+  EXPECT_EQ(gtext_ini_document_group_count(back), 2u);
+  size_t len = 99;
+  const GTEXT_INI_Group * first = gtext_ini_document_group(back, "\xf0");
+  ASSERT_NE(first, nullptr);
+  EXPECT_EQ(gtext_ini_group_get(first, "|D", &len), nullptr) << "the first group object holds no key";
+  const char * v = gtext_ini_document_get(back, "\xf0", "|D", &len);
+  ASSERT_NE(v, nullptr) << "the lookup by name merges the two groups";
+  EXPECT_EQ(len, 0u);
+  gtext_ini_free(back);
+  gtext_ini_free(doc);
+}
+
 TEST(IniGit, ASubsectionMayHoldBytesTheSectionNameMayNot) {
   /* Any byte but a terminator, `]` and `[` included, and a backslash *drops* -
    * so `\t` here is the letter t, while `\t` in a value one line later is a tab.
