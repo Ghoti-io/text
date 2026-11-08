@@ -1113,6 +1113,18 @@ size_t gtext_ini_join_continuations(const GTEXT_INI_Dialect * dialect,
   return joined ? w : SIZE_MAX;
 }
 
+/*
+ * The whitespace that may sit between a key and its `=`, and that is trimmed off the end of a key: a space or a tab, and nothing else, whatever the dialect, unless the dialect
+ * says otherwise (::GTEXT_INI_Dialect::space_set).
+ *
+ * Distinct from gtext_ini_is_space() on purpose, and the distinction is git's: its top-level loop skips anything its ctype calls space - CR included - while the run between a
+ * key and its `=` is matched against `' '` and `'\t'` literally. So `\rk = v` is accepted and `k\r= v` is refused, by the same implementation, on the same line. One predicate for
+ * both would have to pick one of those two answers and would get the other wrong.
+ */
+bool gtext_ini_sep_space(const GTEXT_INI_Dialect * dialect, char c) {
+  return dialect->space_set != GTEXT_INI_SPACE_BLANK ? gtext_ini_is_space(dialect, c) : (c == ' ' || c == '\t');
+}
+
 bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
     const char * name, size_t len) {
   /*

@@ -509,6 +509,9 @@ GTEXT_INTERNAL_API size_t gtext_ini_join_continuations(
     const GTEXT_INI_Dialect * dialect, const char * bytes, size_t len,
     size_t start, size_t end, char * out);
 
+/** The whitespace that may sit between a key and its separator, and that is trimmed off the end of a key (what the parser trims, and what the tree has to trim the same way). */
+GTEXT_INTERNAL_API bool gtext_ini_sep_space(const GTEXT_INI_Dialect * dialect, char c);
+
 /** What a physical line is, before anything looks at its contents. */
 typedef enum {
   INI_LINE_CONTENT,

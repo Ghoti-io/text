@@ -2481,6 +2481,36 @@ TEST(IniSystemd, AGroupMadeInTheTreeWithAContinuationInItsNameHasTheJoinedNameFo
   gtext_ini_free(doc);
 }
 
+TEST(IniSystemd, AKeyMadeInTheTreeWithAContinuationInItHasTheJoinedNameForItsCanonicalOne) {
+  /* The same for a key (fuzz_ini_writer, systemd: `set("\\\\\\<LF>", "")`, three backslashes and a line end): written as it is, read back joined, and the key the document gives is the one a caller has. A continuation
+     that ends the key joins without the blank it would leave (`Environment\<LF>=v` is `Environment`, not `Environment `). */
+  GTEXT_INI_Parse_Options popts = gtext_ini_parse_options_default();
+  popts.dialect = sd();
+  GTEXT_INI_Document * doc = gtext_ini_new(&popts);
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * g = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "g", &g), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_group_set(g, "Env\\\niron", "1", 1), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_group_set(g, "\\\\\\\n", "", 0), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_group_set(g, "Environment\\\n", "v", 1), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_group_set(g, "plain", "p", 1), GTEXT_INI_OK);
+  EXPECT_EQ(got(gtext_ini_group_canonical_key_at, g, (size_t) 0), "Env iron");
+  EXPECT_EQ(got(gtext_ini_group_canonical_key_at, g, (size_t) 1), "\\\\");
+  EXPECT_EQ(got(gtext_ini_group_canonical_key_at, g, (size_t) 2), "Environment");
+  EXPECT_EQ(got(gtext_ini_group_canonical_key_at, g, (size_t) 3), "plain");
+  EXPECT_EQ(raw(doc, "g", "Env iron"), "1") << "reachable by the joined name, as in a document read";
+  const std::string text = written(doc);
+  GTEXT_INI_Document * back = ok(text, sd());
+  ASSERT_NE(back, nullptr) << text;
+  const GTEXT_INI_Group * b = gtext_ini_document_group_at(back, 0);
+  ASSERT_EQ(gtext_ini_group_entry_count(b), 4u);
+  for (size_t i = 0; i < 4; i++) {
+    EXPECT_EQ(got(gtext_ini_group_canonical_key_at, b, i), got(gtext_ini_group_canonical_key_at, g, i)) << "key " << i;
+  }
+  gtext_ini_free(back);
+  gtext_ini_free(doc);
+}
+
 TEST(IniSystemd, AContinuationMayAppearInAHeaderOrAKey) {
   /*
    * **The structural finding, and it is not in the manual.** systemd assembles the

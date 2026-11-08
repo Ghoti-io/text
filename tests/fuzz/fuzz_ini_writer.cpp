@@ -104,6 +104,9 @@ bool same_key(bool folds, const std::string & x, const std::string & y) {
 struct Entry {
   std::string key;
   std::string value;
+  /** The name a lookup answers to: the tree's canonical key. A key that holds a continuation (systemd: `Env\<LF>iron`) is written as it is and read back under its joined name (`Env iron`), which is the
+      name a caller has; a dialect that folds answers to the folded one. The spelling is not what a lookup compares. */
+  std::string canon;
 };
 struct Group {
   std::string name;
@@ -224,14 +227,20 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
               == GTEXT_INI_OK) {
         // set() replaces, so the shadow must replace too rather than append.
         bool replaced = false;
+        size_t at = 0;
         for (Entry & e : shadow.back().entries) {
           if (same_key(popts.dialect.fold_case, e.key, a)) {
             e.value = v;
             replaced = true;
             break;
           }
+          at++;
         }
-        if (!replaced) shadow.back().entries.push_back(Entry{a, v});
+        if (!replaced) shadow.back().entries.push_back(Entry{a, v, a});
+        // the shadow holds the entries in the order the group does, so the place in one is the place in the other
+        size_t clen = 0;
+        const char * ck = gtext_ini_group_canonical_key_at(current, at, &clen);
+        if (ck) shadow.back().entries[at].canon.assign(ck, clen);
       }
     }
   }
@@ -291,11 +300,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
           for (size_t k = 0; k < shadow.size(); k++) {
             if (trimmed_name(trims, shadow[k].canon) != read_as) continue;
             for (const Entry & other : shadow[k].entries) {
-              if (other.key == e.key && (last || !want)) want = &other.value;
+              if (other.canon == e.canon && (last || !want)) want = &other.value;
             }
           }
           size_t len = 0;
-          const char * v = gtext_ini_document_get(back, g.canon.c_str(), e.key.c_str(), &len);
+          const char * v = gtext_ini_document_get(back, g.canon.c_str(), e.canon.c_str(), &len);
           if (!v) {
             std::fprintf(stderr, "key lost in group %s\n", g.name.c_str());
             fail("a key the DOM accepted did not survive the round trip", out);
@@ -325,7 +334,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       }
       for (const Entry & e : g.entries) {
         size_t len = 0;
-        const char * v = gtext_ini_group_get(got, e.key.c_str(), &len);
+        const char * v = gtext_ini_group_get(got, e.canon.c_str(), &len);
         if (!v) {
           std::fprintf(stderr, "key lost in group %s\n", g.name.c_str());
           fail("a key the DOM accepted did not survive the round trip", out);

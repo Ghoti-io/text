@@ -55,23 +55,12 @@
 
 #include "ini_internal.h"
 
-/**
- * A space or a tab, and nothing else, whatever the dialect.
- *
- * Distinct from gtext_ini_is_space() on purpose, and the distinction is git's:
- * its top-level loop skips anything its ctype calls space - CR included - while
- * the run between a key and its `=` is matched against `' '` and `'\t'`
- * literally. So `\rk = v` is accepted and `k\r= v` is refused, by the same
- * implementation, on the same line. One predicate for both would have to pick
- * one of those two answers and would get the other wrong.
- */
-static bool ini_is_blank(char c) { return c == ' ' || c == '\t'; }
 
 /**
  * The whitespace that may sit between a key and its `=`.
  *
- * Two answers, and which one applies is the dialect's. git's is the literal pair
- * above - `k\r= v` is refused by git while `\rk = v` is accepted, by the same
+ * Two answers, and which one applies is the dialect's. git's is the literal pair of
+ * a space and a tab (gtext_ini_sep_space()) - `k\r= v` is refused by git while `\rk = v` is accepted, by the same
  * implementation on the same line - so the separator run cannot simply use
  * gtext_ini_is_space(). EditorConfig has no such split: it trims the whole line
  * with one predicate before classifying it, so `k\v= v` is `k` = `v`.
@@ -83,9 +72,7 @@ static bool ini_is_blank(char c) { return c == ' ' || c == '\t'; }
  * both the key `k`. Measured.
  */
 static bool ini_sep_space(const GTEXT_INI_Dialect * dialect, char c) {
-  return dialect->space_set != GTEXT_INI_SPACE_BLANK
-             ? gtext_ini_is_space(dialect, c)
-             : ini_is_blank(c);
+  return gtext_ini_sep_space(dialect, c);
 }
 
 /** Whether every byte of [start, end) is whitespace to @p dialect. */
