@@ -279,7 +279,7 @@ const char * gtext_ini_document_get(const GTEXT_INI_Document * doc,
 static GTEXT_INI_Status ini_join_name(const GTEXT_Allocator * alloc, const GTEXT_INI_Dialect * d, const char * name, size_t len, bool is_group, char ** joined, size_t * joined_len) {
   *joined = NULL;
   *joined_len = 0;
-  if (!gtext_ini_names_may_continue(d) || !memchr(name, '\n', len)) return GTEXT_INI_OK;
+  if (!gtext_ini_names_may_continue(d) || (!memchr(name, '\n', len) && !memchr(name, '\r', len))) return GTEXT_INI_OK;   /* a lone CR after a backslash continues as well */
   char * tmp = gtext_allocator_malloc(alloc, 2 * len + 2);
   if (!tmp) return GTEXT_INI_E_OOM;
   memcpy(tmp, name, len);
@@ -514,7 +514,7 @@ static GTEXT_INI_Status ini_entry_init(GTEXT_INI_Group * group,
             gtext_ini_str_set(alloc, &entry->pre, "", 0) &&
             gtext_ini_str_set(alloc, &entry->sep, d->separators, 1) &&
             gtext_ini_str_set(alloc, &entry->eol, "\n", 1);
-  if (ok && (d->fold_case || (gtext_ini_names_may_continue(d) && memchr(key, '\n', key_len)))) {
+  if (ok && (d->fold_case || gtext_ini_names_may_continue(d))) {
     /* The canonical form a lookup will compare against: the joined form of a name that holds a continuation, folded when the dialect folds. Built here rather than at
        lookup time for the same reason the parser builds it. */
     char * joined = NULL;

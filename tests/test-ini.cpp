@@ -2463,15 +2463,17 @@ TEST(IniSystemd, AGroupMadeInTheTreeWithAContinuationInItsNameHasTheJoinedNameFo
   EXPECT_EQ(got(gtext_ini_group_canonical_name, g), "Serv ice");
   ASSERT_EQ(gtext_ini_document_add_group(doc, "\\\\\n", &g), GTEXT_INI_OK);
   EXPECT_EQ(got(gtext_ini_group_canonical_name, g), "\\ ");
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "\\\\\\\r \x02", &g), GTEXT_INI_OK);   /* a backslash and a lone carriage return continue as well */
+  EXPECT_EQ(got(gtext_ini_group_canonical_name, g), std::string("\\\\  \x02"));
   ASSERT_EQ(gtext_ini_document_add_group(doc, "plain", &g), GTEXT_INI_OK);
   EXPECT_EQ(got(gtext_ini_group_canonical_name, g), "plain");
   EXPECT_NE(gtext_ini_document_group(doc, "Serv ice"), nullptr) << "reachable by the joined name, as in a document read";
   const std::string text = written(doc);
-  EXPECT_EQ(text, "[Serv\\\nice]\n[\\\\\n]\n[plain]\n");
+  EXPECT_EQ(text, std::string("[Serv\\\nice]\n[\\\\\n]\n[\\\\\\\r \x02]\n[plain]\n"));
   GTEXT_INI_Document * back = ok(text, sd());
   ASSERT_NE(back, nullptr);
-  ASSERT_EQ(gtext_ini_document_group_count(back), 3u);
-  for (size_t i = 0; i < 3; i++) {
+  ASSERT_EQ(gtext_ini_document_group_count(back), 4u);
+  for (size_t i = 0; i < 4; i++) {
     size_t a = 0, b = 0;
     const char * x = gtext_ini_group_canonical_name(gtext_ini_document_group_at(doc, i), &a);
     const char * y = gtext_ini_group_canonical_name(gtext_ini_document_group_at(back, i), &b);
