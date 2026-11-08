@@ -410,12 +410,11 @@ static GTEXT_CSS_Status read_type(GTEXT_CSS_Function_Set * s, const GTEXT_CSS_Co
   return GTEXT_CSS_OK;
 }
 
-/// Whether the values are a <declaration-value> at the top level: one or more tokens, none of them a `;`, a `!`, a bad string or url or a closing bracket that opens nothing.
+/// Whether the values are a <declaration-value> at the top level: none of the tokens is a `;`, a `!`, a bad string or url or a closing bracket that opens nothing. Nothing at
+/// all is accepted, because both places that ask allow an empty one: "<default-value> = <declaration-value>?" ("an empty default value (like `@function --x(--arg:){}`) is
+/// perfectly valid") and the arguments of a <dashed-function>, "[ <declaration-value>? ]#? ,?" ("a comma-separated list of anything (including an empty value)").
 static bool declaration_value(const GTEXT_CSS_Component_Value * v, size_t a, size_t b) {
   trim(v, &a, &b);
-  if (a == b) {
-    return false;
-  }
   for (size_t i = a; i < b; i++) {
     if (v[i].kind != GTEXT_CSS_VALUE_TOKEN) {
       continue;
@@ -581,6 +580,13 @@ static GTEXT_CSS_Status read_prelude(GTEXT_CSS_Function_Set * s, const GTEXT_CSS
   const size_t na = fn->child_count;
   size_t pa = 0, pb = na;
   trim(args, &pa, &pb);
+  /* "<@function> = @function <function-token> <function-parameter>#? ,? )" and "A final trailing comma is allowed after the arguments, to make formatting arguments across
+     multiple lines easier": one comma at the end is not a separator. `(,)` is not "after the arguments" (there are none) and stays invalid, as the page at-function-parsing.html
+     has it. */
+  if (pa < pb && pb - pa > 1 && args[pb - 1].kind == GTEXT_CSS_VALUE_TOKEN && args[pb - 1].type == GTEXT_CSS_TOKEN_COMMA) {
+    pb--;
+    trim(args, &pa, &pb);
+  }
   pre_verdict v = PRE_OK;
   if (pa < pb) {
     size_t count = 1;
@@ -1065,11 +1071,23 @@ GTEXT_CSS_Status css_apply_prelude_read(const GTEXT_Allocator * alloc, const GTE
   const GTEXT_CSS_Component_Value * args = first->children;
   size_t pa = 0, pb = first->child_count;
   trim(args, &pa, &pb);
-  size_t count = 0;
-  if (pa < pb) {
-    count = 1;
-    for (size_t i = pa; i < pb; i++) {
-      count += args[i].kind == GTEXT_CSS_VALUE_TOKEN && args[i].type == GTEXT_CSS_TOKEN_COMMA;
+  /* "The comma-separated values provide the arguments to the function ... Each <declaration-value> has leading/trailing whitespace trimmed from it. If the final argument is
+     empty, it's dropped." `--f()` is no argument, `--f(a,)` is one, `--f(a,,)` is two (the second empty) and `--solo(,)` is one empty argument. */
+  size_t items = 1;
+  for (size_t i = pa; i < pb; i++) {
+    items += args[i].kind == GTEXT_CSS_VALUE_TOKEN && args[i].type == GTEXT_CSS_TOKEN_COMMA;
+  }
+  size_t last_from = pb;
+  while (last_from > pa && !(args[last_from - 1].kind == GTEXT_CSS_VALUE_TOKEN && args[last_from - 1].type == GTEXT_CSS_TOKEN_COMMA)) {
+    last_from--;
+  }
+  size_t lf = last_from, lt = pb;
+  trim(args, &lf, &lt);
+  size_t count = items;
+  if (lf == lt) {            /* the final item is empty (the only item of `--f()` among them): it is dropped */
+    count = items - 1;
+    if (items > 1) {
+      pb = last_from - 1;    /* the list ends before the final comma */
     }
   }
   css_apply_arg * list = NULL;

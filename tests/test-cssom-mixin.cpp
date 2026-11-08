@@ -183,7 +183,9 @@ TEST(CssomMixin, ADefaultMustBeAValueOfTheParametersType) {
 TEST(CssomMixin, AParameterIsANameAnOptionalTypeAndAnOptionalDefault) {
   EXPECT_EQ(shape_of("@mixin --m(a) {}"), "");
   EXPECT_EQ(shape_of("@mixin --m(--a <nonsense>) {}"), "");
-  EXPECT_EQ(shape_of("@mixin --m(--a, ) {}"), "");
+  EXPECT_EQ(shape_of("@mixin --m(--a, ) {}"), "mixin") << "Mixins 1 (pinned 2026-11-07): \"@mixin [<function-token> <function-parameter>#? ,? ) | <ident-token> ]\", a single trailing comma";
+  EXPECT_EQ(shape_of("@mixin --m(--a,, ) {}"), "");
+  EXPECT_EQ(shape_of("@mixin --m(, ) {}"), "");
   EXPECT_EQ(shape_of("@mixin --m(--a <length>+: 1px 2px) {}"), "mixin");
 }
 
@@ -276,8 +278,8 @@ TEST(CssomMixin, TheNameOfAnApplyRuleIsADashedIdentOrADashedFunction) {
   EXPECT_EQ(shape_of("div { @apply; }"), "style");
   EXPECT_EQ(shape_of("div { @apply --a --b; }"), "style");
   EXPECT_EQ(shape_of("div { @apply --a(1) --b; }"), "style");
-  EXPECT_EQ(shape_of("div { @apply --a(,); }"), "style") << "an argument is a declaration value, and is not empty";
-  EXPECT_EQ(shape_of("div { @apply --a(1,); }"), "style");
+  EXPECT_EQ(shape_of("div { @apply --a(,); }"), "style[apply]") << "Mixins 1 (pinned 2026-11-07): an argument may be empty (\"--solo(,)\" passes a single empty argument)";
+  EXPECT_EQ(shape_of("div { @apply --a(1,); }"), "style[apply]") << "a final trailing comma";
   EXPECT_EQ(shape_of("div { @apply --a(); }"), "style[apply]");
   EXPECT_EQ(shape_of("div { @apply --a(1, 2 3, {4, 5}); }"), "style[apply]");
   EXPECT_EQ(shape_of("div { @apply --a(red !important); }"), "style") << "a `!` at the top level is no part of a declaration value";
@@ -550,6 +552,32 @@ TEST(CssomMixin, GetArgumentsIsTheArgumentsOfTheApply) {
   }
   GTEXT_CSSOM_String_List l{};
   EXPECT_EQ(gtext_cssom_apply_get_arguments(path(s, {0}).r, &l), GTEXT_CSS_E_UNSUPPORTED);
+}
+
+// Mixins 1 (pinned 2026-11-07), @apply: "The @apply <dashed-function> syntax has the same whitespace-trimming behavior as custom functions, and the same treatment of a final trailing
+// comma." and, for custom functions, "If the final argument is empty, it's dropped" and "--func(1, 2,,) (or --solo(,) to pass a single empty argument)".
+TEST(CssomMixin, AFinalEmptyArgumentOfAnApplyIsDropped) {
+  Doc doc;
+  Sheet s(doc, "a { @apply --a(); @apply --b(1,); @apply --c(1, 2,,); @apply --d(,); @apply --e(,,); @apply --f( x , ); @apply --g(,1); }");
+  ASSERT_EQ(s.status, GTEXT_CSS_OK);
+  const std::vector<std::vector<std::string>> want = {{}, {"1"}, {"1", "2", ""}, {""}, {"", ""}, {"x"}, {"", "1"}};
+  for (size_t i = 0; i < want.size(); i++) {
+    Rule r = path(s, {0, i});
+    GTEXT_CSSOM_String_List l{};
+    ASSERT_EQ(gtext_cssom_apply_get_arguments(r.r, &l), GTEXT_CSS_OK) << i;
+    ASSERT_EQ(l.count, want[i].size()) << i;
+    for (size_t k = 0; k < l.count; k++) {
+      EXPECT_EQ(std::string(l.items[k].text, l.items[k].length), want[i][k]) << i << "," << k;
+    }
+    gtext_cssom_buffer_free(&reinterpret_cast<css_obj *>(r.r)->core->alloc, static_cast<char *>(l.block));
+  }
+}
+
+// "<@mixin> = @mixin [<function-token> <function-parameter>#? ,? ) | <ident-token> ]" and "Note: Like @function, a single trailing comma can be put at the end of the argument list."
+TEST(CssomMixin, AMixinTakesATrailingCommaAndAnEmptyDefault) {
+  EXPECT_EQ(first("@mixin --m(--a, --b,) {}"), "@mixin --m(--a, --b) {  }");
+  EXPECT_EQ(first("@mixin --m(--a:) {}"), "@mixin --m(--a: ) {  }") << "an empty default is a default: the colon and the space are written";
+  EXPECT_EQ(first("@mixin --m(--a,,) {}"), "<no rule>") << "a second comma is no trailing comma";
 }
 
 /* ---- allocation failure ------------------------------------------------------------------------------------------------------------------------- */

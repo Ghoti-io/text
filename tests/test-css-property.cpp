@@ -1099,15 +1099,18 @@ TEST(CssProperty, PaintIsAnImageNotationOfThePaintingApi) {
 
 TEST(CssProperty, ADashedFunctionIsAnArbitrarySubstitutionFunctionWithItsOwnArguments) {
   const GTEXT_CSS_Registry * r = R();
-  // Mixins 1, 2: "<dashed-function>s are arbitrary substitution functions, like var()", "<dashed-function> = --*( <declaration-value>#? )"; Values 5 lets an argument that
-  // holds commas be wrapped in {}
+  // Mixins 1, 2: "<dashed-function>s are arbitrary substitution functions, like var()", "<dashed-function> = --*( [ <declaration-value>? ]#? ,? )" (the pin of 2026-11-07;
+  // the earlier one had "--*( <declaration-value>#? )") with the Note "That is, a comma-separated list of anything (including an empty value), optionally with a final trailing
+  // comma"; Values 5 lets an argument that holds commas be wrapped in {}
   EXPECT_EQ(parse(r, "top", "--func()"), "pending:--func()");
   EXPECT_EQ(parse(r, "top", "--func(auto ,100px ,#fff)"), "pending:--func(auto ,100px ,#fff)");
   EXPECT_EQ(parse(r, "top", "--func({1, 2, 3},{4})"), "pending:--func({1, 2, 3},{4})");
   EXPECT_EQ(parse(r, "top", "--func(--bar(), --baz(--fez()))"), "pending:--func(--bar(), --baz(--fez()))");
   EXPECT_EQ(parse(r, "top", "calc(--f(1px) + 2px)").substr(0, 8), "pending:");
-  EXPECT_EQ(parse(r, "top", "--func(a,)"), "invalid") << "no empty argument";
-  EXPECT_EQ(parse(r, "top", "--func(,)"), "invalid");
+  EXPECT_EQ(parse(r, "top", "--func(a,)"), "pending:--func(a,)") << "a final trailing comma";
+  EXPECT_EQ(parse(r, "top", "--func(,)"), "pending:--func(,)") << "\"--solo(,)\" passes a single empty argument";
+  EXPECT_EQ(parse(r, "top", "--func(a,,b)"), "pending:--func(a,,b)") << "an empty value";
+  EXPECT_EQ(parse(r, "top", "--func( , )"), "pending:--func( , )");
   EXPECT_EQ(parse(r, "top", "--func({})"), "invalid") << "an empty {} holds no value";
   EXPECT_EQ(parse(r, "top", "--func(123 {})"), "invalid") << "a {} is a whole argument";
   EXPECT_EQ(parse(r, "top", "--func({red !important})"), "invalid");

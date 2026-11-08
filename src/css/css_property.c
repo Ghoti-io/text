@@ -293,29 +293,19 @@ static GTEXT_CSS_Status compat_numbers(const GTEXT_Allocator * al, unsigned mode
 
 
 /**
- * The argument grammar of a dashed function (Mixins 1, 2.1): "<dashed-function> = --*( <declaration-value>#? )", so no arguments at all, or comma-separated
- * arguments none of which is empty ("Empty arguments are not allowed by <declaration-value>#"), with the {} wrapper of Values 5 as a whole argument that holds something
- * (a {} block beside other tokens, or an empty one, is no argument), and no top-level `;` or `!`.
+ * The argument grammar of a dashed function (Mixins 1, 2.1, as pinned 2026-11-07): "<dashed-function> = --*( [ <declaration-value>? ]#? ,? )", "That is, a comma-separated
+ * list of anything (including an empty value), optionally with a final trailing comma", so any number of comma-separated arguments, each of which may be empty, with the {}
+ * wrapper of Values 5 as a whole argument that holds something (a {} block beside other tokens, or an empty one, is no argument), and no top-level `;` or `!`. (The earlier
+ * pin had "--*( <declaration-value>#? )", which refused an empty argument and a trailing comma.) A final empty argument is dropped when the call is evaluated, so the syntax
+ * accepts every comma-separated list.
  */
 static bool dashed_function_syntax(const GTEXT_CSS_Component_Value * fn) {
-  bool any_item = false, has_content = false, has_block = false, has_other = false, block_empty = true;
-  bool commas = false;
+  bool has_content = false, has_block = false, has_other = false, block_empty = true;
   for (size_t k = 0; k <= fn->child_count; k++) {
     const GTEXT_CSS_Component_Value * c = k < fn->child_count ? &fn->children[k] : NULL;
     if (!c || (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA)) {
-      if (c) {
-        commas = true;
-      }
-      if (!has_content) {
-        if (c || commas || any_item) {
-          return false;  /* an empty argument */
-        }
-      }
-      else {
-        if (has_block && (has_other || block_empty)) {
-          return false;
-        }
-        any_item = true;
+      if (has_content && has_block && (has_other || block_empty)) {
+        return false;
       }
       has_content = has_block = has_other = false;
       block_empty = true;

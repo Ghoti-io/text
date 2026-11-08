@@ -155,6 +155,19 @@ TEST(CssFunctionSet, TheInvalidPreludesOfThePinnedPageDefineNothing) {
   }
 }
 
+/* The pin of 2026-11-07 (Mixins 1, 2.1): "<@function> = @function <function-token> <function-parameter>#? ,? )", "<default-value> = <declaration-value>?", "Whether a default
+   value is provided or omitted is determined by the presence or absence of the colon; an empty default value (like `@function --x(--arg:){}`) is perfectly valid." and "A final
+   trailing comma is allowed after the arguments". A comma that is not after an argument stays invalid (the page at-function-parsing.html has `(,)` and `(,,,)` invalid). */
+TEST(CssFunctionSet, AFinalTrailingCommaAndAnEmptyDefaultAreValid) {
+  for (const char * p : {"@function --foo(--x,)", "@function --foo(--x, --y,)", "@function --foo( --x , )", "@function --foo(--x:)", "@function --foo(--x: , --y)",
+                          "@function --foo(--x type(*):)", "@function --foo(--x:,)", "@function --foo(--x <length>: 1px,) returns <length>"}) {
+    EXPECT_TRUE(valid_prelude(p)) << p;
+  }
+  for (const char * p : {"@function --foo(--x,,)", "@function --foo(,--x)", "@function --foo(--x <length>:)", "@function --foo(--x <color>:,)", "@function --foo(--x,;)"}) {
+    EXPECT_FALSE(valid_prelude(p)) << p;
+  }
+}
+
 /* "The <function-token> production must start with two dashes (U+002D HYPHEN-MINUS), similar to <dashed-ident>, or else the definition is invalid." */
 TEST(CssFunctionSet, AFunctionNameWithoutTwoDashesIsInvalidAndReported) {
   Defs d({"@function foo(--x) { result: 1px }", "@function -foo() {}", "@function --() {}"});

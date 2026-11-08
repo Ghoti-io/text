@@ -5081,8 +5081,10 @@ static int step_call(css_sub * sub, size_t fi) {
       return STEP_ERROR;
     }
     f = &sub->frames[fi];
-    if (f->nargs == 1 && f->args[0].count == 0) {
-      f->nargs = 0;   /* `--f()` has no arguments, which is not one empty argument */
+    if (f->nargs >= 1 && f->args[f->nargs - 1].count == 0) {
+      /* "Each <declaration-value> has leading/trailing whitespace trimmed from it. If the final argument is empty, it's dropped." So `--f()` has no arguments (which is not one
+         empty argument), `--f(a,)` has one, `--f(a,,)` has two and `--solo(,)` passes a single empty argument. */
+      f->nargs--;
     }
     GTEXT_Allocator a = sub->alloc;
     f->cargs = gtext_allocator_calloc(&a, f->nargs ? f->nargs : 1, sizeof *f->cargs);

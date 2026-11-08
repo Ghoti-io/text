@@ -192,6 +192,36 @@ TEST(CssFunctionEval, ABraceArgumentIsOneArgument) {
   EXPECT_EQ(width_of(w, "width: --max-plus-x({ 1px, 7px, 2px }, 3px)"), "10px");
 }
 
+TEST(CssFunctionEval, AFinalEmptyArgumentIsDroppedAndAnotherCommaPassesOne) {
+  // Mixins 1 (pinned 2026-11-07), 2.2: "Each <declaration-value> has leading/trailing whitespace trimmed from it. If the final argument is empty, it's dropped." and "If you
+  // do want to pass an empty final argument, put another comma after it, like --func(1, 2,,) (or --solo(,) to pass a single empty argument)."
+  FnWorld w("@function --f(--a: 9, --b: 8, --c: 7) { result: [var(--a)][var(--b)][var(--c)]; }");
+  EXPECT_EQ(custom_of(w, "--r: --f()", "--r"), "[9][8][7]");
+  EXPECT_EQ(custom_of(w, "--r: --f(1,)", "--r"), "[1][8][7]");
+  EXPECT_EQ(custom_of(w, "--r: --f(1, 2, )", "--r"), "[1][2][7]");
+  EXPECT_EQ(custom_of(w, "--r: --f(1, 2,,)", "--r"), "[1][2][]");
+  EXPECT_EQ(custom_of(w, "--r: --f(,)", "--r"), "[][8][7]");
+  EXPECT_EQ(custom_of(w, "--r: --f(1,,)", "--r"), "[1][][7]");
+  EXPECT_EQ(custom_of(w, "--r: --f(,,3)", "--r"), "[][][3]");
+}
+
+TEST(CssFunctionEval, AnEmptyDefaultIsAValueAndAnEmptyArgumentIsNotGuaranteedInvalid) {
+  // Mixins 1 (pinned 2026-11-07), 2.1: "Whether a default value is provided or omitted is determined by the presence or absence of the colon; an empty default value (like
+  // `@function --x(--arg:){}`) is perfectly valid."
+  FnWorld w("@function --f(--a:) { result: [var(--a, none)]; } @function --g(--a) { result: [var(--a, none)]; }");
+  EXPECT_EQ(custom_of(w, "--r: --f()", "--r"), "[]");
+  EXPECT_EQ(custom_of(w, "--r: --f(5)", "--r"), "[5]");
+  EXPECT_EQ(custom_of(w, "--r: --g()", "--r"), "[none]");
+}
+
+TEST(CssFunctionEval, ATrailingCommaAfterTheParametersIsAllowed) {
+  // Mixins 1 (pinned 2026-11-07), 2.1: "<@function> = @function <function-token> <function-parameter>#? ,? )" and "Note: A final trailing comma is allowed after the arguments, to
+  // make formatting arguments across multiple lines easier." The example of the draft: --refs(--one: calc(var(--two) + var(--three)), --two: 5, --three: calc(var(--two) + 1),)
+  // called with no arguments returns 11.
+  FnWorld w("@function --refs(--one: calc(var(--two) + var(--three)), --two: 5, --three: calc(var(--two) + 1),) returns <integer> { result: var(--one); }");
+  EXPECT_EQ(custom_of(w, "--r: --refs()", "--r"), "11");
+}
+
 TEST(CssFunctionEval, ATypedParameterTakesTheDefaultForAnArgumentOfAnotherType) {
   // "a syntax of the parameter type": the registration of a parameter has the parameter's type, so a value that is not of it is invalid, and the next of first-valid() is used.
   FnWorld w(
