@@ -2463,6 +2463,14 @@ static bool expand4(const span * in, size_t n, span * out4) {
   return true;
 }
 
+/// A computed zero length or percentage: `0`, `0px` or `0%`.
+static bool zero_span(span t) {
+  if (t.n == 0 || t.p[0] != '0') {
+    return false;
+  }
+  return t.n == 1 || (t.n == 2 && t.p[1] == '%') || (t.n == 3 && t.p[1] == 'p' && t.p[2] == 'x');
+}
+
 /// The radii after `round`, written as the shortest form: both lists of a `/` pair expanded to the four corners, each shortened, and the second list left out when it
 /// is the first. Both pinned browsers write `inset(0px round 10px)` for `inset(0 round 10px 10px 10px 10px)` and `round 3px` for `round 3px 3px / 3px 3px`
 /// (tools/conformance/css_browser_answers.jsonl, cases radii.*). Returns false (and writes nothing) when the list is not made of 1 to 4 terms on each side.
@@ -2492,6 +2500,16 @@ static bool put_round_short(sb * out, const span * t, size_t n, size_t r, bool *
     for (size_t i = 0; i < 4; i++) {
       same_lists = same_lists && span_same(h[i], v[i]);
     }
+  }
+  /* Shapes 1, 3.3: "For serializing computed values, component values are computed, and omitted when possible without changing the meaning": radii that are all zero (`round 0px`,
+     `round 0px 0px / 0% 0%`) change nothing, and both pinned browsers write `inset(0px)` for `inset(0 round 0)` (tools/conformance/css_browser_answers.jsonl, case radii.36) */
+  bool all_zero = true;
+  for (size_t i = 0; i < 4 && all_zero; i++) {
+    all_zero = zero_span(h[i]) && (slash >= n || zero_span(v[i]));
+  }
+  if (all_zero) {
+    *changed = true;
+    return true;
   }
   const size_t hk = shortest4(h);
   sb_puts(out, " round ");

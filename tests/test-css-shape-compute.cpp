@@ -158,6 +158,12 @@ TEST(CssShapeCompute, LengthsAreAbsoluteEvenWhereThePropertyIsAsSpecified) {
       {"offset-path", "polygon(round 1em, 1px 2px, 3em 4em)", "polygon(round 16px, 1px 2px, 48px 64px)"},
       {"offset-path", "polygon(round calc(1em + 2px), 1px 2px, 3px 4px)", "polygon(round 18px, 1px 2px, 3px 4px)"},
       {"offset-path", "inset(0px round 0px 1px 2% 3em)", "inset(0px round 0px 1px 2% 48px)"},
+      // Shapes 1, 3.3: "For serializing computed values, component values are computed, and omitted when possible without changing the meaning": radii that are all zero are left out
+      // (both pinned browsers, case radii.36 of the record)
+      {"clip-path", "inset(0 round 0)", "inset(0px)"},
+      {"clip-path", "inset(10% round 0px 0px 0px 0px)", "inset(10%)"},
+      {"clip-path", "inset(10% round 0px 0% / 0px 0px)", "inset(10%)"},
+      {"clip-path", "inset(10% round 0px 1px)", "inset(10% round 0px 1px)"},
   });
 }
 
