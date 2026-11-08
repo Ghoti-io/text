@@ -1,0 +1,30 @@
+# Defects planted in this library's INI sources, for tools/ini/plant-sweep.py (make check-ini-sweep-plants): each is a rule of the writer, the document model or the value
+# codec undone, and the sweep of tests/test-ini-sweep.cpp must fail on every one. Most are the defects the fuzzer of the writer found one round at a time (a carriage return
+# before the terminator's line feed, a lone carriage return where it ends a line, a key that reads as a comment, a line end in a name); the others are what the sweep found when
+# it was built. Nothing here is a defect of the library: the lines are what the tree would be if the rule were not there.
+#
+# name <TAB> file under src/ini <TAB> old text (unique in the file; \n is a newline) <TAB> new text
+#
+writer-reads-the-output-under-the-documents-crlf	ini_writer.c	  if (effective.crlf) read_dialect.accept_crlf = true;\n	\n
+writer-skips-the-locale-key-rule	ini_writer.c	  if (doc->dialect.require_unlocalized_key && doc->dialect.locale_postfix) {	  if (0) {
+writer-allows-a-bom-key-at-the-start	ini_writer.c	  if (out->total == 0 && doc->dialect.skip_bom && ini_bom_prefixed(key)) {	  if (0) {
+writer-drops-the-last-entry-of-a-group	ini_writer.c	    for (size_t e = 0; e < group->count; e++) {\n      const ini_entry * entry = &group->entries[e];	    for (size_t e = 0; e + 1 < group->count; e++) {\n      const ini_entry * entry = &group->entries[e];
+writer-writes-a-trailing-cr-before-the-terminators-lf	ini_value.c	  if (dialect->accept_crlf && value[value_len - 1] == '\r' &&	  if (dialect->accept_crlf && value[value_len - 1] == '\r' && 0 &&
+writer-writes-a-lone-cr-where-it-ends-a-line	ini_value.c	    if (dialect->lone_cr_terminates && value[i] == '\r') return false;\n	\n
+writer-writes-a-trailing-blank-a-dialect-trims	ini_value.c	  if (dialect->trim_trailing_space &&\n      gtext_ini_is_space(dialect, value[value_len - 1])) {	  if (0 &&\n      gtext_ini_is_space(dialect, value[value_len - 1])) {
+writer-writes-a-leading-blank-of-a-scanned-value	ini_value.c	    if (gtext_ini_is_space(dialect, value[0])) return false;\n    ini_value_scan scan;	    ini_value_scan scan;
+writer-writes-an-unbalanced-quote	ini_value.c	            &scan) != GTEXT_INI_OK) {\n      return false;\n    }	            &scan) != GTEXT_INI_OK) {\n      return true;\n    }
+writer-writes-a-bare-trailing-backslash	ini_value.c	    return !scan.trailing_backslash || next == '\0';	    return true;
+writer-writes-a-line-with-a-trailing-blank-of-an-indented-value	ini_value.c	    if (!verbatim && content_end > i && gtext_ini_is_space(dialect, value[content_end - 1])) return false;\n	\n
+document-model-takes-a-group-name-with-a-line-end	ini_dom.c	  if (memchr(name, 	  if (0 && memchr(name, 
+document-model-takes-a-key-with-a-line-end	ini_dom.c	  if (memchr(key, 	  if (0 && memchr(key, 
+document-model-takes-a-key-that-reads-as-a-comment	ini_dom.c	  return !(key[0] == '[' || (key[0] == '#' && dialect->comment_hash) || (key[0] == ';' && dialect->comment_semicolon));	  return true;
+document-model-takes-a-key-with-a-blank-at-an-end	ini_dom.c	  if (gtext_ini_is_space(dialect, key[0]) || gtext_ini_is_space(dialect, key[len - 1])) return false;\n	\n
+codec-does-not-quote	ini_value.c	  if (!dialect->quoted_values) return GTEXT_INI_E_UNREPRESENTABLE;	  if (1) return GTEXT_INI_E_UNREPRESENTABLE;
+codec-does-not-check-its-encoding	ini_value.c	    if (serves == GTEXT_INI_OK) {	    if (1) {
+codec-skips-the-writers-rule	ini_value.c	  if (!gtext_ini_value_writable(dialect, candidate, candidate_len, 	  if (0 && !gtext_ini_value_writable(dialect, candidate, candidate_len, 
+codec-does-not-spell-a-leading-space	ini_value.c	                (c == ' ' && i == 0) ||	                (c == ' ' && i == 99999) ||
+codec-does-not-spell-a-trailing-blank	ini_value.c	                (c == ' ' && i + 1 == text_len && dialect->trim_trailing_space);	                (c == ' ' && i + 1 == text_len && 0);
+codec-does-not-spell-a-trailing-backslash-by-number	ini_value.c	    if (c == '\\' && i + 1 == text_len && dialect->numeric_escapes &&	    if (0 && c == '\\' && i + 1 == text_len && dialect->numeric_escapes &&
+codec-does-not-spell-a-line-feed-inside-quotes	ini_value.c	c == '\t' ? 't' : 0;\n    if (letter) {	c == '\t' ? 't' : 0;\n    if (c == 10) letter = 0;\n    if (letter) {
+reader-does-not-flush-the-blank-before-a-quote	ini_value.c	      kept = w;\n      quote = !quote;	      quote = !quote;

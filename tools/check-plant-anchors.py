@@ -24,7 +24,7 @@ A planted defect is a text that must occur exactly once in one source file and w
 (a later commit moved the code) edits nothing, so the gate that is meant to fail on it passes: it is a gate that cannot fail. A text
 that matches twice is edited in the wrong place or refused. The plant tools refuse both when they run, but they run only in the gates
 that build and execute programs; this reads the lists and the sources and nothing else, so `make test` finds a stale anchor on the
-commit that moves the code. It covers every tab separated plant list of tools/conformance, tools/oracle and tools/encoding (the
+commit that moves the code. It covers every tab separated plant list of tools/conformance, tools/oracle, tools/encoding and tools/ini (the
 tables inside tools/*/plant-fuzz.py are tools/check-fuzz-plant-anchors.py's), and checks that the lists which name plants of other
 lists (the oracle populations) name plants that exist.
 
@@ -42,7 +42,7 @@ ROOT = os.path.dirname(HERE)
 
 # list path, layout. Layouts: "nfoc" = name, file, old, new[, ...]; "html-serializer" = name, letter, old, new (the file is fixed);
 # "serialize-oracle" = name, old, new (fixed file). Directories under src/ that a file column may be relative to.
-SRC_DIRS = ["src/css", "src", "src/html", "src/markup", "src/encoding", "src/xml"]
+SRC_DIRS = ["src/css", "src", "src/html", "src/markup", "src/encoding", "src/xml", "src/ini"]
 LISTS = [
     ("tools/conformance/CSS_ANIMATION_PLANTS", "nfoc"),
     ("tools/conformance/CSS_TRANSITION_PLANTS", "nfoc"),
@@ -65,6 +65,7 @@ LISTS = [
     ("tools/oracle/HTML_SERIALIZE_ORACLE_PLANTS", "serialize-oracle"),
     ("tools/oracle/HTML_SNIFF_ORACLE_PLANTS", "nfoc"),
     ("tools/encoding/UNIT_PLANTS", "nfoc"),
+    ("tools/ini/INI_SWEEP_PLANTS", "nfoc"),
 ]
 SERIALIZER = "src/html/html_serialize.c"
 # lists whose runner applies the lines of one name to several files

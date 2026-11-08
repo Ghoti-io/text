@@ -11,6 +11,7 @@ The libFuzzer harnesses:
 | TOML | `fuzz_toml.cpp` | `make fuzz-toml` | `make fuzz-run-toml` |
 | TOML writer | `fuzz_toml_writer.cpp` | `make fuzz-toml-writer` | `make fuzz-run-toml-writer` |
 | INI  | `fuzz_ini.cpp`  | `make fuzz-ini`  | `make fuzz-run-ini`  |
+| INI writer | `fuzz_ini_writer.cpp` | `make fuzz-ini-writer` | `make fuzz-run-ini-writer` |
 | Markup tree | `fuzz_markup_tree.cpp` | `make fuzz-markup-tree` | `make fuzz-run-markup-tree` |
 | XML parsers | `fuzz_xml.cpp` | `make fuzz-xml` | `make fuzz-run-xml` |
 | XML writer | `fuzz_xml_writer.cpp` | `make fuzz-xml-writer` | `make fuzz-run-xml-writer` |
@@ -842,6 +843,19 @@ of file, or before a `\r\n` terminator that supplies its own CR, it round-trips
 fine. So `ini_value_writable()` takes the byte that will follow the value, and
 refuses exactly the values that would read back differently rather than every
 value that looks dangerous. A writer that is too strict is a defect too.
+
+## Fuzzing the INI writer
+
+`fuzz_ini_writer.cpp` reads its input as a program for the document model: the first byte picks one of the seven dialects, the second the options of the write
+(CRLF, comments, normalizing), and the rest are the groups added and the keys set, each with a name and a value of up to seven bytes. The property is the writer's
+promise, and it is not written in the harness: it is `tests/ini_writer_model.h`, the oracle that `tests/test-ini-sweep.cpp` asks about a table of boundary strings
+under every dialect, every option and every entry point. A document the model accepts is either refused by the writer with `GTEXT_INI_E_UNREPRESENTABLE` or written so
+that it reads back as the groups, keys and values it was given (up to the normalizations the dialect defines, which the header lists).
+
+The harness had its own copy of that model, and seven rounds of it each found a corner of one dialect (a carriage return in a Win32 group name, a line end in a systemd
+key, a Desktop Entry value of one carriage return written with CRLF), some of them the library's and some the model's. Sharing it means a rule the fuzzer teaches is
+the sweep's from then on, and a finding of the fuzzer is reproduced by the sweep's table when it is a class and not an accident of the bytes. A reproducer is kept in
+`corpus/ini-writer/` as `reproducer-*.seed`, and `tests/test-ini-fuzz-seeds.cpp` replays that directory in `make test`.
 
 ## The options byte
 
