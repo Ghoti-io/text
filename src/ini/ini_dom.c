@@ -463,6 +463,24 @@ const char * gtext_ini_group_get_nth(const GTEXT_INI_Group * group,
   return ini_out(&group->entries[index].value, len);
 }
 
+/**
+ * Release what a fresh entry holds, for one that could not be finished.
+ *
+ * gtext_ini_group_push() hands out a zeroed entry and ini_entry_init() fills its strings one by one, so an allocation that fails partway leaves the ones before it
+ * allocated. Backing the count out (`group->count--`) forgot them: every set() or add() that ran out of memory after its key had been copied leaked the key, and
+ * the write that follows (the document is still a document) never saw them. Found by the sweep of every allocation of building a document, which asks that nothing
+ * leak after the n-th allocation fails and had not been run on this module before.
+ */
+static void ini_entry_discard(const GTEXT_Allocator * alloc, ini_entry * entry) {
+  gtext_ini_str_clear(alloc, &entry->key);
+  gtext_ini_str_clear(alloc, &entry->canon);
+  gtext_ini_str_clear(alloc, &entry->value);
+  gtext_ini_str_clear(alloc, &entry->pre);
+  gtext_ini_str_clear(alloc, &entry->sep);
+  gtext_ini_str_clear(alloc, &entry->eol);
+  gtext_ini_str_clear(alloc, &entry->comment);
+}
+
 /** Fill in a fresh entry's key, value and synthesized punctuation. */
 static GTEXT_INI_Status ini_entry_init(GTEXT_INI_Group * group,
     ini_entry * entry, const char * key, size_t key_len, const char * value,
@@ -537,7 +555,10 @@ GTEXT_INI_Status gtext_ini_group_set(GTEXT_INI_Group * group, const char * key,
   if (!entry) return GTEXT_INI_E_OOM;
   GTEXT_INI_Status status =
       ini_entry_init(group, entry, key, key_len, value, value_len);
-  if (status != GTEXT_INI_OK) group->count--;
+  if (status != GTEXT_INI_OK) {
+    ini_entry_discard(group->doc->alloc, entry);
+    group->count--;
+  }
   return status;
 }
 
@@ -556,7 +577,10 @@ GTEXT_INI_Status gtext_ini_group_add(GTEXT_INI_Group * group, const char * key,
   if (!entry) return GTEXT_INI_E_OOM;
   GTEXT_INI_Status status =
       ini_entry_init(group, entry, key, key_len, value, value_len);
-  if (status != GTEXT_INI_OK) group->count--;
+  if (status != GTEXT_INI_OK) {
+    ini_entry_discard(group->doc->alloc, entry);
+    group->count--;
+  }
   return status;
 }
 
