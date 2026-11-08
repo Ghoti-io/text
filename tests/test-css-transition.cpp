@@ -500,6 +500,22 @@ TEST(CssTransition, OnlyTheRadiiOfAShapeAreClamped) {
   EXPECT_EQ(t.shown(after, "shape-outside", 75000), "circle(10px at -10px 5px)");
 }
 
+/* The same for the offsets that precede `round` in inset(), rect() and xywh() (the last two compute to inset(), the left offset of xywh(-20px ...) being the one that moves): they are lengths that may be negative, and only the radii after `round` are clamped. */
+TEST(CssTransition, TheOffsetsBeforeRoundOfAnInsetAreNotClamped) {
+  struct Case {
+    const char * from;
+    const char * to;
+    const char * want;
+  };
+  for (const Case & c : {Case{"inset(10px)", "inset(-20px)", "inset(-5px)"}, Case{"inset(10px round 8px)", "inset(-20px round 8px)", "inset(-5px round 8px)"},
+                          Case{"xywh(10px 10px 50px 50px)", "xywh(-20px 10px 50px 50px)", "inset(10px calc(100% - 45px) calc(100% - 60px) -5px)"}}) {
+    Tx t;
+    const std::string after = std::string("transition: all 100s linear; shape-outside: ") + c.to;
+    ASSERT_EQ(t.event(std::string("shape-outside: ") + c.from, after, 0), GTEXT_CSS_OK) << c.from;
+    EXPECT_EQ(t.shown(after, "shape-outside", 50000), c.want) << c.from;
+  }
+}
+
 /* A flow-relative name in `transition-property` stands for the physical property it shares its value with, and the flow-relative property is not transitioned on its own (CSS Logical 1). */
 TEST(CssTransition, AFlowRelativePropertyTransitionsAsItsPhysicalOne) {
   Tx t;
