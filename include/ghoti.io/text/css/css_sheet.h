@@ -390,6 +390,9 @@ typedef struct {
   bool starting_style;
   /** The context of the container queries of this call: the memo that makes a walk over a tree linear (css_container.h). NULL: one private to the call. */
   GTEXT_CSS_Condition_Call * call;
+  /** The flow (`writing-mode`, `direction`, `text-orientation`) of the originating element of the pseudo-element asked for, which says which button `::scroll-button(up)` and
+   *  `::scroll-button(block-start)` are (gtext_css_selector_match_in_flow()). NULL: the initial values, `horizontal-tb` and `ltr`. Not copied; it must outlive the call. */
+  const GTEXT_CSS_Flow * flow;
 } GTEXT_CSS_Rules_Collect_Options;
 
 /**

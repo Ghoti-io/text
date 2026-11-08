@@ -463,3 +463,9 @@ tracker-keeps-the-previous-style	cssom_computed.c	  gtext_css_computed_free(e->b
 tracker-pseudo-element-shares-the-elements-set	cssom_computed.c	    *key = s->name.data ? s->name.data : "";\n    *length = s->name.data ? s->name.length : 0;	    *key = "";\n    *length = 0;	transition
 tracker-forget-keeps-the-set	cssom_computed.c	    if (tracker->entries[i].element == element) {\n      entry_release(tracker, &tracker->entries[i]);	    if (0 && tracker->entries[i].element == element) {\n      entry_release(tracker, &tracker->entries[i]);	transition
 tracker-chain-skips-the-ancestors	cssom_computed.c	  for (size_t i = n; st == GTEXT_CSS_OK && i-- > 0;) {\n    /* each element's own after-change style	  for (size_t i = n > 0 ? 1 : 0; st == GTEXT_CSS_OK && i-- > 0;) {\n    /* each element's own after-change style	transition
+scroll-button-physical-direction-ignores-the-flow	css_match.c	    const GTEXT_CSS_Flow * flow = ctx->request_flow ? ctx->request_flow : &initial;	    const GTEXT_CSS_Flow * flow = &initial;	computed,match
+scroll-button-star-selects-nothing	css_match.c	    if (a->anb_a == 1) {\n      return true;	    if (a->anb_a == 1) {\n      return false;	computed,match
+scroll-button-direction-matched-by-spelling	css_match.c	    return b->anb_a != 1 && sa >= 0 && sa == sb;	    return b->anb_a != 1 && a->strings[0].length == b->strings[0].length && memcmp(a->strings[0].data, b->strings[0].data, a->strings[0].length) == 0;	computed,match
+scroll-button-flow-not-passed-by-the-style	css_style.c	    ro.flow = options->pseudo_flow;	    ro.flow = NULL;	computed
+scroll-button-flow-not-passed-by-the-document	cssom_computed.c	    so.pseudo_flow = &origin_flow;	    so.pseudo_flow = NULL;	computed
+scroll-button-flow-not-given-to-the-matcher	css_rule_index.c	  ctx->request_flow = pseudo && options ? options->flow : NULL;	  ctx->request_flow = NULL;	computed

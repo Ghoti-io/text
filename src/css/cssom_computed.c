@@ -653,9 +653,13 @@ static GTEXT_CSS_Status compute_one_hl(css_core * core, css_cmps * cs, const GTE
   so.rules = index;
   so.match = cs->match;
   so.container_call = &cs->call;
+  GTEXT_CSS_Flow origin_flow;
   if (pseudo) {
     so.pseudo = pseudo;
     so.sources = 0;   /* the element's own style attribute and presentation attributes are not the pseudo-element's */
+    /* `parent` is the originating element's style: its writing mode says which button of a scroll container `::scroll-button(up)` and `::scroll-button(block-start)` are */
+    origin_flow = gtext_css_computed_flow(parent);
+    so.pseudo_flow = &origin_flow;
   }
   /* the animations of the sheets' `@keyframes`, sampled at the times the caller's layout gives */
   GTEXT_CSS_Style_Animation anim;

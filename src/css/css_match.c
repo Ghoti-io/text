@@ -787,7 +787,51 @@ static bool exists_above(struct GTEXT_CSS_Selector_Match_Context * ctx, const GT
 
 /* ---- a complex selector with pseudo-elements and the shadow selectors ------------------------------------------------- */
 
-static bool same_pe(const GTEXT_CSS_Simple * a, const GTEXT_CSS_Simple * b) {
+/// `::scroll-button()`: "Four distinct ::scroll-button() pseudo-elements can exist on a scroll container, each associated with a flow-relative direction, based on their originating
+/// element's writing mode: in order, block-start, inline-start, inline-end, and block-end", and the argument "selects the ::scroll-button() corresponding to the given physical direction"
+/// (`up`, `down`, `left`, `right`) or "the indicated" flow-relative one; `*` "selects all four". The slot (0 to 3, in that order) of the button an argument names in `flow`, or -1 for `*`.
+/// The argument is as the parser keeps it: the row's own spelling, in lower case.
+static int scroll_button_slot(const GTEXT_CSS_Simple * s, const GTEXT_CSS_Flow * flow) {
+  if (s->anb_a == 1 || s->string_count != 1) {
+    return -1;
+  }
+  const GTEXT_CSS_String * w = &s->strings[0];
+  struct {
+    const char * name;
+    int slot;     /* the flow-relative direction it is, or -1 for a physical one */
+    GTEXT_CSS_Side side;
+  } const names[] = {
+      {"block-start", 0, GTEXT_CSS_SIDE_TOP}, {"inline-start", 1, GTEXT_CSS_SIDE_TOP}, {"inline-end", 2, GTEXT_CSS_SIDE_TOP}, {"block-end", 3, GTEXT_CSS_SIDE_TOP},
+      {"up", -1, GTEXT_CSS_SIDE_TOP}, {"right", -1, GTEXT_CSS_SIDE_RIGHT}, {"down", -1, GTEXT_CSS_SIDE_BOTTOM}, {"left", -1, GTEXT_CSS_SIDE_LEFT},
+  };
+  for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
+    if (w->length != strlen(names[i].name) || memcmp(w->data, names[i].name, w->length) != 0) {
+      continue;
+    }
+    if (names[i].slot >= 0) {
+      return names[i].slot;
+    }
+    const GTEXT_CSS_Side sides[4] = {gtext_css_flow_block_side(flow, false), gtext_css_flow_inline_side(flow, false), gtext_css_flow_inline_side(flow, true),
+        gtext_css_flow_block_side(flow, true)};
+    for (int k = 0; k < 4; k++) {
+      if (sides[k] == names[i].side) {
+        return k;
+      }
+    }
+  }
+  return -1;
+}
+
+static bool same_pe(const struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CSS_Simple * a, const GTEXT_CSS_Simple * b) {
+  if (a->pseudo == GTEXT_CSS_SEL_PE_SCROLL_BUTTON_FN && b->pseudo == a->pseudo) {
+    static const GTEXT_CSS_Flow initial = {GTEXT_CSS_WRITING_MODE_HORIZONTAL_TB, GTEXT_CSS_DIRECTION_LTR, GTEXT_CSS_TEXT_ORIENTATION_MIXED};
+    const GTEXT_CSS_Flow * flow = ctx->request_flow ? ctx->request_flow : &initial;
+    const int sa = scroll_button_slot(a, flow), sb = scroll_button_slot(b, flow);
+    if (a->anb_a == 1) {
+      return true;   /* `*`: all four buttons (and the request that says `*`) */
+    }
+    return b->anb_a != 1 && sa >= 0 && sa == sb;
+  }
   if (a->pseudo != b->pseudo || a->anb_a != b->anb_a || a->anb_b != b->anb_b || a->string_count != b->string_count) {
     return false;
   }
@@ -891,7 +935,7 @@ bool css_match_complex_full(struct GTEXT_CSS_Selector_Match_Context * ctx, const
   size_t ri = 0;
   for (size_t i = after; i < last->simple_count; i++) {
     const GTEXT_CSS_Simple * s = &last->simples[i];
-    if (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_ELEMENT && !same_pe(s, &rc->simples[ri++])) {
+    if (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_ELEMENT && !same_pe(ctx, s, &rc->simples[ri++])) {
       return false;
     }
   }
@@ -940,9 +984,15 @@ static bool callbacks_present(struct GTEXT_CSS_Selector_Match_Context * ctx, con
 
 GTEXT_CSS_Status gtext_css_selector_match(const GTEXT_CSS_Selector_List * list, GTEXT_CSS_Selector_Match_Context * ctx, GTEXT_CSS_Element_Handle element,
     const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Selector_Match_Result * result) {
+  return gtext_css_selector_match_in_flow(list, ctx, element, pseudo, NULL, result);
+}
+
+GTEXT_CSS_Status gtext_css_selector_match_in_flow(const GTEXT_CSS_Selector_List * list, GTEXT_CSS_Selector_Match_Context * ctx, GTEXT_CSS_Element_Handle element,
+    const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Flow * flow, GTEXT_CSS_Selector_Match_Result * result) {
   if (!list || !ctx || !element) {
     return GTEXT_CSS_E_INVALID;
   }
+  ctx->request_flow = flow;
   const GTEXT_CSS_Complex * request = NULL;
   if (pseudo) {
     if (pseudo->count != 1 || pseudo->complex[0].compound_count != 1 || pseudo->complex[0].compounds[0].first_pseudo_element != 0 ||

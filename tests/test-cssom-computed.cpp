@@ -234,6 +234,78 @@ TEST(CssomComputed, AHighlightInheritsFromTheSameHighlightOfTheParentElementWhet
   EXPECT_EQ(read("#c", nullptr, "background-color"), "rgba(0, 0, 0, 0)");
 }
 
+/* Overflow 5, "Scroll Buttons": "Four distinct ::scroll-button() pseudo-elements can exist on a scroll container, each associated with a flow-relative direction, based on their
+   originating element's writing mode: in order, block-start, inline-start, inline-end, and block-end." and "The four ::scroll-button() pseudo-elements are individually selected by the
+   selector's argument. A '*' arguments selects all four ::scroll-button()s; otherwise the selected pseudo-element is determined by the <scroll-button-direction> value": a physical
+   direction "selects the ::scroll-button() corresponding to the given physical direction", a flow-relative one "selects the indicated ::scroll-button() pseudo-element". The page of
+   css-overflow/scroll-markers/scroll-button-argument-case-insensitive.html asks the same of getComputedStyle(): neither browser answers it the way its comment says (Chromium answers
+   "up" for `down` and Firefox does not know the pseudo-element), so the served text decides. */
+TEST(CssomComputed, AScrollButtonIsTheOneItsArgumentNamesInTheFlowOfItsScrollContainerAndTheArgumentIsCaseInsensitive) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       ".scroller { width: 100px; height: 100px; overflow: auto; }"
+       ".scroller::scroll-button(*) { content: \"*\"; }"
+       "#physical::scroll-button(UP) { content: \"up\"; }"
+       "#logical::scroll-button(Inline-End) { content: \"inline-end\"; }"
+       "#lowercase::scroll-button(up) { content: \"up\"; } #lowercase::scroll-button(inline-end) { content: \"inline-end\"; }"
+       "</style></head><body><div id=physical class=scroller></div><div id=logical class=scroller></div><div id=lowercase class=scroller></div></body></html>");
+  auto content = [&](const char * element, std::string direction) {
+    Decl d = m.computed(element, ("::scroll-button(" + direction + ")").c_str());
+    return get(d.d, "content");
+  };
+  EXPECT_EQ(content("#physical", "up"), "\"up\"") << "::scroll-button(UP) is the up button";
+  for (const char * other : {"down", "left", "right"}) {
+    EXPECT_EQ(content("#physical", other), "\"*\"") << other << ": only the up button has the rule that says UP";
+  }
+  EXPECT_EQ(content("#logical", "inline-end"), "\"inline-end\"");
+  for (const char * other : {"block-start", "inline-start", "block-end"}) {
+    EXPECT_EQ(content("#logical", other), "\"*\"") << other;
+  }
+  EXPECT_EQ(content("#lowercase", "UP"), "\"up\"") << "the argument of getComputedStyle() is ASCII case-insensitive too";
+  EXPECT_EQ(content("#lowercase", "Block-Start"), "\"up\"") << "in a horizontal-tb element the block-start button is the up one";
+  EXPECT_EQ(content("#lowercase", "INLINE-END"), "\"inline-end\"");
+  EXPECT_EQ(content("#lowercase", "Right"), "\"inline-end\"") << "and with ltr the inline-end button is the right one";
+  EXPECT_EQ(content("#lowercase", "Down"), "\"*\"");
+  EXPECT_EQ(content("#lowercase", "*"), "\"*\"") << "a request of '*' names no one button: only the rule of '*' is for it";
+}
+
+/* The same sentences for every flow: a physical direction names the button that points that way, so which flow-relative button it is depends on `writing-mode` and `direction` of the
+   scroll container (Writing Modes 4: block-start is the top of a horizontal-tb box, the right of a vertical-rl one and the left of a vertical-lr one; inline-start is the left of an ltr
+   horizontal-tb box and the top of an ltr vertical one, and the other side with rtl). A rule for each of the eight arguments is asked for with each of the eight. */
+TEST(CssomComputed, TheButtonAPhysicalDirectionNamesIsTheOneOfTheWritingModeAndDirection) {
+  struct Flow {
+    const char * style;
+    const char * up, * right, * down, * left;   /* the flow-relative button each physical direction is */
+  };
+  const Flow flows[] = {
+      {"writing-mode: horizontal-tb; direction: ltr", "block-start", "inline-end", "block-end", "inline-start"},
+      {"writing-mode: horizontal-tb; direction: rtl", "block-start", "inline-start", "block-end", "inline-end"},
+      {"writing-mode: vertical-rl; direction: ltr", "inline-start", "block-start", "inline-end", "block-end"},
+      {"writing-mode: vertical-rl; direction: rtl", "inline-end", "block-start", "inline-start", "block-end"},
+      {"writing-mode: vertical-lr; direction: ltr", "inline-start", "block-end", "inline-end", "block-start"},
+      {"writing-mode: vertical-lr; direction: rtl", "inline-end", "block-end", "inline-start", "block-start"},
+  };
+  const char * const logical[] = {"block-start", "inline-start", "inline-end", "block-end"};
+  for (const Flow & f : flows) {
+    const std::pair<const char *, const char *> physical[] = {{"up", f.up}, {"right", f.right}, {"down", f.down}, {"left", f.left}};
+    for (const auto & p : physical) {
+      SCOPED_TRACE(std::string(f.style) + "; ::scroll-button(" + p.first + ")");
+      Cs m(std::string("<!DOCTYPE html><html><head><style>#e { overflow: auto; ") + f.style + "; } #e::scroll-button(*) { content: \"*\"; } #e::scroll-button(" + p.first +
+           ") { content: \"hit\"; }</style></head><body><div id=e></div></body></html>");
+      auto content = [&](const char * direction) {
+        Decl d = m.computed("#e", (std::string("::scroll-button(") + direction + ")").c_str());
+        return get(d.d, "content");
+      };
+      EXPECT_EQ(content(p.first), "\"hit\"");
+      for (const char * l : logical) {
+        EXPECT_EQ(content(l), std::string(l) == p.second ? "\"hit\"" : "\"*\"") << l << " (the " << p.first << " button is the " << p.second << " one)";
+      }
+      for (const char * q : {"up", "right", "down", "left"}) {
+        EXPECT_EQ(content(q), std::string(q) == p.first ? "\"hit\"" : "\"*\"") << q;
+      }
+    }
+  }
+}
+
 /* "for highlight pseudo-elements originating from the root element the inherited value of 'color' is currentColor": the keyword, which each element that inherits it reads as its own color */
 TEST(CssomComputed, TheColorOfARootHighlightIsCurrentColorAndStandsForTheColorOfTheElementThatInheritsIt) {
   Cs m("<!DOCTYPE html><html><head><style>"

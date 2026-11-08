@@ -1362,6 +1362,7 @@ GTEXT_CSS_Status gtext_css_rules_collect(const GTEXT_CSS_Rule_Index * x, GTEXT_C
     const GTEXT_CSS_Simple * first = &pseudo->complex[0].compounds[0].simples[0];
     w.from_element = !(first->pseudo == GTEXT_CSS_SEL_PE_SLOTTED_FN || first->pseudo == GTEXT_CSS_SEL_PE_PART_FN);
   }
+  ctx->request_flow = pseudo && options ? options->flow : NULL;   /* a pointer of the caller's: no other call of the context sees it */
   w.starting_style = options && options->starting_style;
   w.res = res;
   GTEXT_CSS_Condition_Call local_call;

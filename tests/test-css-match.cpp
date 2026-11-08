@@ -26,6 +26,7 @@
  */
 
 #include <chrono>
+#include <cstring>
 #include <functional>
 #include <string>
 #include <vector>
@@ -529,6 +530,56 @@ TEST_F(CssMatch, NamespacesThroughACompiledSelectorWithAMap) {
   EXPECT_EQ(run("*|x", &withdefault), "a1 b1");
   EXPECT_EQ(run("y", &withdefault), "");
   EXPECT_EQ(run("b|x", nullptr), "!invalid");
+}
+
+/* Overflow 5, "Scroll Buttons": the four ::scroll-button() pseudo-elements of a scroll container are each "associated with a flow-relative direction, based on their originating element's
+   writing mode", and a physical direction in the argument "selects the ::scroll-button() corresponding to the given physical direction". A pseudo-element asked for is the button of one
+   direction in the flow of its originating element, and a selector matches it when it names the same one. */
+TEST(CssMatchInterface, AScrollButtonSelectorMatchesTheButtonItNamesInTheFlowItIsAskedIn) {
+  Doc d;
+  ASSERT_TRUE(d.html(kPage));
+  GTEXT_CSS_Markup_Adapter * ad = nullptr;
+  ASSERT_EQ(gtext_css_markup_adapter_new(d.doc, nullptr, &ad), GTEXT_CSS_OK);
+  GTEXT_CSS_Selector_Match_Options mo = gtext_css_markup_match_options(ad);
+  GTEXT_CSS_Selector_Match_Context * ctx = nullptr;
+  ASSERT_EQ(gtext_css_selector_match_context_new(gtext_css_markup_interface(ad), &mo, &ctx), GTEXT_CSS_OK);
+  auto parse = [](const char * text) {
+    GTEXT_CSS_Selector_List * l = nullptr;
+    EXPECT_EQ(gtext_css_selector_parse(text, strlen(text), nullptr, &l, nullptr), GTEXT_CSS_OK) << text;
+    return l;
+  };
+  auto asks = [&](const char * rule, const char * button, const GTEXT_CSS_Flow * flow) {
+    GTEXT_CSS_Selector_List * l = parse(rule);
+    GTEXT_CSS_Selector_List * q = parse(button);
+    GTEXT_CSS_Selector_Match_Result r;
+    EXPECT_EQ(flow ? gtext_css_selector_match_in_flow(l, ctx, d.at("p1"), q, flow, &r) : gtext_css_selector_match(l, ctx, d.at("p1"), q, &r), GTEXT_CSS_OK);
+    gtext_css_selector_list_free(l);
+    gtext_css_selector_list_free(q);
+    return r.matched;
+  };
+  GTEXT_CSS_Flow horizontal;
+  memset(&horizontal, 0, sizeof horizontal);
+  GTEXT_CSS_Flow vertical = horizontal;
+  vertical.writing_mode = GTEXT_CSS_WRITING_MODE_VERTICAL_RL;
+  GTEXT_CSS_Flow rtl = horizontal;
+  rtl.direction = GTEXT_CSS_DIRECTION_RTL;
+  EXPECT_TRUE(asks("p::scroll-button(up)", "::scroll-button(up)", nullptr));
+  EXPECT_TRUE(asks("p::scroll-button(up)", "::scroll-button(block-start)", nullptr)) << "no flow: horizontal-tb and ltr";
+  EXPECT_FALSE(asks("p::scroll-button(up)", "::scroll-button(inline-start)", nullptr));
+  EXPECT_TRUE(asks("p::scroll-button(up)", "::scroll-button(block-start)", &horizontal));
+  EXPECT_FALSE(asks("p::scroll-button(up)", "::scroll-button(block-start)", &vertical)) << "in a vertical-rl box the up button is the inline-start one";
+  EXPECT_TRUE(asks("p::scroll-button(up)", "::scroll-button(inline-start)", &vertical));
+  EXPECT_TRUE(asks("p::scroll-button(right)", "::scroll-button(block-start)", &vertical)) << "and the right one is block-start";
+  EXPECT_TRUE(asks("p::scroll-button(right)", "::scroll-button(inline-end)", &horizontal));
+  EXPECT_TRUE(asks("p::scroll-button(right)", "::scroll-button(inline-start)", &rtl)) << "with rtl the right button is the inline-start one";
+  EXPECT_TRUE(asks("p::scroll-button(block-end)", "::scroll-button(DOWN)", &horizontal)) << "the argument is read ignoring ASCII case";
+  EXPECT_TRUE(asks("p::scroll-button(*)", "::scroll-button(left)", &vertical)) << "'*' selects all four";
+  EXPECT_TRUE(asks("p::scroll-button(*)", "::scroll-button(inline-end)", &rtl));
+  EXPECT_FALSE(asks("p::scroll-button(left)", "::scroll-button(*)", &horizontal)) << "a request of '*' is no one button";
+  EXPECT_FALSE(asks("p::scroll-button(up)", "::before", &horizontal)) << "another pseudo-element";
+  EXPECT_FALSE(asks("p::scroll-button(up)", "::scroll-marker", &horizontal));
+  gtext_css_selector_match_context_free(ctx);
+  gtext_css_markup_adapter_free(ad);
 }
 
 /* An adapter keeps the classes of the element it was asked about last (and the form and radio group asked about last). An edit of the tree under it must be seen by the next question,

@@ -428,6 +428,7 @@ static GTEXT_CSS_Status fill_candidates(build * b, GTEXT_CSS_Element_Handle elem
     memset(&ro, 0, sizeof ro);
     ro.starting_style = options->starting_style;
     ro.call = options->container_call;
+    ro.flow = options->pseudo_flow;
     st = gtext_css_rules_collect(options->rules, options->match, element, options->pseudo, b->set, &ro, &rr);
     b->work += rr.work;
     if (st != GTEXT_CSS_OK) {

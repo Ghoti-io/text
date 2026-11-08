@@ -88,6 +88,7 @@ struct GTEXT_CSS_Selector_Match_Context {
   const css_nest * nest;
   const GTEXT_CSS_Complex * implied_cx; ///< A rule of a sheet imported with `scope()` is being matched: this complex has the implied `:where(:scope)` before it (its compounds are inside the scoping root, strictly).
   const void * memo_aux;             ///< The aux key now: the scope element while a scope-dependent selector is read, else NULL.
+  const GTEXT_CSS_Flow * request_flow; ///< The flow of the originating element of the pseudo-element asked for, for `::scroll-button()`; NULL: the initial one. Set by the call.
   /* the ancestor filter */
   uint8_t * bloom;
   bool bloom_live;

@@ -58,6 +58,7 @@
 #include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_element.h>
+#include <ghoti.io/text/css/css_logical.h>
 #include <ghoti.io/text/css/css_selector.h>
 #include <ghoti.io/text/macros.h>
 #include <stdbool.h>
@@ -168,6 +169,20 @@ GTEXT_API void gtext_css_selector_match_counters_reset(GTEXT_CSS_Selector_Match_
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_selector_match(const GTEXT_CSS_Selector_List * list, GTEXT_CSS_Selector_Match_Context * ctx, GTEXT_CSS_Element_Handle element,
     const GTEXT_CSS_Selector_List * pseudo, GTEXT_CSS_Selector_Match_Result * result);
+
+/**
+ * @brief gtext_css_selector_match() for a pseudo-element whose name depends on the flow of its originating element.
+ *
+ * `::scroll-button()` names one of four buttons of a scroll container, "each associated with a flow-relative direction, based on their originating element's writing mode: in
+ * order, block-start, inline-start, inline-end, and block-end", and its argument is a physical direction (`up`, `down`, `left`, `right`) or a flow-relative one (Overflow 5, "Scroll
+ * Buttons"): `::scroll-button(up)` and `::scroll-button(block-start)` are the same button of a `horizontal-tb` element and different ones of a `vertical-rl` element. A selector with
+ * such a pseudo-element matches the pseudo-element asked for when they name the same button in `flow`; `*` selects all four. Everything else is as gtext_css_selector_match().
+ *
+ * @param flow The `writing-mode`, `direction` and `text-orientation` of the originating element (gtext_css_computed_flow() of its style), or NULL for their initial values
+ *   (`horizontal-tb`, `ltr`).
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_selector_match_in_flow(const GTEXT_CSS_Selector_List * list, GTEXT_CSS_Selector_Match_Context * ctx, GTEXT_CSS_Element_Handle element,
+    const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Flow * flow, GTEXT_CSS_Selector_Match_Result * result);
 
 /** @brief Called by gtext_css_selector_match_walk() for each element, in document order. Return false to stop. */
 typedef bool (*GTEXT_CSS_Walk_Fn)(void * user, GTEXT_CSS_Element_Handle element);
