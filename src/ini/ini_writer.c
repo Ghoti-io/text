@@ -136,7 +136,7 @@ static GTEXT_INI_Status ini_put_eol(ini_emit * sink,
  * because an indented empty line is still a blank line to the reader and the
  * bytes would be noise.
  *
- * Only reached for a value ini_value_writable() has already accepted, so there is
+ * Only reached for a value gtext_ini_value_writable() has already accepted, so there is
  * no line here that would come back different - a comment line, a line with its
  * own leading or trailing whitespace, and a trailing terminator are all refused
  * before this runs.

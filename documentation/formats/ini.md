@@ -1242,7 +1242,7 @@ round trip could see it: the byte still came back in the line's trailing run, so
 the document rewrote byte for byte and scored clean. Fixing it drew out a second
 defect in the opposite direction - the writer refused *every* value containing a
 CR, which made a document this module reads unwritable - so
-`ini_value_writable()` now takes the byte that will follow the value and refuses
+`gtext_ini_value_writable()` now takes the byte that will follow the value and refuses
 only the values that would actually read back differently. Reproducer:
 `tests/fuzz/corpus/ini/trailing-cr-with-no-linefeed.ini.seed`.
 

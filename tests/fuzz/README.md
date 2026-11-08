@@ -840,7 +840,7 @@ outright - which is what "a CR would end the line" suggests - made a document
 this module *reads* unwritable, and the round-trip test caught that immediately.
 A trailing CR is unsafe only when an LF is written **directly** after it: at end
 of file, or before a `\r\n` terminator that supplies its own CR, it round-trips
-fine. So `ini_value_writable()` takes the byte that will follow the value, and
+fine. So `gtext_ini_value_writable()` takes the byte that will follow the value, and
 refuses exactly the values that would read back differently rather than every
 value that looks dangerous. A writer that is too strict is a defect too.
 
