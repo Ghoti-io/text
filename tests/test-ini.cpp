@@ -2450,6 +2450,37 @@ TEST(IniSystemd, AGroupNameWithALineTerminatorIsRefusedBecauseNoFileSpellsIt) {
   gtext_ini_free(doc);
 }
 
+TEST(IniSystemd, AGroupMadeInTheTreeWithAContinuationInItsNameHasTheJoinedNameForItsCanonicalOne) {
+  /* fuzz_ini_writer, systemd: `add_group("\\\\<LF>")` was accepted (a line end after a backslash is a continuation), written as `[`, two backslashes, a line end and `]`, and read back as the group whose canonical
+     name is a backslash and a space; the group of the tree had the spelling for its canonical name, so the name the document gives it found nothing in the tree it was written from. */
+  GTEXT_INI_Parse_Options popts = gtext_ini_parse_options_default();
+  popts.dialect = sd();
+  GTEXT_INI_Document * doc = gtext_ini_new(&popts);
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * g = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "Serv\\\nice", &g), GTEXT_INI_OK);
+  EXPECT_EQ(got(gtext_ini_group_name, g), "Serv\\\nice");
+  EXPECT_EQ(got(gtext_ini_group_canonical_name, g), "Serv ice");
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "\\\\\n", &g), GTEXT_INI_OK);
+  EXPECT_EQ(got(gtext_ini_group_canonical_name, g), "\\ ");
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "plain", &g), GTEXT_INI_OK);
+  EXPECT_EQ(got(gtext_ini_group_canonical_name, g), "plain");
+  EXPECT_NE(gtext_ini_document_group(doc, "Serv ice"), nullptr) << "reachable by the joined name, as in a document read";
+  const std::string text = written(doc);
+  EXPECT_EQ(text, "[Serv\\\nice]\n[\\\\\n]\n[plain]\n");
+  GTEXT_INI_Document * back = ok(text, sd());
+  ASSERT_NE(back, nullptr);
+  ASSERT_EQ(gtext_ini_document_group_count(back), 3u);
+  for (size_t i = 0; i < 3; i++) {
+    size_t a = 0, b = 0;
+    const char * x = gtext_ini_group_canonical_name(gtext_ini_document_group_at(doc, i), &a);
+    const char * y = gtext_ini_group_canonical_name(gtext_ini_document_group_at(back, i), &b);
+    EXPECT_EQ(std::string(x, a), std::string(y, b)) << "group " << i;
+  }
+  gtext_ini_free(back);
+  gtext_ini_free(doc);
+}
+
 TEST(IniSystemd, AContinuationMayAppearInAHeaderOrAKey) {
   /*
    * **The structural finding, and it is not in the manual.** systemd assembles the

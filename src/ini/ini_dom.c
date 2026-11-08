@@ -330,6 +330,36 @@ GTEXT_INI_Status gtext_ini_document_add_group(GTEXT_INI_Document * doc,
       return GTEXT_INI_E_OOM;
     }
   }
+  else if (gtext_ini_names_may_continue(&doc->dialect) && memchr(name, '\n', len)) {
+    /*
+     * A name that holds a continuation (systemd: `Serv\<LF>ice`, which gtext_ini_group_name_ok() allows) is written as it is, and a reader joins it: the canonical name of the
+     * group it reads back is `Serv ice`. The group made here has to have that canonical name too, or a lookup by the name the document gives it finds nothing in the tree it was
+     * written from (the fuzz harness for the writer found `[\\<LF>]`). Only a dialect that does not fold gets here: the one that does refuses a line end in a name. The name is
+     * joined as the header it is written in, with the `]` after it, because a continuation that ends the text and one that is followed by more are joined differently (the first
+     * adds no space).
+     */
+    char stack[1024];
+    char * buf = stack;
+    char * heap = NULL;
+    const size_t need = 2 * len + 1;
+    if (need > sizeof(stack)) {
+      heap = gtext_allocator_malloc(doc->alloc, need);
+      if (!heap) {
+        gtext_ini_str_clear(doc->alloc, &group->name);
+        return GTEXT_INI_E_OOM;
+      }
+      buf = heap;
+    }
+    memcpy(buf + len, name, len);
+    buf[len + len] = ']';
+    const size_t got = gtext_ini_join_continuations(&doc->dialect, buf + len, len + 1, 0, len, buf);
+    const bool ok = got == SIZE_MAX || gtext_ini_str_set(doc->alloc, &group->canon, buf, got);
+    if (heap) gtext_allocator_free(doc->alloc, heap);
+    if (!ok) {
+      gtext_ini_str_clear(doc->alloc, &group->name);
+      return GTEXT_INI_E_OOM;
+    }
+  }
   doc->count++;
   if (out) *out = group;
   return GTEXT_INI_OK;
