@@ -433,6 +433,11 @@ GTEXT_API const char * gtext_ini_group_get_nth(const GTEXT_INI_Group * group,
  * a document may spell a key with a continuation (systemd) and it is read as it
  * is spelled, but a key made here has to be the key that is read back.
  *
+ * A localized key (`Name[de]`) is accepted whether or not the group holds the bare key
+ * (`Name`), because the bare key may be set after it; a dialect that requires the bare key
+ * (Desktop Entry §5) has the writer refuse the group with ::GTEXT_INI_E_UNREPRESENTABLE
+ * until it holds one.
+ *
  * Under ::GTEXT_INI_DUPKEY_COLLECT this replaces the first occurrence rather
  * than appending a second, because a setter that grew the list every time it
  * was called would make an idempotent update impossible. Use

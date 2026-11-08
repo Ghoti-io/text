@@ -922,6 +922,21 @@ size_t gtext_ini_key_base_len(const char * key, size_t len) {
   return len;
 }
 
+size_t gtext_ini_group_unlocalized_key_missing(const GTEXT_INI_Group * group) {
+  for (size_t e = 0; e < group->count; e++) {
+    const ini_str * key = &group->entries[e].key;
+    size_t base = gtext_ini_key_base_len(key->data, key->len);
+    if (base == key->len) continue;
+    bool found = false;
+    for (size_t o = 0; o < group->count && !found; o++) {
+      const ini_str * other = &group->entries[o].key;
+      found = other->len == base && memcmp(other->data, key->data, base) == 0;
+    }
+    if (!found) return e;
+  }
+  return SIZE_MAX;
+}
+
 bool gtext_ini_is_space(const GTEXT_INI_Dialect * dialect, char c) {
   if (c == ' ' || c == '\t') return true;
   /*

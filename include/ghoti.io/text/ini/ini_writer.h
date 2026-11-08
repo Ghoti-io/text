@@ -148,6 +148,12 @@ typedef struct {
    * Desktop Entry §3 specifies linefeed, so this is off; it exists because the
    * generic dialect accepts CRLF on input and a caller round-tripping such a
    * file may want to keep it.
+   *
+   * The option belongs to the write and not to the dialect, and the writer
+   * refuses what would not read back **under a reader that accepts CRLF**: a
+   * dialect that does not (Desktop Entry) takes the carriage return after the
+   * `=` for blank, so a value that begins with one is
+   * ::GTEXT_INI_E_UNREPRESENTABLE when this is set.
    */
   bool crlf;
 } GTEXT_INI_Write_Options;
@@ -167,6 +173,16 @@ GTEXT_API GTEXT_INI_Write_Options gtext_ini_write_options_default(void);
  * @param opts Options, or NULL for gtext_ini_write_options_default().
  * @return ::GTEXT_INI_OK, ::GTEXT_INI_E_UNREPRESENTABLE,
  *   ::GTEXT_INI_E_INVALID, ::GTEXT_INI_E_OOM, or whatever the sink returned.
+ *
+ * Either the document is written so that it reads back, under the dialect it was
+ * made for, as the groups, keys and values it holds, or ::GTEXT_INI_E_UNREPRESENTABLE
+ * is returned (and the sink may already hold what came before). The refusals:
+ * a value that would read back differently (a line end, a blank the dialect drops
+ * at either end, an unbalanced quote, a trailing backslash that would join the next
+ * line); a key whose bytes begin with a byte-order mark and that would be the first
+ * thing written, under a dialect that skips one; a group that holds a localized key
+ * (`Name[de]`) and not the bare key, under a dialect that requires it (Desktop Entry
+ * §5), because the parser refuses such a document.
  */
 GTEXT_API GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
     GTEXT_INI_Sink * sink, const GTEXT_INI_Write_Options * opts);

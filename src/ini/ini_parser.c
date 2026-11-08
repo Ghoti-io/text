@@ -582,20 +582,9 @@ static bool ini_add_entry(ini_parse * p, size_t line_start, size_t key_start,
  */
 static bool ini_check_locale_keys(ini_parse * p) {
   for (size_t g = 0; g < p->doc->count; g++) {
-    GTEXT_INI_Group * group = &p->doc->groups[g];
-    for (size_t e = 0; e < group->count; e++) {
-      const ini_str * key = &group->entries[e].key;
-      size_t base = gtext_ini_key_base_len(key->data, key->len);
-      if (base == key->len) continue;
-      bool found = false;
-      for (size_t o = 0; o < group->count && !found; o++) {
-        const ini_str * other = &group->entries[o].key;
-        found = other->len == base && memcmp(other->data, key->data, base) == 0;
-      }
-      if (!found) {
-        return ini_fail(p, GTEXT_INI_E_BAD_KEY,
-            "a localized key has no unlocalized key of the same name", 0);
-      }
+    if (gtext_ini_group_unlocalized_key_missing(&p->doc->groups[g]) != SIZE_MAX) {
+      return ini_fail(p, GTEXT_INI_E_BAD_KEY,
+          "a localized key has no unlocalized key of the same name", 0);
     }
   }
   return true;

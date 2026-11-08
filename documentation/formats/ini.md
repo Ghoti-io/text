@@ -99,7 +99,11 @@ whitespace. An entry a caller created or whose value was changed is written
 - GTEXT_INI_Write_Options::emit_comments, default `true`. False is a departure
   from §3's preservation requirement, available because a caller may be
   generating a file rather than rewriting one.
-- GTEXT_INI_Write_Options::crlf, default false. §3 specifies linefeed.
+- GTEXT_INI_Write_Options::crlf, default false. §3 specifies linefeed. The CRLF is an option of
+  the write and not of the dialect, so the writer asks whether a value reads back **as a reader
+  that accepts CRLF would read the output**: under Desktop Entry, whose own reader does not, a
+  value that begins with a carriage return is refused with `crlf` (the reader takes the CR after
+  the `=` for blank and read `a=<CR><CR><LF>` as the empty value) and written without it.
 
 **What it never writes is a document that would read back differently.** A value
 containing a line terminator, or whose first byte is a space, is reported as
@@ -108,6 +112,24 @@ early and the second would come back shorter, because §3.3 discards the run
 after `=`. The caller's fix is gtext_ini_escape(), which spells both, and which
 itself reports ::GTEXT_INI_E_UNREPRESENTABLE under a dialect whose escape set
 cannot.
+
+Either the writer refuses or the bytes it writes read back, and the sweep of the test suite holds it to that
+for every dialect, every option of the write and every way of building a document
+(tests/test-ini-sweep.cpp, which shares its oracle with the fuzzer of the writer). What it
+refuses, besides the values above:
+
+- **A group with a localized key and no bare key**, under a dialect that requires one (Desktop
+  Entry §5; the generic dialect too): the parser refuses such a document, and an entry made with
+  gtext_ini_group_set() is accepted whatever the group holds because the bare key may come after
+  it, so the check is made when the document is written. `desktop-file-validate` reports the same
+  file: `key "Name[de]" ... is a localized key, but there is no non-localized key "Name"`.
+- **A key that begins with a byte-order mark, when it would be the first bytes of the output**,
+  under a dialect that skips one (a reader strips it there and the key comes back without it). A
+  document that carries its own byte-order mark has written it first, and a key that is not first
+  is data.
+- A group name or a key with a line feed or a carriage return in it, under every dialect, is
+  refused by gtext_ini_document_add_group() and gtext_ini_group_set() when it is made, not by the
+  writer (see their documentation).
 
 ## Compliance checklist
 

@@ -262,6 +262,15 @@ GTEXT_INTERNAL_API bool gtext_ini_key_ok(const GTEXT_INI_Dialect * dialect,
 /** The offset of the `[` that starts a key's locale postfix, or len. */
 GTEXT_INTERNAL_API size_t gtext_ini_key_base_len(const char * key, size_t len);
 
+/**
+ * The index of the first entry of @p group whose key has a locale postfix (`Name[de]`) and whose bare key (`Name`) the group does not hold, or `SIZE_MAX`.
+ *
+ * Desktop Entry §5: "a postfixed key requires its bare form in the same group". The parser asks it of every group when the dialect has
+ * ::GTEXT_INI_Dialect::require_unlocalized_key, and the writer asks it of the same groups before it writes anything, so a document the parser
+ * would refuse is not one the writer produces: they share this function because two copies of the rule is how they would come to differ.
+ */
+GTEXT_INTERNAL_API size_t gtext_ini_group_unlocalized_key_missing(const GTEXT_INI_Group * group);
+
 /** Append an entry to a group without any duplicate or charset check. */
 GTEXT_INTERNAL_API ini_entry * gtext_ini_group_push(GTEXT_INI_Group * group);
 

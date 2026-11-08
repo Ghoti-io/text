@@ -99,11 +99,19 @@ GTEXT_INI_Write_Options gtext_ini_write_options_default(void) {
   return o;
 }
 
+/** The sink and how many bytes have been given to it: what a rule about *where in the output* a name falls has to know, which only the emission can say. */
+typedef struct {
+  GTEXT_INI_Sink * sink;
+  size_t total;
+} ini_emit;
+
 /** Emit bytes, stopping at the first refusal. */
-static GTEXT_INI_Status ini_put(GTEXT_INI_Sink * sink, const char * bytes,
+static GTEXT_INI_Status ini_put(ini_emit * out, const char * bytes,
     size_t len) {
   if (!len) return GTEXT_INI_OK;
-  return sink->write(sink->user, bytes, len);
+  GTEXT_INI_Status status = out->sink->write(out->sink->user, bytes, len);
+  if (status == GTEXT_INI_OK) out->total += len;
+  return status;
 }
 
 #define INI_TRY(expr)                                                          \
@@ -113,7 +121,7 @@ static GTEXT_INI_Status ini_put(GTEXT_INI_Sink * sink, const char * bytes,
   } while (0)
 
 /** The terminator this write uses. */
-static GTEXT_INI_Status ini_put_eol(GTEXT_INI_Sink * sink,
+static GTEXT_INI_Status ini_put_eol(ini_emit * sink,
     const GTEXT_INI_Write_Options * opts) {
   return ini_put(sink, opts->crlf ? "\r\n" : "\n", opts->crlf ? 2 : 1);
 }
@@ -141,7 +149,7 @@ static GTEXT_INI_Status ini_put_eol(GTEXT_INI_Sink * sink,
  * no others, or the caller cannot rewrite a file it just read.
  *
  * @param value The raw value.
- * @param dialect The dialect the document was read under.
+ * @param dialect The dialect the output will be read under: the document's, with a CR before an LF accepted when the write is `crlf`.
  * @param next The first byte written after the value, or 0 for end of output.
  * @param verbatim Whether the value's own bytes are what will be emitted. Only
  *   ::GTEXT_INI_CONTINUATION_INDENT cares, and it cares a great deal: there the
@@ -277,7 +285,7 @@ static bool ini_value_writable(const ini_str * value,
  * own leading or trailing whitespace, and a trailing terminator are all refused
  * before this runs.
  */
-static GTEXT_INI_Status ini_put_indented(GTEXT_INI_Sink * sink,
+static GTEXT_INI_Status ini_put_indented(ini_emit * sink,
     const GTEXT_INI_Write_Options * opts, const ini_str * value) {
   size_t start = 0;
   bool first = true;
@@ -308,13 +316,9 @@ static GTEXT_INI_Status ini_put_indented(GTEXT_INI_Sink * sink,
  * ` <BOM>j=v` - a blank, then the BOM - is an entry whose key really is
  * `<BOM>j`, and that is the correct reading of those bytes.
  *
- * It matters to the **writer**, and only in normalize mode, because normalizing
- * drops the leading blank and can move such a name to offset 0 - where a reader
- * will strip the BOM and give back a different name. Found by the fuzzer at
- * 663,648 executions on a four-byte input, ` <BOM>`, which under the Win32
- * dialect is a valueless entry whose whole key is the BOM. The generic dialect
- * has had the same defect for as long as it has had `skip_bom`; adding a seventh
- * dialect whose keys need no separator is what made it cheap to reach.
+ * It matters to the **writer**, when such a name would be the first bytes of
+ * the output (see ini_key_at_start_ok()), where a reader will strip the BOM and
+ * give back a different name.
  */
 static bool ini_bom_prefixed(const ini_str * name) {
   return name->len >= 3 && (unsigned char) name->data[0] == 0xEF &&
@@ -322,9 +326,33 @@ static bool ini_bom_prefixed(const ini_str * name) {
          (unsigned char) name->data[2] == 0xBF;
 }
 
+/**
+ * Whether a key may be emitted as the next bytes of the output.
+ *
+ * A key can begin with the bytes of a UTF-8 BOM (` <BOM>j=v` is an entry whose key is `<BOM>j`, because a reader skips a BOM only at offset 0), and
+ * a reader that skips one **does** skip it when the key is the first thing in the file, so such a key written there reads back as the key without it.
+ * Found by the fuzzer at 663,648 executions on the four-byte input ` <BOM>` under the Win32 dialect, whose keys need no separator; the generic
+ * dialect had the same defect for as long as it had `skip_bom`.
+ *
+ * Whether the key is the first thing in the file is what the emission knows and nothing computed beforehand does: the first version refused such a
+ * key wherever it sat, as a normalized write, because working out whether it would land at offset 0 meant a second copy of this function's emission
+ * order, and two copies of an order are how the two drift. Counting the bytes already given to the sink is not a copy: it is the emission itself,
+ * and it covers every way a key comes to be first (an entry before any header, the comments left out, the blanks of a normalized line dropped).
+ * A document that carries its own BOM has written it first, so the key is not at offset 0 and is writable.
+ */
+static GTEXT_INI_Status ini_key_at_start_ok(const GTEXT_INI_Document * doc,
+    const ini_emit * out, const ini_str * key) {
+  if (out->total == 0 && doc->dialect.skip_bom && ini_bom_prefixed(key)) {
+    return GTEXT_INI_E_UNREPRESENTABLE;
+  }
+  return GTEXT_INI_OK;
+}
+
 GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
-    GTEXT_INI_Sink * sink, const GTEXT_INI_Write_Options * opts) {
-  if (!doc || !sink || !sink->write) return GTEXT_INI_E_INVALID;
+    GTEXT_INI_Sink * user_sink, const GTEXT_INI_Write_Options * opts) {
+  if (!doc || !user_sink || !user_sink->write) return GTEXT_INI_E_INVALID;
+  ini_emit emit = {user_sink, 0};
+  ini_emit * sink = &emit;
   GTEXT_INI_Write_Options effective = opts ? *opts
                                           : gtext_ini_write_options_default();
 
@@ -337,28 +365,24 @@ GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
     INI_TRY(ini_put(sink, doc->leading.data, doc->leading.len));
   }
   /*
-   * **A normalized write may not emit a name whose own bytes begin with a BOM**,
-   * unless the document already carries one for the reader to strip instead.
-   *
-   * The rule is deliberately **conservative**: what actually breaks is only such a
-   * name landing at offset 0, and whether it does depends on everything emitted
-   * before it. Computing that would mean a second copy of this function's emission
-   * order, and two copies of an order are how the two drift - so this refuses the
-   * name wherever it sits. The cost is that a document with a BOM-prefixed name
-   * below the first line is unwritable in *normalize* mode while remaining
-   * perfectly writable in the default verbatim mode, which is where "refuse rather
-   * than mangle" leaves it.
+   * **The dialect the output is read under, not the one the document was read under.** `crlf` is an option of the write, and a dialect that does not
+   * accept a CR before an LF (Desktop Entry: "Desktop Entry §3 specifies linefeed") cannot read what it is asked to write; the output is read by a
+   * reader that does, and that reader takes a CR after the `=` for blank and a CR before an LF for the terminator's. Asking whether a value is
+   * writable under the document's own dialect said `\r` was fine as a Desktop Entry value, wrote `a=<CR><CR><LF>` and read back an empty value: the
+   * same question has to be asked of the reader that will be given the bytes.
    */
-  if (effective.normalize && doc->dialect.skip_bom && !doc->bom.data) {
+  GTEXT_INI_Dialect read_dialect = doc->dialect;
+  if (effective.crlf) read_dialect.accept_crlf = true;
+
+  /*
+   * A document the parser would refuse is not one to produce. Desktop Entry §5 requires the bare form of a key that has a locale postfix in the same
+   * group, and the parser refuses the document that lacks it (an entry made with set() is accepted whatever the group holds, because the bare key may
+   * come after it). The same function asks the question here and there.
+   */
+  if (doc->dialect.require_unlocalized_key && doc->dialect.locale_postfix) {
     for (size_t g = 0; g < doc->count; g++) {
-      const GTEXT_INI_Group * group = &doc->groups[g];
-      if (!group->preamble && ini_bom_prefixed(&group->name)) {
+      if (gtext_ini_group_unlocalized_key_missing(&doc->groups[g]) != SIZE_MAX) {
         return GTEXT_INI_E_UNREPRESENTABLE;
-      }
-      for (size_t e = 0; e < group->count; e++) {
-        if (ini_bom_prefixed(&group->entries[e].key)) {
-          return GTEXT_INI_E_UNREPRESENTABLE;
-        }
       }
     }
   }
@@ -405,7 +429,7 @@ GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
         next = effective.crlf ? '\r' : '\n';
       }
       if (entry->has_value &&
-          !ini_value_writable(&entry->value, &doc->dialect, next, verbatim)) {
+          !ini_value_writable(&entry->value, &read_dialect, next, verbatim)) {
         return GTEXT_INI_E_UNREPRESENTABLE;
       }
       if (!entry->has_value && !doc->dialect.valueless_keys) {
@@ -421,6 +445,7 @@ GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
       }
       if (verbatim) {
         INI_TRY(ini_put(sink, entry->pre.data, entry->pre.len));
+        INI_TRY(ini_key_at_start_ok(doc, sink, &entry->key));
         INI_TRY(ini_put(sink, entry->key.data, entry->key.len));
         if (entry->has_value) {
           INI_TRY(ini_put(sink, entry->sep.data, entry->sep.len));
@@ -429,6 +454,7 @@ GTEXT_INI_Status gtext_ini_write(const GTEXT_INI_Document * doc,
         INI_TRY(ini_put(sink, entry->eol.data, entry->eol.len));
       }
       else {
+        INI_TRY(ini_key_at_start_ok(doc, sink, &entry->key));
         INI_TRY(ini_put(sink, entry->key.data, entry->key.len));
         if (entry->has_value) {
           /* The dialect's first separator, not a literal `=`: a dialect can have

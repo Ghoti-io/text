@@ -4166,7 +4166,7 @@ TEST(IniWin32, ANameWhoseOwnBytesAreABomIsNotNormalizable) {
     /* The BOM is part of the key, and the verbatim write reproduces the line. */
     EXPECT_EQ(canonical_keys(doc), (std::vector<std::string>{bom + "j"}));
     EXPECT_EQ(written(doc), " " + bom + "j=v\n");
-    /* Normalizing would move it to offset 0, so it is refused instead. */
+    /* Normalizing would move it to offset 0 (nothing is written before it), so it is refused instead. */
     GTEXT_INI_Write_Options norm = gtext_ini_write_options_default();
     norm.normalize = true;
     GTEXT_INI_Sink sink;
@@ -4175,16 +4175,48 @@ TEST(IniWin32, ANameWhoseOwnBytesAreABomIsNotNormalizable) {
     gtext_ini_sink_buffer_free(&sink);
     gtext_ini_free(doc);
   }
-  /* A group name is the same case. */
+  /* A group name is not the same case, and the first version of the rule refused it all the same: a header begins with `[`, so a name that begins with a BOM is never the first
+   * bytes of the output, the BOM is data there, and the normalized document reads back with the group of that name. The rule is about the bytes the writer has emitted so far
+   * (a key is refused only when nothing has been written before it), and not about where a name sits in the tree, which asked for a second copy of the emission order. */
   GTEXT_INI_Document * g = ok(" [" + bom + "a]\nk=v\n", w32());
   ASSERT_NE(g, nullptr);
   GTEXT_INI_Write_Options norm = gtext_ini_write_options_default();
   norm.normalize = true;
   GTEXT_INI_Sink sink;
   ASSERT_EQ(gtext_ini_sink_buffer(&sink), GTEXT_INI_OK);
-  EXPECT_EQ(gtext_ini_write(g, &sink, &norm), GTEXT_INI_E_UNREPRESENTABLE);
+  EXPECT_EQ(gtext_ini_write(g, &sink, &norm), GTEXT_INI_OK);
+  EXPECT_EQ(std::string(gtext_ini_sink_buffer_data(&sink), gtext_ini_sink_buffer_size(&sink)), "[" + bom + "a]\nk=v\n");
+  GTEXT_INI_Document * again = ok(std::string(gtext_ini_sink_buffer_data(&sink), gtext_ini_sink_buffer_size(&sink)), w32());
+  ASSERT_NE(again, nullptr);
+  EXPECT_EQ(group_canon(again), (std::vector<std::string>{bom + "a"}));
+  gtext_ini_free(again);
   gtext_ini_sink_buffer_free(&sink);
   gtext_ini_free(g);
+  /* A key that is not the first thing written is the same: ` <BOM>j=v` after a header is a key of the BOM, and normalizing it leaves it after the header. */
+  GTEXT_INI_Document * later = ok("[a]\n " + bom + "j=v\n", w32());
+  ASSERT_NE(later, nullptr);
+  GTEXT_INI_Sink s3;
+  ASSERT_EQ(gtext_ini_sink_buffer(&s3), GTEXT_INI_OK);
+  EXPECT_EQ(gtext_ini_write(later, &s3, &norm), GTEXT_INI_OK);
+  EXPECT_EQ(std::string(gtext_ini_sink_buffer_data(&s3), gtext_ini_sink_buffer_size(&s3)), "[a]\n" + bom + "j=v\n");
+  gtext_ini_sink_buffer_free(&s3);
+  gtext_ini_free(later);
+  /* And it is by what was written and not by the mode: the comment before a key that begins with a BOM is what keeps it from offset 0, and a write that leaves the comment
+   * out puts the key there (generic: an entry before any header is allowed). */
+  GTEXT_INI_Document * commented = ok("; c\n" + bom + "k=v\n", gtext_ini_dialect_generic());
+  ASSERT_NE(commented, nullptr);
+  {
+    /* the BOM here is at offset 4 of the input, so it is data, and the key is the BOM and k */
+    EXPECT_EQ(canonical_keys(commented), (std::vector<std::string>{bom + "k"}));
+    GTEXT_INI_Write_Options bare = gtext_ini_write_options_default();
+    bare.emit_comments = false;
+    GTEXT_INI_Sink s4;
+    ASSERT_EQ(gtext_ini_sink_buffer(&s4), GTEXT_INI_OK);
+    EXPECT_EQ(gtext_ini_write(commented, &s4, &bare), GTEXT_INI_E_UNREPRESENTABLE);
+    gtext_ini_sink_buffer_free(&s4);
+    EXPECT_EQ(written(commented), "; c\n" + bom + "k=v\n");
+    gtext_ini_free(commented);
+  }
   /* And a document that *does* carry a BOM of its own is unaffected: the reader
    * will strip exactly what the writer emitted and store it again. */
   GTEXT_INI_Document * ok_doc = ok(bom + "[a]\nk=v\n", w32());
@@ -5429,3 +5461,105 @@ TEST(IniInterpolation, BothExtendedSpellingsSeeTheDefaults) {
   }
   gtext_ini_free(d);
 }
+
+
+// ------------------------------------------------- what the writer owes (the sweep is tests/test-ini-sweep.cpp; these are its findings, by name)
+
+namespace {
+
+/** A document of the dialect, made in the tree: one group `G` and the entries given. */
+GTEXT_INI_Document * built(const GTEXT_INI_Dialect & dialect, const std::vector<std::pair<std::string, std::string>> & entries, GTEXT_INI_Group ** group = nullptr) {
+  GTEXT_INI_Parse_Options opts = gtext_ini_parse_options_default();
+  opts.dialect = dialect;
+  GTEXT_INI_Document * doc = gtext_ini_new(&opts);
+  GTEXT_INI_Group * g = nullptr;
+  EXPECT_EQ(gtext_ini_document_add_group(doc, "G", &g), GTEXT_INI_OK);
+  for (const auto & e : entries) {
+    EXPECT_EQ(gtext_ini_group_set(g, e.first.c_str(), e.second.data(), e.second.size()), GTEXT_INI_OK) << e.first;
+  }
+  if (group) *group = g;
+  return doc;
+}
+
+/** The status of a write and the bytes it gave. */
+GTEXT_INI_Status write_status(const GTEXT_INI_Document * doc, const GTEXT_INI_Write_Options & opts, std::string * bytes = nullptr) {
+  GTEXT_INI_Sink sink;
+  EXPECT_EQ(gtext_ini_sink_buffer(&sink), GTEXT_INI_OK);
+  const GTEXT_INI_Status status = gtext_ini_write(doc, &sink, &opts);
+  if (bytes) bytes->assign(gtext_ini_sink_buffer_data(&sink), gtext_ini_sink_buffer_size(&sink));
+  gtext_ini_sink_buffer_free(&sink);
+  return status;
+}
+
+}   // namespace
+
+TEST(IniWrite, ADesktopEntryValueThatBeginsWithACarriageReturnIsRefusedWithCrlfAndWrittenWithout) {
+  /* fuzz_ini_writer, the seventh round (tests/fuzz/corpus/ini-writer/reproducer-desktop-entry-crlf-value-of-a-lone-cr.seed): Desktop Entry written with `crlf`, a value of one carriage
+   * return. `crlf` is an option of the write, and the output is read by a reader that accepts CRLF, which takes a CR after the `=` for blank and the CR before an LF for the terminator's:
+   * `a=<CR><CR><LF>` was read back as the empty value. The writer asked whether the value would read back under the document's own dialect, which does not accept CRLF and so called the
+   * value fine. */
+  for (const std::string & value : {std::string("\r"), std::string("\rx"), std::string("\r "), std::string("\r\"")}) {
+    GTEXT_INI_Document * doc = built(gtext_ini_dialect_desktop_entry(), {{"k", value}});
+    GTEXT_INI_Write_Options plain = gtext_ini_write_options_default();
+    std::string bytes;
+    EXPECT_EQ(write_status(doc, plain, &bytes), GTEXT_INI_OK);
+    EXPECT_EQ(bytes, "[G]\nk=" + value + "\n");
+    GTEXT_INI_Document * back = ok(bytes);
+    ASSERT_NE(back, nullptr);
+    EXPECT_EQ(raw(back, "G", "k"), value) << "a Desktop Entry reader keeps the CR as data";
+    gtext_ini_free(back);
+
+    GTEXT_INI_Write_Options crlf = plain;
+    crlf.crlf = true;
+    EXPECT_EQ(write_status(doc, crlf), GTEXT_INI_E_UNREPRESENTABLE) << "the reader of CRLF output skips a CR after the `=`";
+    gtext_ini_free(doc);
+  }
+  /* A CR at the end of the value is another matter: the terminator's own CR follows it, and the reader takes only the last one. */
+  GTEXT_INI_Document * doc = built(gtext_ini_dialect_desktop_entry(), {{"k", "x\r"}});
+  GTEXT_INI_Write_Options crlf = gtext_ini_write_options_default();
+  crlf.crlf = true;
+  std::string bytes;
+  ASSERT_EQ(write_status(doc, crlf, &bytes), GTEXT_INI_OK);
+  EXPECT_EQ(bytes, "[G]\r\nk=x\r\r\n");
+  GTEXT_INI_Dialect reads_crlf = gtext_ini_dialect_desktop_entry();
+  reads_crlf.accept_crlf = true;
+  GTEXT_INI_Document * back = ok(bytes, reads_crlf);
+  ASSERT_NE(back, nullptr);
+  EXPECT_EQ(raw(back, "G", "k"), "x\r");
+  gtext_ini_free(back);
+  gtext_ini_free(doc);
+}
+
+TEST(IniWrite, AGroupWithALocalizedKeyAndNoBareKeyIsRefusedBecauseTheParserWouldRefuseIt) {
+  /* The sweep of the writer: `set("k[de]", ...)` is accepted (the bare key may be set after it) and the writer wrote `[G]` and `k[de]=...`, a document that no parse of this dialect
+   * reads (§5: "a postfixed key requires its bare form in the same group"; `desktop-file-validate` 0.28 reports the same file as an error). Desktop Entry and the generic dialect have the rule. */
+  for (const GTEXT_INI_Dialect & dialect : {gtext_ini_dialect_desktop_entry(), gtext_ini_dialect_generic()}) {
+    GTEXT_INI_Group * g = nullptr;
+    GTEXT_INI_Document * doc = built(dialect, {{"Name[de]", "x"}}, &g);
+    GTEXT_INI_Write_Options opts = gtext_ini_write_options_default();
+    EXPECT_EQ(write_status(doc, opts), GTEXT_INI_E_UNREPRESENTABLE);
+    /* a bare key of another group is not this group's */
+    GTEXT_INI_Group * other = nullptr;
+    ASSERT_EQ(gtext_ini_document_add_group(doc, "H", &other), GTEXT_INI_OK);
+    ASSERT_EQ(gtext_ini_group_set(other, "Name", "y", 1), GTEXT_INI_OK);
+    EXPECT_EQ(write_status(doc, opts), GTEXT_INI_E_UNREPRESENTABLE);
+    /* the bare key, set after the localized one, makes the group writable and the document the one the parser reads */
+    g = const_cast<GTEXT_INI_Group *>(gtext_ini_document_group(doc, "G"));
+    ASSERT_NE(g, nullptr);
+    ASSERT_EQ(gtext_ini_group_set(g, "Name", "z", 1), GTEXT_INI_OK);
+    std::string bytes;
+    ASSERT_EQ(write_status(doc, opts, &bytes), GTEXT_INI_OK);
+    EXPECT_EQ(bytes, "[G]\nName[de]=x\nName=z\n[H]\nName=y\n");
+    GTEXT_INI_Document * back = ok(bytes, dialect);
+    ASSERT_NE(back, nullptr);
+    EXPECT_EQ(raw(back, "G", "Name[de]"), "x");
+    gtext_ini_free(back);
+    gtext_ini_free(doc);
+  }
+  /* a dialect without the rule has nothing to refuse */
+  GTEXT_INI_Document * doc = built(gtext_ini_dialect_systemd(), {{"Name[de]", "x"}});
+  GTEXT_INI_Write_Options opts = gtext_ini_write_options_default();
+  EXPECT_EQ(write_status(doc, opts), GTEXT_INI_OK);
+  gtext_ini_free(doc);
+}
+
