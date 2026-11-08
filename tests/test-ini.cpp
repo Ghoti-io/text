@@ -5563,3 +5563,28 @@ TEST(IniWrite, AGroupWithALocalizedKeyAndNoBareKeyIsRefusedBecauseTheParserWould
   gtext_ini_free(doc);
 }
 
+TEST(IniConfigParser, AValueSetInTheTreeWithABlankBeforeALineEndIsRefusedBecauseTheJoinedFormStripsIt) {
+  /* The sweep compared the joined form of the value it read with the value it had set and not, as its first version did, with the joined form of both (which made `" x"` and `"x"` one
+   * value): `"# <LF>a"` was written as `k=# ` and ` a` and read back `#<LF>a`. Python's configparser strips each line of a value before it joins them, so a blank at the end of any
+   * line of the value, and not only the last, is not one the dialect can carry (CPython 3.13.5: `k=# <LF> a` is `'#\na'`). */
+  for (const std::string & value : {std::string("# \na"), std::string("a \nb"), std::string("a\nb "), std::string("a\n \nb")}) {
+    GTEXT_INI_Document * doc = built(cp(), {{"k", value}});
+    EXPECT_EQ(write_status(doc, gtext_ini_write_options_default()), GTEXT_INI_E_UNREPRESENTABLE) << value;
+    gtext_ini_free(doc);
+  }
+  GTEXT_INI_Document * doc = built(cp(), {{"k", "a\n\nb"}});
+  std::string bytes;
+  ASSERT_EQ(write_status(doc, gtext_ini_write_options_default(), &bytes), GTEXT_INI_OK);
+  EXPECT_EQ(bytes, "[G]\nk=a\n\n b\n");
+  GTEXT_INI_Document * back = ok(bytes, cp());
+  ASSERT_NE(back, nullptr);
+  const std::string stored = raw(back, "G", "k");
+  char * joined = nullptr;
+  size_t n = 0;
+  const GTEXT_INI_Dialect dialect = cp();
+  ASSERT_EQ(gtext_ini_unescape(&dialect, stored.data(), stored.size(), nullptr, &joined, &n), GTEXT_INI_OK);
+  EXPECT_EQ(std::string(joined, n), "a\n\nb");
+  gtext_ini_string_free(nullptr, joined);
+  gtext_ini_free(back);
+  gtext_ini_free(doc);
+}

@@ -579,6 +579,14 @@ bool gtext_ini_indent_value_ok(const GTEXT_INI_Dialect * dialect,
        */
       if (line_end - content_end != 1 || value[content_end] != '\n') return false;
     }
+    /*
+     * **The joined form strips each line, the first and the last included, and the joined form is the value** (ini.md: the indentation of a continuation line is
+     * part of the stored text, and the joined form is the canonical one; Python's `configparser` strips every line of a value before it joins them). A synthesized
+     * line that ends in a blank therefore reads back one byte shorter, wherever it falls in the value: the last line is the final check below, and this is the
+     * others. A parsed value keeps its own blanks and is emitted as it is, so verbatim has nothing to say here. Found by the sweep of the writer, which compared the
+     * joined form of what it read with what it had set instead of with the joined form of both: `"# <LF>a"` (a blank before a line end) was written and read as `#<LF>a`.
+     */
+    if (!verbatim && content_end > i && gtext_ini_is_space(dialect, value[content_end - 1])) return false;
     if (!first && kind == INI_LINE_CONTENT) {
       size_t indent = gtext_ini_indent_width(dialect, value, len, i);
       /*

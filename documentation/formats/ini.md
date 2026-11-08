@@ -131,6 +131,28 @@ refuses, besides the values above:
   refused by gtext_ini_document_add_group() and gtext_ini_group_set() when it is made, not by the
   writer (see their documentation).
 
+Either the writer refuses or the bytes it writes read back, and the sweep of the test suite holds it to that
+for every dialect, every option of the write and every way of building a document
+(tests/test-ini-sweep.cpp, which shares its oracle with the fuzzer of the writer). What it
+refuses, besides the values above:
+
+- **A group with a localized key and no bare key**, under a dialect that requires one (Desktop
+  Entry §5; the generic dialect too): the parser refuses such a document, and an entry made with
+  gtext_ini_group_set() is accepted whatever the group holds because the bare key may come after
+  it, so the check is made when the document is written. `desktop-file-validate` reports the same
+  file: `key "Name[de]" ... is a localized key, but there is no non-localized key "Name"`.
+- **A key that begins with a byte-order mark, when it would be the first bytes of the output**,
+  under a dialect that skips one (a reader strips it there and the key comes back without it). A
+  document that carries its own byte-order mark has written it first, and a key that is not first
+  is data.
+- **A value of an indent-continued dialect (configparser) that has a blank at the end of a line**,
+  the first or an inner one as well as the last: Python's `configparser` strips every line of a
+  value before it joins them (`k=x <LF>  y  <LF> z` is `x<LF>y<LF>z`, measured with CPython 3.13),
+  and the joined form is the value.
+- A group name or a key with a line feed or a carriage return in it, under every dialect, is
+  refused by gtext_ini_document_add_group() and gtext_ini_group_set() when it is made, not by the
+  writer (see their documentation).
+
 ## Compliance checklist
 
 | Area | Supported | Rejected / limitation |
