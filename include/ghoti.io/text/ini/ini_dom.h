@@ -206,7 +206,11 @@ GTEXT_API const char * gtext_ini_document_get(const GTEXT_INI_Document * doc,
  * @brief Append a group.
  *
  * Refuses a duplicate name when the dialect does, and a name containing `[`,
- * `]` or a control character always (Desktop Entry §3.2).
+ * `]` or a control character always (Desktop Entry §3.2), and a name with a
+ * line feed or a carriage return in it under every dialect: a document may
+ * spell a header with a continuation (systemd), and it is read as it is
+ * spelled, but a name made here has to be the name that is read back from what
+ * is written, which a line end in it does not allow.
  *
  * **Invalidates every ::GTEXT_INI_Group pointer previously returned for this
  * document**, because the group array may move. Look groups up again after
@@ -423,6 +427,11 @@ GTEXT_API const char * gtext_ini_group_get_nth(const GTEXT_INI_Group * group,
  * first with gtext_ini_escape() - or the writer will report
  * ::GTEXT_INI_E_UNREPRESENTABLE rather than emit a document that reads back
  * differently.
+ *
+ * A key with a line feed or a carriage return in it is refused
+ * (::GTEXT_INI_E_BAD_KEY) under every dialect, for the reason a group name is:
+ * a document may spell a key with a continuation (systemd) and it is read as it
+ * is spelled, but a key made here has to be the key that is read back.
  *
  * Under ::GTEXT_INI_DUPKEY_COLLECT this replaces the first occurrence rather
  * than appending a second, because a setter that grew the list every time it

@@ -55,12 +55,23 @@
 
 #include "ini_internal.h"
 
+/**
+ * A space or a tab, and nothing else, whatever the dialect.
+ *
+ * Distinct from gtext_ini_is_space() on purpose, and the distinction is git's:
+ * its top-level loop skips anything its ctype calls space - CR included - while
+ * the run between a key and its `=` is matched against `' '` and `'\t'`
+ * literally. So `\rk = v` is accepted and `k\r= v` is refused, by the same
+ * implementation, on the same line. One predicate for both would have to pick
+ * one of those two answers and would get the other wrong.
+ */
+static bool ini_is_blank(char c) { return c == ' ' || c == '\t'; }
 
 /**
  * The whitespace that may sit between a key and its `=`.
  *
- * Two answers, and which one applies is the dialect's. git's is the literal pair of
- * a space and a tab (gtext_ini_sep_space()) - `k\r= v` is refused by git while `\rk = v` is accepted, by the same
+ * Two answers, and which one applies is the dialect's. git's is the literal pair
+ * above - `k\r= v` is refused by git while `\rk = v` is accepted, by the same
  * implementation on the same line - so the separator run cannot simply use
  * gtext_ini_is_space(). EditorConfig has no such split: it trims the whole line
  * with one predicate before classifying it, so `k\v= v` is `k` = `v`.
@@ -72,7 +83,9 @@
  * both the key `k`. Measured.
  */
 static bool ini_sep_space(const GTEXT_INI_Dialect * dialect, char c) {
-  return gtext_ini_sep_space(dialect, c);
+  return dialect->space_set != GTEXT_INI_SPACE_BLANK
+             ? gtext_ini_is_space(dialect, c)
+             : ini_is_blank(c);
 }
 
 /** Whether every byte of [start, end) is whitespace to @p dialect. */
@@ -82,6 +95,43 @@ static bool ini_all_space(const GTEXT_INI_Dialect * dialect, const char * bytes,
     if (!gtext_ini_is_space(dialect, bytes[i])) return false;
   }
   return true;
+}
+
+/**
+ * Join the continuations in [start, end) into @p out, which must have room for
+ * `end - start` bytes. Returns the joined length, or SIZE_MAX when there is no
+ * continuation in the range at all.
+ *
+ * SIZE_MAX rather than "the same bytes" so that a caller can tell "nothing to do"
+ * from "joined to the same length", and store no canonical form in the first case.
+ * A join only ever shortens: the backslash and its terminator become one space, or
+ * nothing.
+ */
+static size_t ini_join_continuations(const GTEXT_INI_Dialect * dialect,
+    const char * bytes, size_t len, size_t start, size_t end, char * out) {
+  size_t w = 0;
+  bool joined = false;
+  size_t i = start;
+  while (i < end) {
+    ini_continuation cont = gtext_ini_continuation_at(dialect, bytes, len, i);
+    if (cont.span) {
+      joined = true;
+      if (!cont.ends_line &&
+          dialect->continuation == GTEXT_INI_CONTINUATION_JOIN_SPACE) {
+        out[w++] = ' ';
+      }
+      /*
+       * `cont.span` can reach past `end` - a continuation at the end of the range
+       * consumes its terminator, which is outside it - so clamp rather than trust
+       * it. The bytes between are the comment block it skipped, and they are not
+       * part of the name.
+       */
+      i += cont.span;
+      continue;
+    }
+    out[w++] = bytes[i++];
+  }
+  return joined ? w : SIZE_MAX;
 }
 
 /** Where the logical line starting at @p offset ends. */
@@ -281,7 +331,7 @@ static bool ini_set_canon(ini_parse * p, ini_str * canon, const char * raw,
   char * joined = NULL;
   if (joins) {
     size_t offset = (size_t) (raw - p->bytes);
-    size_t got = gtext_ini_join_continuations(&p->doc->dialect, p->bytes, p->len,
+    size_t got = ini_join_continuations(&p->doc->dialect, p->bytes, p->len,
         offset, offset + len, buf);
     if (got != SIZE_MAX) {
       /* There was a continuation, so the joined text is the starting point for the

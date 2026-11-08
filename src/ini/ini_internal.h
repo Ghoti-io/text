@@ -501,17 +501,6 @@ GTEXT_INTERNAL_API bool gtext_ini_group_names_fold(
 GTEXT_INTERNAL_API bool gtext_ini_names_may_continue(
     const GTEXT_INI_Dialect * dialect);
 
-/**
- * Join the continuations in [start, end) of @p bytes into @p out, which must have room for `end - start` bytes. Returns the joined length, or SIZE_MAX when there is no continuation in
- * the range at all. The parser asks it of the document's bytes and gtext_ini_document_add_group() of a name alone, so that the canonical name of a group is the same whichever way it was made.
- */
-GTEXT_INTERNAL_API size_t gtext_ini_join_continuations(
-    const GTEXT_INI_Dialect * dialect, const char * bytes, size_t len,
-    size_t start, size_t end, char * out);
-
-/** The whitespace that may sit between a key and its separator, and that is trimmed off the end of a key (what the parser trims, and what the tree has to trim the same way). */
-GTEXT_INTERNAL_API bool gtext_ini_sep_space(const GTEXT_INI_Dialect * dialect, char c);
-
 /** What a physical line is, before anything looks at its contents. */
 typedef enum {
   INI_LINE_CONTENT,

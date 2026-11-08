@@ -2429,7 +2429,7 @@ TEST(IniWrite, AKeyThatTheParserWouldReadAsAnotherThingIsRefusedOnTheWayIn) {
   GTEXT_INI_Group * sg = nullptr;
   ASSERT_EQ(gtext_ini_document_add_group(sd, "Service", &sg), GTEXT_INI_OK);
   EXPECT_EQ(gtext_ini_group_set(sg, "\n", "v", 1), GTEXT_INI_E_BAD_KEY) << "a bare line end is two lines";
-  EXPECT_EQ(gtext_ini_group_set(sg, "Env\\\nironment", "v", 1), GTEXT_INI_OK) << "a continuation is a spelling of a key";
+  EXPECT_EQ(gtext_ini_group_set(sg, "Env\\\nironment", "v", 1), GTEXT_INI_E_BAD_KEY) << "a continuation is a spelling of a key a document has, and one the tree does not make (IniSystemd.AGroupOrAKeyWithALineEnd...)";
   gtext_ini_free(sd);
   EXPECT_EQ(gtext_ini_group_set(g, "B;", "v", 1), GTEXT_INI_OK);
   EXPECT_EQ(gtext_ini_group_set(g, "B C", "v", 1), GTEXT_INI_OK);
@@ -2450,67 +2450,33 @@ TEST(IniSystemd, AGroupNameWithALineTerminatorIsRefusedBecauseNoFileSpellsIt) {
   gtext_ini_free(doc);
 }
 
-TEST(IniSystemd, AGroupMadeInTheTreeWithAContinuationInItsNameHasTheJoinedNameForItsCanonicalOne) {
-  /* fuzz_ini_writer, systemd: `add_group("\\\\<LF>")` was accepted (a line end after a backslash is a continuation), written as `[`, two backslashes, a line end and `]`, and read back as the group whose canonical
-     name is a backslash and a space; the group of the tree had the spelling for its canonical name, so the name the document gives it found nothing in the tree it was written from. */
+TEST(IniSystemd, AGroupOrAKeyWithALineEndIsNotMadeInTheTreeButAContinuationIsStillReadFromADocument) {
+  /* fuzz_ini_writer, systemd, again and again: a group made with `add_group("\\\\<LF>")` was written as `[`, two backslashes, a line end and `]` and read back as a group of another name (the joined
+     one), then the same for `[\\<CR> \x02]` (a backslash and a lone carriage return continue as well), for a key, and for names that end in a backslash. What a backslash, a carriage return and a
+     line feed make of a name depends on all that is around them, so a name or a key with a line end is not made in the tree at all: the group is refused, and the key. A document that holds a
+     continuation in a header or a key is read as before (AContinuationMayAppearInAHeaderOrAKey), keeps its spelling, and writes it back byte for byte. */
   GTEXT_INI_Parse_Options popts = gtext_ini_parse_options_default();
   popts.dialect = sd();
   GTEXT_INI_Document * doc = gtext_ini_new(&popts);
   ASSERT_NE(doc, nullptr);
   GTEXT_INI_Group * g = nullptr;
-  ASSERT_EQ(gtext_ini_document_add_group(doc, "Serv\\\nice", &g), GTEXT_INI_OK);
-  EXPECT_EQ(got(gtext_ini_group_name, g), "Serv\\\nice");
-  EXPECT_EQ(got(gtext_ini_group_canonical_name, g), "Serv ice");
-  ASSERT_EQ(gtext_ini_document_add_group(doc, "\\\\\n", &g), GTEXT_INI_OK);
-  EXPECT_EQ(got(gtext_ini_group_canonical_name, g), "\\ ");
-  ASSERT_EQ(gtext_ini_document_add_group(doc, "\\\\\\\r \x02", &g), GTEXT_INI_OK);   /* a backslash and a lone carriage return continue as well */
-  EXPECT_EQ(got(gtext_ini_group_canonical_name, g), std::string("\\\\  \x02"));
-  ASSERT_EQ(gtext_ini_document_add_group(doc, "plain", &g), GTEXT_INI_OK);
-  EXPECT_EQ(got(gtext_ini_group_canonical_name, g), "plain");
-  EXPECT_NE(gtext_ini_document_group(doc, "Serv ice"), nullptr) << "reachable by the joined name, as in a document read";
-  const std::string text = written(doc);
-  EXPECT_EQ(text, std::string("[Serv\\\nice]\n[\\\\\n]\n[\\\\\\\r \x02]\n[plain]\n"));
-  GTEXT_INI_Document * back = ok(text, sd());
-  ASSERT_NE(back, nullptr);
-  ASSERT_EQ(gtext_ini_document_group_count(back), 4u);
-  for (size_t i = 0; i < 4; i++) {
-    size_t a = 0, b = 0;
-    const char * x = gtext_ini_group_canonical_name(gtext_ini_document_group_at(doc, i), &a);
-    const char * y = gtext_ini_group_canonical_name(gtext_ini_document_group_at(back, i), &b);
-    EXPECT_EQ(std::string(x, a), std::string(y, b)) << "group " << i;
+  for (const char * name : {"Serv\\\nice", "\\\\\n", "\\\\\\\r \x02", "a\\\r\nb", "\\\r"}) {
+    EXPECT_EQ(gtext_ini_document_add_group(doc, name, &g), GTEXT_INI_E_BAD_GROUP) << name;
   }
-  gtext_ini_free(back);
-  gtext_ini_free(doc);
-}
-
-TEST(IniSystemd, AKeyMadeInTheTreeWithAContinuationInItHasTheJoinedNameForItsCanonicalOne) {
-  /* The same for a key (fuzz_ini_writer, systemd: `set("\\\\\\<LF>", "")`, three backslashes and a line end): written as it is, read back joined, and the key the document gives is the one a caller has. A continuation
-     that ends the key joins without the blank it would leave (`Environment\<LF>=v` is `Environment`, not `Environment `). */
-  GTEXT_INI_Parse_Options popts = gtext_ini_parse_options_default();
-  popts.dialect = sd();
-  GTEXT_INI_Document * doc = gtext_ini_new(&popts);
-  ASSERT_NE(doc, nullptr);
-  GTEXT_INI_Group * g = nullptr;
   ASSERT_EQ(gtext_ini_document_add_group(doc, "g", &g), GTEXT_INI_OK);
-  ASSERT_EQ(gtext_ini_group_set(g, "Env\\\niron", "1", 1), GTEXT_INI_OK);
-  ASSERT_EQ(gtext_ini_group_set(g, "\\\\\\\n", "", 0), GTEXT_INI_OK);
-  ASSERT_EQ(gtext_ini_group_set(g, "Environment\\\n", "v", 1), GTEXT_INI_OK);
-  ASSERT_EQ(gtext_ini_group_set(g, "plain", "p", 1), GTEXT_INI_OK);
-  EXPECT_EQ(got(gtext_ini_group_canonical_key_at, g, (size_t) 0), "Env iron");
-  EXPECT_EQ(got(gtext_ini_group_canonical_key_at, g, (size_t) 1), "\\\\");
-  EXPECT_EQ(got(gtext_ini_group_canonical_key_at, g, (size_t) 2), "Environment");
-  EXPECT_EQ(got(gtext_ini_group_canonical_key_at, g, (size_t) 3), "plain");
-  EXPECT_EQ(raw(doc, "g", "Env iron"), "1") << "reachable by the joined name, as in a document read";
-  const std::string text = written(doc);
-  GTEXT_INI_Document * back = ok(text, sd());
-  ASSERT_NE(back, nullptr) << text;
-  const GTEXT_INI_Group * b = gtext_ini_document_group_at(back, 0);
-  ASSERT_EQ(gtext_ini_group_entry_count(b), 4u);
-  for (size_t i = 0; i < 4; i++) {
-    EXPECT_EQ(got(gtext_ini_group_canonical_key_at, b, i), got(gtext_ini_group_canonical_key_at, g, i)) << "key " << i;
+  for (const char * key : {"Env\\\niron", "\\\\\\\n", "Environment\\\n", "k\\\r", "a\nb", "a\rb"}) {
+    EXPECT_EQ(gtext_ini_group_set(g, key, "1", 1), GTEXT_INI_E_BAD_KEY) << key;
   }
-  gtext_ini_free(back);
+  EXPECT_EQ(gtext_ini_group_set(g, "Env iron", "1", 1), GTEXT_INI_OK) << "the joined name is a name";
   gtext_ini_free(doc);
+  /* a document with the continuations: the value of a key can be changed by the joined name, and is written back with its spelling */
+  GTEXT_INI_Document * read = ok("[Serv\\\nice]\nEnv\\\niron=1\n", sd());
+  ASSERT_NE(read, nullptr);
+  GTEXT_INI_Group * rg = const_cast<GTEXT_INI_Group *>(gtext_ini_document_group(read, "Serv ice"));
+  ASSERT_NE(rg, nullptr);
+  EXPECT_EQ(gtext_ini_group_set(rg, "Env iron", "2", 1), GTEXT_INI_OK);
+  EXPECT_EQ(written(read), "[Serv\\\nice]\nEnv\\\niron=2\n");
+  gtext_ini_free(read);
 }
 
 TEST(IniSystemd, AContinuationMayAppearInAHeaderOrAKey) {

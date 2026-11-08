@@ -1076,55 +1076,6 @@ bool gtext_ini_canon_key(const GTEXT_INI_Dialect * dialect, const char * raw,
   return true;
 }
 
-/**
- * Join the continuations in [start, end) into @p out, which must have room for
- * `end - start` bytes. Returns the joined length, or SIZE_MAX when there is no
- * continuation in the range at all.
- *
- * SIZE_MAX rather than "the same bytes" so that a caller can tell "nothing to do"
- * from "joined to the same length", and store no canonical form in the first case.
- * A join only ever shortens: the backslash and its terminator become one space, or
- * nothing.
- */
-size_t gtext_ini_join_continuations(const GTEXT_INI_Dialect * dialect,
-    const char * bytes, size_t len, size_t start, size_t end, char * out) {
-  size_t w = 0;
-  bool joined = false;
-  size_t i = start;
-  while (i < end) {
-    ini_continuation cont = gtext_ini_continuation_at(dialect, bytes, len, i);
-    if (cont.span) {
-      joined = true;
-      if (!cont.ends_line &&
-          dialect->continuation == GTEXT_INI_CONTINUATION_JOIN_SPACE) {
-        out[w++] = ' ';
-      }
-      /*
-       * `cont.span` can reach past `end` - a continuation at the end of the range
-       * consumes its terminator, which is outside it - so clamp rather than trust
-       * it. The bytes between are the comment block it skipped, and they are not
-       * part of the name.
-       */
-      i += cont.span;
-      continue;
-    }
-    out[w++] = bytes[i++];
-  }
-  return joined ? w : SIZE_MAX;
-}
-
-/*
- * The whitespace that may sit between a key and its `=`, and that is trimmed off the end of a key: a space or a tab, and nothing else, whatever the dialect, unless the dialect
- * says otherwise (::GTEXT_INI_Dialect::space_set).
- *
- * Distinct from gtext_ini_is_space() on purpose, and the distinction is git's: its top-level loop skips anything its ctype calls space - CR included - while the run between a
- * key and its `=` is matched against `' '` and `'\t'` literally. So `\rk = v` is accepted and `k\r= v` is refused, by the same implementation, on the same line. One predicate for
- * both would have to pick one of those two answers and would get the other wrong.
- */
-bool gtext_ini_sep_space(const GTEXT_INI_Dialect * dialect, char c) {
-  return dialect->space_set != GTEXT_INI_SPACE_BLANK ? gtext_ini_is_space(dialect, c) : (c == ' ' || c == '\t');
-}
-
 bool gtext_ini_group_name_ok(const GTEXT_INI_Dialect * dialect,
     const char * name, size_t len) {
   /*

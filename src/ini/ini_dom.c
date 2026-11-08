@@ -269,42 +269,20 @@ const char * gtext_ini_document_get(const GTEXT_INI_Document * doc,
   return ini_out(found ? &found->value : NULL, len);
 }
 
-/**
- * The joined form of a name that holds a continuation, as the parser makes it (systemd: `Serv\<LF>ice` is the group `Serv ice`, `Env\<LF>iron` the key `Env iron`). A name made in the tree is written as it
- * is and read back joined, so its canonical name has to be the joined one or a lookup by the name the document gives it finds nothing in the tree it was written from (the fuzz harness for the writer
- * found it for a group and for a key). The name is joined as it is written, with the `]` of a header or the separator of an entry after it, because a continuation that ends the text and one that
- * is followed by more are joined differently (the first adds no space), and a key loses the blanks the join leaves at its end, as the parser trims them.
- * Sets *joined to a new buffer of *joined_len bytes the caller frees, or to NULL when the name has no continuation to join.
- */
-static GTEXT_INI_Status ini_join_name(const GTEXT_Allocator * alloc, const GTEXT_INI_Dialect * d, const char * name, size_t len, bool is_group, char ** joined, size_t * joined_len) {
-  *joined = NULL;
-  *joined_len = 0;
-  if (!gtext_ini_names_may_continue(d) || (!memchr(name, '\n', len) && !memchr(name, '\r', len))) return GTEXT_INI_OK;   /* a lone CR after a backslash continues as well */
-  char * tmp = gtext_allocator_malloc(alloc, 2 * len + 2);
-  if (!tmp) return GTEXT_INI_E_OOM;
-  memcpy(tmp, name, len);
-  tmp[len] = is_group ? ']' : (d->separators[0] ? d->separators[0] : '=');
-  char * out = tmp + len + 1;
-  size_t got = gtext_ini_join_continuations(d, tmp, len + 1, 0, len, out);
-  if (got == SIZE_MAX) {
-    gtext_allocator_free(alloc, tmp);
-    return GTEXT_INI_OK;
-  }
-  if (!is_group) {
-    while (got && gtext_ini_sep_space(d, out[got - 1])) got--;
-  }
-  memmove(tmp, out, got);
-  *joined = tmp;
-  *joined_len = got;
-  return GTEXT_INI_OK;
-}
-
 GTEXT_INI_Status gtext_ini_document_add_group(GTEXT_INI_Document * doc,
     const char * name, GTEXT_INI_Group ** out) {
   if (out) *out = NULL;
   if (!doc || !name) return GTEXT_INI_E_INVALID;
   size_t len = strlen(name);
   if (!gtext_ini_group_name_ok(&doc->dialect, name, len)) {
+    return GTEXT_INI_E_BAD_GROUP;
+  }
+  /*
+   * A line end is in the name of a group the parser reads only as a continuation (systemd: `Serv\<LF>ice`), which keeps the spelling and joins it for the canonical name. A group
+   * made here is written as it is and has to be the group that is read back, and what a backslash, a carriage return and a line feed make of a name depends on all that is
+   * around them (the fuzz harness for the writer lost `[\\<LF>]`, `[\<CR>...\]` and others one after the other), so a name with a line end is not made in the tree.
+   */
+  if (memchr(name, '\n', len) || memchr(name, '\r', len)) {
     return GTEXT_INI_E_BAD_GROUP;
   }
   if (!doc->dialect.allow_duplicate_groups &&
@@ -355,18 +333,6 @@ GTEXT_INI_Status gtext_ini_document_add_group(GTEXT_INI_Document * doc,
     bool ok = gtext_ini_canon_group(&doc->dialect, name, len, buf, &canon_len) &&
               gtext_ini_str_set(doc->alloc, &group->canon, buf, canon_len);
     if (heap) gtext_allocator_free(doc->alloc, heap);
-    if (!ok) {
-      gtext_ini_str_clear(doc->alloc, &group->name);
-      return GTEXT_INI_E_OOM;
-    }
-  }
-  else {
-    /* Only a dialect that does not fold gets to join: the one that does refuses a line end in a name. */
-    char * joined = NULL;
-    size_t joined_len = 0;
-    GTEXT_INI_Status js = ini_join_name(doc->alloc, &doc->dialect, name, len, true, &joined, &joined_len);
-    const bool ok = js == GTEXT_INI_OK && (!joined || gtext_ini_str_set(doc->alloc, &group->canon, joined, joined_len));
-    if (joined) gtext_allocator_free(doc->alloc, joined);
     if (!ok) {
       gtext_ini_str_clear(doc->alloc, &group->name);
       return GTEXT_INI_E_OOM;
@@ -514,35 +480,21 @@ static GTEXT_INI_Status ini_entry_init(GTEXT_INI_Group * group,
             gtext_ini_str_set(alloc, &entry->pre, "", 0) &&
             gtext_ini_str_set(alloc, &entry->sep, d->separators, 1) &&
             gtext_ini_str_set(alloc, &entry->eol, "\n", 1);
-  if (ok && (d->fold_case || gtext_ini_names_may_continue(d))) {
-    /* The canonical form a lookup will compare against: the joined form of a name that holds a continuation, folded when the dialect folds. Built here rather than at
-       lookup time for the same reason the parser builds it. */
-    char * joined = NULL;
-    size_t joined_len = 0;
-    if (ini_join_name(alloc, d, key, key_len, false, &joined, &joined_len) != GTEXT_INI_OK) return GTEXT_INI_E_OOM;
-    const char * src = joined ? joined : key;
-    const size_t src_len = joined ? joined_len : key_len;
-    if (d->fold_case) {
-      char stack[256];
-      char * buf = stack;
-      char * heap = NULL;
-      if (src_len > sizeof(stack)) {
-        heap = gtext_allocator_malloc(alloc, src_len);
-        if (!heap) {
-          if (joined) gtext_allocator_free(alloc, joined);
-          return GTEXT_INI_E_OOM;
-        }
-        buf = heap;
-      }
-      size_t canon_len = 0;
-      ok = gtext_ini_canon_key(d, src, src_len, buf, &canon_len) &&
-           gtext_ini_str_set(alloc, &entry->canon, buf, canon_len);
-      if (heap) gtext_allocator_free(alloc, heap);
+  if (ok && d->fold_case) {
+    /* The folded form a lookup will compare against. Built here rather than at
+     * lookup time for the same reason the parser builds it. */
+    char stack[256];
+    char * buf = stack;
+    char * heap = NULL;
+    if (key_len > sizeof(stack)) {
+      heap = gtext_allocator_malloc(alloc, key_len);
+      if (!heap) return GTEXT_INI_E_OOM;
+      buf = heap;
     }
-    else if (joined) {
-      ok = gtext_ini_str_set(alloc, &entry->canon, joined, joined_len);
-    }
-    if (joined) gtext_allocator_free(alloc, joined);
+    size_t canon_len = 0;
+    ok = gtext_ini_canon_key(d, key, key_len, buf, &canon_len) &&
+         gtext_ini_str_set(alloc, &entry->canon, buf, canon_len);
+    if (heap) gtext_allocator_free(alloc, heap);
   }
   return ok ? GTEXT_INI_OK : GTEXT_INI_E_OOM;
 }
@@ -556,13 +508,10 @@ static bool ini_key_reads_back(const GTEXT_INI_Dialect * dialect, const char * k
   if (!len || dialect->name_style == GTEXT_INI_NAMES_GIT || dialect->name_style == GTEXT_INI_NAMES_DESKTOP_ENTRY) {
     return true;   /* an empty key is the dialect's to allow (win32), and these two have a character class that excludes all of it */
   }
-  /* a line terminator is in a key only as the end of a continuation line (systemd), as a group name holds one: a backslash before it, a carriage return between for CR LF */
-  for (size_t i = 0; i < len; i++) {
-    if (key[i] != '\n' && key[i] != '\r') continue;
-    const bool after_backslash = i > 0 && key[i - 1] == '\\';
-    const bool after_cr = key[i] == '\n' && i > 1 && key[i - 1] == '\r' && key[i - 2] == '\\';
-    if (!after_backslash && !after_cr) return false;
-  }
+  /* a line end is in a key only as part of a continuation (systemd), which the parser keeps as spelled and joins for the canonical name: a key made in the tree is written as it is and has to be
+     the key that is read back, and what a backslash, a carriage return and a line feed make of a name depends on all that is around them, so a key with a line end is not made in the tree
+     (the same as for the name of a group, and for the same fuzz findings) */
+  if (memchr(key, '\n', len) || memchr(key, '\r', len)) return false;
   if (gtext_ini_is_space(dialect, key[0]) || gtext_ini_is_space(dialect, key[len - 1])) return false;
   return !(key[0] == '[' || (key[0] == '#' && dialect->comment_hash) || (key[0] == ';' && dialect->comment_semicolon));
 }
