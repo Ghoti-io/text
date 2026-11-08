@@ -2968,6 +2968,33 @@ TEST(IniConfigParser, AnIndentedLineContinuesTheValueAndJoinsWithANewline) {
   }
 }
 
+/* found by the libFuzzer run of fuzz_ini_writer (tests/fuzz/corpus/ini-writer/reproducer-configparser-indented-continuation.seed), a fault of the harness's model and not of the library: a value set in the tree
+   with a line feed in it ("\n)") is written as a continuation, `k=` and ` )`, the indentation being what makes the second line part of the value; a reader stores the document's own bytes, so what it
+   stores is "\n )", and the joined form of the two is the same. */
+TEST(IniConfigParser, AMultiLineValueSetInTheTreeIsWrittenAsAContinuationAndReadsBackIndentedAndJoinedTheSame) {
+  GTEXT_INI_Document * doc = empty(cp());
+  ASSERT_NE(doc, nullptr);
+  GTEXT_INI_Group * g = nullptr;
+  ASSERT_EQ(gtext_ini_document_add_group(doc, "a", &g), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_group_set(g, "k", "\n)", 2), GTEXT_INI_OK);
+  ASSERT_EQ(gtext_ini_group_set(g, "j", "x\ny", 3), GTEXT_INI_OK);
+  const std::string text = written(doc);
+  EXPECT_EQ(text, "[a]\nk=\n )\nj=x\n y\n");
+  gtext_ini_free(doc);
+  GTEXT_INI_Document * back = ok(text, cp());
+  ASSERT_NE(back, nullptr);
+  size_t n = 0;
+  const char * k = gtext_ini_document_get(back, "a", "k", &n);
+  ASSERT_NE(k, nullptr);
+  EXPECT_EQ(std::string(k, n), "\n )") << "the stored value is the document's bytes, indentation included";
+  EXPECT_EQ(joined(std::string(k, n)), "\n)");
+  const char * j = gtext_ini_document_get(back, "a", "j", &n);
+  ASSERT_NE(j, nullptr);
+  EXPECT_EQ(joined(std::string(j, n)), "x\ny");
+  EXPECT_EQ(written(back), text) << "written, read and written again is the same text";
+  gtext_ini_free(back);
+}
+
 TEST(IniConfigParser, TheIndentComparisonIsStrictlyGreaterThanTheEntrysOwnLine) {
   /*
    * The rule that cannot be inferred from a single document's result, and the one

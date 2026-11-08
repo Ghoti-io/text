@@ -59,6 +59,33 @@ namespace {
   std::abort();
 }
 
+/**
+ * Whether a value read back is the value that was set.
+ *
+ * A dialect whose lines continue by indentation (configparser) stores the document's own bytes: the writer puts every line of a value after its first
+ * behind the indentation that makes it a continuation, and a reader keeps that indentation in the stored value ("the joined form is the canonical form",
+ * documentation/formats/ini.md), so `\n)` is written as `k=` and ` )` and read back as `\n )`. What is the same is the joined form of the two,
+ * which gtext_ini_unescape() makes. Every other dialect keeps the bytes.
+ */
+bool same_value(const GTEXT_INI_Dialect & dialect, const char * read, size_t read_len, const std::string & set) {
+  if (dialect.continuation != GTEXT_INI_CONTINUATION_INDENT) {
+    return read_len == set.size() && (read_len == 0 || std::memcmp(read, set.data(), read_len) == 0);
+  }
+  std::string a, b;
+  const std::string raw[2] = {std::string(read, read_len), set};
+  std::string * dst[2] = {&a, &b};
+  for (int k = 0; k < 2; k++) {
+    char * out = nullptr;
+    size_t n = 0;
+    if (gtext_ini_unescape(&dialect, raw[k].data(), raw[k].size(), nullptr, &out, &n) != GTEXT_INI_OK) {
+      return raw[0] == raw[1];
+    }
+    dst[k]->assign(out, n);
+    gtext_ini_string_free(nullptr, out);
+  }
+  return a == b;
+}
+
 /** One entry the harness asked for and the DOM accepted. */
 struct Entry {
   std::string key;
@@ -260,7 +287,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
             std::fprintf(stderr, "key lost in group %s\n", g.name.c_str());
             fail("a key the DOM accepted did not survive the round trip", out);
           }
-          if (len != want->size() || (len && std::memcmp(v, want->data(), len) != 0)) {
+          if (!same_value(popts.dialect, v, len, *want)) {
             std::fprintf(stderr, "value changed: wrote %zu bytes, read %zu\n", want->size(), len);
             fail("a value changed across the round trip", out);
           }
@@ -290,8 +317,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
           std::fprintf(stderr, "key lost in group %s\n", g.name.c_str());
           fail("a key the DOM accepted did not survive the round trip", out);
         }
-        if (len != e.value.size()
-            || (len && std::memcmp(v, e.value.data(), len) != 0)) {
+        if (!same_value(popts.dialect, v, len, e.value)) {
           std::fprintf(stderr, "value changed: wrote %zu bytes, read %zu\n",
               e.value.size(), len);
           fail("a value changed across the round trip", out);
