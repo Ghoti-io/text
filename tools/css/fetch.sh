@@ -180,7 +180,7 @@ drafts_verify() { # dir: every manifest file present and hashing as pinned, and 
 	done < "$drafts_manifest"
 	for f in "$1"/*; do
 		[ -e "$f" ] || continue
-		grep -q "^[0-9a-f]*[[:space:]]$(basename "$f")[[:space:]]" "$drafts_manifest" || { printf 'drafts: %s is not in tools/css/DRAFTS_SHA256\n' "$(basename "$f")" >&2; bad=1; }
+		grep -q "^[0-9a-f]*[[:space:]]$(basename "$f")[[:space:]]" "$drafts_manifest" "$root/tools/css/HOUDINI_SHA256" || { printf 'drafts: %s is not in tools/css/DRAFTS_SHA256\n' "$(basename "$f")" >&2; bad=1; }
 	done
 	return $bad
 }
@@ -215,6 +215,45 @@ else
 	fi
 	rm -rf "$drafts"
 	mv "$drafts.partial" "$drafts"
+fi
+
+# ---- the one Editors' Draft of w3c/css-houdini-drafts (CSS Properties and Values API) ------------------------------------------
+# Kept beside the others in third_party/css/drafts/. tools/css/HOUDINI_COMMIT is the commit and tools/css/HOUDINI_SHA256 the hash of the source.
+houdini_manifest="$root/tools/css/HOUDINI_SHA256"
+want_houdini=$(cat "$root/tools/css/HOUDINI_COMMIT")
+houdini_ok() {
+	bad=0
+	while read -r sum file path; do
+		case "$sum" in '#'*|'') continue ;; esac
+		[ -f "$drafts/$file" ] && [ "$(sha256sum "$drafts/$file" | cut -d' ' -f1)" = "$sum" ] || bad=1
+	done < "$houdini_manifest"
+	return $bad
+}
+if houdini_ok; then
+	printf 'have    houdini draft @ %s (tools/css/HOUDINI_SHA256)\n' "$want_houdini"
+else
+	printf 'fetch   houdini draft (css-houdini-drafts) @ %s\n' "$want_houdini"
+	rm -rf "$drafts.hsrc"
+	mkdir -p "$drafts.hsrc"
+	git -C "$drafts.hsrc" init --quiet
+	git -C "$drafts.hsrc" remote add origin https://github.com/w3c/css-houdini-drafts.git
+	git -C "$drafts.hsrc" sparse-checkout init --no-cone
+	# shellcheck disable=SC2046
+	git -C "$drafts.hsrc" sparse-checkout set $(grep -v '^#' "$houdini_manifest" | awk 'NF { print "/" $3 }')
+	git -C "$drafts.hsrc" fetch --quiet --depth 1 --filter=blob:none origin "$want_houdini"
+	git -C "$drafts.hsrc" checkout --quiet --detach FETCH_HEAD
+	got=$(git -C "$drafts.hsrc" rev-parse HEAD)
+	if [ "$got" != "$want_houdini" ]; then
+		rm -rf "$drafts.hsrc"
+		printf 'houdini draft: checked out %s, pinned %s. Nothing was kept.\n' "$got" "$want_houdini" >&2
+		exit 1
+	fi
+	while read -r sum file path; do
+		case "$sum" in '#'*|'') continue ;; esac
+		cp "$drafts.hsrc/$path" "$drafts/$file"
+	done < "$houdini_manifest"
+	rm -rf "$drafts.hsrc"
+	houdini_ok || { printf 'houdini draft: the source does not hash as pinned (tools/css/HOUDINI_SHA256)\n' >&2; exit 1; }
 fi
 
 # ---- the @webref/css package, the second reading of the same data -------------------------------------------------

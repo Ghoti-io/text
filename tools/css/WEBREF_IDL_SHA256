@@ -1,4 +1,4 @@
-# w3c/webref curated d20af004eff967a9b8e562ea3423c29402a5ce61: SHA-256 of the WebIDL files the CSSOM interface ledger (tools/css/cssom_ledger.tsv, tools/css/check-cssom-ledger.py) is checked against; tools/css/fetch.sh verifies
+# w3c/webref curated 6ac6259c96b11e0aea5c34a16822eb06add278c9: SHA-256 of the WebIDL files the CSSOM interface ledger (tools/css/cssom_ledger.tsv, tools/css/check-cssom-ledger.py) is checked against; tools/css/fetch.sh verifies
 41d65d4ffbdf129a2659f2a6aaafa4f9cc1657d180c990190e8dc38cd0d06542  ed/idl/cssom.idl
 9cbaa508b4e2da41904e9f935020a6528184d9f2796672493e4c4d8c36c220ac  ed/idl/css-conditional.idl
 c52b6349f2ac6d8592f5e05d710f4d6247ad703289b92effb8f8b8a1ef6c729b  ed/idl/css-conditional-5.idl

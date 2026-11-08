@@ -1,5 +1,5 @@
 # tools/css/gen-cssom-tables.py: the IDL attributes of CSSStyleDeclaration (CSSOM, "CSS property to IDL attribute") for the properties of the registry
-# (the pin of tools/css/WEBREF_COMMIT, d20af004eff967a9b8e562ea3423c29402a5ce61). Columns, tab separated: attribute, property, kind (camel, dashed, webkit, special).
+# (the pin of tools/css/WEBREF_COMMIT, 6ac6259c96b11e0aea5c34a16822eb06add278c9). Columns, tab separated: attribute, property, kind (camel, dashed, webkit, special).
 # Generated: do not edit; `make check-cssom` regenerates it and fails on a difference.
 attribute	property	kind
 -webkit-align-content	-webkit-align-content	dashed

@@ -1,0 +1,4 @@
+# The one Editors' Draft that lives in w3c/css-houdini-drafts instead of w3c/csswg-drafts (CSS Properties and Values API Level 1: @property, with the
+# shorthand form), pinned like tools/css/DRAFTS_SHA256: the SHA-256 of its Bikeshed source, the name it is kept under in third_party/css/drafts/, its path in the
+# repository at the commit of tools/css/HOUDINI_COMMIT. Same rules: nothing is kept unless the commit and the hash are right.
+4f44ab1934e14d6f5a2cc589e3a58a6e7a2d588a8f6a15a6d26789d39e92c6c9	css-properties-values-api.bs	css-properties-values-api/Overview.bs

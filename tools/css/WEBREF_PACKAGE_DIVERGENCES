@@ -10,8 +10,3 @@
 # * type-syntax: both have the name and the texts differ; the reason gives both and says which side is the older reading.
 #
 type	output-value	the pin nests <output-value> in calc-interpolate(), color-interpolate(), interpolate() and transform-interpolate() with no grammar of its own (the entries carry only keyword values, so it is prose); the package lists no such type
-type-syntax	self-position	the package's text adds `flow-start | flow-end`; the pinned css-align text has neither (grep of ed/css/css-align*.json: no flow-start). The package postdates the pin by two days, and the tables follow the pin
-type-syntax	content-position	the package's text adds `flow-start | flow-end`, as for self-position; the pinned css-align text has neither, and the tables follow the pin
-type-syntax	alpha()	the package reads css-color-5 as `alpha(from <color> / [<alpha-value> | none])` (from required); the pinned css-color-5.json has `alpha([from <color>] [ / [<alpha-value> | none] ]? )`. The tables follow the pin, which accepts the shorter forms
-type-syntax	class-selector	the package's text is selectors-5's `'.' <ident-token> '*'?`; the pinned file that defines it is selectors (level 4) with `'.' <ident-token>`, and the tables follow the pin
-type-syntax	content-list	the package ends the list with `<symbolic-glyph>`, the pinned css-content text with `<symbolic-counter-style>`; the texts differ in that one name. The served draft (Content 3) writes `<symbolic-glyph>`, so tools/css/consolidate.tsv replaces the pin's text and the tables follow the package and the draft here

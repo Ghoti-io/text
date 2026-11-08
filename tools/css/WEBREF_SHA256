@@ -1,10 +1,10 @@
-# w3c/webref curated d20af004eff967a9b8e562ea3423c29402a5ce61: SHA-256 of every file the CSS tables are generated from (tools/css/fetch.sh verifies, tools/css/gen-css-tables.py reads)
+# w3c/webref curated 6ac6259c96b11e0aea5c34a16822eb06add278c9: SHA-256 of every file the CSS tables are generated from (tools/css/fetch.sh verifies, tools/css/gen-css-tables.py reads)
 67e01f90f2d14596733db891416233204f3adf454d4ddc99aba27ac37b1bb70c  ed/css/CSS.json
 a9f95c43687110570bc4ba850c4da16f620a27c9e36b092a7da4b54f6549b649  ed/css/SVG.json
 0b9a047dd806434d5a721dfbeb4d265481aca94573d27cf5af7109fba75d9097  ed/css/animation-triggers.json
 302827e655fb36d7f8fef6dd5f0c95ce26c61c1b2fc760eff18a7007d60a5aa6  ed/css/compat.json
 5200a635fbe2c0c5d464c0a8e174d580ec398103b7dde1e0c676698e0ec922a1  ed/css/compositing.json
-e66c7ab798c05964415821f0c848c471d3bbfdfb86c88cc086faab4ba7090ed2  ed/css/css-align.json
+6f07b171eed357af225c9bac7957265c2577e74d6aded87adf85934698d85d35  ed/css/css-align.json
 ec2b9dd3fb0b43c0123718ee7d3c73eee6db7a84fa55464bbd7e4192de0ddd08  ed/css/css-anchor-position-2.json
 c7b198cfe5533fdc8197e89c61138ac2a15f47ea883d609a36bba712ef466d89  ed/css/css-anchor-position.json
 c1e991416110b0d4a9e2be661a5b64672bae5d479b181f5c565200f5eae5a331  ed/css/css-animations-2.json
@@ -16,7 +16,7 @@ c0470044876f1b006506e2041cdb980ceba7950bbbd276e8b35c73de943bce1e  ed/css/css-box
 08d15d2f8d8ac27efe77c5eb94506b6baadef1d566c7b544d45abd0788054e7d  ed/css/css-break.json
 6cae4c897599c6b4c10433c94feffefa63e14d77803b701493b6c5cda87a271e  ed/css/css-cascade-6.json
 c63ad202ca4ff55a441b848f3e085ca94ff17dd753a2e4965a12d2f116485693  ed/css/css-cascade.json
-3a3a662b8c47f72d7a1ff395ba1cead9505a2b3ab0539568335642d9a6d62fd7  ed/css/css-color-5.json
+b4f59290922d4836f4b12e39e1c8df10f0d61c44c59eead055f0e1ebd87502f2  ed/css/css-color-5.json
 89563384367813cea43c549e729d12a0882b3ede296c7228bcf800f12c89cbda  ed/css/css-color-6.json
 9c080bb24412416986b60473d4154a52034ebd9ed10059918b356515fc3ca59e  ed/css/css-color-adjust.json
 00ddb3175a775f8247d2a685c0fa6ce60ff38460870e472ff0ee8100f425b032  ed/css/css-color-hdr.json
@@ -25,7 +25,7 @@ fa5433f1c55d5f418093658d004d674b2476470f6bd184d3d65fe546738056bd  ed/css/css-con
 74e939432e707f81be4f5b97820b195c1ce0d9a7d5dd52c3f4aded65d5771cad  ed/css/css-conditional-5.json
 a1275bbf8a454327859c2089e3cb6bdc3aa70f978ea94f66c17c125a12f19a1e  ed/css/css-conditional.json
 9015b6f15827a655d2a5cfe8233a42c511851cf1bab45d4209d52166a8521442  ed/css/css-contain.json
-995d264b6a18ff44792526ae6c2a7484e1fc45d67b0f8d1eb09f27279642f294  ed/css/css-content.json
+2b47364a194fbe867c3f411144e5dbec00472bdc8f932ff302846360aa8a5512  ed/css/css-content.json
 cf8ae415040bc3bb6df56e9dec503ae0853ec0cfa27bb55bc3b885b7e148d85d  ed/css/css-counter-styles.json
 280b55558c923f6597ca565a40577648b40b5c05d744658576739315cc559ce0  ed/css/css-display.json
 dd64a5920d89a0c5431a93fbf1371af2bd51cb30376a2a8085428c34b8933117  ed/css/css-easing.json
@@ -63,7 +63,7 @@ bdb3a32fa114717bb2245caa51fbcb07c2b9b7b13f25014d70aa025e54426ec1  ed/css/css-ove
 3ffc7bd0eb18c1a8e1562547ad2744808229c96bf8adff09dc9b361457b003c4  ed/css/css-overflow.json
 fc146fd0311103558512ab4988d739bfc5b4121cfd586f0fbc028c3dc2f6a4a6  ed/css/css-overscroll.json
 d263a126397ceddc04618e94cb7bb6e437fb277b4f7db79ecda808d63197302d  ed/css/css-page-floats.json
-79f8f24062cf5a382676ff6003bdc7114807aa2851b22cb31bc0ebcd2af7f64b  ed/css/css-page.json
+66fbd46825c4f5fab1ca62ec25c4e3df142059b1a7cd081080ccec2e8efd0e52  ed/css/css-page.json
 5703e3129063319595fa7329efc26cb7068131b4b10bce468f94ae8f9a50d5cb  ed/css/css-paint-api.json
 ef36091740a335cf3d1a70e4dc4c585b804876862da27f16f35655d5de42ed52  ed/css/css-position-4.json
 e97f144112a44e2109d3b40e2f7aaddd8773718cfc53719887866b7132f00e0a  ed/css/css-position.json
@@ -86,7 +86,7 @@ f4f3ec4e19fa709bc89b6238bed38bcd342bbb6f74e132d03b845ae8634836ac  ed/css/css-siz
 158aab8dfb7371dc8c53bbf2c93d37ec374dfb81522a9315a5e14f59bd824da0  ed/css/css-speech.json
 3d20ec368486b938ef114e3eba783c8896ba8cc42cf319439c9f3b08419bf146  ed/css/css-syntax.json
 15e12feb1f8dc0a065de6f219e8e9f870ea19a6b907a1788e351e5faa15a992b  ed/css/css-tables.json
-23e8b7ed1e374e338691b093d36bdd7ed54cca03b714a0a7f07a628308efcfb5  ed/css/css-text-4.json
+59f2d51941c23b27c48a109c8ffdaef5d831efbbe54f0881448b851c41a7a1d6  ed/css/css-text-4.json
 15dd1083066278699d4b7efee9d09c58a73a0f4742b7c34883e38cfe5ff41037  ed/css/css-text-5.json
 6982785ee2bd98609d3d3b7d35d1d461d14e704ad56111f327ddbb37c7670952  ed/css/css-text-decor-4.json
 4c8ea99f9a8ee79a1e0c7507ecbe952a18ff21df7dc0370911fb470874be4ce0  ed/css/css-text-decor.json
@@ -97,7 +97,7 @@ b750ffa75041acc54b3ce8e02b7be8e79a2b271faf61fc73f8185fe74f4b91c6  ed/css/css-tra
 c39bb73d589ea408f6401bd7243dc4775bae96019349d0117d5dee42e4938a75  ed/css/css-transitions.json
 96b40d0ccd4873be541667b18fb072c1ef819b70c97a6fee5208a8816d5e847f  ed/css/css-ui.json
 6acf12489736e5f407a73e695a275303d73371c5efc533eb0bc018ee67c483cd  ed/css/css-values-5.json
-80984c69879e4d9740541536fadf929311b5381ceaa6f9c6350aff83522836c4  ed/css/css-values.json
+3925a4abb6bd2ff1edd9d313d9d56bdc6e62b66e787f3ac94d0c9f481b86afbe  ed/css/css-values.json
 e4e6243435f98abba4ba17993ca254d6c36ebe5a57909343ba8196c4fe1b2b2e  ed/css/css-variables.json
 4a949eca80d221fe3c7f5de8fb507482971a2c78bc921251db4b937e916efe27  ed/css/css-view-transitions.json
 67b2332e9a006796bb2ee28d15aabce0457d3b81b024b5ea72c617a4a412c9ae  ed/css/css-viewport.json
@@ -109,12 +109,12 @@ e4e6243435f98abba4ba17993ca254d6c36ebe5a57909343ba8196c4fe1b2b2e  ed/css/css-var
 a312a4d531f3985da835f3e1d40bc381d062f4303ed0d83a1fcb421a2c0a1428  ed/css/fullscreen.json
 f976756cab113f1861b5a1850525256f2cb16c7f9a210c06f3d017be8a28f3ac  ed/css/html.json
 96e034b35568af97346491bcfc33f9027ca2b5160a07ae92457d19f5e43ac63e  ed/css/mathml-core.json
-414101f57daa61fb5cf081fec0b31949f2094f5ba958778073c9fe77e5509951  ed/css/mediaqueries-5.json
+2a7f2d5f84afb62a5a94f3c2cf504015a2b047c77ebe03466ea6e13cbc236cf6  ed/css/mediaqueries-5.json
 bc616fc5715c6685d1c526e609aa1e6735a631ea161c581a04fed89c9691745f  ed/css/mediaqueries.json
 0279a284652dc428a095014333b8d3a45d4bdc900551177485578baea86a0ecd  ed/css/motion.json
 2bb9f52d6c6db95e1eaa50e3b2f39852d2f94bab8eb567a63fd82b266e5e7289  ed/css/pointer-animations.json
 eb934644662de7a692e1836b0ce0407c4df252c50bcf4d12d543cf4f540a5cf6  ed/css/scroll-animations.json
-346189a8da9d05571dfeac369719edc5c0d9431e3f1c822002f34604657ff77c  ed/css/selectors-5.json
+7af60436152b015250bc169bb0cd4049676eb6f40d3b3fb4431fd48384e511d7  ed/css/selectors-5.json
 1d5893bcd8ed853635be8c6c1362a121c10b850b0a30169e5726d4ac724077f5  ed/css/selectors.json
 f24b20a550dff3240f78c4c2c8b58d0080e045046b26987f00608105369ceaed  ed/css/svg-strokes.json
 961fe478954dd7c3da7d370c2555a4297665e799f01bdf344f6e280616da526d  ed/css/upgrade-insecure-requests.json

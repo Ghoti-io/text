@@ -82,7 +82,7 @@ read it.
 ## The generated layer
 
 `tools/css/gen-css-tables.py` reads the `curated` branch of `w3c/webref` (commit
-`d20af004eff967a9b8e562ea3423c29402a5ce61`, 122 per-series files in `ed/css`, and the
+`6ac6259c96b11e0aea5c34a16822eb06add278c9`, 122 per-series files in `ed/css`, and the
 three css-values definition files of `ed/dfns`), after `tools/css/fetch.sh` has checked
 the checkout against the commit and `tools/css/WEBREF_SHA256` has checked every file, and
 writes `src/css/tables/`: const data with no pointer in it, so the shared library carries

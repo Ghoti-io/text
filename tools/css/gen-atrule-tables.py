@@ -27,6 +27,9 @@ import shutil
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import webref_model as wm  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 WEBREF_DEFAULT = os.path.join(ROOT, "third_party", "css", "webref", "ed", "css")
@@ -82,7 +85,7 @@ def read_pin(directory):
     for path in files:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        for a in data.get("atrules", []):
+        for a in wm.promote_nested_atrules(data):
             name = a["name"][1:]
             p = pin.setdefault(name, {"descriptors": set(), "files": set()})
             p["files"].add(os.path.basename(path))

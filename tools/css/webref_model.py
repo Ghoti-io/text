@@ -56,6 +56,32 @@ def read_manifest(path):
     return entries
 
 
+# The margin rules of @page. The pin from 2026-10-26 on gives them as descriptors of @page (type `at-rule`, `for` @page), where the earlier pin
+# had them as at-rules of their own; the library keeps the earlier shape (css_atrule.c reads the declarations of a margin rule against its own
+# entry, and the rule kinds table has a row for each), so the model lifts them back out. They are the nested at-rules of Paged Media only:
+# the nested at-rules of @font-feature-values stay descriptors of their parent, as they always were.
+PROMOTED_NESTED_ATRULES = {"@page": ("@top-left-corner", "@top-left", "@top-center", "@top-right", "@top-right-corner",
+                                     "@bottom-left-corner", "@bottom-left", "@bottom-center", "@bottom-right", "@bottom-right-corner",
+                                     "@left-top", "@left-middle", "@left-bottom", "@right-top", "@right-middle", "@right-bottom")}
+
+
+def promote_nested_atrules(doc):
+    """doc with the margin rules of @page lifted from the descriptors of @page to at-rules of their own (a list of at-rules, the way the earlier pin had them)."""
+    out = []
+    lifted = []
+    for a in doc.get("atrules", []):
+        keep = []
+        for d in a.get("descriptors", []):
+            if d.get("type") == "at-rule" and d["name"] in PROMOTED_NESTED_ATRULES.get(a["name"], ()):
+                lifted.append({"name": d["name"], "href": d.get("href"), "descriptors": [], "value": d.get("value", ""), "for": [a["name"]]})
+            else:
+                keep.append(d)
+        b = dict(a)
+        b["descriptors"] = keep
+        out.append(b)
+    return out + lifted
+
+
 def verify_manifest(data_dir, manifest_path):
     """Check every file against the manifest; the file list must match both ways."""
     manifest = read_manifest(manifest_path)
@@ -180,6 +206,7 @@ def load(data_dir=DATA, manifest_path=None):
             for v in p.get("values", []):
                 if v["type"] in ("function", "type"):
                     types.setdefault((p["name"], type_key(v["name"])), []).append(Entry(stem, v))
+        doc["atrules"] = promote_nested_atrules(doc)
         for a in doc["atrules"]:
             atrules.setdefault(a["name"], []).append(Entry(stem, a))
             for d in a["descriptors"]:

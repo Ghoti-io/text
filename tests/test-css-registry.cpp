@@ -53,7 +53,7 @@ std::string str(const char * s) {
 // ---- the generated layer: relations and order -----------------------------------------------------------------
 
 TEST(CssRegistryTables, ThePinIsNamedAndItsCountsAreTheMeasuredOnes) {
-  EXPECT_EQ(std::string(gtext_css_registry_pin_commit()), "d20af004eff967a9b8e562ea3423c29402a5ce61");
+  EXPECT_EQ(std::string(gtext_css_registry_pin_commit()), "6ac6259c96b11e0aea5c34a16822eb06add278c9");
   // 892 property entries in 822 names (the pin, measured when it was chosen)
   EXPECT_EQ(gtext_css_registry_generated_property_count(), 823u) << "the pin's 822 names and the custom property pattern (tools/css/supplement.tsv)";
   EXPECT_EQ(gtext_css_registry_at_rule_count(), 48u);
