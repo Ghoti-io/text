@@ -44,3 +44,6 @@ escaped-eof-kept-as-a-backslash	css_parser.c	  if (stop->type != GTEXT_CSS_TOKEN
 style-children-change-not-a-change	cssom_markup.c	  if (!e->link && style_children(e->element) != e->children) {	  if (0) {	fail
 titled-sheets-never-disabled	cssom_markup.c	    so.disabled = titled && !(b->preferred_length == e->title_length	    so.disabled = false && !(b->preferred_length == e->title_length	fail
 function-conditional-rule-always-applies	css_substitute.c	  *applies = st == GTEXT_CSS_OK && answer == GTEXT_CSS_TRI_TRUE;	  *applies = st == GTEXT_CSS_OK;	fail
+transitions-not-sampled-into-the-style	css_style.c	  if (st == GTEXT_CSS_OK && options->transitions && options->transitions->set) {	  if (0 && options->transitions && options->transitions->set) {	fail
+transition-keeps-no-before-change-style	cssom_computed.c	  gtext_css_computed_free(e->before);\n  e->before = gtext_css_computed_retain(after);\n  return GTEXT_CSS_OK;	  return GTEXT_CSS_OK;	fail
+after-change-pass-leaves-its-answers	cssom_computed.c	    sync_pair(core, cs, false, tree, time);\n    core->in_callback--;\n  }\n  gtext_allocator_free(&core->alloc, (void *)chain);	    core->in_callback--;\n  }\n  gtext_allocator_free(&core->alloc, (void *)chain);	layout

@@ -189,6 +189,7 @@ typedef struct {
   GTEXT_CSS_Registry * registry;
   GTEXT_CSS_Conditions * conditions;
   GTEXT_CSSOM_Document * doc;
+  GTEXT_CSSOM_Transition_Tracker * tracker;
   GTEXT_Markup_Document * markup;
   GTEXT_CSS_Markup_Adapter * adapter;
   GTEXT_CSS_Selector_Match_Options match_options;
@@ -325,6 +326,26 @@ static uint64_t runner_timeline_version(void * user) {
   return 0;
 }
 
+/* The runner is also the caller that keeps the transitions: the library keeps nothing between calls (css_transition.h), so the world has a tracker (css_cssom_computed.h), the document asks it
+   for the sets of an element, and the runner holds the style change events: a read of a computed style (`sget` and the others) is one, as a read that wants an up-to-date style is in a
+   browser, at the document timeline's 0 like every other time here. CSSOM_RUNNER_TRANSITIONS=none keeps no tracker: nothing then starts, which is the case the controls show. */
+static int g_transitions = 1;
+
+static GTEXT_CSS_Status runner_transitions(void * user, const void * element, const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Transition_Set ** set, double * time_ms) {
+  const world * w = user;
+  *set = NULL;
+  *time_ms = 0.0;
+  if (!w || !w->tracker) {
+    return GTEXT_CSS_OK;
+  }
+  return gtext_cssom_transition_tracker_lookup(w->tracker, element, pseudo, set, time_ms);
+}
+
+static uint64_t runner_transition_version(void * user) {
+  const world * w = user;
+  return w && w->tracker ? gtext_cssom_transition_tracker_version(w->tracker) : 0;
+}
+
 static GTEXT_CSS_Tristate runner_condition(void * user, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * text, GTEXT_CSS_Element_Handle element) {
   (void)element;
   const world * w = user;
@@ -377,6 +398,9 @@ static int world_open(world * w, const char * html, size_t html_len) {
   layout.size = sizeof layout;
   layout.animation_time = runner_animation_time;
   layout.timeline_version = runner_timeline_version;
+  layout.user = w;
+  layout.transitions = runner_transitions;
+  layout.transition_version = runner_transition_version;
   c.layout = &layout;
   /* the runner is a consumer with an environment of its own (the palette, and conditions that are the world's); the document makes the compute context with it and with the registrations of the
      `@property` rules of its sheets, and the conditions object that reads a query container's style is given to the document once it exists */
@@ -414,6 +438,9 @@ static int world_open(world * w, const char * html, size_t html_len) {
         gtext_cssom_document_register_sheet(w->doc, GTEXT_CSS_ORIGIN_USER_AGENT, w->ua_sheet, NULL) != GTEXT_CSS_OK) {
       return 0;
     }
+  }
+  if (g_transitions && gtext_cssom_transition_tracker_new(w->doc, NULL, &w->tracker) != GTEXT_CSS_OK) {
+    return 0;
   }
   GTEXT_CSSOM_Markup_Options mo = gtext_cssom_markup_options_default();
   if (gtext_cssom_markup_binding_new(w->doc, gtext_cssom_document_scope(w->doc), w->markup, &mo, &w->binding) != GTEXT_CSS_OK ||
@@ -458,6 +485,7 @@ static void world_close(world * w) {
   free(w->styles);
   free(w->regs);
   gtext_cssom_markup_binding_free(w->binding);
+  gtext_cssom_transition_tracker_free(w->tracker);
   gtext_cssom_document_release(w->doc);
   gtext_css_sheet_free(w->ua_sheet);
   gtext_css_tree_free(w->ua_tree);
@@ -2219,7 +2247,8 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
 #define ELEM(var, fld) elem * var = find_elem(w, o->f[fld]); if (!var) { *program_error = 1; return fmt("the op %s names the element %s, which the program did not make", name, o->f[fld]); } \
   if (!var->node) { return dups("TypeError: the element is null"); } \
   if (!is_element(var->node)) { return dups("TypeError: the node is not an element"); }
-#define STYLE(var, fld) style * var = find_style(w, o->f[fld]); if (!var) { *program_error = 1; return fmt("the op %s names the style %s, which the program did not make", name, o->f[fld]); }
+#define STYLE(var, fld) style * var = find_style(w, o->f[fld]); if (!var) { *program_error = 1; return fmt("the op %s names the style %s, which the program did not make", name, o->f[fld]); } \
+  if (var->computed && w->tracker) { sync_world(w); const GTEXT_CSS_Status flushed = gtext_cssom_transition_tracker_flush(w->tracker, gtext_css_markup_handle(var->node), var->pseudo, strlen(var->pseudo)); if (flushed != GTEXT_CSS_OK) { return status_failure("style change event", flushed); } }
 
   {
     char * failure = NULL;
@@ -2956,6 +2985,10 @@ static void end_program(program * p) {
 }
 
 int main(void) {
+  const char * tr = getenv("CSSOM_RUNNER_TRANSITIONS");
+  if (tr && strcmp(tr, "none") == 0) {
+    g_transitions = 0;
+  }
   const char * tl = getenv("CSSOM_RUNNER_TIMELINE");
   if (tl && strcmp(tl, "none") == 0) {
     g_timeline = 0;
