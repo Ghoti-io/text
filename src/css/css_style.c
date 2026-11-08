@@ -665,8 +665,9 @@ static GTEXT_CSS_Status style_compute_pass(const GTEXT_CSS_Compute_Context * con
       fail(&b, st, NULL, 0, "the winners could not be made a block");
     }
   }
-  css_anim_untimed untimed;
+  css_anim_untimed untimed, applied_by_animation;
   memset(&untimed, 0, sizeof untimed);
+  memset(&applied_by_animation, 0, sizeof applied_by_animation);
   if (st == GTEXT_CSS_OK && options->animation) {
     /* the animations of the element, sampled at the times the caller gave: their values are declared in the animation origin, over the winners of the cascade */
     GTEXT_CSS_Declaration_Block * animated = NULL;
@@ -674,7 +675,7 @@ static GTEXT_CSS_Status style_compute_pass(const GTEXT_CSS_Compute_Context * con
     memset(&sampled, 0, sizeof sampled);
     style_roll roll = {context, options, element, iface, parent_style, entries, count};
     css_anim_rollback rollback = {style_roll_back, &roll};
-    st = css_anim_sample(context, options, element, parent_style, block, &rollback, &animated, &untimed, &sampled);
+    st = css_anim_sample(context, options, element, parent_style, block, &rollback, &animated, &untimed, &applied_by_animation, &sampled);
     if (st != GTEXT_CSS_OK) {
       if (result && sampled.status == st) {
         *result = sampled;   /* the compute of a keyframe failed: it says which callback or property it lacked */
@@ -686,6 +687,25 @@ static GTEXT_CSS_Status style_compute_pass(const GTEXT_CSS_Compute_Context * con
     else if (animated) {
       gtext_css_block_free(block);
       block = animated;
+    }
+  }
+  if (st == GTEXT_CSS_OK && options->transitions && options->transitions->set) {
+    /* the running transitions of the element: their current values are declared at the transition origin, above every other, over the winners and the animated values */
+    GTEXT_CSS_Declaration_Block * transitioned = NULL;
+    GTEXT_CSS_Compute_Result sampled;
+    memset(&sampled, 0, sizeof sampled);
+    st = css_transition_sample(context, options, element, parent_style, block, &applied_by_animation, &transitioned, &sampled);
+    if (st != GTEXT_CSS_OK) {
+      if (result && st == sampled.status) {
+        *result = sampled;
+      }
+      else {
+        fail(&b, st, NULL, 0, "the transitions of the element could not be sampled");
+      }
+    }
+    else if (transitioned) {
+      gtext_css_block_free(block);
+      block = transitioned;
     }
   }
   css_roll_set roll;
@@ -741,9 +761,11 @@ static GTEXT_CSS_Status style_compute_pass(const GTEXT_CSS_Compute_Context * con
     }
     gtext_allocator_free(&context->alloc, b.diag);
     css_anim_untimed_free(&context->alloc, &untimed);
+    css_anim_untimed_free(&context->alloc, &applied_by_animation);
     return st;
   }
   style->anim_untimed = untimed;
+  style->anim_applied = applied_by_animation;
   style->cascaded = cascaded;
   style->diag = b.diag;
   style->ndiag = b.ndiag;
@@ -788,6 +810,18 @@ bool gtext_css_computed_specified_custom(const GTEXT_CSS_Computed_Style * style,
   }
   GTEXT_CSS_Cascade_Entry scratch;
   return gtext_css_cascaded_find(style->cascaded, 0, name, length, entry ? entry : &scratch);
+}
+
+bool gtext_css_computed_animation_applied(const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Property_Id property) {
+  if (!style) {
+    return false;
+  }
+  for (size_t i = 0; i < style->anim_applied.nids; i++) {
+    if (style->anim_applied.ids[i] == property) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool gtext_css_computed_animation_untimed(const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Property_Id property) {

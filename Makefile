@@ -625,7 +625,7 @@ ALL_TEST_GATES := check-symbols check-allocators check-allocator-callees check-h
 	check-encoding-tables check-encoding-transcription check-conformance-vectors \
 	check-html-quadratic check-fuzz-plant-anchors check-plant-anchors check-css-numbers check-css-libm check-css-grammar-plants \
 	check-css-tables check-css-package check-css-grammars check-css-depth check-css-table-objects \
-	check-size-shifts check-css-compute check-css-color check-css-color-plants check-css-animation-plants check-css-function-plants check-css-color-cross check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules check-cssom check-cssom-plants check-cssom-eval
+	check-size-shifts check-css-compute check-css-color check-css-color-plants check-css-animation-plants check-css-transition-plants check-css-function-plants check-css-color-cross check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules check-cssom check-cssom-plants check-cssom-eval
 TEST_GATES ?= $(ALL_TEST_GATES)
 
 # Four of those gates used to exit 0 when they could not run: three printed
@@ -1014,7 +1014,7 @@ $(foreach pair,$(TEST_PAIRS),$(eval $(call tsan-test-executable-rule,$(word 1,$(
 ####################################################################
 
 # General commands
-.PHONY: conformance-css-cssom conformance-css-selector-queries conformance-css-selectors conformance-css-conditions conformance-css-atrules conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-css-style-oracle check-css-sheet-oracle check-css-cond-oracle check-css-rule-oracle check-css-ruleops-oracle check-css-cssom-oracle check-css-page-oracle check-css-script-plants check-cssom-eval check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-color check-css-color-plants check-css-animation-plants check-css-function-plants check-css-color-cross check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
+.PHONY: conformance-css-cssom conformance-css-selector-queries conformance-css-selectors conformance-css-conditions conformance-css-atrules conformance-css-values conformance-css-property conformance-css-variables conformance-css-computed check-xhtml-test-data clean cloc docs docs-pdf examples help coverage conformance conformance-ini-desktop-entry conformance-ini-editorconfig conformance-ini-systemd conformance-ini-configparser conformance-ini-win32 conformance-roundtrip conformance-fastpath conformance-json conformance-json-to-toml conformance-csv conformance-xml conformance-html-tokenizer conformance-html-tree conformance-html-encoding conformance-html-tree-asan conformance-html-serializer conformance-html-serializer-asan conformance-css-syntax conformance-json-schema conformance-json-schema-all conformance-jsonpath conformance-toml conformance-toml-next conformance-all fuzz fuzz-clean check-symbols check-allocators check-allocator-callees check-windows-cross check-headers check-idna-tables check-html-tables check-foreign-tables check-conformance-vectors check-idna-oracle check-nfc-oracle check-ucd-pin check-metaschema check-oracle-env check-fuzz-harnesses check-nfc-oracle-strict check-toml-oracle check-toml-1-1-oracle check-ini-oracle check-ini-git-oracle check-ini-editorconfig-oracle check-ini-systemd-oracle check-ini-configparser-oracle check-ini-win32-oracle check-ini-win32-encoding-oracle check-ini-win32-authored-oracle check-xml-oracle check-html-oracle check-css-oracle check-css-property-oracle check-css-style-oracle check-css-sheet-oracle check-css-cond-oracle check-css-rule-oracle check-css-ruleops-oracle check-css-cssom-oracle check-css-page-oracle check-css-script-plants check-cssom-eval check-html-serialize-oracle check-html-sniff-oracle check-html-pipeline-oracle check-encoding-oracle check-encoding-transcription check-fuzz-plant-anchors check-plant-anchors check-xml-fuzz-plants check-html-fuzz-plants check-css-fuzz-plants check-css-grammar-plants check-css-numbers check-css-libm check-css-tables check-css-package check-css-grammars check-css-depth check-css-compute check-css-color check-css-color-plants check-css-animation-plants check-css-transition-plants check-css-function-plants check-css-color-cross check-css-presentation check-css-selectors check-css-selector-plants check-css-conditions check-css-condition-plants check-css-atrule-plants check-css-atrules check-css-table-objects check-css-registry-controls check-encoding-fuzz-plants check-markup-fuzz-plants check-encoding-unit-plants check-encoding-tables check-html-quadratic check-html-quadratic-plants check-html-quadratic-instructions oracle-images oracle-version oracle-clean
 # Release build commands
 .PHONY: all install test test-quiet test-valgrind test-valgrind-quiet test-watch uninstall watch
 # Debug build commands
@@ -1167,6 +1167,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_anim_timing.c \
 	src/css/css_anim_interp.c \
 	src/css/css_anim_sample.c \
+	src/css/css_transition.c \
 	src/css/css_atrule_set.c \
 	src/css/css_at_property.c \
 	src/css/css_custom_function.c \
@@ -2202,6 +2203,7 @@ $(eval $(call fuzz-rule,fuzz_css_compute,css-compute))
 $(eval $(call fuzz-rule,fuzz_css_cascade,css-cascade))
 $(eval $(call fuzz-rule,fuzz_css_custom,css-custom))
 $(eval $(call fuzz-rule,fuzz_css_style,css-style))
+$(eval $(call fuzz-rule,fuzz_css_transition,css-transition))
 $(eval $(call fuzz-rule,fuzz_css_selector,css-selector))
 $(eval $(call fuzz-rule,fuzz_css_match,css-match))
 $(eval $(call fuzz-rule,fuzz_css_sheet,css-sheet))
@@ -2224,7 +2226,7 @@ fuzz: fuzz-run-toml fuzz-run-toml-writer fuzz-run-ini
 fuzz: fuzz-run-json-writer fuzz-run-csv-writer fuzz-run-ini-writer
 fuzz: fuzz-run-json-records fuzz-run-json-dupkeys fuzz-run-markup-tree
 fuzz: fuzz-run-xml fuzz-run-xml-writer fuzz-run-html-tokenizer fuzz-run-html-tree fuzz-run-html fuzz-run-html-serialize
-fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar fuzz-run-css-values fuzz-run-css-registry fuzz-run-css-compute fuzz-run-css-cascade fuzz-run-css-custom fuzz-run-css-style fuzz-run-css-selector fuzz-run-css-match fuzz-run-css-sheet fuzz-run-cssom-decl fuzz-run-cssom-sheet fuzz-run-cssom-document fuzz-run-css-condition fuzz-run-css-container fuzz-run-css-atrule
+fuzz: fuzz-run-encoding fuzz-run-css-syntax fuzz-run-css-bytes fuzz-run-css-grammar fuzz-run-css-values fuzz-run-css-registry fuzz-run-css-compute fuzz-run-css-cascade fuzz-run-css-custom fuzz-run-css-style fuzz-run-css-transition fuzz-run-css-selector fuzz-run-css-match fuzz-run-css-sheet fuzz-run-cssom-decl fuzz-run-cssom-sheet fuzz-run-cssom-document fuzz-run-css-condition fuzz-run-css-container fuzz-run-css-atrule
 
 check-fuzz-plant-anchors: ## Fail if a planted edit of the XML, HTML, CSS or Encoding fuzz plants no longer applies to its source
 # tools/check-fuzz-plant-anchors.py: each plant is a text that must occur exactly once in one source file, and a later commit
@@ -2318,6 +2320,11 @@ check-css-animation-plants: ## Plant a defect in the animation sampling and show
 check-css-animation-plants: $(APP_DIR)/$(STATIC_TARGET)
 	@$(REQUIRE_PYTHON3); \
 	PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" python3 tools/css/plant-animation.py
+
+check-css-transition-plants: ## Plant a defect in the transitions and show the tests that must see it fail
+check-css-transition-plants: $(APP_DIR)/$(STATIC_TARGET)
+	@$(REQUIRE_PYTHON3); \
+	PREFIX="$(PREFIX)" DEP_PCS="$(DEP_PCS)" ARCHIVE="$(APP_DIR)/$(STATIC_TARGET)" python3 tools/css/plant-transition.py
 
 check-css-function-plants: ## Plant a defect in the evaluation of custom functions and show the tests that must see it fail
 check-css-function-plants: $(APP_DIR)/$(STATIC_TARGET)

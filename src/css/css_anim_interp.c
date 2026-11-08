@@ -336,6 +336,70 @@ static const GTEXT_CSS_Value * color_node(bctx * c, const GTEXT_CSS_Value * a, c
   return v;
 }
 
+/// Whether the function has this name (ASCII case-insensitive).
+static bool fn_is(const GTEXT_CSS_Value * f, const char * name) {
+  const size_t n = strlen(name);
+  if (f->text.length != n) {
+    return false;
+  }
+  for (size_t i = 0; i < n; i++) {
+    char c = f->text.data[i];
+    if (c >= 'A' && c <= 'Z') {
+      c = (char)(c + 32);
+    }
+    if (c != name[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// Clamp the numbers of the lists of a function's arguments that are radii, in the order they are written: `in_radii` starts true for the arguments of circle() and ellipse(), which end at the
+/// literal `at`, and false for inset(), rect() and xywh(), whose radii follow the literal `round` (a literal of the grammar is a keyword or a preserved token, inside lists as the grammar
+/// nests them).
+static void clamp_walk(GTEXT_CSS_Value * list, bool circular, bool rounded, bool * in_radii) {
+  for (size_t i = 0; i < list->child_count; i++) {
+    /* a node of the value being built here, owned by its builder: not the caller's */
+    GTEXT_CSS_Value * k = (GTEXT_CSS_Value *)(uintptr_t)&list->children[i];
+    switch (k->kind) {
+      case GTEXT_CSS_VAL_KEYWORD:
+      case GTEXT_CSS_VAL_TOKEN:
+        if (circular && k->text.length == 2 && k->text.data[0] == 'a' && k->text.data[1] == 't') {
+          *in_radii = false;
+        }
+        else if (rounded && k->text.length == 5 && memcmp(k->text.data, "round", 5) == 0) {
+          *in_radii = true;
+        }
+        break;
+      case GTEXT_CSS_VAL_LIST:
+        clamp_walk(k, circular, rounded, in_radii);
+        break;
+      case GTEXT_CSS_VAL_DIMENSION:
+      case GTEXT_CSS_VAL_PERCENTAGE:
+      case GTEXT_CSS_VAL_NUMBER:
+        if (*in_radii && k->number < 0) {
+          k->number = 0;
+        }
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+/// CSS Values 4, "Interpolation": "the result of interpolation is clamped to the allowed range of the value"; in a basic shape (CSS Shapes 1) the radii of circle() and ellipse() (the arguments
+/// before `at`) and the corner radii of inset(), rect() and xywh() (those after `round`) are `<length-percentage [0,∞]>`, and a timing function that overshoots (a negative easing) makes them
+/// negative: the page basic-shape-interpolation.html expects `circle(0px)` for a radius that the easing took below zero. The offsets of inset() and the position after `at` may be negative.
+static void clamp_radii(GTEXT_CSS_Value * f) {
+  const bool circular = fn_is(f, "circle") || fn_is(f, "ellipse");
+  const bool rounded = fn_is(f, "inset") || fn_is(f, "rect") || fn_is(f, "xywh");
+  if (!circular && !rounded) {
+    return;
+  }
+  bool in_radii = circular;
+  clamp_walk(f, circular, rounded, &in_radii);
+}
+
 static const GTEXT_CSS_Value * blend(bctx * c, const GTEXT_CSS_Value * a, const GTEXT_CSS_Value * b) {
   if (c->vb.status != GTEXT_CSS_OK) {
     return NULL;
@@ -400,6 +464,9 @@ static const GTEXT_CSS_Value * blend(bctx * c, const GTEXT_CSS_Value * a, const 
       }
       v->children = kids;
       v->child_count = a->child_count;
+      if (a->kind == GTEXT_CSS_VAL_FUNCTION) {
+        clamp_radii(v);
+      }
       return v;
     }
     default:

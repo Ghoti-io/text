@@ -90,6 +90,64 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_computed_style(GTEXT_CSSOM_Document * doc
  * @param empty Receives the answer. Not NULL.
  * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID (a declaration that is not a computed one); the statuses of a read.
  */
+/**
+ * @brief The *after-change style* of an element or one of its pseudo-elements (CSS Transitions 1, "Starting of transitions"): its computed style as of now, computed **without** transitions
+ * and inheriting from the after-change style of its parent, for gtext_css_transitions_update().
+ *
+ * The chain from the root is computed again for every call and nothing is kept (the cache holds the styles a read shows, transitions included). The animations are sampled as the layout
+ * interface gives them.
+ *
+ * @param document The document. @param element The element (the tree's own handle). @param pseudo The pseudo-element as `getComputedStyle()` takes it (`"::marker"`), or NULL.
+ * @param pseudo_length Its length. @param out Receives a style the caller releases with gtext_css_computed_free(); NULL (with GTEXT_CSS_OK) when `pseudo` is not a pseudo-element selector or the
+ * element is not rendered, the cases in which `getComputedStyle()` answers an empty declaration. Not NULL.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_UNSUPPORTED (the document has no element interface); GTEXT_CSS_E_OOM; any status the tree's callbacks fail with.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_document_after_change_style(GTEXT_CSSOM_Document * document, const void * element, const char * pseudo, size_t pseudo_length,
+    GTEXT_CSS_Computed_Style ** out);
+
+/** @brief The transitions of the elements of a document: a set (css_transition.h) and the before-change style for each element and pseudo-element that has been through a style change event. */
+typedef struct GTEXT_CSSOM_Transition_Tracker GTEXT_CSSOM_Transition_Tracker;
+
+/**
+ * @brief Make a tracker for a document: the reference consumer of gtext_css_transitions_update() and gtext_cssom_document_after_change_style().
+ *
+ * The specification makes the implementation keep the running and the completed transitions of each element; the library keeps nothing between calls, so a consumer that wants
+ * `getComputedStyle()` to show transitions holds them in a tracker (or in a structure of its own, with the same calls). The tracker is not shared between threads, and it must be freed
+ * before the document is.
+ *
+ * Use: install `gtext_cssom_transition_tracker_lookup()` and `..._version()` from the layout interface's `transitions` and `transition_version`; call
+ * gtext_cssom_transition_tracker_flush() when a style change event may have happened for an element (a read that wants an up-to-date style is one, as in browsers); set the time first.
+ *
+ * @param document The document. @param allocator NULL for the default. @param out Receives the tracker. @return GTEXT_CSS_OK, GTEXT_CSS_E_INVALID, GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_transition_tracker_new(GTEXT_CSSOM_Document * document, const GTEXT_Allocator * allocator, GTEXT_CSSOM_Transition_Tracker ** out);
+
+/** @brief Release a tracker and every set it holds; NULL is ignored. */
+GTEXT_API void gtext_cssom_transition_tracker_free(GTEXT_CSSOM_Transition_Tracker * tracker);
+
+/** @brief The time of the next style change events and of the current values the layout reports, in milliseconds. It changes the version when it changes. */
+GTEXT_API void gtext_cssom_transition_tracker_set_time(GTEXT_CSSOM_Transition_Tracker * tracker, double time_ms);
+
+/**
+ * @brief A style change event for an element and its pseudo-element.
+ *
+ * The elements from the root down to `element` are brought up to date first (the after-change style of an element inherits from its parent's, and a transition of an inherited property on
+ * a parent changes what the child inherits): for each, the after-change style is computed (gtext_cssom_document_after_change_style()), the element's transitions are updated against the style
+ * of the previous event (gtext_css_transitions_update(); the first event an element is in has no before-change style, so starts nothing) and the after-change style is kept for the next event.
+ * Then the same for the pseudo-element `pseudo` of the element, if there is one. An element that is not rendered, or a pseudo-element that is not a valid one, is left alone.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_transition_tracker_flush(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element, const char * pseudo, size_t pseudo_length);
+
+/** @brief Forget an element and its pseudo-elements ("If an element is no longer in the document, implementations must cancel any running transitions on it"). @return How many entries went. */
+GTEXT_API size_t gtext_cssom_transition_tracker_forget(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element);
+
+/** @brief For GTEXT_CSSOM_Layout_Interface::transitions: the set of an element or pseudo-element and the tracker's time. `*set` is NULL for one with no running transition. */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_transition_tracker_lookup(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element, const GTEXT_CSS_Selector_List * pseudo,
+    const GTEXT_CSS_Transition_Set ** set, double * time_ms);
+
+/** @brief For GTEXT_CSSOM_Layout_Interface::transition_version. */
+GTEXT_API uint64_t gtext_cssom_transition_tracker_version(const GTEXT_CSSOM_Transition_Tracker * tracker);
+
 GTEXT_API GTEXT_CSS_Status gtext_cssom_computed_is_empty(GTEXT_CSSOM_Decl * decl, bool * empty);
 
 /**

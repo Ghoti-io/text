@@ -245,6 +245,7 @@ struct GTEXT_CSS_Computed_Style {
   css_root_info root;
   GTEXT_CSS_Element_Handle element;
   css_anim_untimed anim_untimed;       ///< The properties an animation of the element targets and was not sampled for lack of a time (css_anim_sample.c).
+  css_anim_untimed anim_applied;       ///< The properties an animation of the element applied a sampled value to (css_anim_sample.c): a transition does not start on them.
 };
 
 /* ---- one computation ---------------------------------------------------------------------------- */

@@ -547,7 +547,7 @@ static GTEXT_CSS_Status val_of_style(sampler * s, const GTEXT_CSS_Computed_Style
 /// The element's computed `color` (of the base style): what a `currentcolor` among colors being combined stands for.
 static const GTEXT_CSS_Value * current_color(const sampler * s) {
   const GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(s->reg, "color", 5);
-  return id ? gtext_css_computed_root(s->base_style, id) : NULL;
+  return id && s->base_style ? gtext_css_computed_root(s->base_style, id) : NULL;
 }
 
 /// Where a keyword of a property means a number of the other end's type, as its animation type says: `normal` is a zero `letter-spacing` (CSS Text 4: "a zero length is written normal"), and
@@ -865,8 +865,9 @@ static bool important_in(const GTEXT_CSS_Declaration_Block * base, const key * k
 
 GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Style_Options * options, GTEXT_CSS_Element_Handle element,
     const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Declaration_Block * base, const css_anim_rollback * rollback, GTEXT_CSS_Declaration_Block ** animated,
-    css_anim_untimed * untimed, GTEXT_CSS_Compute_Result * failure) {
+    css_anim_untimed * untimed, css_anim_untimed * applied, GTEXT_CSS_Compute_Result * failure) {
   *animated = NULL;
+  css_anim_untimed * const applied_out = applied;
   const GTEXT_CSS_Style_Animation * an = options->animation;
   sampler s;
   memset(&s, 0, sizeof s);
@@ -967,7 +968,7 @@ GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTE
   if (st == GTEXT_CSS_OK && s.nkeys) {
     st = gtext_css_block_clone(base, &out_block);
   }
-  size_t applied = 0;
+  size_t napplied = 0;
   for (size_t k = 0; k < s.nkeys && st == GTEXT_CSS_OK; k++) {
     const key * ky = &s.keys[k];
     if (important_in(base, ky)) {
@@ -1024,17 +1025,210 @@ GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTE
           gtext_allocator_free(&s.al, wrapped);
         }
       }
-      applied++;
+      if (st == GTEXT_CSS_OK && applied_out) {
+        st = untimed_add(&s, applied_out, ky);
+      }
+      napplied++;
     }
     val_free(&s.al, &under);
     val_free(&s.al, &cur);
   }
-  if (st == GTEXT_CSS_OK && applied) {
+  if (st == GTEXT_CSS_OK && napplied) {
     *animated = out_block;
     out_block = NULL;
   }
   gtext_css_block_free(out_block);
   gtext_css_anim_list_free(list);
   sampler_free(&s);
+  return st;
+}
+
+
+/* ---- transitions ---------------------------------------------------------------------------------------------------------------------------------- */
+
+bool css_property_is_discrete(const GTEXT_CSS_Registry * registry, GTEXT_CSS_Property_Id id, bool * animatable_out) {
+  GTEXT_CSS_Property_Info pi;
+  if (!gtext_css_registry_property_info(registry, id, &pi)) {
+    *animatable_out = false;
+    return true;
+  }
+  *animatable_out = pi.animation != GTEXT_CSS_ANIM_NOT_ANIMATABLE;
+  return pi.animation == GTEXT_CSS_ANIM_DISCRETE || pi.animation == GTEXT_CSS_ANIM_NOT_ANIMATABLE;
+}
+
+GTEXT_CSS_Status css_blend_values_text(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Computed_Style * color_style, GTEXT_CSS_Property_Id id, const char * a, size_t an, const char * b,
+    size_t bn, double p, const GTEXT_Allocator * alloc, char ** text, size_t * length, bool * discrete) {
+  sampler s;
+  memset(&s, 0, sizeof s);
+  s.cc = cc;
+  s.reg = gtext_css_compute_context_registry(cc);
+  s.al = alloc ? *alloc : cc->alloc;
+  s.base_style = (GTEXT_CSS_Computed_Style *)(uintptr_t)color_style;
+  key k;
+  memset(&k, 0, sizeof k);
+  k.id = id;
+  val va, vb;
+  GTEXT_CSS_Status st = val_of_text(&s, &k, a, an, &va);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  st = val_of_text(&s, &k, b, bn, &vb);
+  if (st != GTEXT_CSS_OK) {
+    val_free(&s.al, &va);
+    return st;
+  }
+  st = prepare_pair(&s, &k, &va, &vb);
+  *text = NULL;
+  *length = 0;
+  *discrete = false;
+  if (st == GTEXT_CSS_OK) {
+    const GTEXT_CSS_Value * ra = val_root(&va);
+    const GTEXT_CSS_Value * rb = val_root(&vb);
+    if (ra && rb) {
+      st = css_interp_text(&s.al, CSS_BLEND_LERP, ra, rb, p, current_color(&s), text, length, discrete);
+    }
+    else {
+      /* a text that is no typed value of the property (the guaranteed-invalid value, a value that does not parse): discrete */
+      const val * pick = p < 0.5 ? &va : &vb;
+      *discrete = true;
+      *length = pick->text ? pick->length : 0;
+      *text = gtext_allocator_malloc(&s.al, *length + 1);
+      if (!*text) {
+        st = GTEXT_CSS_E_OOM;
+      }
+      else {
+        if (*length) {
+          memcpy(*text, pick->text, *length);
+        }
+        (*text)[*length] = '\0';
+      }
+    }
+  }
+  val_free(&s.al, &va);
+  val_free(&s.al, &vb);
+  return st;
+}
+
+GTEXT_CSS_Status css_easing_from_text(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * alloc, const char * text, size_t length, GTEXT_CSS_Easing ** out) {
+  *out = NULL;
+  GTEXT_CSS_Property_Value pv;
+  GTEXT_CSS_Property_Options po;
+  memset(&po, 0, sizeof po);
+  po.allocator = alloc;
+  GTEXT_CSS_Status st = gtext_css_parse_property_text(registry, "transition-timing-function", 26, text, length, &po, &pv);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  const GTEXT_CSS_Value * root = pv.outcome == GTEXT_CSS_PROP_RESULT_VALID && pv.set ? gtext_css_value_set_root(pv.set) : NULL;
+  if (root && root->kind == GTEXT_CSS_VAL_LIST && root->separator == GTEXT_CSS_SEP_COMMA && root->child_count) {
+    root = &root->children[0];   /* `transition-timing-function` is a list: the item is the easing function */
+  }
+  st = GTEXT_CSS_E_INVALID;
+  if (root) {
+    bool valid = false;
+    st = gtext_css_easing_from_value(root, alloc, &valid, out);
+    if (st == GTEXT_CSS_OK && !valid) {
+      gtext_css_easing_free(*out);
+      *out = NULL;
+      st = GTEXT_CSS_E_INVALID;
+    }
+  }
+  gtext_css_property_value_free(&pv);
+  return st;
+}
+
+GTEXT_CSS_Status css_transition_sample(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Style_Options * options, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Computed_Style * parent,
+    const GTEXT_CSS_Declaration_Block * base, const css_anim_untimed * applied, GTEXT_CSS_Declaration_Block ** transitioned, GTEXT_CSS_Compute_Result * failure) {
+  *transitioned = NULL;
+  const GTEXT_CSS_Style_Transitions * tr = options->transitions;
+  const size_t n = tr && tr->set ? gtext_css_transition_set_running_count(tr->set) : 0;
+  if (!n) {
+    return GTEXT_CSS_OK;
+  }
+  sampler s;
+  memset(&s, 0, sizeof s);
+  s.cc = cc;
+  s.reg = gtext_css_compute_context_registry(cc);
+  s.al = cc->alloc;
+  s.options = options;
+  s.element = element;
+  s.parent = parent;
+  s.base = base;
+  s.asked_pseudo = asked_pseudo(options->pseudo);
+  s.failure = failure;
+  GTEXT_CSS_Declaration_Block * out_block = NULL;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  size_t done = 0;
+  for (size_t i = 0; i < n && st == GTEXT_CSS_OK; i++) {
+    GTEXT_CSS_Transition_Info t;
+    if (!gtext_css_transition_set_running_at(tr->set, i, &t)) {
+      continue;
+    }
+    /* "When a property on an element is undergoing a transition (that is, when or after the transition has started and before the end time of the transition) the transition adds a style
+       called the current value to the cascade", and "if and only if that property is not currently undergoing a CSS Animation on the same element" */
+    if (tr->time_ms >= t.end_time_ms || !animatable(&s, t.property)) {
+      continue;
+    }
+    bool animated_here = false;
+    for (size_t k = 0; applied && k < applied->nids; k++) {
+      animated_here = animated_here || applied->ids[k] == t.property;
+    }
+    if (animated_here) {
+      continue;
+    }
+    if (!s.base_style) {
+      st = compute_block(&s, base, &s.base_style);
+      if (st != GTEXT_CSS_OK) {
+        break;
+      }
+    }
+    char * text = NULL;
+    size_t len = 0;
+    st = gtext_css_transition_current_value(cc, s.base_style, tr->set, i, tr->time_ms, &s.al, &text, &len);
+    if (st != GTEXT_CSS_OK) {
+      break;
+    }
+    if (!out_block) {
+      st = gtext_css_block_clone(base, &out_block);
+    }
+    GTEXT_CSS_Property_Info pi;
+    if (st == GTEXT_CSS_OK && !gtext_css_registry_property_info(s.reg, t.property, &pi)) {
+      st = GTEXT_CSS_E_INVALID;
+    }
+    if (st == GTEXT_CSS_OK) {
+      st = gtext_css_block_remove(out_block, t.property, NULL, 0, NULL);
+    }
+    GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+    if (st == GTEXT_CSS_OK) {
+      st = add_declaration(&s, out_block, pi.name, pi.name_length, text, len, &outcome);
+    }
+    if (st == GTEXT_CSS_OK && outcome != GTEXT_CSS_PROP_RESULT_VALID && outcome != GTEXT_CSS_PROP_RESULT_WIDE) {
+      /* the number is outside the range of its property (an easing that overshoots): a calculation clamps it as the property says */
+      char * wrapped = gtext_allocator_malloc(&s.al, len + 8);
+      if (!wrapped) {
+        st = GTEXT_CSS_E_OOM;
+      }
+      else {
+        memcpy(wrapped, "calc(", 5);
+        memcpy(wrapped + 5, text, len);
+        memcpy(wrapped + 5 + len, ")", 2);
+        st = add_declaration(&s, out_block, pi.name, pi.name_length, wrapped, len + 6, &outcome);
+        gtext_allocator_free(&s.al, wrapped);
+      }
+    }
+    GTEXT_CSS_Serialize_Options so;
+    memset(&so, 0, sizeof so);
+    so.allocator = &s.al;
+    gtext_css_serialize_buffer_free(&so, text);
+    done++;
+  }
+  if (s.base_style) {
+    gtext_css_computed_free(s.base_style);
+  }
+  if (st == GTEXT_CSS_OK && done) {
+    *transitioned = out_block;
+    out_block = NULL;
+  }
+  gtext_css_block_free(out_block);
   return st;
 }

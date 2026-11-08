@@ -36,6 +36,7 @@
 #include <string.h>
 
 #include <ghoti.io/text/css/css_container.h>
+#include "css_compute_internal.h"
 #include "css_internal.h"
 #include "cssom_computed_internal.h"
 #include "cssom_doc_internal.h"
@@ -589,13 +590,21 @@ static uint64_t timeline_version(const css_core * core, bool * cacheable) {
   if (!core->has_layout) {
     return 0;
   }
+  uint64_t v = 0;
   if (core->layout.timeline_version) {
-    return core->layout.timeline_version(core->layout.user);
+    v = core->layout.timeline_version(core->layout.user);
   }
-  if (core->layout.animation_time && core->keyframes) {
+  else if (core->layout.animation_time && core->keyframes) {
     *cacheable = false;
   }
-  return 0;
+  /* the version of the transitions is a part of the same key; a layout that gives transitions and no version keeps no style across reads */
+  if (core->layout.transition_version) {
+    v += 0x9E3779B97F4A7C15ull * (core->layout.transition_version(core->layout.user) + 1);
+  }
+  else if (core->layout.transitions) {
+    *cacheable = false;
+  }
+  return v;
 }
 
 /// The cache and the match context are for one state of the document and the tree: a read in another drops both.
@@ -657,6 +666,20 @@ static GTEXT_CSS_Status compute_one_hl(css_core * core, css_cmps * cs, const GTE
     anim.user = core;
     anim.current_time = animation_time;
     so.animation = &anim;
+  }
+  /* the running transitions of the element the caller's layout keeps, at its time (the after-change styles are made without them) */
+  GTEXT_CSS_Style_Transitions tr;
+  memset(&tr, 0, sizeof tr);
+  if (!core->no_transitions && core->has_layout && core->layout.transitions) {
+    tr.size = sizeof tr;
+    const GTEXT_CSS_Status ts = core->layout.transitions(core->layout.user, element, pseudo, &tr.set, &tr.time_ms);
+    if (ts != GTEXT_CSS_OK) {
+      css_computed_note_failure(core, ts, "transitions", 11, 0);
+      return ts;
+    }
+    if (tr.set) {
+      so.transitions = &tr;
+    }
   }
   cs->anim_failed = false;
   GTEXT_CSS_Compute_Result res;
@@ -1158,6 +1181,340 @@ GTEXT_CSS_Status gtext_cssom_computed_style(GTEXT_CSSOM_Document * document, con
   chain_link(core, cs, d, rec);
   *out = d;
   return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_cssom_document_after_change_style(GTEXT_CSSOM_Document * document, const void * element, const char * pseudo, size_t pseudo_length,
+    GTEXT_CSS_Computed_Style ** out) {
+  if (!document || !element || !out || (!pseudo && pseudo_length)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  *out = NULL;
+  css_core * core = css_document_core(document);
+  if (!core->config.element_interface) {
+    return GTEXT_CSS_E_UNSUPPORTED;
+  }
+  css_cmps * cs = css_cmps_get(core);
+  if (!cs) {
+    return GTEXT_CSS_E_OOM;
+  }
+  GTEXT_CSS_Selector_List * list = NULL;
+  bool null_obj = false;
+  GTEXT_CSS_Status st = parse_pseudo(core, pseudo, pseudo_length, &list, &null_obj);
+  if (st != GTEXT_CSS_OK || null_obj) {
+    return st;
+  }
+  core->computing++;
+  bool hook = false;
+  const uint64_t tree = css_core_tree_version(core, &hook);
+  bool cacheable = hook || core->tree_epoch > 0 || core->config.computed_trust_tree_changed;
+  const uint64_t time = timeline_version(core, &cacheable);
+  const GTEXT_CSS_Rule_Index * index = NULL;
+  st = css_index_current(core, &index);
+  if (st == GTEXT_CSS_OK) {
+    st = ensure_context(core, cs);
+  }
+  const void ** chain = NULL;
+  size_t n = 0, cap = 0;
+  GTEXT_CSS_Computed_Style * current = NULL;
+  if (st == GTEXT_CSS_OK) {
+    core->in_callback++;
+    core->no_transitions = true;
+    sync_pair(core, cs, cacheable, tree, time);
+    st = ensure_match(core, cs);
+    for (const void * e = element; st == GTEXT_CSS_OK && e;) {
+      if (n == cap) {
+        const size_t grown = cap ? cap * 2 : 16;
+        const void ** bigger = gtext_allocator_realloc(&core->alloc, (void *)chain, grown * sizeof *chain);
+        if (!bigger) {
+          st = GTEXT_CSS_E_OOM;
+          break;
+        }
+        chain = bigger;
+        cap = grown;
+      }
+      if (n >= MAX_CHAIN) {
+        st = GTEXT_CSS_E_LIMIT_ELEMENTS;
+        break;
+      }
+      chain[n++] = e;
+      const void * up = NULL;
+      st = parent_of(core, e, &up);
+      e = up;
+    }
+    for (size_t i = n; st == GTEXT_CSS_OK && i-- > 0;) {
+      GTEXT_CSS_Computed_Style * made = NULL;
+      st = compute_one(core, cs, index, chain[i], current, NULL, &made);
+      gtext_css_computed_free(current);
+      current = st == GTEXT_CSS_OK ? made : NULL;
+    }
+    if (st == GTEXT_CSS_OK && list) {
+      GTEXT_CSS_Computed_Style * of_pseudo = NULL;
+      st = pseudo_style_of(core, cs, index, element, current, list, &of_pseudo);
+      gtext_css_computed_free(current);
+      current = st == GTEXT_CSS_OK ? of_pseudo : NULL;
+    }
+    core->no_transitions = false;
+    /* what the pass learned (the answers of the container queries it asked, the match context) belongs to the after-change styles and not to the styles a read shows: the next read starts
+       from nothing, as it does after the tree changes. A query that could not be answered (a size the layout was not asked for) is answered once, with its status, and the read must ask again. */
+    sync_pair(core, cs, false, tree, time);
+    core->in_callback--;
+  }
+  gtext_allocator_free(&core->alloc, (void *)chain);
+  gtext_css_selector_list_free(list);
+  if (--core->computing == 0 && core->computed_teardown_pending) {
+    core->computed_teardown_pending = false;
+    css_computed_teardown(core);
+  }
+  if (st != GTEXT_CSS_OK) {
+    gtext_css_computed_free(current);
+    return st;
+  }
+  *out = current;
+  return GTEXT_CSS_OK;
+}
+
+/* ---- the transition tracker ----------------------------------------------------------------------------------------------------------------------- */
+
+typedef struct {
+  const void * element;
+  char * key;                        ///< The pseudo-element's canonical name, "" for the element.
+  size_t key_length;
+  GTEXT_CSS_Transition_Set * set;
+  GTEXT_CSS_Computed_Style * before; ///< The after-change style of the previous style change event, or NULL before the first.
+} tracker_entry;
+
+struct GTEXT_CSSOM_Transition_Tracker {
+  GTEXT_CSSOM_Document * document;
+  GTEXT_Allocator alloc;
+  tracker_entry * entries;
+  size_t count, cap;
+  double time_ms;
+  uint64_t version;
+};
+
+GTEXT_CSS_Status gtext_cssom_transition_tracker_new(GTEXT_CSSOM_Document * document, const GTEXT_Allocator * allocator, GTEXT_CSSOM_Transition_Tracker ** out) {
+  if (!document || !out) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  *out = NULL;
+  GTEXT_Allocator a = allocator ? *allocator : *gtext_allocator_default();
+  GTEXT_CSSOM_Transition_Tracker * t = gtext_allocator_calloc(&a, 1, sizeof *t);
+  if (!t) {
+    return GTEXT_CSS_E_OOM;
+  }
+  t->document = document;
+  t->alloc = a;
+  *out = t;
+  return GTEXT_CSS_OK;
+}
+
+static void entry_release(GTEXT_CSSOM_Transition_Tracker * t, tracker_entry * e) {
+  gtext_css_transition_set_free(e->set);
+  gtext_css_computed_free(e->before);
+  gtext_allocator_free(&t->alloc, e->key);
+  memset(e, 0, sizeof *e);
+}
+
+void gtext_cssom_transition_tracker_free(GTEXT_CSSOM_Transition_Tracker * tracker) {
+  if (!tracker) {
+    return;
+  }
+  for (size_t i = 0; i < tracker->count; i++) {
+    entry_release(tracker, &tracker->entries[i]);
+  }
+  GTEXT_Allocator a = tracker->alloc;
+  gtext_allocator_free(&a, tracker->entries);
+  gtext_allocator_free(&a, tracker);
+}
+
+void gtext_cssom_transition_tracker_set_time(GTEXT_CSSOM_Transition_Tracker * tracker, double time_ms) {
+  if (tracker && tracker->time_ms != time_ms) {
+    tracker->time_ms = time_ms;
+    tracker->version++;
+  }
+}
+
+uint64_t gtext_cssom_transition_tracker_version(const GTEXT_CSSOM_Transition_Tracker * tracker) {
+  return tracker ? tracker->version : 0;
+}
+
+static tracker_entry * entry_find(GTEXT_CSSOM_Transition_Tracker * t, const void * element, const char * key, size_t key_length) {
+  for (size_t i = 0; i < t->count; i++) {
+    tracker_entry * e = &t->entries[i];
+    if (e->element == element && e->key_length == key_length && (key_length == 0 || memcmp(e->key, key, key_length) == 0)) {
+      return e;
+    }
+  }
+  return NULL;
+}
+
+static GTEXT_CSS_Status entry_get(GTEXT_CSSOM_Transition_Tracker * t, const void * element, const char * key, size_t key_length, tracker_entry ** out) {
+  tracker_entry * e = entry_find(t, element, key, key_length);
+  if (e) {
+    *out = e;
+    return GTEXT_CSS_OK;
+  }
+  if (t->count == t->cap) {
+    const size_t cap = t->cap ? t->cap * 2 : 8;
+    tracker_entry * bigger = gtext_allocator_realloc(&t->alloc, t->entries, cap * sizeof *bigger);
+    if (!bigger) {
+      return GTEXT_CSS_E_OOM;
+    }
+    t->entries = bigger;
+    t->cap = cap;
+  }
+  tracker_entry fresh;
+  memset(&fresh, 0, sizeof fresh);
+  fresh.element = element;
+  fresh.key = gtext_allocator_malloc(&t->alloc, key_length + 1);
+  if (!fresh.key) {
+    return GTEXT_CSS_E_OOM;
+  }
+  if (key_length) {
+    memcpy(fresh.key, key, key_length);
+  }
+  fresh.key[key_length] = '\0';
+  fresh.key_length = key_length;
+  const GTEXT_CSS_Status st = gtext_css_transition_set_new(&t->alloc, &fresh.set);
+  if (st != GTEXT_CSS_OK) {
+    gtext_allocator_free(&t->alloc, fresh.key);
+    return st;
+  }
+  t->entries[t->count] = fresh;
+  *out = &t->entries[t->count++];
+  return GTEXT_CSS_OK;
+}
+
+size_t gtext_cssom_transition_tracker_forget(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element) {
+  size_t gone = 0;
+  if (!tracker) {
+    return 0;
+  }
+  for (size_t i = 0; i < tracker->count;) {
+    if (tracker->entries[i].element == element) {
+      entry_release(tracker, &tracker->entries[i]);
+      memmove(&tracker->entries[i], &tracker->entries[i + 1], (tracker->count - i - 1) * sizeof *tracker->entries);
+      tracker->count--;
+      gone++;
+    }
+    else {
+      i++;
+    }
+  }
+  if (gone) {
+    tracker->version++;
+  }
+  return gone;
+}
+
+/// The name that keys a pseudo-element: the canonical name of its one pseudo-element selector.
+static void pseudo_key(const GTEXT_CSS_Selector_List * pseudo, const char ** key, size_t * length) {
+  *key = "";
+  *length = 0;
+  if (pseudo && pseudo->count == 1 && pseudo->complex[0].compound_count == 1 && pseudo->complex[0].compounds[0].simple_count == 1) {
+    const GTEXT_CSS_Simple * s = &pseudo->complex[0].compounds[0].simples[0];
+    *key = s->name.data ? s->name.data : "";
+    *length = s->name.data ? s->name.length : 0;
+  }
+}
+
+GTEXT_CSS_Status gtext_cssom_transition_tracker_lookup(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element, const GTEXT_CSS_Selector_List * pseudo,
+    const GTEXT_CSS_Transition_Set ** set, double * time_ms) {
+  if (!tracker || !set || !time_ms) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  const char * key;
+  size_t kl;
+  pseudo_key(pseudo, &key, &kl);
+  tracker_entry * e = entry_find(tracker, element, key, kl);
+  *set = e && gtext_css_transition_set_running_count(e->set) ? e->set : NULL;
+  *time_ms = tracker->time_ms;
+  return GTEXT_CSS_OK;
+}
+
+/// One style change event of one element or pseudo-element: update its set against the style of the previous event, and keep this one.
+static GTEXT_CSS_Status tracker_step(GTEXT_CSSOM_Transition_Tracker * t, const void * element, const char * key, size_t key_length, GTEXT_CSS_Computed_Style * after) {
+  tracker_entry * e = NULL;
+  GTEXT_CSS_Status st = entry_get(t, element, key, key_length, &e);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  const uint64_t was = gtext_css_transition_set_version(e->set);
+  /* a style made in another context (the registrations of the document changed between the two events) is not comparable: it is as if the element had no before-change style */
+  st = gtext_css_transitions_update(after->cc, e->set, e->before && e->before->cc == after->cc ? e->before : NULL, after, t->time_ms, NULL);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (gtext_css_transition_set_version(e->set) != was) {
+    t->version++;
+  }
+  gtext_css_computed_free(e->before);
+  e->before = gtext_css_computed_retain(after);
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_cssom_transition_tracker_flush(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element, const char * pseudo, size_t pseudo_length) {
+  if (!tracker || !element || (!pseudo && pseudo_length)) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  css_core * core = css_document_core(tracker->document);
+  if (!core->config.element_interface) {
+    return GTEXT_CSS_E_UNSUPPORTED;
+  }
+  /* the chain from the root, each element's after-change style made from its parent's */
+  const void ** chain = NULL;
+  size_t n = 0, cap = 0;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  core->in_callback++;
+  for (const void * e = element; e && st == GTEXT_CSS_OK;) {
+    if (n == cap) {
+      const size_t grown = cap ? cap * 2 : 16;
+      const void ** bigger = gtext_allocator_realloc(&tracker->alloc, (void *)chain, grown * sizeof *chain);
+      if (!bigger) {
+        st = GTEXT_CSS_E_OOM;
+        break;
+      }
+      chain = bigger;
+      cap = grown;
+    }
+    if (n >= MAX_CHAIN) {
+      st = GTEXT_CSS_E_LIMIT_ELEMENTS;
+      break;
+    }
+    chain[n++] = e;
+    const void * up = NULL;
+    st = parent_of(core, e, &up);
+    e = up;
+  }
+  core->in_callback--;
+  for (size_t i = n; st == GTEXT_CSS_OK && i-- > 0;) {
+    /* each element's own after-change style: the chain above it is computed again, which keeps this call free of any cache the shown styles use */
+    GTEXT_CSS_Computed_Style * after = NULL;
+    st = gtext_cssom_document_after_change_style(tracker->document, chain[i], NULL, 0, &after);
+    if (st == GTEXT_CSS_OK && after) {
+      st = tracker_step(tracker, chain[i], "", 0, after);
+    }
+    gtext_css_computed_free(after);
+  }
+  gtext_allocator_free(&tracker->alloc, (void *)chain);
+  if (st == GTEXT_CSS_OK && pseudo && pseudo_length) {
+    GTEXT_CSS_Computed_Style * after = NULL;
+    st = gtext_cssom_document_after_change_style(tracker->document, element, pseudo, pseudo_length, &after);
+    if (st == GTEXT_CSS_OK && after) {
+      GTEXT_CSS_Selector_List * list = NULL;
+      bool null_obj = false;
+      st = parse_pseudo(core, pseudo, pseudo_length, &list, &null_obj);
+      if (st == GTEXT_CSS_OK && list) {
+        const char * key;
+        size_t kl;
+        pseudo_key(list, &key, &kl);
+        st = tracker_step(tracker, element, key, kl, after);
+      }
+      gtext_css_selector_list_free(list);
+    }
+    gtext_css_computed_free(after);
+  }
+  return st;
 }
 
 static GTEXT_CSSOM_Decl * require_computed(GTEXT_CSSOM_Decl * decl) {

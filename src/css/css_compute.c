@@ -289,6 +289,7 @@ void gtext_css_computed_free(GTEXT_CSS_Computed_Style * style) {
   GTEXT_Allocator a = style->alloc;
   gtext_css_cascaded_free(style->cascaded);
   css_anim_untimed_free(&a, &style->anim_untimed);
+  css_anim_untimed_free(&a, &style->anim_applied);
   for (size_t i = 0; i < style->ndiag; i++) {
     gtext_allocator_free(&a, style->diag[i].name_copy);
   }

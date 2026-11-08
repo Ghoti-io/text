@@ -1,0 +1,26 @@
+# tools/css/plant-transition.py: planted defects of the transitions, each seen to fail. Columns (tab separated): name, file under src/css/, the text (exactly once, \n is a line feed), what replaces it, the test programs that must fail (comma separated, a key of PROGRAMS).
+start-combined-duration-not-greater-than-zero	css_transition.c	m >= 0 && tn && combined > 0 &&	m >= 0 && tn && combined >= 0 &&	transition
+start-ignores-the-completed-transition	css_transition.c	&& !(di != (size_t)-1 && same(w->done[di].end, w->done[di].le, at, atl))) {	&& true) {	transition
+start-value-is-the-after-change-value	css_transition.c	st = make_tr(w, id, bt, bl, at, atl, bt, bl, timing, lt, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);	st = make_tr(w, id, at, atl, at, atl, bt, bl, timing, lt, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);	transition
+start-delay-left-out-of-the-start-time	css_transition.c	st = make_tr(w, id, bt, bl, at, atl, bt, bl, timing, lt, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);	st = make_tr(w, id, bt, bl, at, atl, bt, bl, timing, lt, time_ms, time_ms + d0, 1.0, allow_discrete);	transition
+first-matching-value-wins	css_transition.c	for (size_t k = props->n; k-- > 0;) {	for (size_t k = 0; k < props->n; k++) {	transition
+short-lists-not-repeated	css_transition.c	durations.items[k % durations.n]	durations.items[k < durations.n ? k : durations.n - 1]	transition
+shorthand-name-matches-nothing	css_transition.c	if ((ni.flags & GTEXT_CSS_PROP_SHORTHAND) && covers(r, named, p, 0)) {	if (0 && covers(r, named, p, 0)) {	transition
+flow-relative-property-transitions-on-its-own	css_transition.c	if (gtext_css_logical_member(reg, id, &lm) == GTEXT_CSS_OK && lm.logical) {\n      continue;	if (0) {\n      continue;	transition
+flow-relative-name-matches-nothing	css_transition.c	if (gtext_css_logical_member(r, named, &lm) == GTEXT_CSS_OK && lm.logical && gtext_css_logical_map(r, named, flow, &physical) == GTEXT_CSS_OK && physical) {	if (0) {	transition
+completion-after-the-end-time-only	css_transition.c	if (w->run[i].end_time <= time_ms) {	if (w->run[i].end_time < time_ms) {	transition
+no-match-keeps-the-running-transition	css_transition.c	if (st == GTEXT_CSS_OK && m < 0) {	if (0 && m < 0) {	transition
+reversing-factor-not-clamped	css_transition.c	const double rsf = clamp01(sum < 0 ? -sum : sum);	const double rsf = clamp01(sum);	transition
+reversal-not-recognized	css_transition.c	else if (same(old.rasv, old.lr, at, atl)) {	else if (0) {	transition
+reversal-negative-delay-not-scaled	css_transition.c	const double start_time = time_ms + (delay >= 0 ? delay : rsf * delay);	const double start_time = time_ms + delay;	transition
+retarget-starts-from-the-before-change-value	css_transition.c	st = make_tr(w, id, cur, cl, at, atl, cur, cl, timing, lt, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);	st = make_tr(w, id, at, atl, at, atl, cur, cl, timing, lt, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);	transition
+discrete-property-always-transitions	css_transition.c	    *out = allow_discrete;\n    return GTEXT_CSS_OK;	    *out = true;\n    return GTEXT_CSS_OK;	transition
+animated-property-starts-a-transition	css_transition.c	const bool animated = gtext_css_computed_animation_applied(after, id) || (before && gtext_css_computed_animation_applied(before, id));	const bool animated = false;	transition
+timing-function-not-applied	css_transition.c	const double p = gtext_css_easing_output(easing, (time_ms - t->start_time) / (t->end_time - t->start_time), false);	const double p = (gtext_css_easing_free(easing), (time_ms - t->start_time) / (t->end_time - t->start_time));	transition
+version-not-bumped-by-an-update	css_transition.c	set_take(set, w);\n    set->version++;	set_take(set, w);	transition
+transition-sampled-over-an-animation	css_anim_sample.c	    if (animated_here) {\n      continue;	    if (0) {\n      continue;	transition
+transition-sampled-after-its-end	css_anim_sample.c	if (tr->time_ms >= t.end_time_ms || !animatable(&s, t.property)) {	if (!animatable(&s, t.property)) {	transition
+style-ignores-the-transitions	css_style.c	  if (st == GTEXT_CSS_OK && options->transitions && options->transitions->set) {	  if (0 && options->transitions && options->transitions->set) {	transition
+reversing-factor-not-absolute	css_transition.c	const double rsf = clamp01(sum < 0 ? -sum : sum);	const double rsf = clamp01(sum);	transition
+shape-radius-not-clamped	css_anim_interp.c	      if (a->kind == GTEXT_CSS_VAL_FUNCTION) {\n        clamp_radii(v);\n      }		transition
+shape-position-clamped-like-a-radius	css_anim_interp.c	  bool in_radii = circular;	  bool in_radii = circular || rounded;	transition

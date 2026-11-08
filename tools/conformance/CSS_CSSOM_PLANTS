@@ -380,7 +380,7 @@ math-result-outside-the-range-is-clamped-for-text-combine	css_compute_algo.c	run
 later-shorthand-replaces-an-important-one-kept-as-written	css_block.c	  if (st == GTEXT_CSS_OK && superseded && keep_important && !important && block->items[superseded - 1].important) {	  if (0) {	decl
 shorthand-formed-from-longhands-beside-the-one-kept-as-written	css_shorthand_serialize.c	        present = !(block->items[i].opaque && !block->items[i].dead && block->items[i].property == (GTEXT_CSS_Property_Id)id);	        present = present;	decl
 animation-time-never-asked	cssom_computed.c	  const GTEXT_CSS_Status st = core->layout.animation_time(core->layout.user, element, pseudo, effect, time_ms, known);	  const GTEXT_CSS_Status st = GTEXT_CSS_OK;	animation
-timeline-version-ignored	cssom_computed.c	    return core->layout.timeline_version(core->layout.user);	    return 0;	animation
+timeline-version-ignored	cssom_computed.c	    v = core->layout.timeline_version(core->layout.user);	    v = 0;	animation
 style-cache-not-keyed-by-the-time	cssom_computed.c	cs->pcepoch == cs->cepoch && cs->ptime == time;	cs->pcepoch == cs->cepoch;	animation
 declaration-not-compared-with-the-time	cssom_computed.c	c->cepoch == cs->cepoch && c->time == time) {	c->cepoch == cs->cepoch) {	animation
 untimed-property-looks-computed	cssom_resolved.c	      origin = GTEXT_CSSOM_ORIGIN_ABSENT_TIMELINE;   /* an animation targets it and the caller gave no time: the underlying value stands */	      origin = origin;	animation
@@ -454,3 +454,12 @@ braced-argument-keeps-its-braces	css_custom_function.c	        list[n].values = 
 default-not-checked-against-the-type	css_custom_function.c	        if (!matched) {\n          css_compiled_syntax_free(p->type);\n          p->type = NULL;\n          *verdict = PRE_BAD_DEFAULT;	        if (0 && !matched) {\n          css_compiled_syntax_free(p->type);\n          p->type = NULL;\n          *verdict = PRE_BAD_DEFAULT;	mixin
 attr-with-a-type-that-does-not-parse-is-an-empty-string	css_substitute.c	    if (type_written) {	    if (0 && type_written) {	custom
 mixin-member-out-of-memory-reported-as-a-write-failure	cssom_mixin.c	  return st == GTEXT_CSS_E_WRITE ? GTEXT_CSS_E_OOM : st;	  return st;	mixin
+transition-version-ignored	cssom_computed.c	    v += 0x9E3779B97F4A7C15ull * (core->layout.transition_version(core->layout.user) + 1);	    v += 0;	transition
+transitions-without-version-are-cached	cssom_computed.c	  else if (core->layout.transitions) {\n    *cacheable = false;	  else if (0) {\n    *cacheable = false;	transition
+after-change-style-has-transitions	cssom_computed.c	    core->no_transitions = true;\n    sync_pair(core, cs, cacheable, tree, time);	    core->no_transitions = false;\n    sync_pair(core, cs, cacheable, tree, time);	transition
+layout-transitions-not-asked	cssom_computed.c	  if (!core->no_transitions && core->has_layout && core->layout.transitions) {	  if (0 && core->has_layout && core->layout.transitions) {	transition
+tracker-first-event-has-a-before-style	cssom_computed.c	e->before && e->before->cc == after->cc ? e->before : NULL, after,	after, after,	transition
+tracker-keeps-the-previous-style	cssom_computed.c	  gtext_css_computed_free(e->before);\n  e->before = gtext_css_computed_retain(after);\n  return GTEXT_CSS_OK;	  return GTEXT_CSS_OK;	transition
+tracker-pseudo-element-shares-the-elements-set	cssom_computed.c	    *key = s->name.data ? s->name.data : "";\n    *length = s->name.data ? s->name.length : 0;	    *key = "";\n    *length = 0;	transition
+tracker-forget-keeps-the-set	cssom_computed.c	    if (tracker->entries[i].element == element) {\n      entry_release(tracker, &tracker->entries[i]);	    if (0 && tracker->entries[i].element == element) {\n      entry_release(tracker, &tracker->entries[i]);	transition
+tracker-chain-skips-the-ancestors	cssom_computed.c	  for (size_t i = n; st == GTEXT_CSS_OK && i-- > 0;) {\n    /* each element's own after-change style	  for (size_t i = n > 0 ? 1 : 0; st == GTEXT_CSS_OK && i-- > 0;) {\n    /* each element's own after-change style	transition

@@ -87,7 +87,25 @@ typedef struct {
 /// Sample the animations of an element over `base`, the winners of its cascade. `rollback` may be NULL: a `revert` in a keyframe is then read as the underlying value, as `revert-layer` is.
 GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Style_Options * options, GTEXT_CSS_Element_Handle element,
     const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Declaration_Block * base, const css_anim_rollback * rollback, GTEXT_CSS_Declaration_Block ** animated,
-    css_anim_untimed * untimed, GTEXT_CSS_Compute_Result * failure);
+    css_anim_untimed * untimed, css_anim_untimed * applied, GTEXT_CSS_Compute_Result * failure);
+
+/// The combination of two computed values of a longhand given as value text (as `property: a` would say them), by `p`, as the sampler combines the ends of a keyframe interval: a pair whose
+/// animation type is discrete gives `a` below 0.5 and `b` from 0.5 on, and `*discrete` says so. `color_style` (may be NULL) supplies the `color` a `currentcolor` stands for. The text is
+/// released with gtext_css_serialize_buffer_free() and options whose allocator is `alloc` (NULL: the context's). GTEXT_CSS_OK, GTEXT_CSS_E_OOM, GTEXT_CSS_E_INVALID (a text that is not a value
+/// of the property), or a limit.
+GTEXT_CSS_Status css_blend_values_text(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Computed_Style * color_style, GTEXT_CSS_Property_Id id, const char * a, size_t an, const char * b,
+    size_t bn, double p, const GTEXT_Allocator * alloc, char ** text, size_t * length, bool * discrete);
+
+/// The property's animation type is `discrete` or `not animatable` in the registry: its values are not interpolated.
+bool css_property_is_discrete(const GTEXT_CSS_Registry * registry, GTEXT_CSS_Property_Id id, bool * animatable);
+
+/// The easing function of a serialized `transition-timing-function` item (never NULL on GTEXT_CSS_OK); release with gtext_css_easing_free().
+GTEXT_CSS_Status css_easing_from_text(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * alloc, const char * text, size_t length, GTEXT_CSS_Easing ** out);
+
+/// Sample the running transitions of an element over `base`, the winners of its cascade after the animations (`animated_block` may be that block, or NULL for `base`): each transition that
+/// is undergoing at `time_ms` and whose property no animation applied (`applied`) has its current value declared in a copy of the block in `*transitioned` (the caller's); NULL if none.
+GTEXT_CSS_Status css_transition_sample(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Style_Options * options, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Computed_Style * parent,
+    const GTEXT_CSS_Declaration_Block * base, const css_anim_untimed * applied, GTEXT_CSS_Declaration_Block ** transitioned, GTEXT_CSS_Compute_Result * failure);
 
 #ifdef __cplusplus
 }

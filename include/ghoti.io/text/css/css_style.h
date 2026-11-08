@@ -66,6 +66,7 @@
 #define GHOTI_IO_GTEXT_CSS_CSS_STYLE_H
 
 #include <ghoti.io/text/css/css_animation.h>
+#include <ghoti.io/text/css/css_transition.h>
 #include <ghoti.io/text/css/css_atrule_set.h>
 #include <ghoti.io/text/css/css_cascade.h>
 #include <ghoti.io/text/css/css_computed.h>
@@ -123,6 +124,21 @@ typedef struct {
       bool * known);
 } GTEXT_CSS_Style_Animation;
 
+/**
+ * @struct GTEXT_CSS_Style_Transitions
+ * @brief The running transitions of an element, sampled at a time (css_transition.h).
+ *
+ * A style computed with it has, for each running transition of the set that is undergoing (the time is before its end time), the transition's *current value* declared at the transition
+ * origin of the cascade, which is above every other origin, important declarations and animations included ("Transition declarations; Important user agent declarations; ..."), unless a CSS
+ * Animation of the element is applying the same property ("Implementations must add this value to the cascade if and only if that property is not currently undergoing a CSS Animation on
+ * the same element"). The elements that inherit the property, the `var()` that reads it and the units that depend on it all see it. The library reads no clock.
+ */
+typedef struct {
+  size_t size;                                   ///< `sizeof` this struct. Required.
+  const GTEXT_CSS_Transition_Set * set;          ///< The element's (or pseudo-element's) transitions. NULL: none. Not copied; it must outlive the call.
+  double time_ms;                                ///< The time the current values are taken at.
+} GTEXT_CSS_Style_Transitions;
+
 /** @brief What a style computation may be told. */
 typedef struct {
   /** Which attributes the call reads: GTEXT_CSS_STYLE_* bits. gtext_css_style_options_default() has both; a zeroed struct has neither (the entries only). Reading
@@ -156,6 +172,8 @@ typedef struct {
   GTEXT_CSS_Condition_Call * container_call;
   /** The animations to sample (GTEXT_CSS_Style_Animation), or NULL: the style is the one without animations. Not copied; it must outlive the call. */
   const GTEXT_CSS_Style_Animation * animation;
+  /** The transitions to sample (GTEXT_CSS_Style_Transitions), or NULL: the style is the one without transitions (the *after-change style* of CSS Transitions 1). Not copied. */
+  const GTEXT_CSS_Style_Transitions * transitions;
   /** `pseudo` is a highlight pseudo-element (`::selection`, `::target-text`, `::search-text`, `::spelling-error`, `::grammar-error`, `::highlight()`) and the style is made by the rules of
    *  CSS Pseudo-Elements 4, "Cascading and Per-Element Highlight Styles": a property the pseudo-element supports that the cascade gives no value, or `inherit` or `unset`, takes the value of the
    *  same pseudo-element of the parent element (`highlight_parent`) whether or not the property is inherited, and where there is no parent element (`highlight_parent` NULL) its initial

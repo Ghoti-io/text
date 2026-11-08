@@ -79,6 +79,7 @@
 #include <ghoti.io/text/css/css_match.h>
 #include <ghoti.io/text/css/css_registry.h>
 #include <ghoti.io/text/css/css_selector.h>
+#include <ghoti.io/text/css/css_transition.h>
 #include <ghoti.io/text/css/css_value.h>
 #include <ghoti.io/text/macros.h>
 #include <stdbool.h>
@@ -216,6 +217,14 @@ typedef struct {
    *  version is kept for that version alone, as one computed for one version of the tree is; so a read after the clock moved without the number moving gives the old answer. Without it, a
    *  document that has `@keyframes` rules and an `animation_time` keeps no style across reads. Optional. */
   uint64_t (*timeline_version)(void * user);
+  /** The running transitions of the element (or of its pseudo-element, a selector list, else NULL) and the time to take their current values at (css_transition.h; CSS Transitions 1,
+   *  "Application of transitions"): the set is the caller's, borrowed for the read, and NULL (the default) means none. The current value of each running transition is declared at the
+   *  transition origin of the element's style, so `getComputedStyle()` shows a transition part way through. The caller makes the sets with gtext_css_transitions_update(), whose
+   *  after-change styles gtext_cssom_document_after_change_style() gives. Any status but GTEXT_CSS_OK fails the read. Optional. */
+  GTEXT_CSS_Status (*transitions)(void * user, const void * element, const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Transition_Set ** set, double * time_ms);
+  /** A number the caller advances whenever what `transitions` would answer could have changed (a set was updated, the time moved): the version of the transitions, kept in the key of
+   *  the styles computed for a read as `timeline_version` is. Without it, a document with `transitions` keeps no style across reads. Optional. */
+  uint64_t (*transition_version)(void * user);
 } GTEXT_CSSOM_Layout_Interface;
 
 /** @brief The finalizer of a user-data pair: called with the pointer and the kind of the object that held it. It must not call any `gtext_cssom_*` function on that object. */
