@@ -10,3 +10,4 @@ function-guard-not-released	css_substitute.c	    if (f->fguard) {\n      guard_p
 function-brace-argument-keeps-its-braces	css_substitute.c	        cnt = vals[0].child_count;\n        vals = vals[0].children;	        cnt = cnt + 0;	eval
 function-inherit-reads-its-own-scope	css_substitute.c	    return lookup_in(sub, fi, slot, sc->parent, name, len, false, NULL);	    return lookup_in(sub, fi, slot, sc, name, len, false, NULL);	eval
 function-rules-not-given-to-the-document-context	cssom_computed.c	  co.function_rules = core->fns;	  co.function_rules = NULL;	doc
+function-initial-registration-not-handed-down-a-chain	css_substitute.c	      if (v[i].param != SIZE_MAX) {\n        /* A local variable	      if (v[i].kind == EK_PARAM) {\n        /* A local variable	eval

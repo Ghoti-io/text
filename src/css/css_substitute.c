@@ -5001,8 +5001,10 @@ static GTEXT_CSS_Status scope_for_body(css_sub * sub, frame_t * f, const scope_t
   size_t m = 0;
   for (size_t i = 0; i < n; i++) {
     if (i + 1 < n && v[i].name.length == v[i + 1].name.length && memcmp(v[i].name.data, v[i + 1].name.data, v[i].name.length) == 0) {
-      if (v[i].kind == EK_PARAM) {
-        v[i + 1].param = v[i].param;   /* a local variable of a parameter's name keeps its registration: `initial` is the parameter's value */
+      if (v[i].param != SIZE_MAX) {
+        /* A local variable of a parameter's name keeps its registration: `initial` is the parameter's value. The last of several declarations is the one that stays, so the
+           registration is handed down the chain (`--x: 20px; --x: initial;` is the parameter's value, not guaranteed-invalid). */
+        v[i + 1].param = v[i].param;
         v[i + 1].ereg = v[i].ereg;
       }
       continue;

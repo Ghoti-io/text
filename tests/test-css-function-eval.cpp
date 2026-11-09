@@ -327,6 +327,27 @@ TEST(CssFunctionEval, InitialOfALocalVariableIsTheParameterAndInheritIsTheCallSi
   EXPECT_EQ(custom_of(w, "--foo: site; --r: --h(param)", "--r"), "site");
 }
 
+TEST(CssFunctionEval, InitialOfALocalVariableDeclaredAgainIsStillTheParameter) {
+  // Same sentences, with the local variable declared more than once: "the 'initial' keyword resolves to that resolved value" (the argument styles), and the later declaration of a property
+  // is the one that stays. The body's declarations are in the cascade's order, so `--x: 20px; --x: initial;` is `--x: initial;`. (web-platform-tests css-mixins/functions/dashed-function-eval.html,
+  // "Local variable with initial keyword", pages added upstream after the pinned commit.)
+  FnWorld w(
+      "@function --t(--x <length>: 10px) { --x: 20px; --x: initial; result: var(--x); }\n"
+      "@function --u(--x) { --x: 20px; --x: initial; result: var(--x); }\n"
+      "@function --v(--x <length>) { --x: 20px; --x: initial; result: var(--x, PASS); }\n"
+      "@function --c(--x type(<length> | auto): auto) { --x: 20px; --x: initial; result: var(--x); }\n"
+      "@function --b(--x <length>: 10px) { --x: initial; --x: 20px; result: var(--x); }\n"
+      "@function --k(--x <length>: 10px) { --x: 20px; --y: 1; --x: initial; result: var(--x); }");
+  EXPECT_EQ(custom_of(w, "--r: --t(5px)", "--r"), "5px");
+  EXPECT_EQ(custom_of(w, "--r: --t()", "--r"), "10px");
+  EXPECT_EQ(custom_of(w, "--r: --t(red)", "--r"), "10px");
+  EXPECT_EQ(custom_of(w, "--r: --u(5px)", "--r"), "5px");
+  EXPECT_EQ(custom_of(w, "--r: --v(var(--unknown))", "--r"), "PASS");
+  EXPECT_EQ(custom_of(w, "--r: --c(5px)", "--r"), "5px");
+  EXPECT_EQ(custom_of(w, "--r: --b(5px)", "--r"), "20px");
+  EXPECT_EQ(custom_of(w, "--r: --k(5px)", "--r"), "5px");
+}
+
 TEST(CssFunctionEval, AnyOtherCssWideKeywordOnACustomPropertyIsGuaranteedInvalid) {
   // "any other CSS-wide keyword: Resolves to the guaranteed-invalid value."
   FnWorld w(
