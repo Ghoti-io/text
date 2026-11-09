@@ -1,0 +1,1 @@
+y8@keyframes none { from { color: red } } @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } @unknown-rule foo { bar }

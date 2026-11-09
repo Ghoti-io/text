@@ -63,6 +63,8 @@ FRAGMENTS = [
     '@view-transition { navigation: auto; types: a b }',
     '@position-try --a { top: anchor(bottom); color: red; left: 1px }',
     '@property --a { syntax: "<number>"; inherits: false; initial-value: 0 }',
+    '@property --a, --b { } @property --c { syntax: "<nosuch>"; inherits: maybe; initial-value: 1 } @property --d { syntax: "<length>"; initial-value: red }',
+    '@property --a <length>: 5px; @property --b type(<length> | auto): auto; @property --c; @property --d: ; @property --e <foo>; @property --f, --g <length>;',
     '@layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } }',
     '@layer { @font-face { font-family: L; src: url(l) } }',
     '@layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } }',

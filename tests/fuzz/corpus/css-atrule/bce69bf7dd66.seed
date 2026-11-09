@@ -1,0 +1,1 @@
+‘H@layer a.b { @page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px } @counter-style p { system: extends q } @counter-style q { system: extends p } @layer a.b { @counter-style n { system: cyclic; symbols

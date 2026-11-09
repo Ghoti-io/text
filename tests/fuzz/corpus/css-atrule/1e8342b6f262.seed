@@ -1,0 +1,1 @@
++a@media all { @font-face { font-family: D } @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } @font-face { font-family: D } @page :bogus { margin: 1px } }

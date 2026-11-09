@@ -1,0 +1,1 @@
+a<@top-left { content: "x" } @view-transition { navigation: auto; types: a b } @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } @page :bogus { margin: 1px }

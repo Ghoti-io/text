@@ -71,7 +71,7 @@ typedef enum {
   GTEXT_CSS_ATRULE_NAMESPACE,     ///< `@namespace`.
   GTEXT_CSS_ATRULE_LAYER,         ///< `@layer` (names or a block): the model keeps the prelude.
   GTEXT_CSS_ATRULE_SCOPE,         ///< `@scope`.
-  GTEXT_CSS_ATRULE_PROPERTY,      ///< `@property`: its descriptors; css_at_property.h applies it.
+  GTEXT_CSS_ATRULE_PROPERTY,      ///< `@property`, a rule or the statement form: the names of its prelude and the descriptors in effect (`syntax` and `inherits` always, with `*` and `true` for what the rule omits; `initial-value` when it has one); css_at_property.h applies it.
   GTEXT_CSS_ATRULE_MEDIA,         ///< `@media`.
   GTEXT_CSS_ATRULE_SUPPORTS,      ///< `@supports`.
   GTEXT_CSS_ATRULE_CONTAINER,     ///< `@container`.
@@ -202,7 +202,7 @@ GTEXT_API size_t gtext_css_atrule_prelude_read_count(const GTEXT_CSS_Atrule * ru
  *  text writes it. Owned by the rule. */
 GTEXT_API const char * gtext_css_atrule_prelude_read(const GTEXT_CSS_Atrule * rule, size_t index, size_t * length);
 
-/** @brief The names of the prelude, decoded, in order: the family names of `@font-feature-values` and `@font-palette-values`, the name of `@counter-style`, `@keyframes`, `@position-try`, `@color-profile`, the namespace prefix, the layer names. */
+/** @brief The names of the prelude, decoded, in order: the family names of `@font-feature-values` and `@font-palette-values`, the name of `@counter-style`, `@keyframes`, `@position-try`, `@color-profile`, the names of an `@property` (every name of its prelude; a statement has the one), the namespace prefix, the layer names. */
 GTEXT_API size_t gtext_css_atrule_name_count(const GTEXT_CSS_Atrule * rule);
 GTEXT_API bool gtext_css_atrule_name_at(const GTEXT_CSS_Atrule * rule, size_t index, GTEXT_CSS_String * out, bool * quoted);
 

@@ -51,7 +51,6 @@ typedef enum {
   CSS_CREG_OK = 0,
   CSS_CREG_BAD_NAME,
   CSS_CREG_BAD_SYNTAX,
-  CSS_CREG_NO_INITIAL,         ///< A syntax other than `*` with no initial value.
   CSS_CREG_BAD_INITIAL,        ///< The initial value is not a value of the syntax (or not a token stream).
   CSS_CREG_SUBSTITUTION,       ///< The initial value has a substitution function.
   CSS_CREG_NOT_INDEPENDENT,    ///< The initial value needs the element.

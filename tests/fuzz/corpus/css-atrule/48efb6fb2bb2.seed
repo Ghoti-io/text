@@ -1,0 +1,2 @@
+
+@property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @position-try --a { top: anchor(bottom); color: red; left: 1px } @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } }

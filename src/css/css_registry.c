@@ -1887,13 +1887,7 @@ GTEXT_CSS_Status css_registry_make_creg(const GTEXT_CSS_Registry * cr, const cha
       }
     }
   }
-  if (!initial) {
-    if (!universal) {
-      css_creg_free(c);
-      return creg_fail_why(result, GTEXT_CSS_E_INVALID, name, name_length, "a syntax other than * needs an initial value", why, CSS_CREG_NO_INITIAL);
-    }
-  }
-  else {
+  if (initial) {   /* "If initialValue is not present, let parsed initial value be the guaranteed-invalid value", for every syntax */
     const char * it = initial;
     size_t il = initial_length;
     /* "the initial value is parsed as written": a string that a line feed ends is a bad string, and cutting the white space off first would close it */

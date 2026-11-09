@@ -1,0 +1,1 @@
+‡j@-webkit-keyframes w { 0%, 100% { opacity: 0 } 50% { opacity: 1 } } @unknown-rule foo { bar } @counter-style p { system: extends q } @counter-style q { system: extends p } @color-profile device-cmyk { src: url(b.icc) }

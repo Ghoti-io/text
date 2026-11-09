@@ -1,0 +1,1 @@
+‘ha { color: red; @font-face { font-family: N; src: url(n) } } @font-palette-values --x { font-family: Bixa, "Foo Bar"; base-palette: 1; override-colors: 0 red, 3 #00f } @property --a, --b { } @property --c { syntax: "<nosuch>"; inherits: maybe; initial-value: 1 } @property --d { syntax: "<length>"; initial-value: red }

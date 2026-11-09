@@ -1,0 +1,1 @@
+Mo@media all { @layer a.b { @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 } @counter-style y { system: additive; additive-symbols: 3 c, 2 b, 1 a } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @unknown-rule foo { bar } } }

@@ -124,12 +124,29 @@ TEST(CssomInsert, TextThatIsNotExactlyOneValidRuleIsSyntaxError) {
 // A rule whose own grammar refuses it is invalid, and "If the whole rule is dropped, return a syntax error."
 TEST(CssomInsert, AnAtRuleThatItsOwnGrammarRefusesIsSyntaxError) {
   Fixture f("");
-  const char * const bad[] = {"@page foo bar{}", "@property --p{syntax:'<length>'}", "@supports{}", "@namespace;", "@namespace x url(u) {}", "@container (min-width:1px){} x",
+  const char * const bad[] = {"@page foo bar{}", "@supports{}", "@namespace;", "@namespace x url(u) {}", "@container (min-width:1px){} x",
       "@scope (a) to {}", "@media print;"};
   for (const char * t : bad) {
     EXPECT_EQ(insert_rule(f.s.s, t, 0).st, GTEXT_CSS_E_SYNTAX) << t;
   }
   EXPECT_EQ(gtext_cssom_rule_list_length(f.s.rules()), 0u);
+}
+
+// Properties and Values API: all of the descriptors of `@property` are optional, a prelude may list names, and the statement form is a rule too, so each is inserted (and a prelude that
+// is not one is a SyntaxError).
+TEST(CssomInsert, APropertyRuleOfAnyOfItsFormsIsInsertedAndOneThatIsNotOneIsSyntaxError) {
+  Fixture f("");
+  for (const char * t : {"@property --p{}", "@property --p{syntax:'<length>'}", "@property --p <length>: 1px;", "@property --p;", "@property --a, --b{inherits:false}"}) {
+    EXPECT_EQ(insert_rule(f.s.s, t, 0).st, GTEXT_CSS_OK) << t;
+  }
+  EXPECT_EQ(gtext_cssom_rule_list_length(f.s.rules()), 5u);
+  EXPECT_EQ(f.text(),
+      "@property --a, --b { syntax: \"*\"; inherits: false; } | @property --p { syntax: \"*\"; inherits: true; } | @property --p { syntax: \"<length>\"; inherits: true; initial-value: 1px; } | "
+      "@property --p { syntax: \"<length>\"; inherits: true; } | @property --p { syntax: \"*\"; inherits: true; }");
+  for (const char * t : {"@property --p, {}", "@property --p <foo>;", "@property p{}", "@property --p <length> | auto;", "@property --a, --b <length>;"}) {
+    EXPECT_EQ(insert_rule(f.s.s, t, 0).st, GTEXT_CSS_E_SYNTAX) << t;
+  }
+  EXPECT_EQ(gtext_cssom_rule_list_length(f.s.rules()), 5u);
 }
 
 TEST(CssomInsert, ARuleWithRulesInsideIsInsertedWithAllOfThem) {

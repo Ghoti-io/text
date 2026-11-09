@@ -1,0 +1,1 @@
+,8@font-face { font-family: "B c"; src: local(B); font-style: oblique 10deg 20deg; font-feature-settings: "liga" 1, "kern"; font-variation-settings: "wght" 300 } a { color: red; @font-face { font-family: N; src: url(n) } } @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic; symbols: a; fallback: f1 }

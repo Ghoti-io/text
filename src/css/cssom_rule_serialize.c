@@ -1020,7 +1020,7 @@ GTEXT_CSS_Status gtext_cssom_sheet_serialize(const GTEXT_CSSOM_Sheet * sheet, co
 
 GTEXT_CSS_Status css_rule_typed(css_core * core, const css_rule * rule, bool shallow, GTEXT_CSS_Atrule ** out) {
   if (!(css_kind((GTEXT_CSSOM_Rule_Kind)rule->kind)->flags & CSS_KIND_LIST_ANY)) {
-    shallow = false;   /* only a rule that has rules inside it can be read without them; `@property` is not valid without its descriptors */
+    shallow = false;   /* only a rule that has rules inside it can be read without them */
   }
   if (rule->kind == GTEXT_CSSOM_RULE_KEYFRAME) {
     GTEXT_CSS_Atrule * a = NULL;

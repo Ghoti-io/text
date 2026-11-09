@@ -8,7 +8,8 @@
 static void variables_property_rule(void) {
   const char sheet[] =
       "@property --size { syntax: '<length>'; inherits: true; initial-value: 16px }\n"
-      "@property --broken { inherits: true }\n";
+      "@property --gap <length>: 4px;\n"
+      "@property --broken { syntax: '<length>'; initial-value: 3em }\n";
   GTEXT_CSS_Registry * registry = NULL;
   gtext_css_registry_new(NULL, &registry);
   GTEXT_CSS_Tree * tree = NULL;
@@ -17,15 +18,18 @@ static void variables_property_rule(void) {
   GTEXT_CSS_At_Property_Set * rules = NULL;
   gtext_css_at_property_set_new(registry, NULL, &rules);
   gtext_css_at_property_collect(rules, tree, NULL);
-  printf("%zu rule registered\n", gtext_css_at_property_count(rules));
+  printf("%zu registered\n", gtext_css_at_property_count(rules));
   for (size_t i = 0; i < gtext_css_at_property_diagnostic_total(rules); i++) {
     GTEXT_CSS_At_Property_Diagnostic d;
     gtext_css_at_property_diagnostic(rules, i, &d);
     printf("ignored %.*s: %s\n", (int)d.name.length, d.name.data, gtext_css_at_property_reason_name(d.reason));
   }
   GTEXT_CSS_Custom_Info info;
-  if (gtext_css_at_property_find(rules, "--size", 6, &info)) {
-    printf("--size: syntax %.*s, initial %.*s\n", (int)info.syntax_length, info.syntax, (int)info.initial_length, info.initial_value);
+  const char * names[] = {"--size", "--gap"};
+  for (size_t k = 0; k < 2; k++) {
+    if (gtext_css_at_property_find(rules, names[k], strlen(names[k]), &info)) {
+      printf("%s: syntax %.*s, initial %.*s\n", names[k], (int)info.syntax_length, info.syntax, (int)info.initial_length, info.initial_value);
+    }
   }
 
   GTEXT_CSS_Compute_Options options = gtext_css_compute_options_default();

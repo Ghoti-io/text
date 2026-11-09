@@ -231,7 +231,6 @@ inserted-import-keeps-the-ids-it-took	cssom_insert.c	      if (core->next_id != 
 sheet-made-from-text-asks-nobody	cssom_sheet.c	  if (st == GTEXT_CSS_OK && !constructed) {\n    st = css_sheet_ask_imports(s);	  if (0) {\n    st = css_sheet_ask_imports(s);	imports
 released-document-keeps-its-scopes	cssom_core.c	  css_events_teardown(core);\n  css_scope_teardown_all(core);	  css_events_teardown(core);	multidoc
 import-request-shows-the-wrong-sheet	cssom_snapshot.c	    req.sheet = sheet;	    req.sheet = NULL;	imports
-
 document-scope-is-an-object-of-the-counters	cssom_scope.c	  core->counters.live_objects--;\n  core->counters.live_bytes -= s->obj.bytes;\n  s->obj.bytes = 0;\n  s->obj.uncounted = true;\n  s->obj.id = 0;\n  core->next_id--;	  s->obj.id = 0;\n  core->next_id--;	document
 event-sent-before-the-rule-is-linked	cssom_insert.c	    css_rule_list_insert(pl->list, index, rule);\n    settle(pl, rule, made, true, &ev);	    settle(pl, rule, made, true, &ev);\n    css_cssom_commit(core, &ev, NULL);\n    css_rule_list_insert(pl->list, index, rule);	events
 nested-insert-sends-no-event	cssom_insert.c	  if (sheet) {\n    if (inserted) {\n      sheet->rule_total += count;	  if (sheet && !pl->target) {\n    if (inserted) {\n      sheet->rule_total += count;	events,insert
@@ -255,7 +254,6 @@ degraded-summary-claims-to-be-complete	cssom_events.c	    p->summary_complete = 
 observer-removed-in-a-delivery-is-compacted-at-once	cssom_events.c	      if (core->delivering > 0) {\n        o->dead = true;	      if (0) {\n        o->dead = true;	events
 style-rule-with-rules-inside-lists-its-own-dependencies-only	cssom_events.c	      if (structural && rule->descendants > 0) {\n        /* the rules inside read	      if (0) {\n        /* the rules inside read	events
 group-rule-lists-no-dependencies	cssom_events.c	    /* a rule that is not a style rule is not found by a selector, and what it changes is read from its kind: anything may have changed */\n    everything(&p->selector_dependencies);	    /* a rule that is not a style rule is not found by a selector, and what it changes is read from its kind: anything may have changed */\n    memset(&p->selector_dependencies, 0, sizeof p->selector_dependencies);	events
-
 style-text-change-keeps-the-old-sheet	cssom_markup.c	  if (length != e->text_length || (length && memcmp(text, e->text, length) != 0)) {	  if (0) {	markup
 unchanged-text-replaces-the-sheet	cssom_markup.c	  if (length != e->text_length || (length && memcmp(text, e->text, length) != 0)) {	  if (1) {	markup
 sync-walks-on-an-unchanged-generation	cssom_markup.c	  if (b->synced && generation == b->last_generation) {	  if (0) {	markup
@@ -440,7 +438,7 @@ mixin-layer-valid-in-a-body	css_atrule.c	    else if (kind == GTEXT_CSS_ATRULE_L
 contents-valid-outside-a-mixin	css_atrule.c	(o.in_mixin && (row->parents & CSS_AR_P_MIXIN))	(row->parents & CSS_AR_P_MIXIN)	mixin
 mixin-with-a-return-type-valid	css_custom_function.c	    if (!d || verdict != PRE_OK || d->returns) {	    if (!d || verdict != PRE_OK) {	mixin
 mixin-name-needs-no-dashes	css_custom_function.c	    if (b - a != 1 || !css_creg_name_ok(first->value.data, first->value.length)) {\n      return GTEXT_CSS_OK;\n    }\n    d = gtext_allocator_calloc	    if (b - a != 1) {\n      return GTEXT_CSS_OK;\n    }\n    d = gtext_allocator_calloc	mixin
-apply-empty-argument-valid	css_custom_function.c	      if (!declaration_value(args, x, y)) {\n        gtext_allocator_free((GTEXT_Allocator *)alloc, list);	      if (0 && !declaration_value(args, x, y)) {\n        gtext_allocator_free((GTEXT_Allocator *)alloc, list);	mixin
+apply-empty-argument-valid	css_custom_function.c	      if (!css_declaration_value_ok(args, x, y)) {\n        gtext_allocator_free((GTEXT_Allocator *)alloc, list);	      if (0 && !css_declaration_value_ok(args, x, y)) {\n        gtext_allocator_free((GTEXT_Allocator *)alloc, list);	mixin
 mixin-body-declarations-are-not-rules	cssom_rule_kinds.c	nested || parent_kind == GTEXT_CSSOM_RULE_MIXIN || parent_kind == GTEXT_CSSOM_RULE_APPLY || parent_kind == GTEXT_CSSOM_RULE_CONTENTS;	nested;	mixin
 mixin-body-selector-not-relative	css_parser.c	    f->context = (uint8_t)(CTX_STYLE | CTX_RELATIVE | CTX_MIXIN);	    f->context = (uint8_t)(CTX_STYLE | CTX_MIXIN);	mixin
 mixin-rules-written-on-lines	cssom_rule_serialize.c	emitz(w, f->inl ? " " :	emitz(w, 0 ? " " :	mixin
@@ -484,3 +482,8 @@ anchor-function-value-comma-not-seen	css_compute_value.c	      p->comma = p->com
 anchor-function-value-name-not-seen	css_compute_value.c	      p->named = true;	      p->named = false;	computed
 if-branch-value-trimmed-of-the-white-space-before-its-separator	css_substitute.c	      while (ve < f->nvals && is_ws(&f->vals[ve])) {\n        ve++;\n      }	      while (0 && ve < f->nvals && is_ws(&f->vals[ve])) {\n        ve++;\n      }	custom,computed
 computed-custom-property-trimmed-again-when-read	cssom_resolved.c	      st = css_property_value_keep_text(&pv, text, len);	      st = GTEXT_CSS_OK;	computed
+property-rule-keeps-a-descriptor-that-was-ignored	css_atrule.c	  remove_desc(c->a, "syntax");\n  remove_desc(c->a, "inherits");\n  remove_desc(c->a, "initial-value");\n		serialize,setters
+property-rule-writes-only-its-first-name	css_atrule.c	    putz(o, "@property ");\n    for (size_t i = 0; i < a->nnames; i++) {	    putz(o, "@property ");\n    for (size_t i = 0; i < 1 && i < a->nnames; i++) {	serialize,insert
+property-statement-keeps-no-initial-value	css_atrule.c	  return !def->has_initial || put_synth_desc(c, "initial-value", def->initial, def->initial_len, false);	  return true;	serialize,setters,insert
+property-rule-without-syntax-has-the-wrong-one	css_atrule.c	def->has_syntax ? def->syntax : "*", def->has_syntax ? def->syntax_len : 1, true)	def->has_syntax ? def->syntax : "<length>", def->has_syntax ? def->syntax_len : 1, true)	serialize,setters,insert
+property-rule-without-inherits-does-not-inherit	css_atrule.c	const bool inherits = def->has_inherits ? def->inherits : true;	const bool inherits = def->has_inherits ? def->inherits : false;	serialize,setters,insert

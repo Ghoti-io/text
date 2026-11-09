@@ -1,0 +1,1 @@
+R@media all { @font-face { src: url(x) } @media (min-width: 100px) { @keyframes m { from { color: red } } } @property --a <length>: 5px; @property --b type(<length> | auto): auto; @property --c; @property --d: ; @property --e <foo>; @property --f, --g <length>; @counter-style z { system: extends x; suffix: ")" } }

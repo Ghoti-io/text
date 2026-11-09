@@ -1,0 +1,1 @@
+Rq@media all { @font-feature-values A, "B c" { font-display: swap; @styleset { nice: 12 3 } @swash { s: 1 } @styleset { nice: 9 } } @color-profile device-cmyk { src: url(b.icc) } }

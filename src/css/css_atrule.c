@@ -822,16 +822,19 @@ static char * text_in_arena(ctx * c, const GTEXT_CSS_Component_Value * v, size_t
 
 static bool add_name(ctx * c, const GTEXT_CSS_String * s, bool quoted) {
   GTEXT_CSS_Atrule * a = c->a;
-  size_t cap = a->nnames;
+  /* the two arrays are as long as each other, and grow by doubling: a prelude of many names (`@property --a, --b, ...`, `@layer a, b, ...`) is read in time linear in its length */
+  size_t cap = a->capnames;
   if (!grow(&a->alloc, (void **)&a->names, &cap, a->nnames + 1, sizeof *a->names)) {
     fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
     return false;
   }
-  size_t cap2 = a->nnames;
+  a->capnames = cap;
+  size_t cap2 = a->capquoted;
   if (!grow(&a->alloc, (void **)&a->quoted, &cap2, a->nnames + 1, sizeof *a->quoted)) {
     fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
     return false;
   }
+  a->capquoted = cap2;
   char * copy = css_arena_strdup(&a->arena, s->data ? s->data : "", s->length);
   if (!copy) {
     fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
@@ -995,6 +998,98 @@ static bool add_desc(ctx * c, atrule_desc * d) {
   }
   a->ds[a->nds++] = *d;
   return true;
+}
+
+/* ---- the @property rule's own descriptors ----------------------------------------------------------------------------------------------- */
+
+/// A collector for a sink: the text written, in the arena of the rule.
+typedef struct {
+  char * data;
+  size_t len, cap;
+  const GTEXT_Allocator * alloc;
+  bool failed;
+} qbuf;
+
+static GTEXT_Markup_Status qbuf_write(void * user, const char * bytes, size_t n) {
+  qbuf * b = user;
+  if (b->failed) {
+    return GTEXT_MARKUP_E_OOM;
+  }
+  if (b->len + n + 1 > b->cap) {
+    size_t nc = b->cap ? b->cap : 32;
+    while (nc < b->len + n + 1) {
+      nc *= 2;
+    }
+    char * nd = gtext_allocator_realloc(b->alloc, b->data, nc);
+    if (!nd) {
+      b->failed = true;
+      return GTEXT_MARKUP_E_OOM;
+    }
+    b->data = nd;
+    b->cap = nc;
+  }
+  memcpy(b->data + b->len, bytes, n);
+  b->len += n;
+  b->data[b->len] = 0;
+  return GTEXT_MARKUP_OK;
+}
+
+/// Drop the descriptor of a name, if the rule has it.
+static void remove_desc(GTEXT_CSS_Atrule * a, const char * name) {
+  const int old = css_atrule_find_index(a, name, strlen(name));
+  if (old >= 0) {
+    free_desc(&a->ds[old]);
+    memmove(&a->ds[old], &a->ds[old + 1], (a->nds - (size_t)old - 1) * sizeof *a->ds);
+    a->nds--;
+  }
+}
+
+/// Give the rule a descriptor it does not have as a declaration of its block (a statement's, or the one that is in effect where the block's was not): its text is the canonical text of the
+/// value, `quote` writing it as a string.
+static bool put_synth_desc(ctx * c, const char * name, const char * text, size_t length, bool quote) {
+  GTEXT_CSS_Atrule * a = c->a;
+  qbuf q = {NULL, 0, 0, &a->alloc, false};
+  if (quote) {
+    const GTEXT_Markup_Sink sink = {qbuf_write, &q};
+    if (gtext_css_serialize_string(text, length, &sink) != GTEXT_CSS_OK || q.failed) {
+      gtext_allocator_free(&a->alloc, q.data);
+      fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
+      return false;
+    }
+  }
+  atrule_desc ad;
+  memset(&ad, 0, sizeof ad);
+  const size_t nl = strlen(name);
+  ad.name = css_arena_strdup(&a->arena, name, nl);
+  ad.name_len = nl;
+  ad.text = css_arena_strdup(&a->arena, quote ? q.data : text, quote ? q.len : length);
+  ad.text_len = quote ? q.len : length;
+  gtext_allocator_free(&a->alloc, q.data);
+  if (!ad.name || !ad.text) {
+    fail(c, GTEXT_CSS_E_OOM, NULL, NULL);
+    return false;
+  }
+  const GTEXT_CSS_At_Rule_Id aid = gtext_css_registry_find_at_rule("@property", 9);
+  ad.desc = aid ? gtext_css_registry_find_descriptor(aid, name, nl) : 0;
+  ad.span = c->rule->span;
+  return add_desc(c, &ad);
+}
+
+/// What a `@property` rule's descriptors are, as CSSOM reads them: the descriptors in effect (css_at_property_rule_read(), the code that registers the rule) and no others. A descriptor that was
+/// ignored (a `syntax` that is no syntax string, an `inherits` that is not `true` or `false`, an `initial-value` that is not of the syntax) is not there; one the block says twice is the one
+/// that is in effect; a statement has the `syntax` and the `initial-value` it was written with. The three are always put in the order the draft's "serialize a CSSPropertyRule" writes them.
+static bool reconcile_property_descriptors(ctx * c, const css_property_def * def) {
+  remove_desc(c->a, "syntax");
+  remove_desc(c->a, "inherits");
+  remove_desc(c->a, "initial-value");
+  /* `syntax` and `inherits` are always there, with the initial values of the descriptors ("*" and true) when the rule omits them, as the draft's CSSPropertyRule has both always and its
+     "serialize a CSSPropertyRule" writes both: the model is then what the text of the rule says, and a rule read back from its text is the same model */
+  const bool inherits = def->has_inherits ? def->inherits : true;
+  if (!put_synth_desc(c, "syntax", def->has_syntax ? def->syntax : "*", def->has_syntax ? def->syntax_len : 1, true) ||
+      !put_synth_desc(c, "inherits", inherits ? "true" : "false", inherits ? 4 : 5, false)) {
+    return false;
+  }
+  return !def->has_initial || put_synth_desc(c, "initial-value", def->initial, def->initial_len, false);
 }
 
 static bool pattern_matches(const char * pat, const char * name, size_t len) {
@@ -1861,6 +1956,9 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
     return fail(&cx, GTEXT_CSS_E_OOM, NULL, NULL);
   }
   a->kind = kind;
+  if (kind == GTEXT_CSS_ATRULE_PROPERTY) {
+    a->statement = false;   /* "Both are represented by CSSPropertyRule, and will thus serialize in the block form." */
+  }
   a->max_children = o.max_children;
   a->max_descriptors = o.max_descriptors;
   /* the place */
@@ -1895,6 +1993,8 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   }
   block_mode mode = BLOCK_NONE;
   const GTEXT_CSS_Component_Value * one = NULL;
+  css_property_def prop;   /* an `@property` rule's definition as the code that registers it reads it; its strings are in the arena of the rule */
+  memset(&prop, 0, sizeof prop);
   switch (kind) {
   case GTEXT_CSS_ATRULE_FONT_FACE:
   case GTEXT_CSS_ATRULE_VIEW_TRANSITION:
@@ -2000,15 +2100,32 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
     mode = BLOCK_DESCRIPTORS;
     prelude_ok = !only_ws(p, pn);
     if (prelude_ok && !bad_prelude) {
-      /* Properties and Values 1, 2.1: "@property rules require a valid name, a syntax descriptor, an inherits descriptor and, unless the syntax is `*`, an
-         initial-value descriptor; otherwise the whole rule is invalid and ignored": the rule is judged by the same code that registers it */
-      bool registered = false;
-      const GTEXT_CSS_Status ps = css_at_property_rule_validity(registry, &a->alloc, rule, &registered, &prelude_why);
+      /* Properties and Values 1: "@property <custom-property-name># { <declaration-list> }", or the statement "@property <custom-property-name> <css-type>? [: <declaration-value>? ]? ;", with
+         every descriptor optional: the rule is judged, and its names and the descriptors in effect are read, by the same code that registers it */
+      css_property_def def;
+      bool valid = false;
+      const GTEXT_CSS_Status ps = css_at_property_rule_read(registry, &a->alloc, rule, &def, &valid, &prelude_why);
       if (ps != GTEXT_CSS_OK) {
         atrule_destroy(a);
         return fail(&cx, ps, &rule->span, NULL);
       }
-      prelude_ok = registered;
+      prelude_ok = valid;
+      if (valid) {
+        prop = def;
+        prop.names = NULL;
+        prop.syntax = def.has_syntax ? css_arena_strdup(&a->arena, def.syntax, def.syntax_len) : NULL;
+        prop.initial = def.has_initial ? css_arena_strdup(&a->arena, def.initial, def.initial_len) : NULL;
+        const bool copied = (!def.has_syntax || prop.syntax) && (!def.has_initial || prop.initial);
+        for (size_t i = 0; copied && i < def.nnames; i++) {
+          if (!add_name(&cx, &def.names[i], false)) {
+            break;
+          }
+        }
+        if (!copied && cx.st == GTEXT_CSS_OK) {
+          fail(&cx, GTEXT_CSS_E_OOM, NULL, NULL);
+        }
+        css_property_def_free(&a->alloc, &def);
+      }
     }
     break;
   case GTEXT_CSS_ATRULE_SUPPORTS:
@@ -2234,6 +2351,9 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
           break;
         }
       }
+    }
+    if (kind == GTEXT_CSS_ATRULE_PROPERTY && cx.st == GTEXT_CSS_OK) {
+      reconcile_property_descriptors(&cx, &prop);
     }
     if (cx.st == GTEXT_CSS_OK) {
       check_required(&cx);
@@ -2475,6 +2595,17 @@ static void put_header(outp * o, const GTEXT_CSS_Atrule * a) {
     put_keyframe_selectors(o, a);
     return;
   }
+  if (a->kind == GTEXT_CSS_ATRULE_PROPERTY) {
+    /* the names of the prelude, each as an identifier (a statement's prelude has more in it than the names) */
+    putz(o, "@property ");
+    for (size_t i = 0; i < a->nnames; i++) {
+      if (i) {
+        putz(o, ", ");
+      }
+      put_ident(o, a->names[i].data, a->names[i].length);
+    }
+    return;
+  }
   putz(o, "@");
   put_ident(o, a->name, a->name_len);
   if (a->prelude_len || a->nnames || a->nsels) {
@@ -2505,6 +2636,26 @@ static void put_rule(outp * o, const GTEXT_CSS_Atrule * a, size_t indent) {
     putz(o, " { ");
     put_declarations(o, a);
     putz(o, a->nds ? " }" : "}");
+    return;
+  }
+  if (a->kind == GTEXT_CSS_ATRULE_PROPERTY) {
+    /* Properties and Values 1, "serialize a CSSPropertyRule": `syntax: ` and the syntax as a string, `inherits: ` and `true` or `false` (both always, the descriptors being optional and having
+       the initial values `*` and `true`), then `initial-value: ` and the value when the rule has one, each followed by `; `, and `}` */
+    const int si = css_atrule_find_index(a, "syntax", 6);
+    const int ii = css_atrule_find_index(a, "inherits", 8);
+    const int vi = css_atrule_find_index(a, "initial-value", 13);
+    put_header(o, a);
+    putz(o, " { syntax: ");
+    put(o, si >= 0 ? a->ds[si].text : "\"*\"", si >= 0 ? a->ds[si].text_len : 3);   /* always there: reconcile_property_descriptors() */
+    putz(o, "; inherits: ");
+    put(o, ii >= 0 ? a->ds[ii].text : "true", ii >= 0 ? a->ds[ii].text_len : 4);
+    putz(o, "; ");
+    if (vi >= 0) {
+      putz(o, "initial-value: ");
+      put(o, a->ds[vi].text, a->ds[vi].text_len);
+      putz(o, "; ");
+    }
+    putz(o, "}");
     return;
   }
   put_header(o, a);

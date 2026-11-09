@@ -1,0 +1,1 @@
+PÏ@media all { @counter-style p { system: extends q } @counter-style q { system: extends p } @font-face { src: url(x) } }

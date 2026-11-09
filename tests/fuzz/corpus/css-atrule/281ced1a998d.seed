@@ -1,0 +1,2 @@
+½
+@view-transition { navigation: auto; types: a b } @font-feature-values A, "B c" { font-display: swap; @styleset { nice: 12 3 } @swash { s: 1 } @styleset { nice: 9 } } @font-palette-values --y { base-palette: dark } @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } }

@@ -70,6 +70,7 @@ struct GTEXT_CSS_Atrule {
   GTEXT_CSS_String * names;
   bool * quoted;
   size_t nnames;
+  size_t capnames, capquoted;        ///< The room of `names` and of `quoted`: they double, so that a prelude of n names is read in O(n).
   atrule_desc * ds;
   size_t nds, capds;
   struct GTEXT_CSS_Atrule ** kids;
@@ -182,9 +183,29 @@ static inline GTEXT_CSS_String copy_string(holder * h, const GTEXT_CSS_String * 
 }
 #endif
 
-/// Whether an `@property` rule is valid, judged by the code that registers it (css_at_property.c): a valid name, `syntax`, `inherits` and an `initial-value` that holds for
-/// the syntax. *why receives the sentence of the first reason it is not (static), or NULL. A registration of the same name by the caller does not make the rule invalid.
-GTEXT_CSS_Status css_at_property_rule_validity(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * allocator, const GTEXT_CSS_Rule * rule, bool * valid,
+/// What an `@property` rule or statement defines, as the code that registers it reads it (css_at_property.c): the names of its prelude (pointers into the rule) and the descriptors that are
+/// in effect. A descriptor that is invalid and ignored, or that is not there, is not here, and its default applies ("syntax" `*`, "inherits" true, no initial value: the guaranteed-invalid value).
+typedef struct {
+  GTEXT_CSS_String * names;      ///< The names, in order, owned (the strings are the rule's).
+  size_t nnames;
+  char * syntax;                 ///< The syntax string; NULL-terminated, owned.
+  size_t syntax_len;
+  bool has_syntax;
+  bool inherits;
+  bool has_inherits;
+  char * initial;                ///< The initial value's text (trimmed; empty for an empty value); NULL-terminated, owned.
+  size_t initial_len;
+  bool has_initial;
+} css_property_def;
+
+/// Free what a definition owns (with the allocator the read was given); the definition is left empty.
+void css_property_def_free(const GTEXT_Allocator * allocator, css_property_def * def);
+
+/// Read an `@property` rule (a rule with a block, or a statement) as the code that registers it does: "While the <custom-property-name> is required, all of the descriptors are optional". `*valid`
+/// says whether it is a rule: the prelude is `<custom-property-name>#` (a rule) or `<custom-property-name> <css-type>? [: <declaration-value>? ]?` (a statement), and an initial value that is
+/// of the syntax can be computed without an element. When it is, `*def` is the definition (free it with css_property_def_free()); when it is not, `*why` is the sentence (static) that says why.
+/// A registration of the same name by the caller does not make the rule invalid. GTEXT_CSS_OK, or a failure of the allocator or the registry.
+GTEXT_CSS_Status css_at_property_rule_read(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * allocator, const GTEXT_CSS_Rule * rule, css_property_def * def, bool * valid,
     const char ** why);
 
 #endif

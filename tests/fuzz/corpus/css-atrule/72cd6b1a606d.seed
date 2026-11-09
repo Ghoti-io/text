@@ -1,0 +1,1 @@
+·Ë@media all { @font-palette-values --y { base-palette: dark } @layer { @font-face { font-family: L; src: url(l) } } }

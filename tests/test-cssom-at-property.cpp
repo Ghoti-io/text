@@ -93,14 +93,16 @@ TEST(CssomAtProperty, TheLastValidRuleOfANameWins) {
 }
 
 TEST(CssomAtProperty, AnInvalidRuleAfterAValidOneDoesNotReplaceIt) {
-  Cs m(page("@property --l { syntax: \"<length>\"; inherits: false; initial-value: 3px } @property --l { syntax: \"<length>\"; inherits: false }"));
+  Cs m(page("@property --l { syntax: \"<length>\"; inherits: false; initial-value: 3px } @property --l { syntax: \"<length>\"; inherits: false; initial-value: 1em }"));
   EXPECT_EQ(m.value("#b", "--l"), "3px");
 }
 
-/* "initial-value ... is required unless the syntax is universal": the rule is invalid, the property is not registered */
-TEST(CssomAtProperty, ARuleWithNoInitialValueRegistersNothing) {
-  Cs m(page("@property --l { syntax: \"<length>\"; inherits: false } #a { --l: calc(1px + 2px) }"));
-  EXPECT_EQ(m.value("#a", "--l"), "calc(1px + 2px)");
+/* Properties and Values API (6 August 2026, as pinned): "While the <custom-property-name> is required, all of the descriptors are optional", and the initial value of an omitted
+   initial-value is "the guaranteed-invalid value", so a rule that names a type and no initial value registers: the property is computed as the type says and has no value of its own. */
+TEST(CssomAtProperty, ARuleWithNoInitialValueRegistersAndHasNone) {
+  Cs m(page("@property --l { syntax: \"<length>\"; inherits: false } #a { --l: calc(1px + 2px); --u: var(--l) }"));
+  EXPECT_EQ(m.value("#a", "--l"), "3px");
+  EXPECT_EQ(m.value("#b", "--l"), "") << "no initial value: the guaranteed-invalid value, which has no text";
 }
 
 /* the cascade order: a later sheet's rule wins over an earlier sheet's, as for any at-rule that cascades by name */
@@ -270,11 +272,11 @@ TEST(CssomAtProperty, TheDocumentExposesTheRegistrationsItsRulesMake) {
   EXPECT_GE(c.property_collects, 1u);
 }
 
-/* the I/O row: "invalid rule | no initial-value for <length> | not registered". Properties and Values 1, "the @property rule": a rule without the descriptors it requires "is invalid"; the
-   parse of a sheet does not keep an invalid @property rule (it is not in `cssRules`, as in the browsers), so it never reaches the set and there is no diagnostic to report for it. What is
+/* A rule that is not valid is not kept by the parse of a sheet (it is not in `cssRules`, as in the browsers), so it never reaches the set and there is no diagnostic to report for it. What
+   is refused here is an initial value that cannot be computed without an element (`1em`: "If parsed initial value is not computationally independent, throw a SyntaxError"). What is
    reported is the valid rule that another replaced ("the last one wins"). */
 TEST(CssomAtProperty, AnInvalidRuleIsNotInTheSheetAndRegistersNothing) {
-  Cs m(page("@property --l { syntax: \"<length>\"; inherits: false } p { color: red }"));
+  Cs m(page("@property --l { syntax: \"<length>\"; inherits: false; initial-value: 1em } @property --m, { } p { color: red }"));
   GTEXT_CSSOM_Sheet * sh = m.sheet(m.el("#s"));
   const GTEXT_CSSOM_Rule_List * list = nullptr;
   ASSERT_EQ(gtext_cssom_sheet_rules(sh, &list), GTEXT_CSS_OK);
@@ -283,6 +285,32 @@ TEST(CssomAtProperty, AnInvalidRuleIsNotInTheSheetAndRegistersNothing) {
   bool none = false;
   EXPECT_TRUE(registered(m.d(), nullptr, &none).empty());
   EXPECT_TRUE(none);
+}
+
+TEST(CssomAtProperty, ARuleWithNoDescriptorsAStatementAndAListOfNamesAreRegistrations) {
+  Cs m(page("@property --u {} @property --v <length>: 3px; @property --w, --x { syntax: \"<length>\"; inherits: false; initial-value: 1px } "
+            "#a { --u: 1 2; --v: 1em; --w: 2em; font-size: 10px }"));
+  EXPECT_EQ(m.value("#a", "--u"), "1 2");
+  EXPECT_EQ(m.value("#a", "--v"), "10px");
+  EXPECT_EQ(m.value("#b", "--v"), "10px") << "a statement registers a property that inherits";
+  EXPECT_EQ(m.value("#b", "--u"), "1 2") << "so does a rule that says nothing";
+  EXPECT_EQ(m.value("#a", "--w"), "20px");
+  EXPECT_EQ(m.value("#b", "--w"), "1px") << "inherits: false: the initial value";
+  EXPECT_EQ(m.value("#b", "--x"), "1px");
+  bool applied = false, none = true;
+  EXPECT_EQ(registered(m.d(), &applied, &none), (std::vector<std::string>{"--u * inherits -", "--v <length> inherits 3px", "--w <length> own 1px", "--x <length> own 1px"}));
+}
+
+TEST(CssomAtProperty, AStatementInsertedIntoASheetRegistersAtTheNextRead) {
+  Cs m(page("#a { --l: calc(1px + 2px) }"));
+  GTEXT_CSSOM_Sheet * sh = m.sheet(m.el("#s"));
+  const std::string rule = "@property --l <length>: 5px;";
+  ASSERT_EQ(gtext_cssom_sheet_insert_rule(sh, rule.data(), rule.size(), 0, nullptr, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(m.value("#a", "--l"), "3px");
+  EXPECT_EQ(m.value("#b", "--l"), "3px");
+  ASSERT_EQ(gtext_cssom_sheet_delete_rule(sh, 0, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(m.value("#a", "--l"), "calc(1px + 2px)");
+  gtext_cssom_sheet_release(sh);
 }
 
 TEST(CssomAtProperty, ARuleAnotherReplacedIsReportedAsSuperseded) {
@@ -435,19 +463,20 @@ TEST(CssomAtProperty, ADocumentMadeWithAnEnvironmentComputesItsOwnContextInThatE
 /* ---- allocation failure ---------------------------------------------------------------------------------------------------------------------------------- */
 
 std::string everything_custom(Cs & m) {
-  return m.value("#a", "--l") + "|" + m.value("#b", "--l") + "|" + m.value("#a", "--r");
+  return m.value("#a", "--l") + "|" + m.value("#b", "--l") + "|" + m.value("#a", "--r") + "|" + m.value("#a", "--m") + "|" + m.value("#b", "--n") + "|" + m.value("#a", "--o");
 }
 
 /* Every allocation of reading the rules and of making the context with them is failed in turn: a failed read is an error and leaves the document as it was (the next read, with memory,
    gives the healthy answer), and nothing leaks. */
 TEST(CssomAtProperty, EveryAllocationOfReadingTheRulesAndMakingTheContextIsFailedInTurn) {
   const std::string html = page(std::string(kLength) + "@media (min-width: 1px) { @property --k { syntax: \"<number>\"; inherits: true; initial-value: 2 } }"
+                                "@property --m <length>: 7px; @property --n, --o { syntax: \"<length>\"; initial-value: 5px } "
                                 "#a { --l: calc(1px + 2px); --r: if(style(--l: 3px): T; else: F) }");
   std::string want;
   {
     Cs m(html);
     want = everything_custom(m);
-    ASSERT_EQ(want, "3px|3px|T");
+    ASSERT_EQ(want, "3px|3px|T|7px|5px|5px");
   }
   size_t failed = 0;
   for (size_t n = 1; n < 100000; n += n < 60 ? 1 : 31) {

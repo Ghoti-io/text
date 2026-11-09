@@ -70,6 +70,18 @@ typedef struct css_fn_def {
   size_t sheet;
 } css_fn_def;
 
+/// The range [*a, *b) of the component values without the white space at either end.
+void css_values_trim(const GTEXT_CSS_Component_Value * v, size_t * a, size_t * b);
+
+/// Whether the values are a <declaration-value> at the top level: none of the tokens is a `;`, a `!`, a bad string or url or a closing bracket that opens nothing. Nothing at all is accepted.
+bool css_declaration_value_ok(const GTEXT_CSS_Component_Value * v, size_t a, size_t b);
+
+/// Read a <css-type> from the values [a, b): one syntax component (`<length>+`, `auto`), or `type(<syntax>)`; "<css-type> = <syntax-component> | <type()>", so a syntax that needs a combinator
+/// or is `*` alone has to be wrapped in `type()`. `*ok` says whether it is one, and when it is `*type` is the compiled syntax (owned; its `text` is the syntax string). GTEXT_CSS_OK or
+/// GTEXT_CSS_E_OOM.
+GTEXT_CSS_Status css_read_type(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * alloc, const GTEXT_CSS_Component_Value * v, size_t a, size_t b, css_compiled_syntax ** type,
+    bool * ok);
+
 /// Whether two sets define the same functions the same way: the same names in the same layers with the same rules (the text of the rules the sets own, else the rules themselves) and
 /// the same diagnostics counted. A NULL set defines none.
 bool css_function_sets_equal(const GTEXT_CSS_Function_Set * x, const GTEXT_CSS_Function_Set * y);

@@ -1,0 +1,1 @@
+Ež@layer a { @property --a, --b { } @property --c { syntax: "<nosuch>"; inherits: maybe; initial-value: 1 } @property --d { syntax: "<length>"; initial-value: red } @page :bogus { margin: 1px } @-webkit-keyframes w { 0%, 100% { opacity: 0 } 50% { opacity: 1 } } @keyframes none { from { 

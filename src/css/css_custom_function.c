@@ -330,8 +330,7 @@ static bool ieq(const GTEXT_CSS_String * s, const char * lower) {
   return css_ascii_ieq(s, lower);
 }
 
-/// The range [*a, *b) of the values without the white space at either end.
-static void trim(const GTEXT_CSS_Component_Value * v, size_t * a, size_t * b) {
+void css_values_trim(const GTEXT_CSS_Component_Value * v, size_t * a, size_t * b) {
   while (*a < *b && is_ws(&v[*a])) {
     (*a)++;
   }
@@ -364,12 +363,11 @@ static char * copy_n(const GTEXT_Allocator * a, const char * s, size_t n) {
   return c;
 }
 
-/// Read a <css-type> from the values: one syntax component (`<length>+`, `auto`), or `type(<syntax>)`. `*type` is the compiled syntax (owned) when `*verdict` is PRE_OK.
-/// "<css-type> = <syntax-component> | <type()>": a syntax that needs a combinator or is `*` alone has to be wrapped in `type()`.
-static GTEXT_CSS_Status read_type(GTEXT_CSS_Function_Set * s, const GTEXT_CSS_Component_Value * v, size_t a, size_t b, css_compiled_syntax ** type, pre_verdict * verdict) {
+GTEXT_CSS_Status css_read_type(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * alloc, const GTEXT_CSS_Component_Value * v, size_t a, size_t b, css_compiled_syntax ** type,
+    bool * ok) {
   *type = NULL;
-  *verdict = PRE_BAD_TYPE;
-  trim(v, &a, &b);
+  *ok = false;
+  css_values_trim(v, &a, &b);
   if (a == b) {
     return GTEXT_CSS_OK;
   }
@@ -377,12 +375,14 @@ static GTEXT_CSS_Status read_type(GTEXT_CSS_Function_Set * s, const GTEXT_CSS_Co
   size_t n = b - a;
   bool wrapped = false;
   if (n == 1 && v[a].kind == GTEXT_CSS_VALUE_FUNCTION && ieq(&v[a].value, "type")) {
-    inner = v[a].children;
-    n = v[a].child_count;
+    size_t ia = 0, ib = v[a].child_count;
+    css_values_trim(v[a].children, &ia, &ib);   /* `type( <length> )`: the white space inside the parentheses is not part of the syntax */
+    inner = v[a].children + ia;
+    n = ib - ia;
     wrapped = true;
   }
   GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
-  so.allocator = &s->alloc;
+  so.allocator = alloc;
   char * text = NULL;
   size_t length = 0;
   GTEXT_CSS_Status st = n ? gtext_css_serialize_values_buffer(inner, n, &so, &text, &length) : GTEXT_CSS_E_GRAMMAR;
@@ -393,8 +393,8 @@ static GTEXT_CSS_Status read_type(GTEXT_CSS_Function_Set * s, const GTEXT_CSS_Co
     return GTEXT_CSS_OK;
   }
   css_compiled_syntax * c = NULL;
-  st = css_registry_compile_syntax(s->registry, text, length, &c);
-  gtext_allocator_free(&s->alloc, text);
+  st = css_registry_compile_syntax(registry, text, length, &c);
+  gtext_allocator_free((GTEXT_Allocator *)alloc, text);
   if (st == GTEXT_CSS_E_OOM) {
     return st;
   }
@@ -406,15 +406,23 @@ static GTEXT_CSS_Status read_type(GTEXT_CSS_Function_Set * s, const GTEXT_CSS_Co
     return GTEXT_CSS_OK;
   }
   *type = c;
-  *verdict = PRE_OK;
+  *ok = true;
   return GTEXT_CSS_OK;
+}
+
+/// Read a <css-type> of a parameter or a return type; `*verdict` is PRE_OK when the values are one.
+static GTEXT_CSS_Status read_type(GTEXT_CSS_Function_Set * s, const GTEXT_CSS_Component_Value * v, size_t a, size_t b, css_compiled_syntax ** type, pre_verdict * verdict) {
+  bool ok = false;
+  const GTEXT_CSS_Status st = css_read_type(s->registry, &s->alloc, v, a, b, type, &ok);
+  *verdict = ok ? PRE_OK : PRE_BAD_TYPE;
+  return st;
 }
 
 /// Whether the values are a <declaration-value> at the top level: none of the tokens is a `;`, a `!`, a bad string or url or a closing bracket that opens nothing. Nothing at
 /// all is accepted, because both places that ask allow an empty one: "<default-value> = <declaration-value>?" ("an empty default value (like `@function --x(--arg:){}`) is
 /// perfectly valid") and the arguments of a <dashed-function>, "[ <declaration-value>? ]#? ,?" ("a comma-separated list of anything (including an empty value)").
-static bool declaration_value(const GTEXT_CSS_Component_Value * v, size_t a, size_t b) {
-  trim(v, &a, &b);
+bool css_declaration_value_ok(const GTEXT_CSS_Component_Value * v, size_t a, size_t b) {
+  css_values_trim(v, &a, &b);
   for (size_t i = a; i < b; i++) {
     if (v[i].kind != GTEXT_CSS_VALUE_TOKEN) {
       continue;
@@ -443,7 +451,7 @@ static bool declaration_value(const GTEXT_CSS_Component_Value * v, size_t a, siz
 static GTEXT_CSS_Status read_param(GTEXT_CSS_Function_Set * s, const GTEXT_CSS_Component_Value * v, size_t a, size_t b, css_fn_param * p, pre_verdict * verdict) {
   memset(p, 0, sizeof *p);
   *verdict = PRE_BAD_PARAMETER;
-  trim(v, &a, &b);
+  css_values_trim(v, &a, &b);
   if (a == b) {
     return GTEXT_CSS_OK;
   }
@@ -461,7 +469,7 @@ static GTEXT_CSS_Status read_param(GTEXT_CSS_Function_Set * s, const GTEXT_CSS_C
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
   pre_verdict tv = PRE_OK;
   size_t ta = a + 1, tb = colon;
-  trim(v, &ta, &tb);
+  css_values_trim(v, &ta, &tb);
   if (ta < tb) {
     st = read_type(s, v, ta, tb, &p->type, &tv);
     if (st != GTEXT_CSS_OK) {
@@ -474,8 +482,8 @@ static GTEXT_CSS_Status read_param(GTEXT_CSS_Function_Set * s, const GTEXT_CSS_C
   }
   if (colon < b) {
     size_t da = colon + 1, db = b;
-    trim(v, &da, &db);
-    if (!declaration_value(v, da, db)) {
+    css_values_trim(v, &da, &db);
+    if (!css_declaration_value_ok(v, da, db)) {
       css_compiled_syntax_free(p->type);
       p->type = NULL;
       *verdict = PRE_BAD_DEFAULT;
@@ -550,7 +558,7 @@ static GTEXT_CSS_Status read_prelude(GTEXT_CSS_Function_Set * s, const GTEXT_CSS
   *verdict = PRE_BAD_PRELUDE;
   const GTEXT_CSS_Component_Value * p = rule->prelude;
   size_t a = 0, b = rule->prelude_count;
-  trim(p, &a, &b);
+  css_values_trim(p, &a, &b);
   if (a == b) {
     return GTEXT_CSS_OK;
   }
@@ -579,13 +587,13 @@ static GTEXT_CSS_Status read_prelude(GTEXT_CSS_Function_Set * s, const GTEXT_CSS
   const GTEXT_CSS_Component_Value * args = fn->children;
   const size_t na = fn->child_count;
   size_t pa = 0, pb = na;
-  trim(args, &pa, &pb);
+  css_values_trim(args, &pa, &pb);
   /* "<@function> = @function <function-token> <function-parameter>#? ,? )" and "A final trailing comma is allowed after the arguments, to make formatting arguments across
      multiple lines easier": one comma at the end is not a separator. `(,)` is not "after the arguments" (there are none) and stays invalid, as the page at-function-parsing.html
      has it. */
   if (pa < pb && pb - pa > 1 && args[pb - 1].kind == GTEXT_CSS_VALUE_TOKEN && args[pb - 1].type == GTEXT_CSS_TOKEN_COMMA) {
     pb--;
-    trim(args, &pa, &pb);
+    css_values_trim(args, &pa, &pb);
   }
   pre_verdict v = PRE_OK;
   if (pa < pb) {
@@ -633,7 +641,7 @@ static GTEXT_CSS_Status read_prelude(GTEXT_CSS_Function_Set * s, const GTEXT_CSS
   /* what follows: nothing, or `returns <type>` */
   if (st == GTEXT_CSS_OK && v == PRE_OK) {
     size_t ra = a + 1, rb = b;
-    trim(p, &ra, &rb);
+    css_values_trim(p, &ra, &rb);
     if (ra < rb) {
       if (p[ra].kind != GTEXT_CSS_VALUE_TOKEN || p[ra].type != GTEXT_CSS_TOKEN_IDENT || !ieq(&p[ra].value, "returns")) {
         v = PRE_BAD_RETURNS;
@@ -989,7 +997,7 @@ GTEXT_CSS_Status css_mixin_prelude_read(const GTEXT_CSS_Registry * registry, con
     return GTEXT_CSS_OK;
   }
   size_t a = 0, b = rule->prelude_count;
-  trim(rule->prelude, &a, &b);
+  css_values_trim(rule->prelude, &a, &b);
   if (a == b) {
     return GTEXT_CSS_OK;
   }
@@ -1051,7 +1059,7 @@ GTEXT_CSS_Status css_apply_prelude_read(const GTEXT_Allocator * alloc, const GTE
     return GTEXT_CSS_OK;
   }
   size_t a = 0, b = rule->prelude_count;
-  trim(rule->prelude, &a, &b);
+  css_values_trim(rule->prelude, &a, &b);
   if (a == b) {
     return GTEXT_CSS_OK;
   }
@@ -1070,7 +1078,7 @@ GTEXT_CSS_Status css_apply_prelude_read(const GTEXT_Allocator * alloc, const GTE
   }
   const GTEXT_CSS_Component_Value * args = first->children;
   size_t pa = 0, pb = first->child_count;
-  trim(args, &pa, &pb);
+  css_values_trim(args, &pa, &pb);
   /* "The comma-separated values provide the arguments to the function ... Each <declaration-value> has leading/trailing whitespace trimmed from it. If the final argument is
      empty, it's dropped." `--f()` is no argument, `--f(a,)` is one, `--f(a,,)` is two (the second empty) and `--solo(,)` is one empty argument. */
   size_t items = 1;
@@ -1082,7 +1090,7 @@ GTEXT_CSS_Status css_apply_prelude_read(const GTEXT_Allocator * alloc, const GTE
     last_from--;
   }
   size_t lf = last_from, lt = pb;
-  trim(args, &lf, &lt);
+  css_values_trim(args, &lf, &lt);
   size_t count = items;
   if (lf == lt) {            /* the final item is empty (the only item of `--f()` among them): it is dropped */
     count = items - 1;
@@ -1102,8 +1110,8 @@ GTEXT_CSS_Status css_apply_prelude_read(const GTEXT_Allocator * alloc, const GTE
         continue;
       }
       size_t x = from, y = i;
-      trim(args, &x, &y);
-      if (!declaration_value(args, x, y)) {
+      css_values_trim(args, &x, &y);
+      if (!css_declaration_value_ok(args, x, y)) {
         gtext_allocator_free((GTEXT_Allocator *)alloc, list);
         return GTEXT_CSS_OK;
       }
@@ -1114,9 +1122,9 @@ GTEXT_CSS_Status css_apply_prelude_read(const GTEXT_Allocator * alloc, const GTE
         list[n].count = args[x].child_count;
         list[n].braced = true;
         size_t p = 0, q = list[n].count;
-        trim(list[n].values, &p, &q);
+        css_values_trim(list[n].values, &p, &q);
         /* the contents of a `{}` argument are a declaration value as well ("!important invalidates mixin argument `{red !important}`", the pinned page important.html); they may be empty */
-        if (q > p && !declaration_value(list[n].values, p, q)) {
+        if (q > p && !css_declaration_value_ok(list[n].values, p, q)) {
           gtext_allocator_free((GTEXT_Allocator *)alloc, list);
           return GTEXT_CSS_OK;
         }

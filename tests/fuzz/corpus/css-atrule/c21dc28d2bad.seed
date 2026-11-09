@@ -1,0 +1,1 @@
+ûﬂ@media all { @layer { @font-face { font-family: L; src: url(l) } } @property --a <length>: 5px; @property --b type(<length> | auto): auto; @property --c; @property --d: ; @property --e <foo>; @property --f, --g <length>; }

@@ -1,0 +1,1 @@
+_@media all { @font-face { font-family: D } @unknown-rule foo { bar } @top-left { content: "x" } @font-palett

@@ -417,10 +417,11 @@ GTEXT_API GTEXT_CSS_Status gtext_css_registry_register_shorthand(GTEXT_CSS_Regis
 typedef struct {
   const char * name;         ///< `--name`, case kept (custom property names are case-sensitive); at least one character after the dashes. Required.
   const char * syntax;       ///< A syntax string (`<length> | auto`, `<color>#`, `*`); NULL is `*`.
-  bool inherits;             ///< Whether the property inherits. (`registerProperty()` requires it to be said; there is no default here.)
-  const char * initial_value; ///< The initial value as CSS text; NULL for none (then the syntax has to be `*`, and the initial value is the guaranteed-invalid
-                             ///< value). For a syntax other than `*` it has to be a value of the syntax that can be computed without an element (`5px`, `1in`,
-                             ///< `10vw`; not `3em`, `currentcolor` or `var(--x)`).
+  bool inherits;             ///< Whether the property inherits. (The dictionary of `registerProperty()` gives it the default `true`; a struct has no way to say that it was left out,
+                             ///< so a caller that follows the dictionary sets it, and the `@property` rule's reader does.)
+  const char * initial_value; ///< The initial value as CSS text; NULL for none, whatever the syntax: "If initialValue is not present, let parsed initial value be the guaranteed-invalid
+                             ///< value". One that is given has to be a value of the syntax that can be computed without an element (`5px`, `1in`, `10vw`; not `3em`,
+                             ///< `currentcolor` or `var(--x)`).
 } GTEXT_CSS_Custom_Def;
 
 /** @brief What the registry holds of a registered custom property. The strings are owned by the registry. */
@@ -442,8 +443,8 @@ typedef struct {
  *
  * Validated as `CSS.registerProperty()` validates (Properties and Values API 1, 4.1, "register a custom property"): the name must be a custom property
  * name string, the syntax a syntax string, a name that is registered already is an error (`InvalidModificationError` there, GTEXT_CSS_E_EXISTS here), and the
- * initial value, if given, must be a value of the syntax that is computationally independent; a syntax other than `*` with no initial value is an error. Each
- * component of the syntax is compiled here. Nothing is registered on a failure.
+ * initial value, if given, must be a value of the syntax that is computationally independent; with none the initial value is the guaranteed-invalid value, for a syntax
+ * other than `*` as well. Each component of the syntax is compiled here. Nothing is registered on a failure.
  *
  * @param builder The builder. Not NULL.
  * @param def The definition; strings are copied. Not NULL.

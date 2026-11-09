@@ -1,0 +1,1 @@
+š@media all { @top-left { content: "x" } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } a { color: red; @font-face { font-family: N; src: url(n) } } }

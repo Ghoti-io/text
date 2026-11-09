@@ -73,7 +73,7 @@ const GTEXT_CSS_Match_Options * css_registry_match_options(const GTEXT_CSS_Regis
 
 /**
  * @brief Make a custom property registration, validated as CSS.registerProperty() validates (see gtext_css_registry_register_custom()), without adding it to the
- *   registry. `syntax` NULL is `*`; `initial` NULL is none. The name is checked as a custom property name string; a caller that has a dashed identifier has one.
+ *   registry. `syntax` NULL is `*`; `initial` NULL is none (the guaranteed-invalid value, whatever the syntax). The name is checked as a custom property name string; a caller that has a dashed identifier has one.
  *   The grammars are compiled under the registry's resolver.
  */
 GTEXT_CSS_Status css_registry_make_creg(const GTEXT_CSS_Registry * registry, const char * name, size_t name_length, const char * syntax, size_t syntax_length,

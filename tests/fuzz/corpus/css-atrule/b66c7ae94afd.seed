@@ -1,0 +1,1 @@
+«è@media all { @property --a, --b { } @property --c { syntax: "<nosuch>"; inherits: maybe; initial-value: 1 } @property --d { syntax: "<length>"; initial-value: red } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @font-palette-values --y { base-palette: dark } }

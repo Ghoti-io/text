@@ -1,0 +1,1 @@
+öQ@media all { @layer  { @font-palette-values --y { base-palette: dark } @layer { @font-face { font-family: L; src: url(l) } } @counter-style p { system: extends q } @counter-style q { system: extends p } } }

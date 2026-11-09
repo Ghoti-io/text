@@ -32,7 +32,9 @@
 
 #include <string.h>
 
+#include "css_atrule_internal.h"
 #include "css_creg.h"
+#include "css_fndef.h"
 #include "css_internal.h"
 #include "css_registry_internal.h"
 #include "css_syntax_string.h"
@@ -122,11 +124,9 @@ void gtext_css_at_property_set_free(GTEXT_CSS_At_Property_Set * s) {
 
 const char * gtext_css_at_property_reason_name(GTEXT_CSS_At_Property_Reason reason) {
   switch (reason) {
-  case GTEXT_CSS_AT_PROP_BAD_NAME: return "bad-name";
-  case GTEXT_CSS_AT_PROP_NO_SYNTAX: return "no-syntax";
+  case GTEXT_CSS_AT_PROP_BAD_PRELUDE: return "bad-prelude";
   case GTEXT_CSS_AT_PROP_BAD_SYNTAX: return "bad-syntax";
-  case GTEXT_CSS_AT_PROP_NO_INHERITS: return "no-inherits";
-  case GTEXT_CSS_AT_PROP_NO_INITIAL: return "no-initial-value";
+  case GTEXT_CSS_AT_PROP_BAD_INHERITS: return "bad-inherits";
   case GTEXT_CSS_AT_PROP_BAD_INITIAL: return "bad-initial-value";
   case GTEXT_CSS_AT_PROP_NOT_INDEPENDENT: return "not-computationally-independent";
   case GTEXT_CSS_AT_PROP_UNKNOWN_DESCRIPTOR: return "unknown-descriptor";
@@ -249,31 +249,27 @@ static const GTEXT_CSS_Component_Value * only_value(const GTEXT_CSS_Component_Va
   return found;
 }
 
-typedef struct {
-  char * syntax;       size_t syntax_len;  bool has_syntax;  bool saw_bad_syntax;
-  bool inherits;       bool has_inherits;
-  char * initial;      size_t initial_len; bool has_initial;
-} descriptors;
+static bool ieq(const GTEXT_CSS_String * s, const char * lower) {
+  return css_ascii_ieq(s, lower);
+}
 
-static void descriptors_free(const GTEXT_Allocator * a, descriptors * d) {
+void css_property_def_free(const GTEXT_Allocator * a, css_property_def * d) {
+  if (!d) {
+    return;
+  }
+  gtext_allocator_free((GTEXT_Allocator *)a, d->names);
   gtext_allocator_free((GTEXT_Allocator *)a, d->syntax);
   gtext_allocator_free((GTEXT_Allocator *)a, d->initial);
   memset(d, 0, sizeof *d);
 }
 
-static bool ieq(const GTEXT_CSS_String * s, const char * lower) {
-  return css_ascii_ieq(s, lower);
-}
-
-/// The names of the prelude: `--a, --b`. Fills `names` (pointers into the tree) up to `cap`; `*count` is how many there are. False when the prelude is not
-/// a list of custom property names.
-static bool read_names(const GTEXT_CSS_Rule * rule, GTEXT_CSS_String * names, size_t cap, size_t * count) {
+/// Whether the prelude of a rule with a block is `<custom-property-name>#` ("@property <<custom-property-name>># { <<declaration-list>> }"): names, each followed by a comma or the end, none
+/// empty and none that is not a dashed identifier. `*count` is how many; when `names` is not NULL the names (pointers into the tree) are written to it.
+static bool read_names(const GTEXT_CSS_Rule * rule, GTEXT_CSS_String * names, size_t * count) {
   size_t n = 0;
-  size_t i = 0;
-  const GTEXT_CSS_Component_Value * p = rule->prelude;
-  const size_t pn = rule->prelude_count;
   bool expect_name = true;
-  for (; i < pn; i++) {
+  const GTEXT_CSS_Component_Value * p = rule->prelude;
+  for (size_t i = 0; i < rule->prelude_count; i++) {
     if (is_ws(&p[i])) {
       continue;
     }
@@ -281,25 +277,107 @@ static bool read_names(const GTEXT_CSS_Rule * rule, GTEXT_CSS_String * names, si
       if (p[i].kind != GTEXT_CSS_VALUE_TOKEN || p[i].type != GTEXT_CSS_TOKEN_IDENT || !css_creg_name_ok(p[i].value.data, p[i].value.length)) {
         return false;
       }
-      if (n < cap) {
+      if (names) {
         names[n] = p[i].value;
       }
       n++;
       expect_name = false;
     }
+    else if (p[i].kind == GTEXT_CSS_VALUE_TOKEN && p[i].type == GTEXT_CSS_TOKEN_COMMA) {
+      expect_name = true;
+    }
     else {
-      return false; /* "@property <custom-property-name> { ... }": one name; a list, a comma and anything else are not a prelude of the rule */
+      return false;
     }
   }
-  if (expect_name) {
-    return false; /* empty */
-  }
   *count = n;
-  return true;
+  return n > 0 && !expect_name;   /* an empty prelude and a trailing comma are not names */
 }
 
-/// Read the descriptors of the rule's block. GTEXT_CSS_OK or GTEXT_CSS_E_OOM.
-static GTEXT_CSS_Status read_descriptors(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Rule * rule, descriptors * d) {
+/// The names of a rule with a block into `d->names`. `*valid` says whether the prelude is a list of names. GTEXT_CSS_OK or GTEXT_CSS_E_OOM.
+static GTEXT_CSS_Status read_block_names(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Rule * rule, css_property_def * d, bool * valid) {
+  size_t n = 0;
+  *valid = read_names(rule, NULL, &n);
+  if (!*valid) {
+    return GTEXT_CSS_OK;
+  }
+  d->names = gtext_allocator_malloc(&s->alloc, n * sizeof *d->names);
+  if (!d->names) {
+    return GTEXT_CSS_E_OOM;
+  }
+  read_names(rule, d->names, &n);
+  d->nnames = n;
+  return GTEXT_CSS_OK;
+}
+
+/// The statement form, "@property <<custom-property-name>> <<css-type>>? [: <<declaration-value>>? ]? ;", read as the descriptors it is "exactly equivalent" to: the <css-type> is the `syntax`
+/// descriptor and the <declaration-value> after the colon (which may be empty: whether it is there is whether the colon is) the `initial-value`. `*valid` says whether the prelude is one.
+static GTEXT_CSS_Status read_statement(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Rule * rule, css_property_def * d, bool * valid) {
+  *valid = false;
+  const GTEXT_CSS_Component_Value * v = rule->prelude;
+  size_t a = 0, b = rule->prelude_count;
+  css_values_trim(v, &a, &b);
+  if (a == b || v[a].kind != GTEXT_CSS_VALUE_TOKEN || v[a].type != GTEXT_CSS_TOKEN_IDENT || !css_creg_name_ok(v[a].value.data, v[a].value.length)) {
+    return GTEXT_CSS_OK;
+  }
+  size_t colon = b;
+  for (size_t k = a + 1; k < b; k++) {
+    if (v[k].kind == GTEXT_CSS_VALUE_TOKEN && v[k].type == GTEXT_CSS_TOKEN_COLON) {
+      colon = k;
+      break;
+    }
+  }
+  s->work += b - a;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  size_t ta = a + 1, tb = colon;
+  css_values_trim(v, &ta, &tb);
+  if (ta < tb) {
+    css_compiled_syntax * type = NULL;
+    bool ok = false;
+    st = css_read_type(s->registry, &s->alloc, v, ta, tb, &type, &ok);
+    if (st != GTEXT_CSS_OK || !ok) {
+      return st;
+    }
+    d->syntax = gtext_allocator_malloc(&s->alloc, type->len + 1);
+    if (!d->syntax) {
+      css_compiled_syntax_free(type);
+      return GTEXT_CSS_E_OOM;
+    }
+    memcpy(d->syntax, type->text, type->len);
+    d->syntax[type->len] = '\0';
+    d->syntax_len = type->len;
+    d->has_syntax = true;
+    css_compiled_syntax_free(type);
+  }
+  if (colon < b) {
+    size_t da = colon + 1, db = b;
+    css_values_trim(v, &da, &db);
+    if (!css_declaration_value_ok(v, da, db)) {
+      return GTEXT_CSS_OK;
+    }
+    GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+    so.allocator = &s->alloc;
+    st = gtext_css_serialize_values_buffer(v + da, db - da, &so, &d->initial, &d->initial_len);
+    if (st != GTEXT_CSS_OK) {
+      d->initial = NULL;
+      return st;
+    }
+    d->has_initial = true;
+  }
+  d->names = gtext_allocator_malloc(&s->alloc, sizeof *d->names);
+  if (!d->names) {
+    return GTEXT_CSS_E_OOM;
+  }
+  d->names[0] = v[a].value;
+  d->nnames = 1;
+  *valid = true;
+  return GTEXT_CSS_OK;
+}
+
+/// Read the descriptors of the rule's block. Each one that is invalid is ignored and reported, and the rule stands: "Unknown descriptors are invalid and ignored, but do not invalidate the
+/// @property rule", and so for a `syntax` that is no syntax string ("the descriptor is invalid and must be ignored") and an `inherits` that is not `true` or `false`; of two valid ones of a name the
+/// later wins, and an invalid later one does not replace the earlier. GTEXT_CSS_OK or GTEXT_CSS_E_OOM.
+static GTEXT_CSS_Status read_descriptors(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Rule * rule, css_property_def * d) {
   for (size_t it = 0; it < rule->content_count; it++) {
     const GTEXT_CSS_Block_Item * item = &rule->contents[it];
     if (item->kind != GTEXT_CSS_ITEM_DECLARATIONS) {
@@ -342,7 +420,11 @@ static GTEXT_CSS_Status read_descriptors(GTEXT_CSS_At_Property_Set * s, const GT
         }
         else {
           /* "If the provided string is not a valid syntax string ... the descriptor is invalid and must be ignored." */
-          d->saw_bad_syntax = true;
+          st = diagnose(s, GTEXT_CSS_AT_PROP_BAD_SYNTAX, d->names[0].data, d->names[0].length, rule, &decl->span,
+              "\"If the provided string is not a valid syntax string ... the descriptor is invalid and must be ignored\": the rule has the syntax it had without it, which is *.");
+          if (st != GTEXT_CSS_OK) {
+            return st;
+          }
         }
       }
       else if (ieq(&decl->name, "inherits")) {
@@ -350,6 +432,13 @@ static GTEXT_CSS_Status read_descriptors(GTEXT_CSS_At_Property_Set * s, const GT
         if (v && v->kind == GTEXT_CSS_VALUE_TOKEN && v->type == GTEXT_CSS_TOKEN_IDENT && (ieq(&v->value, "true") || ieq(&v->value, "false"))) {
           d->inherits = ieq(&v->value, "true");
           d->has_inherits = true;
+        }
+        else {
+          const GTEXT_CSS_Status st = diagnose(s, GTEXT_CSS_AT_PROP_BAD_INHERITS, d->names[0].data, d->names[0].length, rule, &decl->span,
+              "The inherits descriptor is true or false: another value is invalid and ignored, and the rule inherits unless an earlier descriptor said it does not.");
+          if (st != GTEXT_CSS_OK) {
+            return st;
+          }
         }
       }
       else if (ieq(&decl->name, "initial-value")) {
@@ -378,16 +467,77 @@ static GTEXT_CSS_Status read_descriptors(GTEXT_CSS_At_Property_Set * s, const GT
   return GTEXT_CSS_OK;
 }
 
-/// Whether a rule with these descriptors can be valid before the initial value is looked at: the one place the draft's "valid @property rule" is decided for
-/// `syntax` and `inherits`. Returns the reason it cannot, or -1.
-static int rule_valid(const descriptors * d) {
-  if (!d->has_syntax) {
-    return d->saw_bad_syntax ? GTEXT_CSS_AT_PROP_BAD_SYNTAX : GTEXT_CSS_AT_PROP_NO_SYNTAX;
+/// Judge the initial value against the syntax, as the registration the rule makes would ("as if registerProperty() had been called with equivalent parameters"). A value that is not of the syntax is
+/// "invalid and ignored": the descriptor goes and the rule stands, with the guaranteed-invalid value for its initial value. A value that is of the syntax and cannot be computed without an element
+/// (`3em`, `currentcolor`, `var()`: not "computationally independent") is a registration "register a custom property" refuses, so the rule is invalid, except for the universal syntax, which is
+/// a value of nothing in particular: its `var()` is a descriptor to ignore (both browsers). `*valid` says whether the rule is one. GTEXT_CSS_OK or a failure of the registry.
+static GTEXT_CSS_Status judge_initial_value(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Rule * rule, css_property_def * d, bool * valid) {
+  *valid = true;
+  if (!d->has_initial) {
+    return GTEXT_CSS_OK;
   }
-  if (!d->has_inherits) {
-    return GTEXT_CSS_AT_PROP_NO_INHERITS;
+  css_creg * c = NULL;
+  GTEXT_CSS_Registry_Result rr;
+  css_creg_why why = CSS_CREG_OK;
+  GTEXT_CSS_Status st = css_registry_make_creg(s->registry, d->names[0].data, d->names[0].length, d->has_syntax ? d->syntax : NULL, d->has_syntax ? d->syntax_len : 0, true, d->initial,
+      d->initial_len, &c, &rr, &why);
+  if (st == GTEXT_CSS_OK) {
+    css_creg_free(c);
+    return GTEXT_CSS_OK;
   }
-  return -1;
+  if (st != GTEXT_CSS_E_INVALID) {
+    return st;
+  }
+  bool universal = true;
+  if (d->has_syntax) {
+    css_syntax * syn = NULL;
+    st = css_syntax_parse(&s->alloc, d->syntax, d->syntax_len, &syn, NULL);
+    if (st != GTEXT_CSS_OK) {
+      return st == GTEXT_CSS_E_OOM ? st : GTEXT_CSS_E_INTERNAL;   /* it parsed when the descriptor was read */
+    }
+    universal = syn->universal;
+    css_syntax_free(syn);
+  }
+  if (why != CSS_CREG_BAD_INITIAL && why != CSS_CREG_SUBSTITUTION && why != CSS_CREG_NOT_INDEPENDENT) {
+    return GTEXT_CSS_E_INTERNAL;   /* the name and the syntax were judged before: nothing else refuses a registration */
+  }
+  const bool ignorable = why == CSS_CREG_BAD_INITIAL || (why == CSS_CREG_SUBSTITUTION && universal);
+  const GTEXT_CSS_At_Property_Reason reason = why == CSS_CREG_BAD_INITIAL ? GTEXT_CSS_AT_PROP_BAD_INITIAL : GTEXT_CSS_AT_PROP_NOT_INDEPENDENT;
+  const char * message = why == CSS_CREG_BAD_INITIAL ?
+      "\"If specified, the value of the initial-value descriptor must successfully parse according to the rule's syntax descriptor, or else the descriptor is invalid and ignored.\"" :
+      "\"If parsed initial value is not computationally independent\" the registration is refused: the rule is ignored (for the syntax * the descriptor is).";
+  st = diagnose(s, reason, d->names[0].data, d->names[0].length, rule, &rule->span, message);
+  if (ignorable) {
+    gtext_allocator_free(&s->alloc, d->initial);
+    d->initial = NULL;
+    d->initial_len = 0;
+    d->has_initial = false;
+  }
+  else {
+    *valid = false;
+  }
+  return st;
+}
+
+/// Read a rule or a statement into the definition it makes: the names, and the descriptors that are in effect. Everything is reported: a prelude that is not one, descriptors that are ignored, an
+/// initial value that is ignored or that refuses the rule. `*valid` says whether it is a rule. GTEXT_CSS_OK or a failure.
+static GTEXT_CSS_Status read_definition(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Rule * rule, css_property_def * d, bool * valid) {
+  s->work++;
+  GTEXT_CSS_Status st = rule->has_block ? read_block_names(s, rule, d, valid) : read_statement(s, rule, d, valid);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  if (!*valid) {
+    return diagnose(s, GTEXT_CSS_AT_PROP_BAD_PRELUDE, "", 0, rule, &rule->span,
+        "@property <custom-property-name># { <declaration-list> } or @property <custom-property-name> <css-type>? [: <declaration-value>? ]? ; : the prelude is not one.");
+  }
+  if (rule->has_block) {
+    st = read_descriptors(s, rule, d);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+  }
+  return judge_initial_value(s, rule, d, valid);
 }
 
 /// Which of two layers of a set's registry the cascade sorts later: -1, 0 or 1. The unlayered rules come last; a layer's sub-layers before its own rules; siblings in the order they were
@@ -438,35 +588,20 @@ static int layer_compare(const GTEXT_CSS_At_Property_Set * s, GTEXT_CSS_Layer_Id
 }
 
 static GTEXT_CSS_Status handle_property(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Rule * rule, GTEXT_CSS_Layer_Id layer) {
-  s->work++;
-  enum { NAME_CAP = 64 };
-  GTEXT_CSS_String names[NAME_CAP];
-  size_t nnames = 0;
-  GTEXT_CSS_Status st;
-  if (!rule->has_block || !read_names(rule, names, NAME_CAP, &nnames) || nnames > NAME_CAP) {
-    return diagnose(s, GTEXT_CSS_AT_PROP_BAD_NAME, "", 0, rule, &rule->span,
-        "@property <custom-property-name> { <declaration-list> }: the prelude is one custom property name.");
-  }
-  descriptors d;
+  css_property_def d;
   memset(&d, 0, sizeof d);
-  st = read_descriptors(s, rule, &d);
-  if (st != GTEXT_CSS_OK) {
-    descriptors_free(&s->alloc, &d);
+  bool valid = false;
+  GTEXT_CSS_Status st = read_definition(s, rule, &d, &valid);
+  if (st != GTEXT_CSS_OK || !valid) {
+    css_property_def_free(&s->alloc, &d);
     return st;
   }
-  const int bad = rule_valid(&d);
-  if (bad >= 0) {
-    static const char * const messages[] = {
-      [GTEXT_CSS_AT_PROP_NO_SYNTAX] = "The @property rule needs a syntax descriptor: it is ignored.",
-      [GTEXT_CSS_AT_PROP_BAD_SYNTAX] = "\"If the provided string is not a valid syntax string ... the descriptor is invalid and must be ignored\", so the rule has no syntax: it is ignored.",
-      [GTEXT_CSS_AT_PROP_NO_INHERITS] = "The @property rule needs an inherits descriptor (true or false): it is ignored.",
-    };
-    st = diagnose(s, (GTEXT_CSS_At_Property_Reason)bad, names[0].data, names[0].length, rule, &rule->span, messages[bad]);
-    descriptors_free(&s->alloc, &d);
-    return st;
-  }
-  for (size_t i = 0; i < nnames && st == GTEXT_CSS_OK; i++) {
-    const GTEXT_CSS_String * nm = &names[i];
+  /* "A valid @property rule represents a custom property registration for each <custom-property-name> in the rule's prelude, with the property name being the serialization of that
+     <custom-property-name> and all other fields identical." Each is judged on its own: a caller's registration of one name wins over the rule for that name, and the later of two rules
+     wins for the names they share. */
+  for (size_t i = 0; i < d.nnames && st == GTEXT_CSS_OK; i++) {
+    const GTEXT_CSS_String * nm = &d.names[i];
+    s->work++;
     if (css_registry_find_creg(s->registry, nm->data, nm->length, &s->work)) {
       st = diagnose(s, GTEXT_CSS_AT_PROP_CALLER_WINS, nm->data, nm->length, rule, &rule->span,
           "\"A custom property registration from CSS.registerProperty() further wins over any @property rules for the same <custom-property-name>.\"");
@@ -475,57 +610,14 @@ static GTEXT_CSS_Status handle_property(GTEXT_CSS_At_Property_Set * s, const GTE
     css_creg * c = NULL;
     GTEXT_CSS_Registry_Result rr;
     css_creg_why why = CSS_CREG_OK;
-    st = css_registry_make_creg(s->registry, nm->data, nm->length, d.syntax, d.syntax_len, d.inherits, d.has_initial ? d.initial : NULL, d.initial_len, &c, &rr,
-        &why);
-    if (st == GTEXT_CSS_E_INVALID && why != CSS_CREG_OK) {
-      GTEXT_CSS_At_Property_Reason reason = GTEXT_CSS_AT_PROP_BAD_INITIAL;
-      const char * message = "The initial-value must successfully parse according to the rule's syntax descriptor, or else the descriptor is invalid and ignored.";
-      switch (why) {
-      case CSS_CREG_NO_INITIAL:
-        reason = GTEXT_CSS_AT_PROP_NO_INITIAL;
-        message = "A syntax other than * needs an initial-value: the rule is ignored.";
-        break;
-      case CSS_CREG_SUBSTITUTION:
-      case CSS_CREG_NOT_INDEPENDENT:
-        reason = GTEXT_CSS_AT_PROP_NOT_INDEPENDENT;
-        message = "\"If parsed initial value is not computationally independent\" the registration is refused: the rule is ignored.";
-        break;
-      default:
-        break;
-      }
-      /* an initial value that does not hold for the universal syntax is a descriptor to ignore, and the rule stands without it */
-      if (why == CSS_CREG_BAD_INITIAL || why == CSS_CREG_SUBSTITUTION) {
-        css_syntax * syn = NULL;
-        const GTEXT_CSS_Status parsed = css_syntax_parse(&s->alloc, d.syntax, d.syntax_len, &syn, NULL);
-        if (parsed == GTEXT_CSS_E_OOM) {
-          st = parsed; /* a failed allocation is the answer, not a reason to ignore the rule */
-          break;
-        }
-        if (parsed == GTEXT_CSS_OK) {
-          const bool universal = syn->universal;
-          css_syntax_free(syn);
-          if (universal) {
-            st = diagnose(s, reason, nm->data, nm->length, rule, &rule->span, message);
-            if (st != GTEXT_CSS_OK) {
-              break;
-            }
-            st = css_registry_make_creg(s->registry, nm->data, nm->length, d.syntax, d.syntax_len, d.inherits, NULL, 0, &c, &rr, &why);
-            if (st == GTEXT_CSS_OK) {
-              goto put;
-            }
-            if (st == GTEXT_CSS_E_OOM) {
-              break;
-            }
-          }
-        }
-      }
-      st = diagnose(s, reason, nm->data, nm->length, rule, &rule->span, message);
-      continue;
+    st = css_registry_make_creg(s->registry, nm->data, nm->length, d.has_syntax ? d.syntax : NULL, d.has_syntax ? d.syntax_len : 0, d.has_inherits ? d.inherits : true,
+        d.has_initial ? d.initial : NULL, d.initial_len, &c, &rr, &why);
+    if (st == GTEXT_CSS_E_INVALID) {
+      st = GTEXT_CSS_E_INTERNAL;   /* the name, the syntax and the initial value were judged, with the first name, before: they hold for every name */
     }
     if (st != GTEXT_CSS_OK) {
       break;
     }
-  put:
     if (s->store.count >= s->opt.max_properties && !css_creg_store_find(&s->store, nm->data, nm->length, NULL)) {
       css_creg_free(c);
       st = GTEXT_CSS_E_LIMIT_REGISTRY;
@@ -551,12 +643,15 @@ static GTEXT_CSS_Status handle_property(GTEXT_CSS_At_Property_Set * s, const GTE
           "\"If multiple valid @property rules represent a registration for the same <custom-property-name>, the last one in stylesheet order wins.\"");
     }
   }
-  descriptors_free(&s->alloc, &d);
+  css_property_def_free(&s->alloc, &d);
   return st;
 }
 
-GTEXT_CSS_Status css_at_property_rule_validity(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * allocator, const GTEXT_CSS_Rule * rule, bool * valid,
+GTEXT_CSS_Status css_at_property_rule_read(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * allocator, const GTEXT_CSS_Rule * rule, css_property_def * def, bool * valid,
     const char ** why) {
+  memset(def, 0, sizeof *def);
+  *valid = false;
+  *why = NULL;
   GTEXT_CSS_At_Property_Options opt = gtext_css_at_property_options_default();
   opt.allocator = allocator;
   GTEXT_CSS_At_Property_Set * s = NULL;
@@ -564,18 +659,13 @@ GTEXT_CSS_Status css_at_property_rule_validity(const GTEXT_CSS_Registry * regist
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  st = handle_property(s, rule, GTEXT_CSS_LAYER_NONE);
-  if (st == GTEXT_CSS_OK) {
-    /* registered, or refused only because the caller registered the name itself (the rule is valid; that registration wins) */
-    bool wins = false;
-    for (size_t i = 0; i < s->ndiags; i++) {
-      wins = wins || s->diags[i].reason == GTEXT_CSS_AT_PROP_CALLER_WINS;
-    }
-    *valid = s->store.count > 0 || wins;
-    *why = NULL;
-    if (!*valid && s->ndiags > 0) {
-      *why = s->diags[0].message;
-    }
+  st = read_definition(s, rule, def, valid);
+  if (st == GTEXT_CSS_OK && !*valid && s->ndiags) {
+    *why = s->diags[s->ndiags - 1].message;   /* the sentence of the diagnostic that refused the rule: static */
+  }
+  if (st != GTEXT_CSS_OK || !*valid) {
+    css_property_def_free(&s->alloc, def);
+    *valid = false;
   }
   gtext_css_at_property_set_free(s);
   return st;

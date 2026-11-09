@@ -1,0 +1,1 @@
+”c@keyframes k { from { color: red } 50%, 60% { color: blue; animation-name: x } to { color: green !important } } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) } @namespace svg url(http://www.w3.org/2000/svg); @charset "utf-8"; @import url(a.css) layer(x);

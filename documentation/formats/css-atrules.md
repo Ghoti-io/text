@@ -13,7 +13,7 @@ descriptor goes through the registry's grammar for it and is kept as a typed val
 
 - An invalid or unknown descriptor is dropped with a diagnostic (`gtext_css_atrule_diagnostic()`); the rule stands. What the registry's grammar cannot say is checked after it: the weights of `additive-symbols` must strictly descend, a `range` must not run backwards, `fallback` is never `none`, the `font-family` of an `@font-face` is a name and not a generic family, a feature tag of `font-feature-settings` is four ASCII characters, `override-colors` takes no `currentcolor`. A page descriptor may be `!important`; an `@page` block takes only margin rules, and an `@font-feature-values` block only feature blocks. Each diagnostic names the sentence of the draft that decides it.
 - A rule is ignored as a whole (`result.valid` false, nothing returned) only where the served text says so: `@keyframes` named by a CSS-wide keyword or `none`, `@font-palette-values`
-  without `font-family`, a `@counter-style` named `none`, `decimal`, `disc`, `circle`, `square`, `disclosure-open` or `disclosure-closed`, an `@property` that would not register (no `syntax`, a syntax that is not one, no `inherits`, an `initial-value` that does not hold, a name that is not a custom property name), `@page` with an invalid selector, a rule in a place that does not allow it (`options.parent`: an `@font-face` in a style rule, a margin rule outside `@page`).
+  without `font-family`, a `@counter-style` named `none`, `decimal`, `disc`, `circle`, `square`, `disclosure-open` or `disclosure-closed`, an `@property` that would not register (a prelude that is not `<custom-property-name>#` or, for the statement, `<custom-property-name> <css-type>? [: <declaration-value>? ]?`, an `initial-value` that is of the syntax and needs the element: every descriptor is optional, and a descriptor that is invalid is ignored), `@page` with an invalid selector, a rule in a place that does not allow it (`options.parent`: an `@font-face` in a style rule, a margin rule outside `@page`).
 - A rule that is valid and defines nothing says so (`gtext_css_atrule_defines_nothing()`): an `@font-face` without `font-family` or `src` is not considered, a `@counter-style`
   with too few symbols for its system defines nothing.
 - `gtext_css_atrule_serialize()` writes the rule as CSSOM's "serialize a CSS rule" does. The text parses back to a rule that serializes to the same bytes.
@@ -105,7 +105,11 @@ prints
 @counter-style roman { system: additive; additive-symbols: 10 X, 5 V, 1 I; suffix: ". "; }
 ```
 
-The validity of an `@property` rule is the answer of the code that registers it.
+The validity of an `@property` rule is the answer of the code that registers it. Every descriptor is optional ("While the <custom-property-name> is required, all of the descriptors
+are optional"), the prelude may list names, and `@property --gap <length>: 4px;` is the same rule in the statement form: the model keeps the descriptors that are in effect
+(`syntax` and `inherits` are always there, with `*` and `true` for what the rule omits or has ignored; an `initial-value` that is ignored is not), the statement's `syntax` and
+`initial-value` are there as if it had written them, and the rule is written in the block form
+(`@property --gap { syntax: "<length>"; inherits: true; initial-value: 4px; }`).
 
 ```c
 #include <ghoti.io/text/css.h>
@@ -118,8 +122,8 @@ static void atrule_property(void) {
   if (gtext_css_registry_new(NULL, &registry) != GTEXT_CSS_OK) {
     return;
   }
-  const char * rules[] = {"@property --gap { syntax: \"<length>\"; inherits: false; initial-value: 4px }", "@property --gap { syntax: \"<length>\"; inherits: false }",
-                          "@property --any { syntax: \"*\"; inherits: true }", "@property gap { syntax: \"*\"; inherits: true }"};
+  const char * rules[] = {"@property --gap { syntax: \"<length>\"; inherits: false; initial-value: 4px }", "@property --gap { syntax: \"<length>\"; inherits: false; initial-value: 4em }",
+                          "@property --any { }", "@property gap <length>: 4px;"};
   for (size_t i = 0; i < sizeof rules / sizeof *rules; i++) {
     GTEXT_CSS_Tree * tree = NULL;
     if (gtext_css_parse_stylesheet(rules[i], strlen(rules[i]), NULL, &tree, NULL) != GTEXT_CSS_OK) {

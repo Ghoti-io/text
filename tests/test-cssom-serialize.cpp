@@ -212,6 +212,46 @@ TEST(CssomSerializeAtRules, ImportAndNamespaceAreWrittenWithQuotedUrls) {
   EXPECT_EQ(first("@namespace svg url(http://www.w3.org/2000/svg);"), "@namespace svg url(\"http://www.w3.org/2000/svg\");");
 }
 
+// Properties and Values API, "serialize a CSSPropertyRule": `@property`, the name as an identifier, `{ `, `syntax: ` and the syntax as a string, `inherits: ` and `true` or `false`, then
+// `initial-value: ` and the value when the rule has one, each followed by `; `, and `}`. The syntax and inherits are always written (the descriptors are optional and default to `*` and
+// `true`), in that order, whatever order or form the rule was written in: "Whether a @property is specified as a rule or in this statement form is not preserved after parsing. Both are
+// represented by CSSPropertyRule, and will thus serialize in the block form."
+TEST(CssomSerializeAtRules, APropertyRuleIsWrittenWithItsSyntaxAndInheritsInTheOrderOfTheDraft) {
+  EXPECT_EQ(first("@property --p {}"), "@property --p { syntax: \"*\"; inherits: true; }");
+  EXPECT_EQ(first("@property --p { initial-value: 0px; inherits: false; syntax: '<length>' }"), "@property --p { syntax: \"<length>\"; inherits: false; initial-value: 0px; }");
+  EXPECT_EQ(first("@property --p { syntax: '<length>' }"), "@property --p { syntax: \"<length>\"; inherits: true; }");
+  EXPECT_EQ(first("@property --p { inherits: false }"), "@property --p { syntax: \"*\"; inherits: false; }");
+  EXPECT_EQ(first("@property --p { initial-value: 7 }"), "@property --p { syntax: \"*\"; inherits: true; initial-value: 7; }");
+  EXPECT_EQ(first("@property --a\\ b {}"), "@property --a\\ b { syntax: \"*\"; inherits: true; }") << "the name is written as an identifier";
+  EXPECT_EQ(first("@property --p { syntax: '<length>';   initial-value:   0px   }"), "@property --p { syntax: \"<length>\"; inherits: true; initial-value: 0px; }") << "the value without the white space around it";
+  EXPECT_EQ(first("@property --p { initial-value: /* c */ a   b /* d */ }"), "@property --p { syntax: \"*\"; inherits: true; initial-value: a b; }");
+  EXPECT_EQ(first("@property --p { initial-value: ; }"), "@property --p { syntax: \"*\"; inherits: true; initial-value: ; }") << "an empty initial value is one";
+}
+
+TEST(CssomSerializeAtRules, APropertyRuleWithoutADescriptorThatIsInEffectDoesNotWriteIt) {
+  // an invalid descriptor is ignored: the rule is written as if it had not been there
+  EXPECT_EQ(first("@property --p { syntax: '<nosuch>'; inherits: maybe; initial-value: 5px }"), "@property --p { syntax: \"*\"; inherits: true; initial-value: 5px; }");
+  EXPECT_EQ(first("@property --p { syntax: '<length>'; initial-value: red }"), "@property --p { syntax: \"<length>\"; inherits: true; }");
+  EXPECT_EQ(first("@property --p { syntax: '<length>'; syntax: '<nosuch>'; inherits: false !important }"), "@property --p { syntax: \"<length>\"; inherits: true; }");
+}
+
+TEST(CssomSerializeAtRules, AStatementIsWrittenInTheBlockForm) {
+  EXPECT_EQ(first("@property --p <length>: 0px;"), "@property --p { syntax: \"<length>\"; inherits: true; initial-value: 0px; }");
+  EXPECT_EQ(first("@property --p <length>;"), "@property --p { syntax: \"<length>\"; inherits: true; }");
+  EXPECT_EQ(first("@property --p;"), "@property --p { syntax: \"*\"; inherits: true; }");
+  EXPECT_EQ(first("@property --p: 7;"), "@property --p { syntax: \"*\"; inherits: true; initial-value: 7; }");
+  EXPECT_EQ(first("@property --p type(<length> | auto): auto;"), "@property --p { syntax: \"<length> | auto\"; inherits: true; initial-value: auto; }");
+  EXPECT_EQ(first("@property --p <length>#: 1px,2px;"), "@property --p { syntax: \"<length>#\"; inherits: true; initial-value: 1px,2px; }");
+  EXPECT_EQ(first("@property --p <length>: red;"), "@property --p { syntax: \"<length>\"; inherits: true; }");
+}
+
+// The CSSOM of a prelude that lists names is unresolved upstream (w3c/csswg-drafts#14227, the Issue in the draft): the rule is one rule, its name is the first, and its text lists them.
+TEST(CssomSerializeAtRules, APropertyRuleOfSeveralNamesIsOneRuleThatListsThem) {
+  EXPECT_EQ(first("@property --a,--b ,--c { syntax: '<length>'; inherits: false; initial-value: 0px }"),
+      "@property --a, --b, --c { syntax: \"<length>\"; inherits: false; initial-value: 0px; }");
+  EXPECT_EQ(first("@property --a, --b {}"), "@property --a, --b { syntax: \"*\"; inherits: true; }");
+}
+
 TEST(CssomSerializeAtRules, TheTypedRulesAreTheirModelsSerialization) {
   EXPECT_EQ(first("@font-face { font-family: x; src: url(a) format(woff2); font-weight: 400 }"), "@font-face { font-family: x; src: url(\"a\") format(woff2); font-weight: 400; }");
   EXPECT_EQ(first("@counter-style c { system: cyclic; symbols: a b; suffix: '. ' }"), "@counter-style c { system: cyclic; symbols: a b; suffix: \". \"; }");

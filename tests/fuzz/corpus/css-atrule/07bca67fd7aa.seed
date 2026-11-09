@@ -1,0 +1,1 @@
+¯x@property --a, --b { } @property --c { syntax: "<nosuch>"; inherits: maybe; initial-value: 1 } @property --d { syntax: "<length>"; initial-value: red } @top-left { content: "x" } @view-transition { navigation: auto; types: a b }

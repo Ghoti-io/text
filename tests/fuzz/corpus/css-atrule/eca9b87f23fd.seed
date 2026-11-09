@@ -1,0 +1,1 @@
+¯¾@counter-style z { system: extends x; suffix: ")" } a { color: red; @font-face { font-family: N; src: url(n) } } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) }

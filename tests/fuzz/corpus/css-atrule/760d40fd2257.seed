@@ -1,0 +1,1 @@
+N@layer a.b { @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } } @layer { @font-face { font-family: L; src: url(l) } } }

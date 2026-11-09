@@ -1,0 +1,1 @@
+ã1@media all { @page :bogus { margin: 1px } @layer a.b { @counter-style n { system: cyclic; symbols: x } } @layer a { @counter-style n { system: cyclic; symbols: y } } }

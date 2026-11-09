@@ -182,9 +182,16 @@ TEST(CssCustomOom, CollectingPropertyRulesSweptOverEveryAllocation) {
       "@property --a { syntax: '<length>'; inherits: true; initial-value: 1px }\n"
       "@layer x { @property --b { syntax: '<color> | auto'; inherits: false; initial-value: red } }\n"
       "@media all { @property --c { syntax: '<number>#'; inherits: false; initial-value: 1, 2 } }\n"
-      "@property --bad { syntax: '<length>'; inherits: true }\n"
-      "@property --d { syntax: '*'; inherits: false; initial-value: var(--x) }\n";  // the universal syntax keeps the rule, without its initial value
-  const size_t want_count = 4;  // --a, --b, --c and --d; --bad has no initial value and is ignored
+      "@property --bad { syntax: '<length>'; inherits: true; initial-value: 3em }\n"   // not computationally independent: the rule is refused
+      "@property --d { syntax: '*'; inherits: false; initial-value: var(--x) }\n"       // the universal syntax keeps the rule, without its initial value
+      "@property --e, --f { syntax: '<length>' }\n"                                    // a list of names, and no initial value
+      "@property --g <length>: 5px;\n"                                                 // the statement form
+      "@property --h type(<color> | auto): auto;\n"
+      "@property --i;\n"
+      "@property --j { syntax: '<nosuch>'; inherits: maybe; initial-value: red }\n"    // descriptors that are ignored
+      "@property --k <length>: red;\n"
+      "@property --l <foo>;\n";                                                        // not a statement
+  const size_t want_count = 11;  // --a to --d, --e, --f, --g, --h, --i, --j and --k; --bad and --l are ignored
   size_t failures = 0;
   for (size_t n = 1; n < 100000; n++) {
     FaultAllocator fa;
@@ -250,6 +257,78 @@ TEST(CssCustomOom, MakingAValueSweptOverEveryAllocation) {
     EXPECT_EQ(v, nullptr) << n;
     EXPECT_TRUE(fa.live.empty()) << n;
     EXPECT_EQ(fa.bad_frees, 0u) << n;
+  }
+}
+
+// The typed model of an `@property` rule (what CSSOM reads its `name`, `syntax`, `inherits` and `initialValue` from, and writes its text from) is made by the same reading that registers the rule:
+// every allocation of it, and of the compile of the syntax it asks the registry for, is failed in turn. A failed parse is GTEXT_CSS_E_OOM with no model and nothing left held beyond what the
+// registry caches (compiled grammars, counted before the sweep); one that fails nothing gives the model of the healthy parse.
+TEST(CssCustomOom, ParsingAPropertyRuleIntoItsTypedModelSweptOverEveryAllocation) {
+  const char * const forms[] = {
+      "@property --a, --b { syntax: '<length>'; inherits: false; initial-value: 5px }",
+      "@property --c { syntax: '<nosuch>'; inherits: maybe; initial-value: red }",
+      "@property --d <length>: 5px;",
+      "@property --e type(<color> | auto): auto;",
+      "@property --f;",
+      "@property --g { syntax: '<length>'; initial-value: 3em }",
+      "@property --h { syntax: '<length>'; initial-value: red }",
+      "@property --i { }",
+  };
+  for (const char * css : forms) {
+    FaultAllocator fa;
+    GTEXT_CSS_Registry_Options ro = gtext_css_registry_options_default();
+    ro.allocator = &fa.alloc;
+    GTEXT_CSS_Registry * registry = nullptr;
+    ASSERT_EQ(gtext_css_registry_new(&ro, &registry), GTEXT_CSS_OK);
+    GTEXT_CSS_Tree * tree = nullptr;
+    ASSERT_EQ(gtext_css_parse_stylesheet(css, std::strlen(css), nullptr, &tree, nullptr), GTEXT_CSS_OK);
+    ASSERT_GE(tree->rule_count, 1u);
+    GTEXT_CSS_Atrule_Options o = gtext_css_atrule_options_default();
+    o.allocator = &fa.alloc;
+    auto text_of = [](const GTEXT_CSS_Atrule * a) {
+      if (!a) {
+        return std::string("<none>");
+      }
+      char * out = nullptr;
+      size_t len = 0;
+      EXPECT_EQ(gtext_css_atrule_serialize_buffer(a, nullptr, &out, &len), GTEXT_CSS_OK);
+      std::string text(out, len);
+      gtext_css_atrule_buffer_free(nullptr, out);
+      return text;
+    };
+    GTEXT_CSS_Atrule * healthy = nullptr;
+    GTEXT_CSS_Atrule_Result hres;
+    ASSERT_EQ(gtext_css_atrule_parse(registry, &tree->rules[0], &o, &healthy, &hres), GTEXT_CSS_OK) << css;
+    const std::string want = text_of(healthy);
+    const bool valid = hres.valid;
+    gtext_css_atrule_free(healthy);
+    const size_t held = fa.live.size();   // the registry, and what it compiled for this rule
+    size_t failures = 0;
+    for (size_t n = 1; n < 20000; n++) {
+      GTEXT_CSS_Atrule * a = nullptr;
+      GTEXT_CSS_Atrule_Result res;
+      fa.arm(n);
+      const GTEXT_CSS_Status st = gtext_css_atrule_parse(registry, &tree->rules[0], &o, &a, &res);
+      fa.disarm();
+      if (!fa.failed) {
+        EXPECT_EQ(st, GTEXT_CSS_OK) << css << " " << n;
+        EXPECT_EQ(res.valid, valid) << css << " " << n;
+        EXPECT_EQ(text_of(a), want) << css << " " << n;
+        gtext_css_atrule_free(a);
+        EXPECT_EQ(fa.live.size(), held) << css << " " << n << ": a block is left";
+        break;
+      }
+      failures++;
+      EXPECT_EQ(st, GTEXT_CSS_E_OOM) << css << " " << n << " " << gtext_css_status_string(st);
+      EXPECT_EQ(a, nullptr) << css << " " << n;
+      EXPECT_EQ(fa.live.size(), held) << css << " " << n << ": a block is left";
+      EXPECT_EQ(fa.bad_frees, 0u) << css << " " << n;
+    }
+    EXPECT_GT(failures, 5u) << css;
+    gtext_css_tree_free(tree);
+    gtext_css_registry_free(registry);
+    EXPECT_TRUE(fa.live.empty()) << css;
+    EXPECT_EQ(fa.bad_frees, 0u) << css;
   }
 }
 

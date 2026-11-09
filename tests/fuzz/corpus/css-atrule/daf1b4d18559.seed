@@ -1,0 +1,1 @@
+:Ä@font-face { font-family: A; src: url(a.woff2) format(woff2) tech(variations), local("A b"); font-weight: 400 700; unicode-range: U+25-FF, U+4??; font-display: swap } @namespace svg url(http://www.w3.org/2000/svg); @charset "utf-8"; @import url(a.css) layer(x); @keyframes t { entry 10% { color: red } calc(10%) { color: blue } exit calc(60%) { width: 1px } 50% { color: green } }

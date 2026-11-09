@@ -1,0 +1,1 @@
+мо@keyframes none { from { color: red } } @supports (display: grid) { @font-face { font-family: S; src: url(s) } } @unknown-rule foo { bar }

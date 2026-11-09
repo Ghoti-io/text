@@ -1,0 +1,1 @@
+˜W@media all { @layer  { @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) } @counter-style z { system: extends x; suffix: ")" } @font-palette-values --y { base-palette: dark } } }

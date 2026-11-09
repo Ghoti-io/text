@@ -1,0 +1,1 @@
+ìy@layer a { @font-palette-values --y { base-palette: dark } @property --a, --b { } @property --c { syntax: "<nosuch>"; inherits: maybe; initial-value: 1 } @property --d { syntax: "<length>"; initial-value: red } @media (min-width: 100px) { @keyframes m { from { color: red } } } }

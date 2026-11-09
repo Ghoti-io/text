@@ -1,0 +1,1 @@
+h@layer a { @supports (display: grid) { @font-face { font-family: S; src: url(s) } } @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) } }

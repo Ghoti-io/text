@@ -1,0 +1,1 @@
+çÎ@keyframes "q" { to { width: 1px } 50% { width: 2px } from { width: 3px } 50% { height: 1px } } @position-try --a { top: anchor(bottom); color: red; left: 1px } @property --a, --b { } @property --c { syntax: "<nosuch>"; inherits: maybe; initial-value: 1 } @property --d { syntax: "<length>"; initial-value: red } @color-profile device-cmyk { src: url(b.icc) }

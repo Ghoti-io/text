@@ -262,6 +262,36 @@ TEST(CssomSetters, TheNamedAttributesOfTheOtherKinds) {
   EXPECT_TRUE(nul);
 }
 
+// CSSPropertyRule: `name`, `syntax` ("exactly as specified"), `inherits` and `initialValue` (null when absent). The descriptors are optional, so a rule that omits one has its initial value:
+// the syntax `*` and `inherits` true; a descriptor that is ignored is as omitted; a statement has the syntax and initial value it was written with; of a prelude that lists names the name is
+// the first (unresolved upstream, w3c/csswg-drafts#14227; the names are the typed model's).
+TEST(CssomSetters, ThePropertyRuleHasTheDefaultsOfItsOmittedDescriptors) {
+  Doc doc;
+  Sheet p(doc, "@property --a {} @property --b { syntax: '<nosuch>'; inherits: maybe; initial-value: 5 } @property --c { syntax: '<length>'; initial-value: red } @property --d <length>: 4px;"
+               " @property --e; @property --f type(<length> | auto); @property --g, --h { inherits: false }");
+  bool nul = false;
+  EXPECT_EQ(attr(path(p, {0}).r, "name"), "--a");
+  EXPECT_EQ(attr(path(p, {0}).r, "syntax"), "*");
+  EXPECT_EQ(attr(path(p, {0}).r, "inherits"), "true");
+  EXPECT_EQ(attr(path(p, {0}).r, "initialValue", &nul), "");
+  EXPECT_TRUE(nul);
+  EXPECT_EQ(attr(path(p, {1}).r, "syntax"), "*");
+  EXPECT_EQ(attr(path(p, {1}).r, "inherits"), "true");
+  EXPECT_EQ(attr(path(p, {1}).r, "initialValue"), "5");
+  EXPECT_EQ(attr(path(p, {2}).r, "syntax"), "<length>");
+  EXPECT_EQ(attr(path(p, {2}).r, "initialValue", &nul), "");
+  EXPECT_TRUE(nul) << "ignored: it is no <length>";
+  EXPECT_EQ(attr(path(p, {3}).r, "name"), "--d");
+  EXPECT_EQ(attr(path(p, {3}).r, "syntax"), "<length>");
+  EXPECT_EQ(attr(path(p, {3}).r, "inherits"), "true");
+  EXPECT_EQ(attr(path(p, {3}).r, "initialValue"), "4px");
+  EXPECT_EQ(attr(path(p, {4}).r, "name"), "--e");
+  EXPECT_EQ(attr(path(p, {4}).r, "syntax"), "*");
+  EXPECT_EQ(attr(path(p, {5}).r, "syntax"), "<length> | auto");
+  EXPECT_EQ(attr(path(p, {6}).r, "name"), "--g");
+  EXPECT_EQ(attr(path(p, {6}).r, "inherits"), "false");
+}
+
 TEST(CssomSetters, ACounterStyleDescriptorIsReplacedAsAWhole) {
   Doc doc;
   Sheet s(doc, "@counter-style c { system: cyclic; symbols: a b; suffix: '. ' }");

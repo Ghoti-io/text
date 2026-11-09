@@ -175,7 +175,8 @@ A **registration** gives a custom property a syntax, whether it inherits, and an
 its value is checked against the syntax and computed by its type: `2em` as a `<length>` is pixels, a list is computed item by item, `<color>` is a color.
 A value that is not of the syntax is invalid at computed-value time, and the property takes its **initial value**, which is the property's own, not the
 inherited one. The initial value has to be **computationally independent**: `5px`, `1in` and `light-dark(red, blue)` (computed in the environment's color scheme) are, `3em`, `currentcolor` and
-anything with `var()` are not. A caller registers through the registry builder before it is frozen, as `CSS.registerProperty()` does:
+anything with `var()` are not. It is optional, for a typed syntax as for `*`: "If initialValue is not present, let parsed initial value be the guaranteed-invalid value", so a
+registered `<length>` that nothing sets has no value (and `var(--x, fallback)` takes its fallback), and a value that is not a `<length>` makes it "invalid at computed-value time", which is that same value. A caller registers through the registry builder before it is frozen, as `CSS.registerProperty()` does:
 
 ```c
 #include <ghoti.io/text/css.h>
@@ -256,9 +257,15 @@ prints
 ```
 
 An `@property` rule is a registration too (css_at_property.h). The rules of the sheets are collected into a set, and a compute context made with
-`GTEXT_CSS_Compute_Options::property_rules` computes by them. A rule without `syntax` or `inherits`, with an initial value that is not of the syntax or is not
-computationally independent, or with a name that is not a custom property's, is **ignored**, and the set keeps a diagnostic with the name, the reason, the
-rule's place and the sentence of the draft it applies; the last valid rule of a name wins, and so does a registration the caller made over a rule. A rule inside
+`GTEXT_CSS_Compute_Options::property_rules` computes by them. **Every descriptor of the rule is optional** ("While the <custom-property-name> is required, all of
+the descriptors are optional. When omitted, it matches the behavior of an unregistered custom property"): `syntax` is `*`, `inherits` is `true`, and the initial value
+is the guaranteed-invalid value, for a typed syntax too. A descriptor that is invalid is ignored and the rule stands (a `syntax` that is no syntax string, an `inherits`
+that is not `true` or `false`, an `initial-value` that is not of the syntax); an initial value that is of the syntax and needs the element (`3em`, `currentcolor`,
+`var()`) makes the registration "register a custom property" refuses, and the rule is **ignored**, as is a rule with a prelude that is not a custom property name. A prelude may
+list names (`@property --width, --height { syntax: "<length>"; inherits: false }` registers both with the same descriptors), and a rule may be written as the **statement**
+`@property --size <length>: 16px;` (a `<css-type>`, the syntax of one component or `type(<a> | <b>)`, and after a colon the initial value, which may be empty), which is "exactly
+equivalent to the normal rule form" with the other descriptors omitted, so the property inherits; both are a CSSPropertyRule and serialize in the block form. The set keeps a
+diagnostic with the name, the reason, the rule's place and the sentence of the draft it applies for everything that was ignored; the last valid rule of a name wins, and so does a registration the caller made over a rule. A rule inside
 `@layer` is read; one inside `@media` or `@supports` is read when the `active` callback of the options says the condition holds, and `GTEXT_CSS_E_UNSUPPORTED`
 (naming `active_rule`) when there is none: a condition is never guessed.
 
@@ -273,7 +280,8 @@ rule's place and the sentence of the draft it applies; the last valid rule of a 
 static void variables_property_rule(void) {
   const char sheet[] =
       "@property --size { syntax: '<length>'; inherits: true; initial-value: 16px }\n"
-      "@property --broken { inherits: true }\n";
+      "@property --gap <length>: 4px;\n"
+      "@property --broken { syntax: '<length>'; initial-value: 3em }\n";
   GTEXT_CSS_Registry * registry = NULL;
   gtext_css_registry_new(NULL, &registry);
   GTEXT_CSS_Tree * tree = NULL;
@@ -282,15 +290,18 @@ static void variables_property_rule(void) {
   GTEXT_CSS_At_Property_Set * rules = NULL;
   gtext_css_at_property_set_new(registry, NULL, &rules);
   gtext_css_at_property_collect(rules, tree, NULL);
-  printf("%zu rule registered\n", gtext_css_at_property_count(rules));
+  printf("%zu registered\n", gtext_css_at_property_count(rules));
   for (size_t i = 0; i < gtext_css_at_property_diagnostic_total(rules); i++) {
     GTEXT_CSS_At_Property_Diagnostic d;
     gtext_css_at_property_diagnostic(rules, i, &d);
     printf("ignored %.*s: %s\n", (int)d.name.length, d.name.data, gtext_css_at_property_reason_name(d.reason));
   }
   GTEXT_CSS_Custom_Info info;
-  if (gtext_css_at_property_find(rules, "--size", 6, &info)) {
-    printf("--size: syntax %.*s, initial %.*s\n", (int)info.syntax_length, info.syntax, (int)info.initial_length, info.initial_value);
+  const char * names[] = {"--size", "--gap"};
+  for (size_t k = 0; k < 2; k++) {
+    if (gtext_css_at_property_find(rules, names[k], strlen(names[k]), &info)) {
+      printf("%s: syntax %.*s, initial %.*s\n", names[k], (int)info.syntax_length, info.syntax, (int)info.initial_length, info.initial_value);
+    }
   }
 
   GTEXT_CSS_Compute_Options options = gtext_css_compute_options_default();
@@ -320,9 +331,10 @@ static void variables_property_rule(void) {
 prints
 
 ```
-1 rule registered
-ignored --broken: no-syntax
+2 registered
+ignored --broken: not-computationally-independent
 --size: syntax <length>, initial 16px
+--gap: syntax <length>, initial 4px
 width: 16px
 ```
 
@@ -422,7 +434,11 @@ are listed with the reason in `tools/css/UNEXTRACTED_VARIABLES`; the cases it fa
 
 The evaluation of a custom function (`--name()`: the definitions are read, see above); `first-valid()`; the animation and transition of custom properties; the used
 value of anything; `revert` resolved after a substitution; the `CSS` object of a browser (the registry builder and the `@property` set are what it
-would call).
+would call). Of `@property`: an `@property` inside `@private` (the draft places one there, "directly inside of a @private rule"; private properties are not built), and
+inside the body of an `@function` or a `@mixin` (the draft does not place one there: a function body "accepts conditional group rules ... the result descriptor ... custom
+properties"). The CSSOM of a prelude that lists names is not decided upstream (the draft's own issue, w3c/csswg-drafts#14227: "The CSSOM for multi-name @property rules has not
+been resolved on by the CSSWG"): such a rule is one rule here, its `name` is the first name, its text lists every name, and the typed model has them all
+(`gtext_css_atrule_name_at()`); a decision upstream is one function (`put_header()` of `css_atrule.c`) and the `name` row of `cssom_setters.c`.
 
 ## `@function` definitions
 

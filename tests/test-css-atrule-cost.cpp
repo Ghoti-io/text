@@ -164,3 +164,51 @@ TEST(CssAtruleCost, ManyDistinctRules) {
     return [css, n] { build_set(css, 2 * n); };
   });
 }
+
+// An `@property` (or an `@layer`) prelude of many names is read, and registered, in time linear in its length: the names of a typed model are kept in arrays that grow by doubling, and a
+// registration is made for each name.
+TEST(CssAtruleCost, PropertyRuleOfManyNames) {
+  expect_linear("an @property of n names, as a typed model", 2000, [](size_t n) {
+    std::string css = "@property --n0";
+    for (size_t i = 1; i < n; i++) {
+      css += ", --n" + std::to_string(i);
+    }
+    css += " { syntax: \"<length>\"; inherits: false; initial-value: 1px }";
+    return [css, n] {
+      css_test::Parsed p;
+      GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+      po.max_tokens = 100000000;
+      p.status = gtext_css_parse_stylesheet(css.data(), css.size(), &po, &p.tree, &p.result);
+      ASSERT_NE(p.tree, nullptr);
+      GTEXT_CSS_Atrule_Options o = gtext_css_atrule_options_default();
+      GTEXT_CSS_Atrule * a = nullptr;
+      GTEXT_CSS_Atrule_Result res;
+      ASSERT_EQ(gtext_css_atrule_parse(R(), &p.tree->rules[0], &o, &a, &res), GTEXT_CSS_OK);
+      EXPECT_TRUE(res.valid);
+      EXPECT_EQ(gtext_css_atrule_name_count(a), n);
+      gtext_css_atrule_free(a);
+    };
+  });
+  expect_linear("an @property of n names, registered", 1000, [](size_t n) {
+    std::string css = "@property --n0";
+    for (size_t i = 1; i < n; i++) {
+      css += ", --n" + std::to_string(i);
+    }
+    css += " { syntax: \"<length>\"; inherits: false; initial-value: 1px }";
+    return [css, n] {
+      css_test::Parsed p;
+      GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+      po.max_tokens = 100000000;
+      p.status = gtext_css_parse_stylesheet(css.data(), css.size(), &po, &p.tree, &p.result);
+      ASSERT_NE(p.tree, nullptr);
+      GTEXT_CSS_At_Property_Options so = gtext_css_at_property_options_default();
+      so.max_properties = 100000000;
+      GTEXT_CSS_At_Property_Set * set = nullptr;
+      ASSERT_EQ(gtext_css_at_property_set_new(R(), &so, &set), GTEXT_CSS_OK);
+      GTEXT_CSS_At_Property_Result res;
+      ASSERT_EQ(gtext_css_at_property_collect(set, p.tree, &res), GTEXT_CSS_OK);
+      EXPECT_EQ(gtext_css_at_property_count(set), n);
+      gtext_css_at_property_set_free(set);
+    };
+  });
+}

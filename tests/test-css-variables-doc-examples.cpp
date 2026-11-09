@@ -72,7 +72,7 @@ const Snippet kSnippets[] = {
     {"variables-registered.c", registered::variables_registered,
         "--len: 40px\n--len: 0px\n"},
     {"variables-property-rule.c", property_rule::variables_property_rule,
-        "1 rule registered\nignored --broken: no-syntax\n--size: syntax <length>, initial 16px\nwidth: 16px\n"},
+        "2 registered\nignored --broken: not-computationally-independent\n--size: syntax <length>, initial 16px\n--gap: syntax <length>, initial 4px\nwidth: 16px\n"},
     {"variables-budget.c", budget::variables_budget,
         "--v18 has a value\n--v19 is guaranteed-invalid\n--v30 is guaranteed-invalid\nvalues stopped by the budget: 1\nwork under 200000: yes\n"},
 };

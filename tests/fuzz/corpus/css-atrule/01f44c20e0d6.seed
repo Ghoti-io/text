@@ -1,0 +1,1 @@
+¿=@media all { @font-face { src: local(inherit), url(foo.ttf), junk, local("x") format(bad) } @font-face { font-family: D } @property --a <length>: 5px; @property --b type(<length> | auto): auto; @property --c; @property --d: ; @property --e <foo>; @property --f, --g <length>; @counter-style f1 { system: cyclic; symbols: a; fallback: f2 } @counter-style f2 { system: cyclic;

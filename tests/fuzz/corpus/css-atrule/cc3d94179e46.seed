@@ -1,0 +1,1 @@
+qR@-webkit-keyframes w { 0%, 100% { opacity: 0 } 50% { opacity: 1 } } @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @property --a <length>: 5px; @property --b type(<length> | auto): auto; @property --c; @property -

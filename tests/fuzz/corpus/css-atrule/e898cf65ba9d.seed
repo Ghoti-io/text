@@ -1,0 +1,1 @@
+κη@media all { @property --a { syntax: "<number>"; inherits: false; initial-value: 0 } @position-try --a { top: anchor(bottom); color: red; left: 1px } }

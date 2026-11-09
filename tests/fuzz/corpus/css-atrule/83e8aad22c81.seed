@@ -1,0 +1,1 @@
+yw@media all { @font-feature-values X { @bogus { a: 1 } @ornaments { o: 1 2 } } @counter-style p { system: extends q } @counter-style q { system: extends p } @position-try --a { top: anchor(bottom); color: red; left: 1px } a { color: red; @font-face { font-family: N; src: url(n) } } }

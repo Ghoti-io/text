@@ -1,0 +1,1 @@
+Ç7@property --a, --b { } @property --c { syntax: "<nosuch>"; inherits: maybe; initial-value: 1 } @property --d { syntax: "<length>"; initial-value: red } @page named:left:first { margin: 2px } @page :blank { margin: 3px } @page { margin: 4px }

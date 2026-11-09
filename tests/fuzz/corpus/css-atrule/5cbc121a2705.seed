@@ -1,0 +1,1 @@
+ÂY@keyframes none { from { color: red } } @-webkit-keyframes w { 0%, 100% { opacity: 0 } 50% { opacity: 1 } } @counter-style bad { system: alphabetic; symbols: a } @layer a, b; @layer b { @keyframes k { from { color: red } } } @layer a { @keyframes k { from { color: blue } } }

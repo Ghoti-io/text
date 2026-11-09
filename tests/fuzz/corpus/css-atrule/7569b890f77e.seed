@@ -1,0 +1,1 @@
+Ò+a { color: red; @font-face { font-family: N; src: url(n) } } @top-left { content: "x" } @namespace svg url(http://www.w3.org/2000/svg); @charset "utf-8"; @import url(a.css) layer(x);

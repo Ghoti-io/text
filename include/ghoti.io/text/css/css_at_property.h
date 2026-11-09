@@ -24,21 +24,31 @@
  * @file css_at_property.h
  * @brief `@property` rules: reading them from stylesheets into the registrations a style is computed with.
  *
- * Reference: CSS Properties and Values API Level 1 (6 August 2026), 2 ("Registered Custom Properties"), 3 ("The `@property` Rule"), 4.1 and 5 ("Syntax
- * Strings"), as served 2026-10-27; CSS Cascade Level 5 for what a conditional rule does to the rules inside it.
+ * Reference: the Editor's Draft of CSS Properties and Values API Level 1 (css-houdini-drafts 27d37c6, 31 October 2026), 2 ("Registered Custom Properties"), 3 ("The `@property`
+ * Rule"), 4.1 and 5 ("Syntax Strings"); CSS Cascade Level 5 for what a conditional rule does to the rules inside it; CSS Functions and Mixins 1 for `<css-type>`.
  *
  * ## What a rule has to say
  *
- * An `@property` rule registers a custom property for each name of its prelude (`@property --a, --b { ... }`). It is **valid** when its `syntax` and `inherits`
- * descriptors are both there and valid, and, for a syntax other than `*`, when its `initial-value` is there, is a value of the syntax and is
- * computationally independent (`5px`, `1in`, `10vw`: not `3em`, `currentcolor`, `var(--x)`). A rule that is not valid is ignored whole and reported
- * (GTEXT_CSS_At_Property_Diagnostic); so is the rule of a name that is not a dashed identifier (`@property foo`, `@property --`). A descriptor the rule
- * does not know is ignored and reported, and the rule stands. Of two valid rules for one name, the later wins ("the last such one in document order").
+ * "While the <custom-property-name> is required, all of the descriptors are optional. When omitted, it matches the behavior of an unregistered custom property": a rule says as much or
+ * as little as it likes. The initial values of the descriptors are `*` (`syntax`), `true` (`inherits`) and "the guaranteed-invalid value" (`initial-value`).
  *
- * **Decided:** the served draft says "While the <custom-property-name> is required, all of the descriptors are optional. When omitted, it matches the behavior
- * of an unregistered custom property." This library follows the plan's rule (a rule without `syntax` or `inherits` is ignored), which is what the pinned
- * web-platform-tests helper still assumes ("The syntax descriptor is required ... The inherits descriptor is required") and what the browsers implement. It is one
- * condition in one function (`rule_valid()` of css_at_property.c), and the reading of the draft is in the tests that quote it.
+ * - **The prelude** is `<custom-property-name>#`: `@property --a, --b { ... }` registers both names, each with the same descriptors ("a custom property registration for each
+ *   <custom-property-name> in the rule's prelude ... and all other fields identical"); the later of two rules and a caller's registration win for each name on its own. A prelude that is
+ *   not a list of dashed identifiers other than `--` is not a prelude of the rule, and the rule is ignored (GTEXT_CSS_AT_PROP_BAD_PRELUDE).
+ * - **The statement form**, `@property <custom-property-name> <css-type>? [: <declaration-value>? ]? ;`, "is exactly equivalent to the normal rule form": the `<css-type>` (one syntax component,
+ *   or `type(<syntax>)`) is the `syntax`, the value after the colon the `initial-value` (the colon decides whether there is one, and the value may be empty), and "The other descriptors of
+ *   the @property rule are always treated as omitted", so the property inherits. It has one name.
+ * - **A descriptor that is not valid is ignored**, and the rule stands: a `syntax` that is no syntax string ("the descriptor is invalid and must be ignored"), an `inherits` that is not
+ *   `true` or `false`, an `initial-value` that does not "successfully parse according to the rule's syntax descriptor", a name the rule does not know ("Unknown descriptors are invalid and
+ *   ignored, but do not invalidate the @property rule"), a descriptor with `!important`. Each is reported (GTEXT_CSS_At_Property_Diagnostic).
+ * - **An initial value that parses and needs the element** (`3em`, `currentcolor`, `var(--x)`) is a registration "register a custom property" refuses ("If parsed initial value is not
+ *   computationally independent, throw a SyntaxError"), and the rule is ignored whole (both browsers drop it from the style sheet); with the syntax `*` it is the descriptor that is ignored.
+ *
+ * Of two valid rules for one name the later wins ("the last such one in document order"). Nothing is registered by an `@property` inside a style rule, an `@function` or a `@mixin`: the draft
+ * places it at the top of a sheet (and in the group rules the cascade enters) and, with private properties, inside `@private`, which this library does not have.
+ *
+ * **Unresolved upstream (w3c/csswg-drafts#14227):** the draft says "The CSSOM for multi-name @property rules has not been resolved on by the CSSWG." A rule of several names is one rule here
+ * (css_cssom_rule.h: its `name` is the first, its text lists them all, the typed model's names are every one).
  *
  * ## A caller's registration wins
  *
@@ -71,16 +81,14 @@ extern "C" {
 
 /** @brief Why a rule or a descriptor was not used. */
 typedef enum {
-  GTEXT_CSS_AT_PROP_BAD_NAME = 0,      ///< The prelude is not one custom property name (a dashed identifier other than `--`): the rule is ignored. A list of names is not a prelude of this rule.
-  GTEXT_CSS_AT_PROP_NO_SYNTAX,         ///< No valid `syntax` descriptor: the rule is ignored.
-  GTEXT_CSS_AT_PROP_BAD_SYNTAX,        ///< The `syntax` descriptor is not a string that is a syntax definition (and so there is none): the rule is ignored.
-  GTEXT_CSS_AT_PROP_NO_INHERITS,       ///< No valid `inherits` descriptor (it is `true` or `false`): the rule is ignored.
-  GTEXT_CSS_AT_PROP_NO_INITIAL,        ///< A syntax other than `*` and no valid `initial-value`: the rule is ignored.
-  GTEXT_CSS_AT_PROP_BAD_INITIAL,       ///< The `initial-value` is not a value of the syntax: the rule is ignored (it has none).
-  GTEXT_CSS_AT_PROP_NOT_INDEPENDENT,   ///< The `initial-value` needs the element (`3em`, `currentcolor`) or holds a substitution function: the rule is ignored.
-  GTEXT_CSS_AT_PROP_UNKNOWN_DESCRIPTOR, ///< A declaration of a name that is no descriptor of `@property`: it is ignored and the rule stands.
+  GTEXT_CSS_AT_PROP_BAD_PRELUDE = 0,   ///< The prelude is not `<custom-property-name>#` (a rule) or `<custom-property-name> <css-type>? [: <declaration-value>? ]?` (a statement): the rule is ignored.
+  GTEXT_CSS_AT_PROP_BAD_SYNTAX,        ///< The `syntax` descriptor is not a string that is a syntax definition: it is ignored (the rule has the syntax it had without it, `*` for none).
+  GTEXT_CSS_AT_PROP_BAD_INHERITS,      ///< The `inherits` descriptor is not `true` or `false`: it is ignored (the rule inherits, as it does when it says nothing).
+  GTEXT_CSS_AT_PROP_BAD_INITIAL,       ///< The `initial-value` is not a value of the syntax: it is ignored (the initial value is the guaranteed-invalid value).
+  GTEXT_CSS_AT_PROP_NOT_INDEPENDENT,   ///< The `initial-value` needs the element (`3em`, `currentcolor`) or holds a substitution function: the rule is ignored (for the syntax `*`, the descriptor is).
+  GTEXT_CSS_AT_PROP_UNKNOWN_DESCRIPTOR, ///< A declaration of a name that is no descriptor of `@property`, or a descriptor with `!important`: it is ignored and the rule stands.
   GTEXT_CSS_AT_PROP_SUPERSEDED,        ///< An earlier valid rule for the name: the later one wins, and this reports the earlier.
-  GTEXT_CSS_AT_PROP_CALLER_WINS        ///< The registry has a registration of the name: the rule's registration is ignored.
+  GTEXT_CSS_AT_PROP_CALLER_WINS        ///< The registry has a registration of the name: the rule's registration of that name is ignored.
 } GTEXT_CSS_At_Property_Reason;
 
 /** @brief One rule or descriptor that was ignored or replaced. The strings are owned by the set. */
@@ -177,7 +185,7 @@ GTEXT_API size_t gtext_css_at_property_diagnostic_total(const GTEXT_CSS_At_Prope
 /** @brief The `index`th kept diagnostic, in the order raised; false past the end. */
 GTEXT_API bool gtext_css_at_property_diagnostic(const GTEXT_CSS_At_Property_Set * set, size_t index, GTEXT_CSS_At_Property_Diagnostic * out);
 
-/** @brief The name of a reason ("no-syntax" ...); static. */
+/** @brief The name of a reason ("bad-syntax" ...); static. */
 GTEXT_API const char * gtext_css_at_property_reason_name(GTEXT_CSS_At_Property_Reason reason);
 
 #ifdef __cplusplus

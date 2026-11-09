@@ -442,17 +442,19 @@ TEST(CssAtrule, PageKeepsAnImportantDescriptorAndOnlyTheMarginRulesOfItsGrammar)
 }
 
 TEST(CssAtrule, AnInvalidPropertyRuleIsNotValid) {
-  /* Properties and Values 1, 2.1: a valid name, `syntax`, `inherits`, and an `initial-value` that parses for the syntax (unless the syntax is `*`); otherwise the
-   * rule is invalid and ignored. `valid` is the answer of the code that registers the rule. */
+  /* Properties and Values 1 (6 August 2026, as pinned): "@property <custom-property-name># { <declaration-list> }"; "While the <custom-property-name> is required, all of the descriptors
+   * are optional", so what makes the rule invalid is the prelude (and a statement that is not "@property <custom-property-name> <css-type>? [: <declaration-value>? ]? ;"), and an
+   * initial value that parses for the syntax but needs the element (registering it "throws a SyntaxError"). `valid` is the answer of the code that registers the rule. */
   const char * invalid[] = {
-    "@property --a { inherits: true }",                                  /* no syntax */
-    "@property --a { syntax: \"<foo>\"; inherits: true }",               /* a syntax that is not a syntax */
-    "@property --a { syntax: \"*\" }",                                   /* no inherits */
-    "@property --a { syntax: \"*\"; inherits: maybe }",
     "@property a { syntax: \"*\"; inherits: true }",                     /* not a custom property name */
-    "@property --a { syntax: \"<color>\"; inherits: true; initial-value: 1em }",
+    "@property --a --b { }",
+    "@property --a, { }",
+    "@property { }",
     "@property --a { syntax: \"<length>\"; inherits: true; initial-value: 1em }", /* not computationally independent */
-    "@property --a { syntax: \"<length>\"; inherits: true }",            /* no initial value for a syntax other than * */
+    "@property --a <length>: 1em;",
+    "@property --a <foo>;",                                              /* a statement whose type is not a syntax component */
+    "@property --a, --b <length>;",                                      /* a statement has one name */
+    "@property --a <length> | auto;",                                    /* a combinator is wrapped in type() */
   };
   for (const char * css : invalid) {
     Parsed p(css);
@@ -465,11 +467,70 @@ TEST(CssAtrule, AnInvalidPropertyRuleIsNotValid) {
     "@property --a { syntax: \"*\"; inherits: true; initial-value: whatever }",
     "@property --a { syntax: \"<length>\"; inherits: true; initial-value: 1px }",
     "@property --a { syntax: \"<color> | none\"; inherits: false; initial-value: none }",
+    "@property --a { }",                                                 /* every descriptor is optional */
+    "@property --a { inherits: true }",
+    "@property --a { syntax: \"*\" }",
+    "@property --a { syntax: \"<length>\"; inherits: true }",
+    "@property --a { syntax: \"<foo>\"; inherits: true }",               /* the descriptors that are not valid are ignored */
+    "@property --a { syntax: \"*\"; inherits: maybe }",
+    "@property --a { syntax: \"<color>\"; inherits: true; initial-value: 1em }",
+    "@property --a, --b { }",
+    "@property --a <length>: 1px;",
+    "@property --a <length>;",
+    "@property --a;",
+    "@property --a: ;",
+    "@property --a type(<length> | auto): auto;",
   };
   for (const char * css : valid) {
     Parsed p(css);
     EXPECT_TRUE(p.res.valid) << css;
     EXPECT_NE(p.a, nullptr) << css;
+  }
+}
+
+TEST(CssAtrule, ThePropertyRuleHasTheDescriptorsInEffectAndTheNamesOfItsPrelude) {
+  /* the model keeps what is in effect: a descriptor that was ignored is not there (the initial value, which has none to fall back to; `syntax` and `inherits` are always there, with the initial values
+   of the descriptors, `*` and true, as CSSPropertyRule has them), one that a statement gave is, and the names are the prelude's */
+  struct Row {
+    const char * css;
+    const char * names;       /* joined by "," */
+    const char * syntax;      /* "" when there is none */
+    const char * inherits;
+    const char * initial;
+  } rows[] = {
+    {"@property --a { syntax: \"<length>\"; inherits: false; initial-value: 1px }", "--a", "\"<length>\"", "false", "1px"},
+    {"@property --a { }", "--a", "\"*\"", "true", ""},
+    {"@property --a, --b { inherits: true }", "--a,--b", "\"*\"", "true", ""},
+    {"@property --a { syntax: \"<foo>\"; inherits: maybe; initial-value: 5 }", "--a", "\"*\"", "true", "5"},
+    {"@property --a { syntax: \"<length>\"; initial-value: red }", "--a", "\"<length>\"", "true", ""},
+    {"@property --a <length>: 1px;", "--a", "\"<length>\"", "true", "1px"},
+    {"@property --a;", "--a", "\"*\"", "true", ""},
+    {"@property --a: x;", "--a", "\"*\"", "true", "x"},
+    {"@property --a type(<length> | auto);", "--a", "\"<length> | auto\"", "true", ""},
+  };
+  for (const Row & r : rows) {
+    Parsed p(r.css);
+    ASSERT_NE(p.a, nullptr) << r.css;
+    std::string names;
+    for (size_t i = 0; i < gtext_css_atrule_name_count(p.a); i++) {
+      GTEXT_CSS_String n;
+      bool quoted = false;
+      ASSERT_TRUE(gtext_css_atrule_name_at(p.a, i, &n, &quoted));
+      names += (i ? "," : "") + std::string(n.data, n.length);
+    }
+    EXPECT_EQ(names, r.names) << r.css;
+    auto text_of = [&](const char * d) {
+      GTEXT_CSS_Atrule_Descriptor ad;
+      return gtext_css_atrule_descriptor_find(p.a, d, std::strlen(d), &ad) ? std::string(ad.text.data, ad.text.length) : std::string();
+    };
+    EXPECT_EQ(text_of("syntax"), r.syntax) << r.css;
+    EXPECT_EQ(text_of("inherits"), r.inherits) << r.css;
+    EXPECT_EQ(text_of("initial-value"), r.initial) << r.css;
+    char * out = nullptr;
+    size_t length = 0;
+    ASSERT_EQ(gtext_css_atrule_serialize_buffer(p.a, nullptr, &out, &length), GTEXT_CSS_OK) << r.css;
+    EXPECT_NE(std::string(out, length).find(" { syntax: "), std::string::npos) << r.css << ": a CSSPropertyRule is written with a block (" << std::string(out, length) << ")";
+    gtext_css_atrule_buffer_free(nullptr, out);
   }
 }
 

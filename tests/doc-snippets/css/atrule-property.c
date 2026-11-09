@@ -8,8 +8,8 @@ static void atrule_property(void) {
   if (gtext_css_registry_new(NULL, &registry) != GTEXT_CSS_OK) {
     return;
   }
-  const char * rules[] = {"@property --gap { syntax: \"<length>\"; inherits: false; initial-value: 4px }", "@property --gap { syntax: \"<length>\"; inherits: false }",
-                          "@property --any { syntax: \"*\"; inherits: true }", "@property gap { syntax: \"*\"; inherits: true }"};
+  const char * rules[] = {"@property --gap { syntax: \"<length>\"; inherits: false; initial-value: 4px }", "@property --gap { syntax: \"<length>\"; inherits: false; initial-value: 4em }",
+                          "@property --any { }", "@property gap <length>: 4px;"};
   for (size_t i = 0; i < sizeof rules / sizeof *rules; i++) {
     GTEXT_CSS_Tree * tree = NULL;
     if (gtext_css_parse_stylesheet(rules[i], strlen(rules[i]), NULL, &tree, NULL) != GTEXT_CSS_OK) {

@@ -1,0 +1,1 @@
+#@media all { @layer b { @property --a, --b { } @property --c { syntax: "<nosuch>"; inherits: maybe; initial-value: 1 } @property --d { syntax: "<length>"; initial-value: red } @page :bogus { margin: 1px } @layer a, b; @layer b { @ke

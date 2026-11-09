@@ -283,7 +283,7 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_condition_text(GTEXT_CSSOM_Rule * ru
  * | `@scope` | `start`, `end` (null when absent) |
  * | `@container` | `containerName`, `containerQuery`, `conditionText` |
  * | `@media`, `@supports`, `@when`, `@else` | `conditionText` |
- * | `@property` | `name`, `syntax` (unquoted), `inherits`, `initialValue` (null when absent) |
+ * | `@property` | `name` (the first of a prelude that lists names), `syntax` (unquoted; `*` when omitted), `inherits` (`true` when omitted), `initialValue` (null when absent) |
  * | `@counter-style` | `name` w, `system` w, `symbols` w, `additiveSymbols` w, `negative` w, `prefix` w, `suffix` w, `range` w, `pad` w, `speakAs` w, `fallback` w |
  * | `@font-palette-values` | `name`, `fontFamily`, `basePalette`, `overrideColors` |
  * | `@font-feature-values` | `fontFamily` w |

@@ -1,0 +1,1 @@
+:i@color-profile --p { src: url(a.icc); rendering-intent: perceptual; components: a, b } @layer { @font-face { font-family: L; src: url(l) } } @counter-style y { system: additive; additive-symbols: 3 c, 2 b, 1 a }

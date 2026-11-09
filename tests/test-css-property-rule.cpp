@@ -210,15 +210,31 @@ TEST(CssPropertyRule, RegisteringTwiceFails) {
   EXPECT_FALSE(gtext_css_registry_find_custom(o.r, "--RE-register", 13, &info));
 }
 
-TEST(CssPropertyRule, NonUniversalNeedsAnInitialValue) {
-  // "registerProperty only allows omitting initialValue if syntax is '*'"
+TEST(CssPropertyRule, AnyTypeMayOmitTheInitialValue) {
+  // "If initialValue is not present, let parsed initial value be the guaranteed-invalid value." (the pinned text no longer says that a syntax other than * needs one)
   EXPECT_EQ(register_one("--a", "*", nullptr), GTEXT_CSS_OK);
   EXPECT_EQ(register_one("--a", " * ", nullptr), GTEXT_CSS_OK);
-  std::string detail;
-  EXPECT_EQ(register_one("--a", "<length>", nullptr, &detail), GTEXT_CSS_E_INVALID);
-  EXPECT_NE(detail.find("initial value"), std::string::npos) << detail;
-  EXPECT_EQ(register_one("--a", "length", nullptr), GTEXT_CSS_E_INVALID) << "an identifier needs one as well";
+  EXPECT_EQ(register_one("--a", "<length>", nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(register_one("--a", "length", nullptr), GTEXT_CSS_OK) << "an identifier too";
   EXPECT_EQ(register_one("--a", "length", "length"), GTEXT_CSS_OK);
+  // an initial value that is given is still a value of the syntax: the empty string is one for the universal syntax only
+  EXPECT_EQ(register_one("--a", "<length>", ""), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(register_one("--a", "*", ""), GTEXT_CSS_OK);
+  // and a registration with no initial value reads as one that has none
+  reg::Builder b;
+  GTEXT_CSS_Custom_Def d;
+  std::memset(&d, 0, sizeof d);
+  d.name = "--a";
+  d.syntax = "<length>";
+  d.inherits = true;
+  ASSERT_EQ(gtext_css_registry_register_custom(b.b, &d, nullptr), GTEXT_CSS_OK);
+  reg::Owned o;
+  ASSERT_EQ(b.freeze(o), GTEXT_CSS_OK);
+  GTEXT_CSS_Custom_Info info;
+  ASSERT_TRUE(gtext_css_registry_find_custom(o.r, "--a", 3, &info));
+  EXPECT_FALSE(info.has_initial);
+  EXPECT_EQ(info.initial_value, nullptr);
+  EXPECT_FALSE(info.universal);
 }
 
 TEST(CssPropertyRule, TheInitialValueIsAValueOfTheSyntax) {
@@ -314,65 +330,149 @@ TEST(CssPropertyRule, AValidRuleRegistersOneName) {
   EXPECT_TRUE(s.reasons().empty());
 }
 
-TEST(CssPropertyRule, AListOfNamesIsNotAPreludeOfTheRule) {
-  // the rule has one name: `@property --a, --b { ... }` is not an @property rule (a browser ignores it), and the syntax of the rule says so
-  Sheets s({"@property --width, --height { syntax: \"<length>\"; inherits: false; initial-value: 0px }"});
-  EXPECT_EQ(gtext_css_at_property_count(s.set()), 0u);
-  EXPECT_FALSE(s.has("--width", nullptr));
-  EXPECT_FALSE(s.has("--height", nullptr));
+TEST(CssPropertyRule, APreludeListsTheNamesItRegisters) {
+  // "@property <<custom-property-name>># { <<declaration-list>> }" and "A valid @property rule represents a custom property registration for each <custom-property-name> in the rule's
+  // prelude, with the property name being the serialization of that <custom-property-name> and all other fields identical."
+  Sheets s({"@property --width, --height,--depth { syntax: \"<length>\"; inherits: false; initial-value: 0px }"});
+  EXPECT_EQ(gtext_css_at_property_count(s.set()), 3u);
+  for (const char * n : {"--width", "--height", "--depth"}) {
+    GTEXT_CSS_Custom_Info info;
+    ASSERT_TRUE(s.has(n, &info)) << n;
+    EXPECT_EQ(std::string(info.syntax, info.syntax_length), "<length>") << n;
+    EXPECT_FALSE(info.inherits) << n;
+    EXPECT_EQ(std::string(info.initial_value, info.initial_length), "0px") << n;
+  }
+  GTEXT_CSS_Custom_Info first;
+  ASSERT_TRUE(gtext_css_at_property_at(s.set(), 0, &first));
+  EXPECT_EQ(std::string(first.name, first.name_length), "--width") << "in the order of the prelude";
+  EXPECT_TRUE(s.reasons().empty());
+}
+
+TEST(CssPropertyRule, EachNameOfAListIsSupersededAndOverriddenOnItsOwn) {
+  // "if multiple valid @property rules represent a registration for the same <custom-property-name>, the last one in stylesheet order wins", and the caller's registration wins
+  // "over any @property rules for the same <custom-property-name>": both are judged per name
+  Reg r;
+  r.name = "--c";
+  r.syntax = "<number>";
+  r.initial = "7";
+  Sheets s({"@property --a, --b, --c { syntax: \"<length>\"; inherits: true; initial-value: 1px } @property --b, --d { syntax: \"<length>\"; inherits: false; initial-value: 2px }"}, {r});
+  GTEXT_CSS_Custom_Info info;
+  ASSERT_TRUE(s.has("--a", &info));
+  EXPECT_EQ(std::string(info.initial_value, info.initial_length), "1px");
+  ASSERT_TRUE(s.has("--b", &info));
+  EXPECT_EQ(std::string(info.initial_value, info.initial_length), "2px");
+  EXPECT_FALSE(info.inherits);
+  EXPECT_TRUE(s.has("--d"));
+  EXPECT_FALSE(s.has("--c")) << "the caller's";
+  EXPECT_EQ(gtext_css_at_property_count(s.set()), 3u);
+  const auto reasons = s.reasons();
+  ASSERT_EQ(reasons.size(), 2u);
+  EXPECT_EQ(reasons[0], "caller-registration-wins:--c");
+  EXPECT_EQ(reasons[1], "superseded:--b");
+}
+
+TEST(CssPropertyRule, ANameTwiceInOnePreludeIsOneRegistrationTheLaterWins) {
+  Sheets s({"@property --a, --a { inherits: false }"});
+  EXPECT_EQ(gtext_css_at_property_count(s.set()), 1u);
   ASSERT_EQ(s.reasons().size(), 1u);
-  EXPECT_EQ(s.reasons()[0].substr(0, 8), "bad-name");
+  EXPECT_EQ(s.reasons()[0], "superseded:--a");
 }
 
-TEST(CssPropertyRule, ARuleWithoutSyntaxOrInheritsIsIgnoredAndSaysWhere) {
-  // The plan's matrix row: "@property --x { inherits: true } ... rule ignored: diagnostic with location". The served draft says the descriptors are optional;
-  // the condition is rule_valid() of css_at_property.c, and the pinned web-platform-tests helper still says "The syntax descriptor is required ... The inherits
-  // descriptor is required".
-  Sheets s({"@property --x { inherits: true }", "@property --y { syntax: \"*\" }"});
-  EXPECT_FALSE(s.has("--x"));
-  EXPECT_FALSE(s.has("--y"));
-  const auto r = s.reasons();
-  ASSERT_EQ(r.size(), 2u);
-  EXPECT_EQ(r[0], "no-syntax:--x");
-  EXPECT_EQ(r[1], "no-inherits:--y");
-  GTEXT_CSS_At_Property_Diagnostic d;
-  ASSERT_TRUE(gtext_css_at_property_diagnostic(s.set(), 0, &d));
-  EXPECT_EQ(d.span.line, 1u) << "with its location";
-  EXPECT_EQ(d.span.offset, 0u);
-  EXPECT_EQ(d.sheet, 0u);
-  ASSERT_TRUE(gtext_css_at_property_diagnostic(s.set(), 1, &d));
-  EXPECT_EQ(d.sheet, 1u) << "the second sheet given";
-  EXPECT_EQ(d.span.offset, 0u);
-  EXPECT_NE(std::string(d.message).find("inherits"), std::string::npos);
+TEST(CssPropertyRule, EveryDescriptorIsOptionalAndOmittedOnesMatchAnUnregisteredProperty) {
+  // "While the <custom-property-name> is required, all of the descriptors are optional. When omitted, it matches the behavior of an unregistered custom property." The initial
+  // values of the descriptors: syntax "*", inherits true, initial-value "the guaranteed-invalid value".
+  Sheets s({"@property --a {}", "@property --b { inherits: false }", "@property --c { syntax: \"<length>\" }", "@property --d { initial-value: 7 }",
+            "@property --e { syntax: \"<length>\"; inherits: false }"});
+  GTEXT_CSS_Custom_Info info;
+  ASSERT_TRUE(s.has("--a", &info));
+  EXPECT_TRUE(info.universal);
+  EXPECT_EQ(std::string(info.syntax, info.syntax_length), "*");
+  EXPECT_TRUE(info.inherits);
+  EXPECT_FALSE(info.has_initial);
+  ASSERT_TRUE(s.has("--b", &info));
+  EXPECT_TRUE(info.universal);
+  EXPECT_FALSE(info.inherits);
+  ASSERT_TRUE(s.has("--c", &info));
+  EXPECT_EQ(std::string(info.syntax, info.syntax_length), "<length>");
+  EXPECT_TRUE(info.inherits) << "inherits: true";
+  EXPECT_FALSE(info.has_initial) << "a typed syntax with no initial value has the guaranteed-invalid value";
+  ASSERT_TRUE(s.has("--d", &info));
+  EXPECT_TRUE(info.universal);
+  EXPECT_TRUE(info.has_initial);
+  EXPECT_EQ(std::string(info.initial_value, info.initial_length), "7");
+  ASSERT_TRUE(s.has("--e", &info));
+  EXPECT_FALSE(info.inherits);
+  EXPECT_FALSE(info.has_initial);
+  EXPECT_EQ(gtext_css_at_property_count(s.set()), 5u);
+  EXPECT_TRUE(s.reasons().empty());
 }
 
-TEST(CssPropertyRule, AnInvalidSyntaxDescriptorIsIgnoredAndSoTheRuleHasNone) {
-  // "If the provided string is not a valid syntax string (if it returns failure when consume a syntax definition is called on it), the descriptor is invalid and
-  // must be ignored."
-  Sheets s({"@property --a { syntax: \"<nosuch>\"; inherits: true; initial-value: 1 }", "@property --b { syntax: <length>; inherits: true; initial-value: 1px }"});
-  EXPECT_FALSE(s.has("--a"));
-  EXPECT_FALSE(s.has("--b")) << "missing quotes";
-  const auto r = s.reasons();
-  ASSERT_EQ(r.size(), 2u);
-  EXPECT_EQ(r[0], "bad-syntax:--a");
-  EXPECT_EQ(r[1], "bad-syntax:--b");
+TEST(CssPropertyRule, ARuleWithNoDescriptorsComputesAsAnUnregisteredProperty) {
+  Sheets s({"@property --a {} @property --b { syntax: \"<length>\" }"});
+  Computed p, c, none;
+  compute(s.w, p, "--a: 1 2; --b: 2em; font-size: 10px");
+  compute(s.w, c, "", &p);
+  EXPECT_EQ(c.custom("--a"), "1 2") << "inherits, as the tokens";
+  EXPECT_EQ(p.custom("--b"), "20px") << "the typed one is computed";
+  EXPECT_EQ(c.custom("--b"), "20px") << "and inherits";
+  compute(s.w, none, "");
+  EXPECT_EQ(none.custom("--a"), "<gi>");
+  EXPECT_EQ(none.custom("--b"), "<gi>") << "no initial value: the guaranteed-invalid value";
+  Computed bad;
+  compute(s.w, bad, "--b: red");
+  EXPECT_EQ(bad.custom("--b"), "<gi>") << "invalid at computed-value time, and the property has no initial value to reset to";
 }
 
-TEST(CssPropertyRule, ANonUniversalSyntaxNeedsAnInitialValueThatMatches) {
-  Sheets s({"@property --a { syntax: \"<length>\"; inherits: true }", "@property --b { syntax: \"<length>\"; inherits: true; initial-value: red }",
-            "@property --c { syntax: \"<length>\"; inherits: true; initial-value: 3em }", "@property --d { syntax: \"*\"; inherits: true }",
-            "@property --e { syntax: \"<length>\"; inherits: true; initial-value: var(--q) }"});
-  EXPECT_FALSE(s.has("--a"));
-  EXPECT_FALSE(s.has("--b"));
-  EXPECT_FALSE(s.has("--c"));
-  EXPECT_TRUE(s.has("--d")) << "\"a syntax of * needs no initial value\"";
-  EXPECT_FALSE(s.has("--e"));
+TEST(CssPropertyRule, AnInvalidDescriptorIsIgnoredAndTheRuleStandsWithTheDefault) {
+  // "If the provided string is not a valid syntax string (if it returns failure when consume a syntax definition is called on it), the descriptor is invalid and must be ignored."
+  // The rule has no syntax then, which is "*"; an inherits that is not true or false is as invalid.
+  Sheets s({"@property --a { syntax: \"<nosuch>\"; inherits: false; initial-value: 1 }", "@property --b { syntax: <length>; initial-value: 1px }",
+            "@property --c { inherits: maybe; syntax: \"<length>\" }", "@property --d { syntax: \"<length>\"; syntax: \"<nosuch>\" }"});
+  GTEXT_CSS_Custom_Info info;
+  ASSERT_TRUE(s.has("--a", &info));
+  EXPECT_TRUE(info.universal);
+  EXPECT_FALSE(info.inherits);
+  EXPECT_EQ(std::string(info.initial_value, info.initial_length), "1");
+  ASSERT_TRUE(s.has("--b", &info)) << "missing quotes: the draft's descriptor is a <string>";
+  EXPECT_TRUE(info.universal);
+  EXPECT_EQ(std::string(info.initial_value, info.initial_length), "1px");
+  ASSERT_TRUE(s.has("--c", &info));
+  EXPECT_TRUE(info.inherits);
+  EXPECT_EQ(std::string(info.syntax, info.syntax_length), "<length>");
+  ASSERT_TRUE(s.has("--d", &info));
+  EXPECT_EQ(std::string(info.syntax, info.syntax_length), "<length>") << "the earlier valid one stands over a later one that is not";
   const auto r = s.reasons();
   ASSERT_EQ(r.size(), 4u);
-  EXPECT_EQ(r[0], "no-initial-value:--a");
-  EXPECT_EQ(r[1], "bad-initial-value:--b");
-  EXPECT_EQ(r[2], "not-computationally-independent:--c");
-  EXPECT_EQ(r[3], "not-computationally-independent:--e");
+  EXPECT_EQ(r[0], "bad-syntax:--a");
+  EXPECT_EQ(r[1], "bad-syntax:--b");
+  EXPECT_EQ(r[2], "bad-inherits:--c");
+  EXPECT_EQ(r[3], "bad-syntax:--d");
+}
+
+TEST(CssPropertyRule, AnInitialValueThatIsNotOfTheSyntaxIsIgnoredAndOneThatNeedsTheElementRefusesTheRule) {
+  // "If specified, the value of the initial-value descriptor must successfully parse according to the rule's syntax descriptor, or else the descriptor is invalid and ignored":
+  // the rule registers with no initial value. A value that parses and cannot be computed from itself (`3em`, a `var()`) is a registration that "register a custom property"
+  // refuses ("If parsed initial value is not computationally independent, throw a SyntaxError"): the rule registers nothing (both browsers drop it from the sheet).
+  Sheets s({"@property --a { syntax: \"<length>\"; inherits: true }", "@property --b { syntax: \"<length>\"; inherits: true; initial-value: red }",
+            "@property --c { syntax: \"<length>\"; inherits: true; initial-value: 3em }", "@property --d { syntax: \"*\"; inherits: true }",
+            "@property --e { syntax: \"<length>\"; inherits: true; initial-value: var(--q) }", "@property --f { syntax: \"<length>\"; initial-value: }"});
+  GTEXT_CSS_Custom_Info info;
+  ASSERT_TRUE(s.has("--a", &info));
+  EXPECT_FALSE(info.has_initial);
+  ASSERT_TRUE(s.has("--b", &info));
+  EXPECT_FALSE(info.has_initial) << "ignored";
+  EXPECT_EQ(std::string(info.syntax, info.syntax_length), "<length>");
+  EXPECT_FALSE(s.has("--c"));
+  EXPECT_TRUE(s.has("--d"));
+  EXPECT_FALSE(s.has("--e"));
+  ASSERT_TRUE(s.has("--f", &info));
+  EXPECT_FALSE(info.has_initial) << "an empty value is no <length>";
+  const auto r = s.reasons();
+  ASSERT_EQ(r.size(), 4u);
+  EXPECT_EQ(r[0], "bad-initial-value:--b");
+  EXPECT_EQ(r[1], "not-computationally-independent:--c");
+  EXPECT_EQ(r[2], "not-computationally-independent:--e");
+  EXPECT_EQ(r[3], "bad-initial-value:--f");
 }
 
 TEST(CssPropertyRule, AnInvalidInitialValueOfTheUniversalSyntaxIsIgnoredAndTheRuleStands) {
@@ -385,13 +485,14 @@ TEST(CssPropertyRule, AnInvalidInitialValueOfTheUniversalSyntaxIsIgnoredAndTheRu
   ASSERT_EQ(s.reasons().size(), 1u);
 }
 
-TEST(CssPropertyRule, NamesThatAreNoCustomPropertyNamesIgnoreTheRule) {
+TEST(CssPropertyRule, APreludeThatIsNotAListOfCustomPropertyNamesIgnoresTheRule) {
   Sheets s({"@property foo { syntax: \"*\"; inherits: true }", "@property -- { syntax: \"*\"; inherits: true }", "@property { syntax: \"*\"; inherits: true }",
             "@property --a --b { syntax: \"*\"; inherits: true }", "@property --a, { syntax: \"*\"; inherits: true }",
-            "@property --ok, nope { syntax: \"*\"; inherits: true }"});
+            "@property --ok, nope { syntax: \"*\"; inherits: true }", "@property , --a { }", "@property --a,, --b { }", "@property --a, , --b { }", "@property --a, --b c { }",
+            "@property --a (x) { }", "@property \"--a\" { }"});
   EXPECT_EQ(gtext_css_at_property_count(s.set()), 0u);
-  EXPECT_EQ(s.reasons().size(), 6u);
-  EXPECT_EQ(s.reasons()[0], "bad-name:");
+  EXPECT_EQ(s.reasons().size(), 12u);
+  EXPECT_EQ(s.reasons()[0], "bad-prelude:");
 }
 
 TEST(CssPropertyRule, UnknownDescriptorsAreIgnoredAndTheRuleStands) {
@@ -422,7 +523,7 @@ TEST(CssPropertyRule, TheLastValidRuleWins) {
 }
 
 TEST(CssPropertyRule, AnInvalidLaterRuleDoesNotReplaceAValidEarlierOne) {
-  Sheets s({"@property --a { syntax: \"<length>\"; inherits: true; initial-value: 1px } @property --a { syntax: \"<length>\"; inherits: true }"});
+  Sheets s({"@property --a { syntax: \"<length>\"; inherits: true; initial-value: 1px } @property --a { syntax: \"<length>\"; inherits: true; initial-value: 2em }"});
   GTEXT_CSS_Custom_Info info;
   ASSERT_TRUE(s.has("--a", &info));
   EXPECT_EQ(std::string(info.initial_value, info.initial_length), "1px");
@@ -487,6 +588,114 @@ TEST(CssPropertyRule, RulesInLayersAndConditionalRules) {
   gtext_css_registry_free(r);
 }
 
+/* ---- the statement form --------------------------------------------------------------------------------------------------- */
+
+/// What a registration of `css` (one sheet) came to for `name`: "-" when there is none, else `syntax|inherits|initial` ("-" for no initial value).
+std::string registration(const std::string & css, const char * name = "--a") {
+  Sheets s({css});
+  GTEXT_CSS_Custom_Info info;
+  if (!s.has(name, &info)) {
+    return "-";
+  }
+  return std::string(info.syntax, info.syntax_length) + "|" + (info.inherits ? "inherits" : "own") + "|" + (info.has_initial ? "[" + std::string(info.initial_value, info.initial_length) + "]" : "-");
+}
+
+TEST(CssPropertyRule, TheStatementIsExactlyTheRuleWithItsSyntaxAndInitialValue) {
+  // "@property <<custom-property-name>> <<css-type>>? [: <<declaration-value>>? ]? ;" is "exactly equivalent to the normal rule form": the <css-type> is the syntax descriptor, the
+  // <declaration-value> the initial-value descriptor, "The other descriptors of the @property rule are always treated as omitted. (So, for example, any property registered with this
+  // syntax will inherit.)" The draft's examples: `@property --foo <integer>: 0;` is `@property --foo { syntax: "<integer>"; initial-value: 0 }`, and
+  // `@property --bar type(narrow | normal | wide);` is `@property --bar { syntax: "narrow | normal | wide" }`.
+  EXPECT_EQ(registration("@property --a <integer>: 0;"), "<integer>|inherits|[0]");
+  EXPECT_EQ(registration("@property --a { syntax: \"<integer>\"; initial-value: 0 }"), "<integer>|inherits|[0]");
+  EXPECT_EQ(registration("@property --a type(narrow | normal | wide);"), "narrow | normal | wide|inherits|-");
+  EXPECT_EQ(registration("@property --a { syntax: \"narrow | normal | wide\" }"), "narrow | normal | wide|inherits|-");
+  EXPECT_EQ(registration("@property --a <length>;"), "<length>|inherits|-");
+  EXPECT_EQ(registration("@property --a;"), "*|inherits|-");
+  EXPECT_EQ(registration("@property --a <length> : 5px ;"), "<length>|inherits|[5px]") << "white space around the colon and before the semicolon";
+  EXPECT_EQ(registration("@property --a<length>:5px;"), "<length>|inherits|[5px]");
+  EXPECT_EQ(registration("@property --a <length>#: 1px, 2px;"), "<length>#|inherits|[1px, 2px]");
+  EXPECT_EQ(registration("@property --a <length>+: 1px 2px;"), "<length>+|inherits|[1px 2px]");
+  EXPECT_EQ(registration("@property --a auto: auto;"), "auto|inherits|[auto]") << "one keyword is one syntax component";
+  EXPECT_EQ(registration("@property --a type(*): 5;"), "*|inherits|[5]") << "the universal syntax is written type(*)";
+  EXPECT_EQ(registration("@property --a type(<length> | auto): auto;"), "<length> | auto|inherits|[auto]");
+  EXPECT_EQ(registration("@property --a type( <color># ): red, blue;"), "<color>#|inherits|[red, blue]") << "type() of one component";
+}
+
+TEST(CssPropertyRule, TheColonDecidesWhetherThereIsAnInitialValue) {
+  // "Whether or not this component is omitted is determined by the presence or absence of the colon separator; the <declaration-value> itself can be validly omitted to specify an
+  // empty initial value."
+  EXPECT_EQ(registration("@property --a;"), "*|inherits|-");
+  EXPECT_EQ(registration("@property --a:;"), "*|inherits|[]");
+  EXPECT_EQ(registration("@property --a : ;"), "*|inherits|[]");
+  EXPECT_EQ(registration("@property --a: 7;"), "*|inherits|[7]");
+  EXPECT_EQ(registration("@property --a <length>:;"), "<length>|inherits|-") << "an empty value is no <length>: the initial value is ignored";
+  EXPECT_EQ(registration("@property --a { initial-value: }"), "*|inherits|[]") << "as the rule form says it";
+}
+
+TEST(CssPropertyRule, AnInvalidInitialValueOfAStatementIsIgnoredAsTheRulesIs) {
+  // the statement is the rule with the two descriptors, so the descriptor rules apply: a value that is not of the type is ignored, one that needs the element refuses the registration
+  EXPECT_EQ(registration("@property --a <length>: red;"), "<length>|inherits|-");
+  EXPECT_EQ(registration("@property --a <length>: 3em;"), "-");
+  EXPECT_EQ(registration("@property --a <length>: var(--q);"), "-");
+  EXPECT_EQ(registration("@property --a: var(--q);"), "*|inherits|-");
+  Sheets s({"@property --a <length>: red; @property --b <length>: 3em;"});
+  const auto r = s.reasons();
+  ASSERT_EQ(r.size(), 2u);
+  EXPECT_EQ(r[0], "bad-initial-value:--a");
+  EXPECT_EQ(r[1], "not-computationally-independent:--b");
+}
+
+TEST(CssPropertyRule, AStatementThatIsNotOfTheGrammarIsIgnored) {
+  // <css-type> = <syntax-component> | type(<syntax>): a syntax that needs a combinator is wrapped, `*` is `type(*)`, a name is one name, and the value is a <declaration-value>
+  for (const char * css : {"@property --a, --b <length>;", "@property --a <foo>;", "@property --a <length> | auto;", "@property --a *;", "@property --a <length> 5px;",
+                           "@property --a <length>: 5px !important;", "@property <length>;", "@property a <length>;", "@property --a type();", "@property --a type(<length>) <number>;",
+                           "@property --a '<length>';", "@property --a <length>: \"a\nb\";",
+                           "@property --a type(<length> | <foo>);", "@property --a <length> <number>;", "@property --a: 1 ) 2;", "@property;", "@property --a, --b;",
+                           "@property --a <length>: 5px { inherits: false }"}) {
+    EXPECT_EQ(registration(std::string(css) + " "), "-") << css;
+  }
+  Sheets s({"@property --a <foo>;"});
+  ASSERT_EQ(s.reasons().size(), 1u);
+  EXPECT_EQ(s.reasons()[0], "bad-prelude:");
+}
+
+TEST(CssPropertyRule, AStatementIsRegisteredWhereARuleIsAndRankedWithTheRules) {
+  // it is a CSSPropertyRule like the rule form: layers and the last one in stylesheet order decide, and a statement inside a style rule is no rule of one
+  Sheets s({"@property --a <length>: 1px; @property --a { syntax: \"<length>\"; initial-value: 2px } @property --a <length>: 3px;",
+            "@layer l { @property --b <length>: 1px; } @property --b <length>: 2px; @layer m { @property --c <length>: 3px; } a { @property --d <length>: 4px; }"});
+  GTEXT_CSS_Custom_Info info;
+  ASSERT_TRUE(s.has("--a", &info));
+  EXPECT_EQ(std::string(info.initial_value, info.initial_length), "3px");
+  ASSERT_TRUE(s.has("--b", &info));
+  EXPECT_EQ(std::string(info.initial_value, info.initial_length), "2px");
+  EXPECT_TRUE(s.has("--c"));
+  EXPECT_FALSE(s.has("--d"));
+  Computed c;
+  compute(s.w, c, "");
+  EXPECT_EQ(c.custom("--a"), "3px");
+}
+
+TEST(CssPropertyRule, ARegisteredStatementComputesLikeTheRuleForm) {
+  Sheets s({"@property --a <length>: 5px; @property --b <length>;"});
+  Computed p, c, d;
+  compute(s.w, p, "font-size: 10px");
+  EXPECT_EQ(p.custom("--a"), "5px");
+  EXPECT_EQ(p.custom("--b"), "<gi>");
+  compute(s.w, c, "--a: 2em; --b: 2em", &p);
+  EXPECT_EQ(c.custom("--a"), "20px") << "computed against the element's own font-size, which it inherits";
+  compute(s.w, d, "", &c);
+  EXPECT_EQ(d.custom("--a"), "20px") << "any property registered with this syntax will inherit";
+}
+
+TEST(CssPropertyRule, NothingIsRegisteredByPropertyRulesTheDraftDoesNotPlaceThere) {
+  // The pinned draft places an `@property` at the top of a style sheet (and inside the group rules the cascade enters) and "directly inside of a @private rule" (private properties,
+  // which this library does not have). It says nothing of the body of an `@function` ("accepts conditional group rules ... the result descriptor ... custom properties") or of a
+  // `@mixin`: nothing registers there.
+  Sheets s({"@private { @property --a <length>: 1px; } @function --f() { @property --b <length>: 1px; result: 1; } @mixin --m() { @property --c <length>: 1px; } "
+            "@function --g() { @media all { @property --d <length>: 1px; } result: 1; }"});
+  EXPECT_EQ(gtext_css_at_property_count(s.set()), 0u);
+}
+
 /* ---- computing a registered custom property ------------------------------------------------------------------------------ */
 
 TEST(CssPropertyRule, ARegisteredLengthIsComputedToPx) {
@@ -505,6 +714,15 @@ TEST(CssPropertyRule, ARegisteredLengthIsComputedToPx) {
   EXPECT_EQ(typed("<resolution>", "1dppx", "--x: 96dpi", false), "1dppx");
   EXPECT_EQ(typed("<string>", "\"a\"", "--x: 'b'", false), "\"b\"");
   EXPECT_EQ(typed("<custom-ident>", "none", "--x: Foo", false), "Foo") << "\"For <custom-ident>, ident, or * values, the computed value is as specified.\"";
+}
+
+TEST(CssPropertyRule, ATypedPropertyWithNoInitialValueIsTheGuaranteedInvalidValueUntilSet) {
+  // "optionally, an initial value ... (defaulting to the guaranteed-invalid value)"
+  EXPECT_EQ(typed("<length>", nullptr, "", false), "<gi>");
+  EXPECT_EQ(typed("<length>", nullptr, "font-size: 10px; --x: 2em", false), "20px");
+  EXPECT_EQ(typed("<length>", nullptr, "--x: red", false), "<gi>") << "invalid at computed-value time: reset to the initial value, which is the guaranteed-invalid value";
+  EXPECT_EQ(typed("<length>", nullptr, "--x: initial", false), "<gi>");
+  EXPECT_EQ(typed("<length>", nullptr, "", true, "--x: 3px"), "3px") << "inherits";
 }
 
 TEST(CssPropertyRule, ARegisteredColorIsAColor) {
