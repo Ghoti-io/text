@@ -737,6 +737,27 @@ const mnode * mk_unresolved(mbuilder * mb, const char * text, size_t len, const 
   return n;
 }
 
+const mnode * mk_unresolved_with(mbuilder * mb, const char * text, size_t len, const GTEXT_CSS_Math_Type * type, const mnode * kid) {
+  mnode * n = mb_node(mb, GTEXT_CSS_MATH_UNRESOLVED);
+  if (!n) {
+    return NULL;
+  }
+  n->type = *type;
+  if (!copy_text(mb, text, len, &n->text)) {
+    return NULL;
+  }
+  if (kid) {
+    const mnode ** k1 = mb_kids(mb, 1);
+    if (!k1) {
+      return NULL;
+    }
+    k1[0] = kid;
+    n->kids = k1;
+    n->kid_count = 1;
+  }
+  return n;
+}
+
 /* ---- negate and invert --------------------------------------------------- */
 
 const mnode * mk_negate(mbuilder * mb, const mnode * x) {

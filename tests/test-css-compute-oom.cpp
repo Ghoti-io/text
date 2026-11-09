@@ -108,6 +108,9 @@ const char * const kShorthands[] = {
     " transition-timing-function: linear(0 20%, 0.5 10% 30%, 1), linear(0, 1); background-image: image-set(\"a\" type(\"b\"), url(c) 2x), linear-gradient(red 10% 20%, blue);"
     " content: attr(x)  'b'  var(--y)",
     "--a: 1; --b: 2; --a: 3; box-shadow: 1px 2px 0 red, inset 0 0 1px blue; text-shadow: 1px 1px",
+    /* anchor functions: the fallback is an operand of the leaf, in the arena of the tree it is part of */
+    "max-width: anchor-size(width, 28%); max-height: calc(28% + anchor-size(height, calc(1px + 1em))); left: anchor(--a right, 3px); top: calc(8.5% + anchor(top, min(1px, 2px))); "
+    "width: anchor-size(--b width, 0); margin-left: anchor-size(2px)",
 };
 
 TEST(CssComputeOom, ABlockOfShorthandsBuiltAndWrittenSweptOverEveryAllocation) {
@@ -337,6 +340,18 @@ TEST(CssComputeOom, ComputingAStyleSweptOverEveryAllocation) {
                        "text-decoration-color: alpha(from color-mix(in lab, currentcolor 20%, white) / calc(alpha * 0.5)); caret-color: lab(calc(50 + 10) 30 50); "
                        "font-palette: palette-mix(in srgb, dark 10%, palette-mix(light 30%, normal)); dynamic-range-limit: dynamic-range-limit-mix(no-limit 10%, standard 30%); "
                        "transition-timing-function: step-start, linear(0 0% 50%, 1 50% 100%), steps(calc(-10), start); animation-timing-function: steps(3, end)", 20u);
+}
+
+/* Anchor Positioning 1, "Resolution of anchor()": a function that cannot be resolved is its fallback, or makes the declaration invalid at computed-value time. The rebuild of the
+   calculation puts the fallback in the place of the function, so the allocations of a computation that substitutes, one that keeps the function and one that invalidates are each swept. */
+TEST(CssComputeOom, AnchorFunctionsThatAreSubstitutedKeptAndInvalidSweptOverEveryAllocation) {
+  sweep_computed_style("font-size: 20px",
+                       "position: absolute; max-width: anchor-size(width, 28%); max-height: calc(28% + anchor-size(height, calc(1px + 1em))); "
+                       "top: calc(8.5% + anchor(top, min(1px, 2px))); left: anchor(top, 5px); width: calc(anchor-size(width, 5%) + anchor-size(height, 2em)); "
+                       "margin-left: calc(1px + anchor-size(width)); right: anchor(top)", 10u);
+  sweep_computed_style("font-size: 20px",
+                       "position: absolute; position-anchor: --a; max-width: anchor-size(width, 28%); left: anchor(--a right, 3px); top: calc(8.5% + anchor(--a top, 1em))", 5u);
+  sweep_computed_style("font-size: 20px", "position: relative; max-width: anchor-size(width, calc(10% + 1em)); top: anchor(bottom, 1px); margin-top: anchor-size(width)", 5u);
 }
 
 /* The rewrites of the shape family (css_algo_shape: shapes, gradients, filters, the image form of light-dark(), easing, position-area and the corner shapes), ident() with a

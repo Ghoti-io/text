@@ -306,6 +306,81 @@ TEST(CssomComputed, TheButtonAPhysicalDirectionNamesIsTheOneOfTheWritingModeAndD
   }
 }
 
+/* Anchor Positioning 1, "Resolution of anchor()" and "Resolution of anchor-size()": "An anchor() function is a resolvable anchor function only if all the following conditions are true:
+   It's applied to an absolutely positioned box ... There is a target anchor element for the box it's used on, and the <anchor-name> value specified in the function. If any of these
+   conditions are false, the anchor() function computes to its specified fallback value. If no fallback value is specified, it makes the declaration referencing it invalid at
+   computed-value time." and, for a function with no <anchor-name>, "If |anchor spec| was not passed, return the default anchor element if it exists, otherwise return nothing", the
+   default anchor element being what 'position-anchor' says: "none: The box has no default anchor element" and "normal: If 'position-area' is none, behaves as none. Otherwise, behaves as
+   auto" (the implicit anchor element, which a host language defines). The page css-anchor-position/anchor-invalid-fallback.html asks it of an element that has no position-anchor. */
+TEST(CssomComputed, AnAnchorFunctionOfABoxThatCannotHaveAnAnchorComputesToItsFallback) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "div { position: absolute; font-size: 10px; }"
+       "#sizes { max-width: anchor-size(width, 28%); max-height: calc(28% + anchor-size(height, 1px)); }"
+       "#insets { left: anchor(right, 17px); top: calc(8.5% + anchor(top, 1px)); width: anchor-size(width, 42px); }"
+       "#em { max-width: anchor-size(width, 2em); margin-left: anchor-size(height, calc(1px + 1em)); }"
+       "#nested { max-width: calc(anchor-size(width, 28%) + anchor-size(width, 4px)); }"
+       "#math { max-width: anchor-size(width, min(10px, 20px)); }"
+       "#static { position: static; top: anchor(top, 5px); }"
+       "#relative { position: relative; max-width: anchor-size(width, 7px); }"
+       "#none { position-anchor: none; max-width: anchor-size(width, 6px); }"
+       "#area { position-area: top; max-width: anchor-size(width, 6px); }"
+       "#named { max-width: anchor-size(--a width, 6px); left: anchor(--a right, 3px); }"
+       "#auto { position-anchor: auto; max-width: anchor-size(width, 6px); }"
+       "#dashed { position-anchor: --a; max-width: anchor-size(width, 6px); }"
+       "#matchparent { position-anchor: match-parent; max-width: anchor-size(width, 6px); }"
+       "#nofallback { max-width: 30px; max-width: anchor-size(width); left: 5px; left: anchor(left); margin-left: 3px; margin-left: calc(1px + anchor-size(width)); }"
+       "#staticnofallback { position: static; top: 4px; top: anchor(top); }"
+       "#axis { left: anchor(--a top, 5px); top: anchor(--a top, 6px); right: anchor(top); bottom: anchor(--a left, 8px); }"
+       "#logical { inset-inline-start: anchor(--a top, 7px); inset-block-start: anchor(--a top, 9px); inset-inline-end: anchor(--a start, 10px); }"
+       "#vertical { writing-mode: vertical-rl; inset-inline-start: anchor(--a top, 7px); inset-block-start: anchor(--a top, 9px); }"
+       "#sizeaxis { width: anchor-size(--a height, 11px); }"
+       "#calcs { max-height: calc(1px + anchor-size(--a height, 2px)); left: calc(1px + anchor(--a top, 3px)); top: calc(2px + anchor(--a top, 4px)); }"
+       "</style></head><body><div id=sizes></div><div id=insets></div><div id=em></div><div id=nested></div><div id=math></div><div id=static></div><div id=relative></div>"
+       "<div id=none></div><div id=area></div><div id=named></div><div id=auto></div><div id=dashed></div><div id=matchparent></div><div id=nofallback></div>"
+       "<div id=staticnofallback></div><div id=axis></div><div id=logical></div><div id=vertical></div><div id=sizeaxis></div><div id=calcs></div></body></html>");
+  auto read = [&](const char * element, const char * property) {
+    Decl d = m.computed(element, nullptr);
+    return get(d.d, property);
+  };
+  EXPECT_EQ(read("#sizes", "max-width"), "28%") << "no position-anchor: normal is none when position-area is none, so there is no default anchor element";
+  EXPECT_EQ(read("#sizes", "max-height"), "calc(28% + 1px)") << "the fallback takes the place of the function in the calculation";
+  EXPECT_EQ(read("#insets", "left"), "17px");
+  EXPECT_EQ(read("#insets", "top"), "calc(8.5% + 1px)");
+  EXPECT_EQ(read("#insets", "width"), "42px");
+  EXPECT_EQ(read("#em", "max-width"), "20px") << "the fallback is a computed value: em is made px";
+  EXPECT_EQ(read("#em", "margin-left"), "11px") << "a calculation of lengths is one length";
+  EXPECT_EQ(read("#nested", "max-width"), "calc(28% + 4px)");
+  EXPECT_EQ(read("#math", "max-width"), "10px");
+  EXPECT_EQ(read("#static", "top"), "5px") << "a box that is not absolutely positioned has no anchor";
+  EXPECT_EQ(read("#relative", "max-width"), "7px");
+  EXPECT_EQ(read("#none", "max-width"), "6px") << "position-anchor: none";
+  EXPECT_EQ(read("#area", "max-width"), "anchor-size(width, 6px)") << "position-anchor: normal behaves as auto when position-area is not none: the implicit anchor element is the host's";
+  EXPECT_EQ(read("#named", "max-width"), "anchor-size(--a width, 6px)") << "whether an anchor of that name exists is a fact of the boxes";
+  EXPECT_EQ(read("#named", "left"), "anchor(--a right, 3px)");
+  EXPECT_EQ(read("#auto", "max-width"), "anchor-size(width, 6px)");
+  EXPECT_EQ(read("#dashed", "max-width"), "anchor-size(width, 6px)");
+  EXPECT_EQ(read("#matchparent", "max-width"), "anchor-size(width, 6px)");
+  EXPECT_EQ(read("#nofallback", "max-width"), "none") << "invalid at computed-value time: the initial value of a property that is not inherited, whatever the cascade had below";
+  EXPECT_EQ(read("#nofallback", "left"), "auto");
+  EXPECT_EQ(read("#nofallback", "margin-left"), "0px") << "a calculation with an anchor function that has no fallback makes the whole declaration invalid";
+  EXPECT_EQ(read("#staticnofallback", "top"), "auto");
+  /* "If its <anchor-side> specifies a physical keyword, it's specified in an inset property applicable to that axis. (For example, anchor()/left can only be used in 'left', 'right', or a
+     logical inset property in the horizontal axis.)": a function that is not is unresolvable, whether or not an anchor of that name exists */
+  EXPECT_EQ(read("#axis", "left"), "5px") << "a vertical side in a horizontal property";
+  EXPECT_EQ(read("#axis", "top"), "anchor(--a top, 6px)") << "a vertical side in a vertical one: the anchor may exist";
+  EXPECT_EQ(read("#axis", "right"), "auto") << "no fallback: invalid at computed-value time";
+  EXPECT_EQ(read("#axis", "bottom"), "8px");
+  EXPECT_EQ(read("#logical", "inset-inline-start"), "7px") << "the inline axis of a horizontal-tb box is horizontal";
+  EXPECT_EQ(read("#logical", "inset-block-start"), "anchor(--a top, 9px)");
+  EXPECT_EQ(read("#logical", "inset-inline-end"), "anchor(--a start, 10px)") << "a side that is not physical is of the property's own axis";
+  EXPECT_EQ(read("#vertical", "inset-inline-start"), "anchor(--a top, 7px)") << "the inline axis of a vertical-rl box is vertical";
+  EXPECT_EQ(read("#vertical", "inset-block-start"), "9px");
+  EXPECT_EQ(read("#sizeaxis", "width"), "anchor-size(--a height, 11px)") << "an anchor-size() may name either dimension in any sizing property";
+  EXPECT_EQ(read("#calcs", "max-height"), "calc(1px + anchor-size(--a height, 2px))") << "a named function of a calculation is kept";
+  EXPECT_EQ(read("#calcs", "left"), "4px") << "a vertical side in a horizontal property, in a calculation";
+  EXPECT_EQ(read("#calcs", "top"), "calc(2px + anchor(--a top, 4px))");
+}
+
 /* "for highlight pseudo-elements originating from the root element the inherited value of 'color' is currentColor": the keyword, which each element that inherits it reads as its own color */
 TEST(CssomComputed, TheColorOfARootHighlightIsCurrentColorAndStandsForTheColorOfTheElementThatInheritsIt) {
   Cs m("<!DOCTYPE html><html><head><style>"

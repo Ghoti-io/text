@@ -512,6 +512,148 @@ static bool mr_push_frame(mrebuild * r, GTEXT_Allocator * a, const GTEXT_CSS_Mat
   return true;
 }
 
+/// "If its <anchor-side> specifies a physical keyword, it's specified in an inset property applicable to that axis. (For example, anchor()/left can only be used in 'left', 'right', or a
+/// logical inset property in the horizontal axis.)": a function that is not is unresolvable, whatever the tree holds. `side` is the side the function names (NULL for `anchor-size()` and for a
+/// percentage); one that is not physical (`start`, `inside` ...) is of the property's own axis and is never in the wrong one.
+static bool anchor_side_in_the_wrong_axis(css_state * st, GTEXT_CSS_Property_Id property, const char * side, size_t n) {
+  if (!side) {
+    return false;
+  }
+  static const struct {
+    const char * name;
+    int kind;   /* 0 vertical, 1 horizontal, 2 the block axis, 3 the inline axis */
+  } axes[] = {{"top", 0}, {"bottom", 0}, {"left", 1}, {"right", 1}, {"inset-block-start", 2}, {"inset-block-end", 2}, {"inset-inline-start", 3}, {"inset-inline-end", 3}};
+  int want = -1;
+  for (size_t k = 0; k < 4; k++) {
+    if (n == strlen(axes[k].name) && memcmp(side, axes[k].name, n) == 0) {
+      want = axes[k].kind;
+    }
+  }
+  if (want < 0) {
+    return false;
+  }
+  GTEXT_CSS_Property_Info info;
+  if (!gtext_css_registry_property_info(st->cc->registry, property, &info)) {
+    return false;
+  }
+  for (size_t k = 0; k < sizeof axes / sizeof *axes; k++) {
+    if (info.name_length != strlen(axes[k].name) || memcmp(info.name, axes[k].name, info.name_length) != 0) {
+      continue;
+    }
+    const GTEXT_CSS_Axis has = axes[k].kind < 2 ? (axes[k].kind == 0 ? GTEXT_CSS_AXIS_VERTICAL : GTEXT_CSS_AXIS_HORIZONTAL)
+                                                : gtext_css_flow_axis(&st->style->flow, axes[k].kind == 3);
+    return has != (want == 0 ? GTEXT_CSS_AXIS_VERTICAL : GTEXT_CSS_AXIS_HORIZONTAL);
+  }
+  return false;
+}
+
+/// What a function of a calculation (an unresolved leaf) names: `anchor(` or `anchor-size(`, the name and a space when there is one, the side (or the size), then `, ` and the fallback, or `)`
+/// (anchor_leaf() writes it so). `*side` is NULL unless the side is a physical keyword.
+static void anchor_text_parts(const GTEXT_CSS_String * text, size_t head, bool * named, const char ** side, size_t * side_len) {
+  size_t i = head;
+  *named = i + 1 < text->length && text->data[i] == '-' && text->data[i + 1] == '-';
+  if (*named) {
+    while (i < text->length && text->data[i] != ' ' && text->data[i] != ',' && text->data[i] != ')') {
+      i++;
+    }
+    i += i < text->length && text->data[i] == ' ' ? 1 : 0;
+  }
+  size_t j = i;
+  while (j < text->length && text->data[j] != ' ' && text->data[j] != ',' && text->data[j] != ')') {
+    j++;
+  }
+  *side = text->data + i;
+  *side_len = j - i;
+}
+
+/// The same for a function that is a value of its own (`max-width: anchor-size(width, 28%)`: the grammar's `<anchor-size()>`), whose arguments are lists of the values the grammar matched
+/// (a name, a keyword, a `,` token and the fallback). The fallback is the value after the comma, or, for `anchor-size()`, a length that stands alone ("the engine's grammar takes it so").
+static bool function_is(const GTEXT_CSS_Value * v, const char * name) {
+  const size_t n = strlen(name);
+  if (!v->text.data || v->text.length != n) {
+    return false;
+  }
+  for (size_t i = 0; i < n; i++) {
+    char a = v->text.data[i];
+    a = a >= 'A' && a <= 'Z' ? (char)(a - 'A' + 'a') : a;
+    if (a != name[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+typedef struct {
+  const GTEXT_CSS_Value * fallback;
+  bool comma, named;
+  const char * side;
+  size_t side_len;
+} anchor_parts;
+
+static void anchor_scan(const GTEXT_CSS_Value * v, bool is_size, anchor_parts * p, int depth) {
+  if (depth > 8) {
+    return;
+  }
+  for (size_t i = 0; i < v->child_count; i++) {
+    const GTEXT_CSS_Value * c = &v->children[i];
+    if (c->kind == GTEXT_CSS_VAL_LIST) {
+      anchor_scan(c, is_size, p, depth + 1);
+    }
+    else if (c->kind == GTEXT_CSS_VAL_TOKEN) {
+      p->comma = p->comma || (c->text.length == 1 && c->text.data && c->text.data[0] == ',');
+    }
+    else if (c->kind == GTEXT_CSS_VAL_DASHED_IDENT) {
+      p->named = true;
+    }
+    else if (c->kind == GTEXT_CSS_VAL_KEYWORD) {
+      if (!p->side) {
+        p->side = c->text.data;
+        p->side_len = c->text.length;
+      }
+    }
+    else if (p->comma || is_size) {
+      p->fallback = c;
+    }
+  }
+}
+
+/// Anchor Positioning 1, "Resolution of anchor()" and "Resolution of anchor-size()": "An anchor() function is a resolvable anchor function only if all the following conditions are true: It's
+/// applied to an absolutely positioned box ... There is a target anchor element for the box it's used on, and the <anchor-name> value specified in the function. If any of these conditions
+/// are false, the anchor() function computes to its specified fallback value. If no fallback value is specified, it makes the declaration referencing it invalid at computed-value time."
+/// Three of the conditions are facts of the computed style of the box and are decided here: the box is absolutely positioned when its `position` is `absolute` or `fixed`; a physical side
+/// is in an inset property of its own axis (anchor_side_in_the_wrong_axis()); and a function with no
+/// <anchor-name> is for the default anchor element ("If |anchor spec| was not passed, return the default anchor element if it exists, otherwise return nothing"), which 'position-anchor' gives:
+/// `none` is no anchor, and `normal` "behaves as none" when 'position-area' is `none`. Whether an anchor that a name, `auto` or `match-parent` gives exists and is acceptable is a fact of the
+/// tree and of the boxes, which is the layout's: a function that may resolve there is left as it is. The properties are read only when they are computed (tools/css/compute_order.tsv puts them
+/// ahead of every property an anchor function is valid in).
+static bool anchor_unresolvable(css_state * st, GTEXT_CSS_Property_Id property, bool is_anchor, bool named, const char * side, size_t side_len) {
+  const GTEXT_CSS_Registry * reg = st->cc->registry;
+  const GTEXT_CSS_Property_Id position = gtext_css_registry_find_property(reg, "position", 8);
+  if (!position || !st->done[position - 1]) {
+    return false;
+  }
+  const GTEXT_CSS_Value * pv = gtext_css_value_set_root(st->style->vals[position - 1]);
+  if (!css_val_is_keyword(pv, "absolute") && !css_val_is_keyword(pv, "fixed")) {
+    return true;
+  }
+  if (is_anchor && anchor_side_in_the_wrong_axis(st, property, side, side_len)) {
+    return true;
+  }
+  if (named) {
+    return false;
+  }
+  const GTEXT_CSS_Property_Id anchor = gtext_css_registry_find_property(reg, "position-anchor", 15);
+  const GTEXT_CSS_Property_Id area = gtext_css_registry_find_property(reg, "position-area", 13);
+  if (!anchor || !area || !st->done[anchor - 1] || !st->done[area - 1]) {
+    return false;
+  }
+  const GTEXT_CSS_Value * av = gtext_css_value_set_root(st->style->vals[anchor - 1]);
+  if (css_val_is_keyword(av, "none")) {
+    return true;
+  }
+  return css_val_is_keyword(av, "normal") && css_val_is_keyword(gtext_css_value_set_root(st->style->vals[area - 1]), "none");
+}
+
 /// One node of the calculation with its operands (already rebuilt) made again.
 static const GTEXT_CSS_Math_Node * mr_node(cv_walk * w, mrebuild * r, const GTEXT_CSS_Math_Node * n, const GTEXT_CSS_Math_Node * const * args) {
   mbuilder * mb = &r->mb;
@@ -519,6 +661,7 @@ static const GTEXT_CSS_Math_Node * mr_node(cv_walk * w, mrebuild * r, const GTEX
   case GTEXT_CSS_MATH_NUMBER:
     return mk_number(mb, n->value);
   case GTEXT_CSS_MATH_PERCENT:
+    mb->saw_percent = true;
     return mk_percent(mb, n->value);
   case GTEXT_CSS_MATH_DIMENSION: {
     double v = n->value;
@@ -550,6 +693,21 @@ static const GTEXT_CSS_Math_Node * mr_node(cv_walk * w, mrebuild * r, const GTEX
         return NULL;
       }
       return mk_number(mb, v);
+    }
+    /* an anchor function that cannot be resolved is its fallback (the operand it holds, rebuilt), or, with none, makes the whole value invalid at computed-value time */
+    const bool is_anchor = n->text.length >= 7 && memcmp(n->text.data, "anchor(", 7) == 0;
+    const bool is_size = n->text.length >= 12 && memcmp(n->text.data, "anchor-size(", 12) == 0;
+    if (is_anchor || is_size) {
+      bool named;
+      const char * side;
+      size_t side_len;
+      anchor_text_parts(&n->text, is_anchor ? 7 : 12, &named, &side, &side_len);
+      if (anchor_unresolvable(w->st, w->property, is_anchor, named, is_anchor ? side : NULL, side_len)) {
+        if (n->kid_count == 1 && args) {
+          return args[0];
+        }
+        w->st->range_invalid = true;
+      }
     }
     r->has_symbols = true;
     return n; /* shared: it lives in the source set */
@@ -720,7 +878,7 @@ static GTEXT_CSS_Status leaf_math(cv_walk * w, const GTEXT_CSS_Value * src, GTEX
   nm->root = root;
   nm->type = root->type;
   nm->category = css_math_type_category(&root->type);
-  nm->has_percent = m->has_percent;
+  nm->has_percent = m->has_percent || r.mb.saw_percent;   /* a fallback that stood for an anchor function may have brought the percentage */
   nm->has_symbols = r.has_symbols;
   nm->node_count = r.mb.nodes;
   char * text = NULL;
@@ -1007,6 +1165,22 @@ static GTEXT_CSS_Status by_type_impl(css_state * st, const GTEXT_CSS_Value_Set *
         status = image_set_give_resolution(&w, &done, &node_changed);
         if (status != GTEXT_CSS_OK) {
           break;
+        }
+      }
+      if (done.kind == GTEXT_CSS_VAL_FUNCTION && (function_is(&done, "anchor") || function_is(&done, "anchor-size"))) {
+        /* a function of the property's grammar (`<anchor()>`, `<anchor-size()>`): a calculation holds its own as a leaf (mr_node()) */
+        const bool is_anchor = function_is(&done, "anchor");
+        anchor_parts parts;
+        memset(&parts, 0, sizeof parts);
+        anchor_scan(&done, !is_anchor, &parts, 0);
+        if (anchor_unresolvable(st, w.property, is_anchor, parts.named, is_anchor ? parts.side : NULL, parts.side_len)) {
+          if (parts.fallback) {
+            done = *parts.fallback;
+            node_changed = true;
+          }
+          else {
+            st->range_invalid = true;
+          }
         }
       }
       nframes--;

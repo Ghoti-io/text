@@ -625,8 +625,8 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {1, 0, 0, 0, 0, 0, 0}, /* pointer-timeline-axis */
   {1, 0, 0, 0, 0, 0, 0}, /* pointer-timeline-name */
   {1, 0, 0, 0, 23, 0, 0}, /* position */
-  {1, 0, 0, 0, 0, 0, 0}, /* position-anchor */
-  {3, 41, 0, 0, 0, 0, 0}, /* position-area */
+  {1, 0, 0, 0, 27, 0, 0}, /* position-anchor */
+  {3, 41, 0, 0, 26, 0, 0}, /* position-area */
   {4, 0, 3, 0, 0, 0, 0}, /* position-try */
   {3, 41, 0, 0, 0, 0, 0}, /* position-try-fallbacks */
   {1, 0, 0, 0, 0, 0, 0}, /* position-try-order */
@@ -872,5 +872,5 @@ const char gtext_css_tbl_compute_pool[20] = {
 const size_t gtext_css_tbl_compute_pool_size = 20;
 
 /* the properties computed first, by property index + 1, in order */
-const size_t gtext_css_tbl_compute_order_count = 25;
-const uint32_t gtext_css_tbl_compute_order[25] = {819, 323, 744, 242, 361, 370, 385, 386, 367, 368, 452, 213, 200, 157, 192, 147, 141, 184, 178, 531, 259, 618, 586, 352, 324};
+const size_t gtext_css_tbl_compute_order_count = 27;
+const uint32_t gtext_css_tbl_compute_order[27] = {819, 323, 744, 242, 361, 370, 385, 386, 367, 368, 452, 213, 200, 157, 192, 147, 141, 184, 178, 531, 259, 618, 586, 352, 324, 588, 587};

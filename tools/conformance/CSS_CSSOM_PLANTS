@@ -469,3 +469,16 @@ scroll-button-direction-matched-by-spelling	css_match.c	    return b->anb_a != 1
 scroll-button-flow-not-passed-by-the-style	css_style.c	    ro.flow = options->pseudo_flow;	    ro.flow = NULL;	computed
 scroll-button-flow-not-passed-by-the-document	cssom_computed.c	    so.pseudo_flow = &origin_flow;	    so.pseudo_flow = NULL;	computed
 scroll-button-flow-not-given-to-the-matcher	css_rule_index.c	  ctx->request_flow = pseudo && options ? options->flow : NULL;	  ctx->request_flow = NULL;	computed
+anchor-function-resolvable-in-a-box-that-is-not-absolutely-positioned	css_compute_value.c	  if (!css_val_is_keyword(pv, "absolute") && !css_val_is_keyword(pv, "fixed")) {\n    return true;	  if (!css_val_is_keyword(pv, "absolute") && !css_val_is_keyword(pv, "fixed")) {\n    return false;	computed
+anchor-position-anchor-none-has-a-default-anchor	css_compute_value.c	  if (css_val_is_keyword(av, "none")) {\n    return true;	  if (css_val_is_keyword(av, "none")) {\n    return false;	computed
+anchor-position-anchor-normal-is-none-whatever-position-area-is	css_compute_value.c	  return css_val_is_keyword(av, "normal") && css_val_is_keyword(gtext_css_value_set_root(st->style->vals[area - 1]), "none");	  return css_val_is_keyword(av, "normal");	computed
+anchor-function-without-a-fallback-is-kept	css_compute_value.c	        w->st->range_invalid = true;\n      }\n    }\n    r->has_symbols = true;	        r->has_symbols = true;\n      }\n    }\n    r->has_symbols = true;	computed
+anchor-function-keeps-its-fallback-for-later	css_compute_value.c	        if (n->kid_count == 1 && args) {\n          return args[0];\n        }	        if (0 && n->kid_count == 1 && args) {\n          return args[0];\n        }	computed
+anchor-function-has-no-fallback-operand	css_math.c	    leaf = mk_unresolved_with(mb, t.d, t.n, &length, fallback_node);	    leaf = mk_unresolved_with(mb, t.d, t.n, &length, NULL);	computed
+anchor-function-named-is-unresolvable	css_compute_value.c	  if (named) {\n    return false;	  if (named) {\n    return true;	computed
+anchor-function-value-keeps-the-function-when-unresolvable	css_compute_value.c	            done = *parts.fallback;\n            node_changed = true;	            node_changed = false;	computed
+anchor-physical-side-never-in-the-wrong-axis	css_compute_value.c	  if (is_anchor && anchor_side_in_the_wrong_axis(st, property, side, side_len)) {\n    return true;	  if (is_anchor && anchor_side_in_the_wrong_axis(st, property, side, side_len)) {\n    return false;	computed
+anchor-inline-axis-is-the-block-axis	css_compute_value.c	gtext_css_flow_axis(&st->style->flow, axes[k].kind == 3)	gtext_css_flow_axis(&st->style->flow, axes[k].kind == 9)	computed
+anchor-leaf-name-not-seen	css_compute_value.c	  *named = i + 1 < text->length && text->data[i] == '-' && text->data[i + 1] == '-';	  *named = false;	computed
+anchor-function-value-comma-not-seen	css_compute_value.c	      p->comma = p->comma || (c->text.length == 1 && c->text.data && c->text.data[0] == ',');	      p->comma = p->comma;	computed
+anchor-function-value-name-not-seen	css_compute_value.c	      p->named = true;	      p->named = false;	computed

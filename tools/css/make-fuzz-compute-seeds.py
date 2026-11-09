@@ -119,6 +119,11 @@ PAIRS = [
     ("", "stroke-width: 0; fill: currentcolor; stroke: url(#a) red; stroke-dasharray: 1 2, 3"),
     ("", "gap: 1px 2px; row-gap: calc(1em + 1px); column-gap: normal; aspect-ratio: 16 / 9"),
     ("font-size: 10px; color: red", "border-top-color: currentcolor; background-color: currentcolor; box-shadow: 1px 1px red"),
+    # anchor functions: substituted by the fallback, kept, and invalid at computed-value time (Anchor Positioning 1, "Resolution of anchor()")
+    ("font-size: 10px", "position: absolute; max-width: anchor-size(width, 28%); max-height: calc(28% + anchor-size(height, calc(1px + 1em))); top: calc(8.5% + anchor(top, min(1px, 2px)))"),
+    ("", "position: absolute; position-anchor: --a; left: anchor(--a right, 3px); max-width: anchor-size(width, 6px); margin-left: calc(1px + anchor-size(width))"),
+    ("", "position: static; top: anchor(top, 5px); left: anchor(top); right: anchor(--a left, 1px); width: anchor-size(width)"),
+    ("writing-mode: vertical-rl", "position: absolute; inset-inline-start: anchor(--a top, 7px); inset-block-start: anchor(--a top, 9px); position-anchor: none; width: anchor-size(self-block, 2px)"),
 ]
 
 
@@ -161,6 +166,7 @@ FAMILIES = [
     "font-synthesis: weight position", "font: italic bold 12px/1.5 serif", "text-align-last: match-parent", "outline-offset: inset",
     "-webkit-text-stroke: 1px red", "width: calc(10% + 0px)", "z-index: 1e400", "flex-grow: calc(1 / 0)", "width: calc(infinity * 1px)",
     "color-scheme: only dark; color: light-dark(red, blue)", "clip-path: circle(calc(min(50%, 60%)) at 1px 2px)",
+    "max-width: anchor-size(width, 28%)", "top: calc(8.5% + anchor(top, 1px))", "width: calc(anchor-size(width) + 1px)", "max-height: anchor-size(--a height, calc(1px + 2em))",
 ]
 
 

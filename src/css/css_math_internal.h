@@ -94,6 +94,8 @@ const mnode * mk_dimension(mbuilder * mb, double v, GTEXT_CSS_Unit unit);
 const mnode * mk_percent(mbuilder * mb, double v);
 const mnode * mk_symbol(mbuilder * mb, const char * name, size_t len, const GTEXT_CSS_Math_Type * type);
 const mnode * mk_unresolved(mbuilder * mb, const char * text, size_t len, const GTEXT_CSS_Math_Type * type);
+/// An unresolved leaf that holds one operand of its own, which it stands for when it cannot be resolved (the fallback of `anchor()` and `anchor-size()`); `kid` may be NULL.
+const mnode * mk_unresolved_with(mbuilder * mb, const char * text, size_t len, const GTEXT_CSS_Math_Type * type, const mnode * kid);
 
 /* ---- operators (each simplifies the node it makes, its operands being simplified) ---- */
 

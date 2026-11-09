@@ -758,12 +758,16 @@ static bool atext_put(mbuilder * mb, atext * t, const char * s, size_t n) {
 }
 
 /// A value of the position slot of an anchor function (a <percentage>, or a <length-percentage> for the fallback) written as the specified value is: the token
-/// as it serializes, `0` as `0px`, a calculation (whose nesting is bounded) as the math layer serializes it. Returns whether it was a value of the kind.
-static bool anchor_operand(mbuilder * mb, const GTEXT_CSS_Math_Context * ctx, const GTEXT_CSS_Component_Value * v, bool percentage_only, atext * out) {
+/// as it serializes, `0` as `0px`, a calculation (whose nesting is bounded) as the math layer serializes it. Returns whether it was a value of the kind. `node`, when not NULL, receives the
+/// value as a node of the builder's tree (the fallback, which the function stands for when it cannot be resolved); a percentage written in it is a percentage written in the calculation.
+static bool anchor_operand(mbuilder * mb, const GTEXT_CSS_Math_Context * ctx, const GTEXT_CSS_Component_Value * v, bool percentage_only, atext * out, const mnode ** node) {
   if (v->kind == GTEXT_CSS_VALUE_TOKEN) {
     if (v->type == GTEXT_CSS_TOKEN_PERCENTAGE || (!percentage_only && v->type == GTEXT_CSS_TOKEN_DIMENSION) ||
         (!percentage_only && v->type == GTEXT_CSS_TOKEN_NUMBER && v->number == 0)) {
       if (v->type == GTEXT_CSS_TOKEN_NUMBER) {
+        if (node && !(*node = mk_dimension(mb, 0.0, GTEXT_CSS_UNIT_PX))) {
+          return false;
+        }
         return atext_put(mb, out, "0px", 3);
       }
       if (v->type == GTEXT_CSS_TOKEN_DIMENSION) {
@@ -772,6 +776,15 @@ static bool anchor_operand(mbuilder * mb, const GTEXT_CSS_Math_Context * ctx, co
           mb_invalid(mb);
           return false;
         }
+        if (node && !(*node = mk_dimension(mb, v->number, u))) {
+          return false;
+        }
+      }
+      else if (node) {
+        if (!(*node = mk_percent(mb, v->number))) {
+          return false;
+        }
+        mb->saw_percent = true;
       }
       GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
       so.allocator = &mb->alloc;
@@ -803,7 +816,9 @@ static bool anchor_operand(mbuilder * mb, const GTEXT_CSS_Math_Context * ctx, co
     bool valid = false;
     GTEXT_CSS_Math * m = NULL;
     GTEXT_CSS_Math_Result r;
-    const GTEXT_CSS_Status st = gtext_css_math_parse(v, ctx, &mo, &valid, &m, &r);
+    /* the fallback is built in the arena of the tree it is a part of, so that the function can stand for it later (the nodes are the arena's: nothing is freed) */
+    const GTEXT_CSS_Status st = node ? css_math_build(mb->arena, &mb->alloc, v, ctx, mo.max_depth, mb->max_nodes > mb->nodes ? mb->max_nodes - mb->nodes : 1, &m, &valid, &r)
+                                     : gtext_css_math_parse(v, ctx, &mo, &valid, &m, &r);
     if (st != GTEXT_CSS_OK) {
       mb->status = st;
       mb->where = r.where;
@@ -815,6 +830,10 @@ static bool anchor_operand(mbuilder * mb, const GTEXT_CSS_Math_Context * ctx, co
     }
     const GTEXT_CSS_Math_Category cat = m->category;
     bool ok = percentage_only ? cat == GTEXT_CSS_MATH_CAT_PERCENTAGE : (cat == GTEXT_CSS_MATH_CAT_LENGTH || cat == GTEXT_CSS_MATH_CAT_PERCENTAGE);
+    if (ok && node) {
+      *node = m->root;
+      mb->saw_percent = mb->saw_percent || m->has_percent;
+    }
     if (ok) {
       char * buf = NULL;
       size_t len = 0;
@@ -831,7 +850,9 @@ static bool anchor_operand(mbuilder * mb, const GTEXT_CSS_Math_Context * ctx, co
     else {
       mb_invalid(mb);
     }
-    gtext_css_math_free(m);
+    if (!node) {
+      gtext_css_math_free(m);
+    }
     return ok;
   }
   mb_invalid(mb);
@@ -907,6 +928,7 @@ static const mnode * anchor_leaf(mbuilder * mb, const GTEXT_CSS_Math_Context * c
     return NULL;
   }
   atext t = {NULL, 0, 0};
+  const mnode * fallback_node = NULL;
   const char * fname = is_size ? "anchor-size(" : "anchor(";
   bool ok = atext_put(mb, &t, fname, strlen(fname));
   bool first = true;
@@ -922,17 +944,17 @@ static const mnode * anchor_leaf(mbuilder * mb, const GTEXT_CSS_Math_Context * c
     first = false;
   }
   if (ok && position) {
-    ok = (first || atext_put(mb, &t, " ", 1)) && anchor_operand(mb, ctx, position, true, &t);
+    ok = (first || atext_put(mb, &t, " ", 1)) && anchor_operand(mb, ctx, position, true, &t, NULL);
     first = false;
   }
   if (ok && fallback) {
-    ok = (first || atext_put(mb, &t, ", ", 2)) && anchor_operand(mb, ctx, fallback, false, &t);
+    ok = (first || atext_put(mb, &t, ", ", 2)) && anchor_operand(mb, ctx, fallback, false, &t, &fallback_node);
   }
   ok = ok && atext_put(mb, &t, ")", 1);
   const mnode * leaf = NULL;
   if (ok) {
     GTEXT_CSS_Math_Type length = gtext_css_math_category_type(GTEXT_CSS_MATH_CAT_LENGTH);
-    leaf = mk_unresolved(mb, t.d, t.n, &length);
+    leaf = mk_unresolved_with(mb, t.d, t.n, &length, fallback_node);
   }
   gtext_allocator_free(&mb->alloc, t.d);
   return leaf;

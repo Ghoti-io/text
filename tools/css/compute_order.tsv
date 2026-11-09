@@ -27,3 +27,5 @@ row-rule-style	-	row-rule-width
 position	-	float (computes to none under an absolutely positioned box), display (blockification)
 float	position	display (blockification), wrap-flow
 display	float,position	every property that reads the display of the parent (a flex or grid item)
+position-area	-	anchor() and anchor-size() are their fallback when the box has no default anchor element: position-anchor: normal is none when position-area is none (Anchor Positioning 1, "Resolution of anchor()")
+position-anchor	position-area	the same: the default anchor element, which a function with no <anchor-name> is for
