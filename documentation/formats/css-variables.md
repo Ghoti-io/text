@@ -130,6 +130,11 @@ A custom property's value is its **tokens, exactly as specified**: `--c: /* a */
 names are case-sensitive (`--foo` and `--FOO` are two properties). A value that comes from a replacement is the pieces joined, with `/**/` between two
 tokens that would otherwise merge into one (`var(--gap)px` with `--gap: 20` is `20/**/px`, not the token `20px`).
 
+A declaration's own value is trimmed of white space at both ends when it is consumed (CSS Syntax 3), and **what substitution makes of it is not trimmed again**: `--a: x var(--empty)`
+is `x ` and `--b: var(--empty) x` is ` x` (Chromium and Firefox answer so), and the white space after the value of a branch of an `if()`, up to the `;` or the `)` that ends the
+branch, is part of it (`if( style( --x : 3 ) : true_value )` is `true_value `, as the one engine that has `if()` answers), where the white space before the value, after the colon, is
+not (Values 5: a free-form production "can either (after optional whitespace) start with" a `{`). A branch of white space only has no value.
+
 The **guaranteed-invalid value** is not the empty value. `--x:;` is a valid, empty value (`margin: var(--x) 1px` is `margin: 1px`); a property that was
 never declared, or came to an invalid substitution, or is `initial`, has the guaranteed-invalid value, which is "not found" to
 `gtext_css_computed_custom_find()` and makes any `var()` of it take its fallback. `inherit` and `unset` take the parent's value, as custom properties inherit.

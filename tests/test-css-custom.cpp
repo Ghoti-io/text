@@ -537,6 +537,27 @@ TEST(CssCustom, IfPicksTheFirstTrueBranchAndElseIsAlwaysTrue) {
   EXPECT_EQ(if_value("if(media(width >= 600px): blue;)", "", media), "blue") << "\"if( [ <if-branch> ; ]* <if-branch> ;? )\": a trailing semicolon";
 }
 
+/* Values 5, "Conditional Value Selection": "<if-branch> = <if-condition> : <declaration-value>?" and, of the free-form productions (<declaration-value> among them), "A free-form production can
+   either (after optional whitespace) start with a <{-token>, or not: If it does not start with a "{" token: The production does not match any top-level commas or {} blocks. (The production
+   stops parsing at that point, so the comma or {} block is matched by the next grammar term instead ...)". The white space before the value is optional, and nothing says the white space after
+   it, up to the `;` or the `)` that ends the branch, is not part of it: Chromium, the one engine with if(), keeps it (css/css-values/if-conditionals.html expects "true_value " of
+   `if( style( --x : 3 ) : true_value )`, and the answers recorded for the probe of the white space of a branch are in the plan). */
+TEST(CssCustom, TheWhiteSpaceAfterTheValueOfABranchUpToItsSeparatorIsPartOfIt) {
+  EXPECT_EQ(if_value("if( style( --p : 3 ) : true_value )", "3"), "true_value ") << "the page's own case";
+  EXPECT_EQ(if_value("if(else: true_value )"), "true_value ") << "the last branch, ended by the parenthesis";
+  EXPECT_EQ(if_value("if(else: true_value ;)"), "true_value ") << "a branch that a semicolon ends";
+  EXPECT_EQ(if_value("if(else: true_value ;  )"), "true_value ") << "what follows the semicolon is not the branch's";
+  EXPECT_EQ(if_value("if(else: true_value; )"), "true_value") << "no white space before the semicolon";
+  EXPECT_EQ(if_value("if(else: true_value)"), "true_value");
+  EXPECT_EQ(if_value("if(else:   true_value)"), "true_value") << "the white space after the colon is the optional white space before the production";
+  EXPECT_EQ(if_value("if(else: )"), "") << "a branch of white space only has no value";
+  EXPECT_EQ(if_value("if(else: ;)"), "");
+  EXPECT_EQ(if_value("if(style(--x: 0): a ; else: b )"), "b ") << "the branch that is taken keeps its own";
+  EXPECT_EQ(if_value("if(else: a  b  )"), "a  b  ") << "inside and after";
+  EXPECT_EQ(if_value("foo if(else: a ) bar"), "foo a  bar") << "the white space after the function is the declaration's, the branch's comes before it";
+  EXPECT_EQ(if_value("if(else: var(--p) )", "bb"), "bb ");
+}
+
 TEST(CssCustom, IfWithoutAColonInABranchIsInvalid) {
   // "<if-args-branch> = <declaration-value> : <declaration-value>?"
   EXPECT_EQ(if_value("if(else red)"), "<gi>");
@@ -1235,9 +1256,10 @@ TEST(CssCustom, ComputedStylesAreImmutableAndShareableAcrossThreadsOfRead) {
   EXPECT_EQ(child.custom("--a"), "9px");
 }
 
-TEST(CssCustom, TheValueOfACustomPropertyHasNoWhiteSpaceAtEitherEndWhateverWasSubstitutedBesideIt) {
-  /* Syntax 3, "consume a declaration": the value of a declaration is trimmed of white space at both ends, so the text a declaration of the computed value would
-     have is what the computed value is. Substitution can leave a blank where a piece vanished: var() of an empty value, an if() that takes no branch. */
+TEST(CssCustom, TheValueOfACustomPropertyKeepsTheBlankThatSubstitutionLeavesAtAnEnd) {
+  /* A declaration's own value is trimmed of white space at both ends when it is consumed (Syntax 3, "consume a declaration"); what substitution makes of it is not trimmed again: Values 5,
+     "property replacement" parses the result according to the property's grammar, `<declaration-value>?` for a custom property, which has no such rule. Chromium 156.0.8078.47 and Firefox
+     158.0.1 both answer "x " for `--a: x var(--empty)` and " x" for `--b: var(--empty) x` (the page css/css-values/if-conditionals.html expects the same of an if(): "true_value "). */
   World w;
   w.condition = [](GTEXT_CSS_Condition_Kind, const std::string &) { return GTEXT_CSS_TRI_FALSE; };
   ASSERT_EQ(w.build(), GTEXT_CSS_OK);
@@ -1249,14 +1271,16 @@ TEST(CssCustom, TheValueOfACustomPropertyHasNoWhiteSpaceAtEitherEndWhateverWasSu
        {"--c", "var(--empty) x var(--empty)"},
        {"--d", "var(--empty) var(--empty)"},
        {"--e", "ight: if(media(print): 3px)"},
-       {"--f", "x var(--empty) y"}});
+       {"--f", "x var(--empty) y"},
+       {"--g", "x var(--nope, y )"}});
   ASSERT_EQ(c.status, GTEXT_CSS_OK) << c.result.name << " " << (c.result.detail ? c.result.detail : "");
-  EXPECT_EQ(c.custom("--a"), "x");
-  EXPECT_EQ(c.custom("--b"), "x");
-  EXPECT_EQ(c.custom("--c"), "x");
-  EXPECT_EQ(c.custom("--d"), "");
+  EXPECT_EQ(c.custom("--g"), "x y") << "the fallback of a var() is an argument, trimmed (Chromium answers so; Firefox keeps the blank, \"x y \")";
+  EXPECT_EQ(c.custom("--a"), "x ");
+  EXPECT_EQ(c.custom("--b"), " x");
+  EXPECT_EQ(c.custom("--c"), " x ") << "both ends";
+  EXPECT_EQ(c.custom("--d"), " ") << "the one blank between the two";
   EXPECT_EQ(c.custom("--f"), "x  y") << "white space inside the value is not touched";
-  EXPECT_EQ(c.custom("--e"), "ight:") << "the fuzz harness found this one: the computed value was `ight: `, its own declaration `ight:`";
+  EXPECT_EQ(c.custom("--e"), "ight: ") << "an if() with no branch taken is an empty token stream (Values 5): the blank before it stays (Chromium answers \"\" for such a value, which the draft does not say)";
 }
 
 } // namespace

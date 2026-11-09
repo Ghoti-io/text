@@ -370,6 +370,11 @@ std::string declarations_of(const GTEXT_CSS_Computed_Style * s, bool * ok, const
     if (text.find_first_of(";\n\r\f") != std::string::npos) {
       *ok = false;
     }
+    /* a declaration's value is trimmed when it is consumed and a substituted value is not (Chromium and Firefox keep the blank of `x var(--empty)`), so a value with a blank at an end is
+       not one that a declaration of it can make again */
+    if (!text.empty() && (text.front() == ' ' || text.front() == '\t' || text.back() == ' ' || text.back() == '\t')) {
+      *ok = false;
+    }
     out.append(name.data, name.length);
     out += ": ";
     out += text;

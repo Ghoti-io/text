@@ -4228,11 +4228,14 @@ static int step_if(css_sub * sub, size_t fi) {
       f->aux = NULL;
       const range_t br = f->args[f->branch];
       size_t vb = br.from + f->aux_n + 1, ve = br.from + br.count;
+      /* the value is "<declaration-value>?" after the colon: a free-form production "can either (after optional whitespace) start with" a `{`, so the white space before it is not part of
+         it, and nothing says the white space after it is not: it stops at the `;` or the `)` that ends the branch, which is where Chromium (the one engine with if(); css/css-values/
+         if-conditionals.html expects "true_value " of `if( style( --x : 3 ) : true_value )`) stops it too. split_args() trimmed the argument, so the white space that follows is taken back. */
+      while (ve < f->nvals && is_ws(&f->vals[ve])) {
+        ve++;
+      }
       while (vb < ve && is_ws(&f->vals[vb])) {
         vb++;
-      }
-      while (ve > vb && is_ws(&f->vals[ve - 1])) {
-        ve--;
       }
       f->phase = 15;
       const int r = seq_start(sub, fi, 1, f->csrc, f->vals + vb, ve - vb, false);
@@ -4557,25 +4560,14 @@ static int prop_finish(css_sub * sub, size_t fi) {
       }
     }
     else {
-      /* "leading and trailing white space is removed" from a declaration's value (Syntax 3, consume a declaration); a blank that substitution left at an end of
-         this one (`--e: x var(--empty)`, an if() with no branch taken) is not part of the value its own declaration would have */
-      css_rope * trimmed = NULL;
-      status = css_rope_trim_space(&sub->alloc, rope, sub->max_bytes, &sub->work, &trimmed);
-      if (status == GTEXT_CSS_E_LIMIT_OUTPUT) {
-        sub->limited++;
-        gi = true;
-      }
-      else if (status != GTEXT_CSS_OK) {
-        SUB_FAIL(sub, status);
+      /* What substitution made is the value: nothing trims it. A declaration's own value is trimmed when it is consumed (Syntax 3, "consume a declaration"), so the blank that a var() of an empty
+         value or an if() with no branch taken leaves at an end of this one (`--e: x var(--empty)`) is the substitution's, and both engines keep it (Chromium 156.0.8078.47 and Firefox
+         158.0.1 answer "x " and " x" for `x var(--empty)` and `var(--empty) x`), as does the white space that ends a branch of an if(): the page css/css-values/if-conditionals.html expects
+         "true_value " of `if( style( --x : 3 ) : true_value )`. Values 5, "property replacement": the result is parsed according to the property's grammar, and `<declaration-value>?` has none. */
+      final = tainted ? css_rope_taint(&sub->alloc, rope) : css_rope_retain(rope);
+      if (!final) {
+        SUB_FAIL(sub, GTEXT_CSS_E_OOM);
         return STEP_ERROR;
-      }
-      else {
-        final = tainted ? css_rope_taint(&sub->alloc, trimmed) : css_rope_retain(trimmed);
-        css_rope_release(trimmed);
-        if (!final) {
-          SUB_FAIL(sub, GTEXT_CSS_E_OOM);
-          return STEP_ERROR;
-        }
       }
     }
   }

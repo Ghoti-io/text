@@ -482,3 +482,5 @@ anchor-inline-axis-is-the-block-axis	css_compute_value.c	gtext_css_flow_axis(&st
 anchor-leaf-name-not-seen	css_compute_value.c	  *named = i + 1 < text->length && text->data[i] == '-' && text->data[i + 1] == '-';	  *named = false;	computed
 anchor-function-value-comma-not-seen	css_compute_value.c	      p->comma = p->comma || (c->text.length == 1 && c->text.data && c->text.data[0] == ',');	      p->comma = p->comma;	computed
 anchor-function-value-name-not-seen	css_compute_value.c	      p->named = true;	      p->named = false;	computed
+if-branch-value-trimmed-of-the-white-space-before-its-separator	css_substitute.c	      while (ve < f->nvals && is_ws(&f->vals[ve])) {\n        ve++;\n      }	      while (0 && ve < f->nvals && is_ws(&f->vals[ve])) {\n        ve++;\n      }	custom,computed
+computed-custom-property-trimmed-again-when-read	cssom_resolved.c	      st = css_property_value_keep_text(&pv, text, len);	      st = GTEXT_CSS_OK;	computed

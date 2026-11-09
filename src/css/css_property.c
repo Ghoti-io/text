@@ -984,6 +984,10 @@ static GTEXT_CSS_Status use_custom_text(GTEXT_CSS_Property_Value * out, const ch
   return GTEXT_CSS_OK;
 }
 
+GTEXT_CSS_Status css_property_value_keep_text(GTEXT_CSS_Property_Value * out, const char * text, size_t length) {
+  return use_custom_text(out, text, length);
+}
+
 GTEXT_CSS_Status gtext_css_parse_property_text(const GTEXT_CSS_Registry * registry, const char * name, size_t name_length,
     const char * text, size_t text_length, const GTEXT_CSS_Property_Options * options, GTEXT_CSS_Property_Value * out) {
   if (!out) {

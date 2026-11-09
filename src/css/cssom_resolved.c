@@ -1097,6 +1097,10 @@ GTEXT_CSS_Status css_resolved_build(const css_resolve_in * in, const GTEXT_CSS_C
     GTEXT_CSS_Property_Value pv;
     memset(&pv, 0, sizeof pv);
     st = gtext_css_parse_property_text(reg, name.data, name.length, text, len, NULL, &pv);
+    if (st == GTEXT_CSS_OK && (pv.outcome == GTEXT_CSS_PROP_RESULT_VALID || pv.outcome == GTEXT_CSS_PROP_RESULT_PENDING)) {
+      /* the parse took the white space off the ends, as a declaration's value is trimmed; the computed value is what substitution made, and has what it left */
+      st = css_property_value_keep_text(&pv, text, len);
+    }
     gtext_css_serialize_buffer_free(&so, text);
     if (st == GTEXT_CSS_OK && (pv.outcome == GTEXT_CSS_PROP_RESULT_VALID || pv.outcome == GTEXT_CSS_PROP_RESULT_PENDING || pv.outcome == GTEXT_CSS_PROP_RESULT_WIDE)) {
       st = gtext_css_block_add_custom(block, name.data, name.length, &pv, false);

@@ -353,6 +353,9 @@ bool css_mix_sums_to_zero(const GTEXT_Allocator * a, const char * text, size_t l
 /// Trim the text of a custom property's value: the white space and the comments before its first token and after its last are not part of it ("the original text" is
 /// that of the tokens, and a comment is no token), those between are. Strings are stepped over. `*s` and `*n` are narrowed.
 void css_trim_value_text(const char ** s, size_t * n);
+/// The text of a custom property's value, as the value is to be written: the parse of a declaration trims it, and a computed value is not a declaration's (a substituted value keeps the blank
+/// that substitution left at an end of it), so a caller that parsed the text of a computed value puts the whole text back.
+GTEXT_CSS_Status css_property_value_keep_text(GTEXT_CSS_Property_Value * out, const char * text, size_t length);
 
 /// Whether a name is one the parser could have read as a custom property: `--` and then the code points of an identifier or escapes, as it was written (css_registry.c).
 bool css_custom_name_ok(const char * name, size_t length);

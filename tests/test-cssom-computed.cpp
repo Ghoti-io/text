@@ -306,6 +306,23 @@ TEST(CssomComputed, TheButtonAPhysicalDirectionNamesIsTheOneOfTheWritingModeAndD
   }
 }
 
+/* The value `getComputedStyle()` gives of a custom property is the computed value, which substitution made: a declaration's own value is trimmed when it is consumed (Syntax 3) and what a
+   var() or an if() left at an end of it is not, and both pinned browsers answer "x " for `x var(--empty)` and " x" for `var(--empty) x` (css/css-values/if-conditionals.html expects
+   "true_value " of `if( style( --x : 3 ) : true_value )`, the white space after the value of a branch being part of it). The declaration built for the read does not trim it again. */
+TEST(CssomComputed, ACustomPropertyKeepsTheBlankThatSubstitutionLeavesAtAnEnd) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#a { --empty:; --x: 3; --p: x var(--empty); --q: var(--empty) x; --r: if( style( --x : 3 ) : true_value ); --s: if(style(--x: 3): a ; else: b )x; --t: if(style(--x: 3): ); --u: y   z }"
+       "</style></head><body><p id=a>x</p></body></html>");
+  Decl d = m.computed("#a");
+  EXPECT_EQ(get(d.d, "--p"), "x ");
+  EXPECT_EQ(get(d.d, "--q"), " x");
+  EXPECT_EQ(get(d.d, "--r"), "true_value ");
+  EXPECT_EQ(get(d.d, "--s"), "a x");
+  EXPECT_EQ(get(d.d, "--t"), "");
+  EXPECT_EQ(get(d.d, "--u"), "y   z") << "a declaration's own value is trimmed and its inner white space is as written";
+  EXPECT_EQ(get(d.d, "--empty"), "");
+}
+
 /* Anchor Positioning 1, "Resolution of anchor()" and "Resolution of anchor-size()": "An anchor() function is a resolvable anchor function only if all the following conditions are true:
    It's applied to an absolutely positioned box ... There is a target anchor element for the box it's used on, and the <anchor-name> value specified in the function. If any of these
    conditions are false, the anchor() function computes to its specified fallback value. If no fallback value is specified, it makes the declaration referencing it invalid at
