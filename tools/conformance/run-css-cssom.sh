@@ -279,7 +279,8 @@ grep '^#' "$script_exceptions" > "$scratch/exc-empty" || true
 script_expect no-script-exceptions "UNEXPLAINED FAILURES" "$vectors" "$scratch/exc-empty" "$layout" "$pagerecord"
 { cat "$script_exceptions"; printf 'css/control/planted.html#0\tfails\tdefect\towner: planted\n'; } > "$scratch/exc-stale"
 script_expect stale-script-exception "STALE EXCEPTIONS" "$vectors" "$scratch/exc-stale" "$layout" "$pagerecord"
-awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } !done && $3 == "defect" { $3 = "wpt-wrong"; done = 1 } { print }' "$script_exceptions" > "$scratch/exc-class"
+# (the first exception of the class wpt-wrong: the controls cannot rest on a class that has no member when the gate has no defect left)
+awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } !done && $3 == "wpt-wrong" { $3 = "browsers-differ"; done = 1 } { print }' "$script_exceptions" > "$scratch/exc-class"
 script_expect script-exception-class-changed "CLASS:" "$vectors" "$scratch/exc-class" "$layout" "$pagerecord"
 awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ { print; next } !done { $2 = $2 " a lie"; done = 1 } { print }' "$script_exceptions" > "$scratch/exc-message"
 script_expect script-exception-message-changed "STALE EXCEPTIONS" "$vectors" "$scratch/exc-message" "$layout" "$pagerecord"
@@ -324,7 +325,8 @@ script_expect script-op-dropped "STALE EXCEPTIONS" "$scratch/prog-drop" "$script
 # the floors and the ceilings
 expect script-floor "below the floor" env CSS_CSSOM_SCRIPT_MIN_SCORED=9999999 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
 expect script-page-floor "below the floor" env CSS_CSSOM_SCRIPT_MIN_PAGES=9999999 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
-expect script-defect-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_DEFECTS=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
+# (a ceiling below zero: the run has no defect left to be above zero, and the check is what the control shows)
+expect script-defect-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_DEFECTS=-1 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
 expect script-layout-ceiling "above the ceiling" env CSS_CSSOM_SCRIPT_MAX_LAYOUT=0 python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
 # the timeline list: the run in which no animation is given a time reads animated properties that need one; they are neither passed nor failed, and they are not listed
 expect script-timeline-unlisted "which needs a timeline, and is not listed" env CSSOM_RUNNER_TIMELINE=none python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$fixtures" --wpt "$wpt"
@@ -389,7 +391,8 @@ expect no-replay-record "no replay record was given" python3 -I "$script_py" "$v
 sed '0,/^#expect.*PASS$/s//&X/' "$fixtures" > "$scratch/fixtures-lie"
 expect fixture-expectation-lie "FIXTURE" python3 -I "$script_py" "$vectors" "$script_runner" "$script_exceptions" "$layout" --record "$pagerecord" --replay "$replayrecord" --served "$served" --fixtures "$scratch/fixtures-lie" --wpt "$wpt"
 # the served-text list: a line for a test that does not fail, one without a quoted sentence, one without both answers
-first=$(awk -F'\t' '!/^#/ && $3 == "defect" { print $1 "\t" $2; exit }' "$script_exceptions")
+first=$(awk -F'\t' '!/^#/ && $3 == "wpt-wrong" { print $1 "\t" $2; exit }' "$script_exceptions")
+[ -n "$first" ] || { echo "control served-text: the exceptions have no test of the class wpt-wrong to plant a served line for" >&2; exit 1; }
 if [ -n "$first" ]; then
 	id=$(printf '%s' "$first" | cut -f1)
 	msg=$(printf '%s' "$first" | cut -f2)
