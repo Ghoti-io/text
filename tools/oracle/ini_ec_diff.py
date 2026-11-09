@@ -122,7 +122,7 @@ def batch(documents):
 
 
 def run(command, blob, label):
-    result = subprocess.run(command, input=blob, capture_output=True)
+    result = oracle_env.run(command, input=blob, capture_output=True)
     if result.returncode != 0:
         sys.stderr.write("%s failed (%d): %s\n"
                          % (label, result.returncode,

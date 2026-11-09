@@ -116,7 +116,7 @@ def driver_command(engine):
 
 def run_engine(engine, docs):
     data = "".join(json.dumps({"w": d["w"], "h": d["h"], "dpr": d["dpr"], "q": d["q"]}, ensure_ascii=False) + "\n" for d in docs)
-    run = subprocess.run(driver_command(engine), input=data.encode("utf-8", "surrogatepass"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    run = oracle_env.run(driver_command(engine), input=data.encode("utf-8", "surrogatepass"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if run.returncode != 0:
         raise SystemExit("css_cond_diff: the %s driver exited %d:\n%s" % (engine, run.returncode, oracle_env.reference_stderr(run.stderr.decode("utf-8", "replace"))[-1500:]))
     lines = run.stdout.decode("utf-8", "replace").split("\n")

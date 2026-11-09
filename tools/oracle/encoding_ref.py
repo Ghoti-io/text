@@ -56,7 +56,7 @@ def python_command(*args):
 def ask(command, lines):
     """The answers (one line each) of a line-protocol driver to `lines`, all at once."""
     payload = ("\n".join(lines) + "\n").encode("ascii")
-    done = subprocess.run(command, input=payload, capture_output=True)
+    done = oracle_env.run(command, input=payload, capture_output=True)
     if done.returncode != 0:
         raise SystemExit("a reference exited %d:\n%s" % (
             done.returncode, oracle_env.reference_stderr(done.stderr.decode("utf-8", "replace"))[-2000:]))
@@ -88,7 +88,7 @@ def ask_python(lines, chunk=50000):
 
 def enum_stream(command):
     """The raw bytes a driver's `enum` command writes."""
-    done = subprocess.run(command, capture_output=True)
+    done = oracle_env.run(command, capture_output=True)
     if done.returncode != 0:
         raise SystemExit("an enum command exited %d:\n%s" % (
             done.returncode, oracle_env.reference_stderr(done.stderr.decode("utf-8", "replace"))[-2000:]))

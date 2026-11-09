@@ -79,7 +79,7 @@ def read_all(documents):
         body = text.encode("utf-8") if isinstance(text, str) else text
         request.append(b"%d\n" % len(body))
         request.append(body)
-    finished = subprocess.run(argv, input=b"".join(request),
+    finished = oracle_env.run(argv, input=b"".join(request),
                               capture_output=True)
     if finished.returncode != 0:
         raise OracleUnavailable(

@@ -50,7 +50,7 @@ def ask(engine, items):
     import oracle_env
     inner = ["sh", "-c", 'cd /opt/cssprop && exec node "%s" %s' % (DRIVER, engine)]
     doc = {"probe": [[i, m, "const" if k == "const" else ("key" if k == "key" else "member")] for i, m, k in items]}
-    run = subprocess.run(oracle_env.command("cssprop", inner), input=(json.dumps(doc) + "\n").encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    run = oracle_env.run(oracle_env.command("cssprop", inner), input=(json.dumps(doc) + "\n").encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if run.returncode != 0:
         raise SystemExit("css_cssom_idl_probe: the %s driver exited %d:\n%s" % (engine, run.returncode, run.stderr.decode("utf-8", "replace")[-1500:]))
     lines = run.stdout.decode("utf-8", "replace").split("\n")

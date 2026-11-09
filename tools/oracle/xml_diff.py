@@ -366,7 +366,7 @@ def run_ours(runner, batch):
 
 def run_reference(batch):
     cmd = oracle_env.command("xml", ["xml-driver"])
-    done = subprocess.run(cmd, input=batch, capture_output=True)
+    done = oracle_env.run(cmd, input=batch, capture_output=True)
     if done.returncode != 0:
         raise SystemExit("the reference driver exited %d:\n%s" % (
             done.returncode, oracle_env.reference_stderr(done.stderr.decode("utf-8", "replace"))[-2000:]))

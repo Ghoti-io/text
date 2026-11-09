@@ -349,7 +349,7 @@ def write_population(path, marks, starters, ccc):
 def ask(argv, question, answer, what):
     """Run one side against the population file, answers to `answer`."""
     with open(question, "rb") as stdin, open(answer, "wb") as stdout:
-        finished = subprocess.run(argv, stdin=stdin, stdout=stdout,
+        finished = oracle_env.run(argv, stdin=stdin, stdout=stdout,
                                   stderr=subprocess.PIPE)
     if finished.returncode != 0:
         sys.exit("%s failed (exit %d):\n%s"

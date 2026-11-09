@@ -100,7 +100,7 @@ def ask(engine, pages, wpt):
     inner = ['sh', '-c', 'cd /opt/cssprop && exec node "%s" %s "%s"' % (DRIVER, engine, wpt)]
     cmd = oracle_env.command('cssprop', inner)
     data = ''.join(json.dumps(p) + '\n' for p in pages).encode('utf-8')
-    p = subprocess.run(cmd, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    p = oracle_env.run(cmd, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if p.returncode != 0:
         raise SystemExit('css_page_record: %s exited %d:\n%s' % (engine, p.returncode, oracle_env.reference_stderr(p.stderr.decode('utf-8', 'replace'))[-1500:]))
     lines = p.stdout.decode('utf-8', 'surrogateescape').split('\n')
@@ -251,6 +251,7 @@ def settle_engines(pages, wpt, batch, references=None, label='', jobs=2):
 
 def record(pages, out, wpt, batch, against=None, jobs=2):
     import oracle_env
+    oracle_env.guard()   # the engines are asked from threads
     references = None
     if against:
         _, committed = load(against)
@@ -377,6 +378,7 @@ def replay_differences(page, page_entry, replay_entry, modeled):
 def record_replay(programs_path, out, batch, plants=None, pages=None, against=None, jobs=2):
     """Replay the programs in the browsers: the overlay of build/css-replay-root is served in place of the checkout."""
     import oracle_env
+    oracle_env.guard()   # the engines are asked from threads
     import shutil
     sys.path.insert(0, os.path.join(ROOT, 'tools', 'css'))
     import replay_gen as G

@@ -237,7 +237,7 @@ def reference(docs, plans):
                      ("ASK %d\n" % len(job) + "".join(l + "\n" for l in job))
                      .encode())
     command = oracle_env.command("win32", argv=[])
-    finished = subprocess.run(command, input=b"".join(lines),
+    finished = oracle_env.run(command, input=b"".join(lines),
                               stdout=subprocess.PIPE)
     out = finished.stdout.decode("ascii", "replace").splitlines()
     blocks = []
@@ -316,7 +316,7 @@ def authored():
                                                hexed(key.encode()),
                                                hexed(value.encode()))).encode())
     command = oracle_env.command("win32", argv=[])
-    finished = subprocess.run(command, input=b"".join(lines),
+    finished = oracle_env.run(command, input=b"".join(lines),
                               stdout=subprocess.PIPE)
     files = []
     for line in finished.stdout.decode("ascii", "replace").splitlines():

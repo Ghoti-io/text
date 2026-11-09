@@ -246,7 +246,7 @@ def main(argv):
     mine = parse_records(ours.stdout.decode("ascii"), "ours")
 
     command = oracle_env.command(NAME, ["ini-driver"])
-    theirs_proc = subprocess.run(command, input=bytes(payload),
+    theirs_proc = oracle_env.run(command, input=bytes(payload),
                                  capture_output=True)
     if theirs_proc.returncode != 0:
         print("FAIL: the reference driver exited %d" % theirs_proc.returncode)

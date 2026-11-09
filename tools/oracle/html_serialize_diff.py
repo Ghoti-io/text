@@ -266,7 +266,7 @@ def ours_ser(runner, queries):
 
 def _drive(which, payload, out):
     cmd = oracle_env.command("html", DRIVERS[which])
-    done = subprocess.run(cmd, input=payload, capture_output=True)
+    done = oracle_env.run(cmd, input=payload, capture_output=True)
     if done.returncode != 0:
         out[which] = ("fail", "the %s driver exited %d:\n%s" % (
             which, done.returncode, oracle_env.reference_stderr(done.stderr.decode("utf-8", "replace"))[-2000:]))

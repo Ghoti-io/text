@@ -83,7 +83,7 @@ def run_theirs(requests, chunk=20000):
     for lo in range(0, len(requests), chunk):
         part = requests[lo:lo + chunk]
         payload = ("\n".join(json.dumps(r) for r in part) + "\n").encode("ascii")
-        done = subprocess.run(cmd, input=payload, capture_output=True)
+        done = oracle_env.run(cmd, input=payload, capture_output=True)
         if done.returncode != 0:
             raise SystemExit("html5lib's sniffer exited %d:\n%s" % (
                 done.returncode, oracle_env.reference_stderr(done.stderr.decode("utf-8", "replace"))[-2000:]))

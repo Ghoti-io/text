@@ -201,7 +201,7 @@ def run_suite(binary, files, plant):
         ours = subprocess.Popen([binary, "serve", req, resp], stderr=open(errfile, "wb"))
         args = [tmp, SUITE] + (["--plant", plant] if plant in ("bridge-drops-a-byte",) else []) + files
         command = oracle_env.command("encoding", ["node", RUNNER] + args, scratch=[tmp])
-        done = subprocess.run(command, capture_output=True)
+        done = oracle_env.run(command, capture_output=True)
         try:
             ours.wait(timeout=20)
         except subprocess.TimeoutExpired:

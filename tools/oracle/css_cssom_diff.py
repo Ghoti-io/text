@@ -115,7 +115,7 @@ def run_browsers(engine, docs):
     mounted = mounted_driver()
     inner = ["sh", "-c", 'cd /opt/cssprop && exec node "%s" %s' % (DRIVER, engine)]
     data = "".join(json.dumps(d, ensure_ascii=False) + "\n" for d in docs)
-    run = subprocess.run(oracle_env.command("cssprop", inner), input=data.encode("utf-8", "surrogatepass"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    run = oracle_env.run(oracle_env.command("cssprop", inner), input=data.encode("utf-8", "surrogatepass"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if run.returncode != 0:
         raise SystemExit("css_cssom_diff: the %s driver exited %d:\n%s" % (engine, run.returncode, oracle_env.reference_stderr(run.stderr.decode("utf-8", "replace"))[-1500:]))
     lines = run.stdout.decode("utf-8", "replace").split("\n")

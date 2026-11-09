@@ -162,7 +162,7 @@ def main(argv):
         return 1
 
     command = oracle_env.command(NAME, ["systemd-unit-driver"])
-    theirs_proc = subprocess.run(command, input=bytes(payload), capture_output=True)
+    theirs_proc = oracle_env.run(command, input=bytes(payload), capture_output=True)
     if theirs_proc.returncode != 0:
         print("FAIL: the reference driver exited %d" % theirs_proc.returncode)
         print(theirs_proc.stderr.decode("utf-8", "replace")[:3000])

@@ -86,7 +86,7 @@ def document(batch, pseudo):
 def run(argv, data):
     import oracle_env
     cmd = oracle_env.command("cssprop", argv)
-    p = subprocess.run(cmd, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    p = oracle_env.run(cmd, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if p.returncode != 0:
         raise SystemExit("css_pseudo_record: %s exited %d:\n%s" % (argv[-3:], p.returncode, oracle_env.reference_stderr(p.stderr.decode("utf-8", "replace"))[-1500:]))
     lines = p.stdout.decode("utf-8", "replace").split("\n")

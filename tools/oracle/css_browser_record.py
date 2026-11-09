@@ -154,7 +154,7 @@ def document(batch, cases):
 def run(argv, data):
     import oracle_env
     cmd = oracle_env.command("cssprop", argv)
-    p = subprocess.run(cmd, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    p = oracle_env.run(cmd, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if p.returncode != 0:
         import oracle_env as oe
         raise SystemExit("css_browser_record: %s exited %d:\n%s" % (argv[-3:], p.returncode, oe.reference_stderr(p.stderr.decode("utf-8", "replace"))[-1500:]))

@@ -33,6 +33,7 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 wpt=${CSS_PROPERTY_WPT:-$root/third_party/css/wpt}
 [ -f "$wpt/resources/testharness.js" ] || { echo "the harness is not in $wpt; fetch it: tools/css/fetch.sh" >&2; exit 1; }
 scratch=$(mktemp -d)
+. "$root/tools/oracle/child.sh"
 trap 'rm -rf "$scratch"' EXIT
 "$root/tools/conformance/run-css-cssom.sh" --script-pages > "$scratch/pages.txt"
 committed=$root/tools/conformance/css_cssom_pagerecord.jsonl
@@ -49,18 +50,18 @@ for i, l in enumerate(lines):
             break
 open(sys.argv[2], 'w', encoding='utf-8').write('\n'.join(lines))
 PY
-	if python3 "$root/tools/oracle/css_page_record.py" --compare "$scratch/tampered.jsonl" "$committed" >/dev/null 2>&1; then
+	if run_child python3 "$root/tools/oracle/css_page_record.py" --compare "$scratch/tampered.jsonl" "$committed" >/dev/null 2>&1; then
 		echo "control: a changed answer in the record was not noticed" >&2
 		exit 1
 	fi
 	echo "control record-answer-changed: caught"
-	python3 "$root/tools/oracle/css_page_record.py" --policy-controls
-	"$root/tools/conformance/run-css-cssom.sh" --script-programs > "$scratch/programs.tsv"
-	python3 "$root/tools/oracle/css_page_record.py" --replay-controls --programs "$scratch/programs.tsv"
+	run_child python3 "$root/tools/oracle/css_page_record.py" --policy-controls
+	run_child "$root/tools/conformance/run-css-cssom.sh" --script-programs > "$scratch/programs.tsv"
+	run_child python3 "$root/tools/oracle/css_page_record.py" --replay-controls --programs "$scratch/programs.tsv"
 	exit $?
 fi
-python3 "$root/tools/oracle/css_page_record.py" --record --pages "$scratch/pages.txt" --out "$scratch/record.jsonl" --against "$committed"
-python3 "$root/tools/oracle/css_page_record.py" --compare "$committed" "$scratch/record.jsonl"
+run_child python3 "$root/tools/oracle/css_page_record.py" --record --pages "$scratch/pages.txt" --out "$scratch/record.jsonl" --against "$committed"
+run_child python3 "$root/tools/oracle/css_page_record.py" --compare "$committed" "$scratch/record.jsonl"
 "$root/tools/conformance/run-css-cssom.sh" --script-programs > "$scratch/programs.tsv"
-python3 "$root/tools/oracle/css_page_record.py" --replay --programs "$scratch/programs.tsv" --out "$scratch/replay.jsonl" --against "$root/tools/conformance/css_cssom_replayrecord.jsonl"
-python3 "$root/tools/oracle/css_page_record.py" --replay-compare "$root/tools/conformance/css_cssom_replayrecord.jsonl" "$scratch/replay.jsonl"
+run_child python3 "$root/tools/oracle/css_page_record.py" --replay --programs "$scratch/programs.tsv" --out "$scratch/replay.jsonl" --against "$root/tools/conformance/css_cssom_replayrecord.jsonl"
+run_child python3 "$root/tools/oracle/css_page_record.py" --replay-compare "$root/tools/conformance/css_cssom_replayrecord.jsonl" "$scratch/replay.jsonl"

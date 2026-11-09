@@ -59,7 +59,7 @@ def request(html, scripting=False, context=None):
 
 
 def _run_one(which, payload, cmd, out):
-    done = subprocess.run(cmd, input=payload, capture_output=True)
+    done = oracle_env.run(cmd, input=payload, capture_output=True)
     if done.returncode != 0:
         out[which] = ("fail", "the %s driver exited %d:\n%s" % (
             which, done.returncode,

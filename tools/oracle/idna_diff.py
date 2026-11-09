@@ -80,7 +80,7 @@ def ask_reference():
     """
     argv = oracle_env.command("idna", ["python3", os.path.join(HERE,
                                                                "idna_ask.py")])
-    finished = subprocess.run(argv, capture_output=True, text=True)
+    finished = oracle_env.run(argv, capture_output=True, text=True)
     if finished.returncode != 0:
         raise oracle_env.OracleUnavailable(
             "the reference failed (exit %d):\n%s"

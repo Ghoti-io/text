@@ -25,8 +25,11 @@ Copyright 2026 by Corey Pennycuff
 import os
 import re
 import shutil
+import signal
+import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -616,6 +619,126 @@ esac
         shutil.rmtree(store, ignore_errors=True)
 
 
+def check_killed_driver_leaves_no_container():
+    """A driver that is stopped removes the container it started, and a gate script that is stopped stops its driver.
+
+    A fake engine stands in. `run ... --name N` makes a file for N in its store and stays until the file is removed or a minute has passed (a container that does not take the signal the client forwards); `kill` and
+    `rm -f` remove the file; `ps` lists the files; the container is removed by the engine only when its `run` ends normally. A driver (a python process asking `oracle_env.run(command(...))`) is
+    started, once by itself and once under a shell script that uses tools/oracle/child.sh, and is sent SIGTERM, SIGINT and SIGHUP: no container may be left. Controls: with the
+    removal planted away (`ORACLE_ENV_CONTROL_NO_REMOVE` makes the fake engine ignore `kill` and `rm`) the container stays, so the check can see a leftover; a driver stopped with
+    SIGKILL leaves its container, which `reap()` removes (the documented limit); and a driver that asks from a thread is covered by the signal handler.
+    """
+    store = tempfile.mkdtemp()
+    engine = os.path.join(store, "engine")
+    with open(engine, "w", encoding="utf-8") as handle:
+        handle.write("""#!/bin/sh
+dir=$(dirname "$0")
+case "$1" in
+run) while [ "$1" != "--name" ]; do shift; done; f="$dir/live.$2"; : > "$f"; i=0; while [ -e "$f" ] && [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done; rm -f "$f" ;;
+kill|rm) [ -n "$ORACLE_ENV_CONTROL_NO_REMOVE" ] && exit 0; shift; [ "$1" = "-f" ] && shift; for n in "$@"; do rm -f "$dir/live.$n"; done ;;
+ps) for f in "$dir"/live.*; do [ -e "$f" ] && echo "${f##*/live.}"; done; exit 0 ;;
+*) exit 2 ;;
+esac
+""")
+    os.chmod(engine, 0o755)
+    driver = os.path.join(store, "driver.py")
+    with open(driver, "w", encoding="utf-8") as handle:
+        handle.write("""import os, sys, threading
+sys.path.insert(0, %r)
+import oracle_env
+oracle_env.ENGINE = %r
+oracle_env.MODE = 'container'
+oracle_env.runnable = lambda name: 'fake-image'
+oracle_env.ensure = lambda name: None
+oracle_env._probe = lambda name, default: ([name],)
+how = sys.argv[1]
+if how == 'thread':
+    oracle_env.guard()
+    t = threading.Thread(target=lambda: oracle_env.run(oracle_env.command('fake', ['x']), input=b''))
+    t.start()
+    t.join()
+else:
+    oracle_env.run(oracle_env.command('fake', ['x']), input=b'')
+""" % (HERE, engine))
+    script = os.path.join(store, "gate.sh")
+    with open(script, "w", encoding="utf-8") as handle:
+        handle.write("""#!/bin/sh
+. %s/child.sh
+run_child python3 %s plain
+""" % (HERE, driver))
+    os.chmod(script, 0o755)
+
+    def live():
+        return sorted(n for n in os.listdir(store) if n.startswith("live."))
+
+    def wait_for(predicate, seconds=10):
+        end = time.time() + seconds
+        while time.time() < end:
+            if predicate():
+                return True
+            time.sleep(0.05)
+        return predicate()
+
+    def start(argv, env=None):
+        proc = subprocess.Popen(argv, env=dict(os.environ, **(env or {})), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if not wait_for(lambda: len(live()) >= 1):
+            proc.kill()
+            proc.wait()
+            fail("killed driver: the fake container was never started by %s" % argv[1:])
+            return None
+        return proc
+
+    def clean():
+        for n in live():
+            os.unlink(os.path.join(store, n))
+
+    try:
+        for label, argv in (("the driver", ["python3", driver, "plain"]), ("the driver, from a thread", ["python3", driver, "thread"]), ("the gate script", ["sh", script])):
+            for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+                proc = start(argv)
+                if proc is None:
+                    continue
+                if label == "the gate script":
+                    time.sleep(0.2)   # the shell has started its child and is waiting for it
+                proc.send_signal(sig)
+                try:
+                    proc.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                    fail("killed driver: %s did not stop on %s" % (label, sig.name))
+                if not wait_for(lambda: not live()):
+                    fail("killed driver: %s stopped by %s left a container (%s)" % (label, sig.name, ", ".join(live())))
+                clean()
+        # control: the removal planted away leaves the container, so that a leftover can be seen
+        proc = start(["python3", driver, "plain"], {"ORACLE_ENV_CONTROL_NO_REMOVE": "1"})
+        if proc is not None:
+            proc.send_signal(signal.SIGTERM)
+            proc.wait(timeout=20)
+            if not live():
+                fail("control: a driver whose containers cannot be removed left none, so the check could not see a leftover")
+            clean()
+        # the documented limit: SIGKILL cannot be handled, and reap() removes what that left
+        proc = start(["python3", driver, "plain"])
+        if proc is not None:
+            prefix = "ghoti-oracle-%d-" % proc.pid
+            proc.kill()
+            proc.wait()
+            if not live():
+                fail("control: a driver killed with SIGKILL left no container, so the limit is not what the comment says")
+            saved = oracle_env.ENGINE
+            oracle_env.ENGINE = engine
+            try:
+                found = oracle_env.reap(prefix)
+            finally:
+                oracle_env.ENGINE = saved
+            if found != 1 or live():
+                fail("reap: it found %d containers of the prefix and %d are left" % (found, len(live())))
+            clean()
+    finally:
+        shutil.rmtree(store, ignore_errors=True)
+
+
 def main():
     table = check_images_parses()
     check_images_rules_fire()
@@ -624,6 +747,7 @@ def main():
     check_reference_stderr()
     check_mode_is_closed()
     check_runnable_follows_the_image_id()
+    check_killed_driver_leaves_no_container()
     check_matched_pins(table)
     check_matched_pins_fire()
     check_xml_pin(table)

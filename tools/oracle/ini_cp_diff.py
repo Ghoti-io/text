@@ -237,7 +237,7 @@ def main(argv):
             return 1
 
         command = oracle_env.command(NAME, ["python3", DRIVER] + flags)
-        proc = subprocess.run(command, input=bytes(payload), capture_output=True)
+        proc = oracle_env.run(command, input=bytes(payload), capture_output=True)
         if proc.returncode != 0:
             print("FAIL: the reference driver exited %d under %s"
                   % (proc.returncode, which))

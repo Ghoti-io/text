@@ -64,10 +64,13 @@ Modes, from GHOTI_ORACLE_MODE:
 Copyright 2026 by Corey Pennycuff
 """
 
+import atexit
 import hashlib
+import itertools
 import json
 import os
 import shutil
+import signal
 import threading
 import subprocess
 import sys
@@ -365,6 +368,89 @@ ALIAS = dict(
     if "=" in pair)
 
 
+# A container is named, and removed when the process that started it is stopped.
+#
+# `docker run` is a client: when it is killed the container it started goes on running (a node
+# or a browser as the container's first process does not take the signal the client forwards),
+# and the `--rm` that would have removed it waits for the container to exit. A gate killed
+# part-way left its containers `Up` for hours. So every container a process starts carries a
+# name that begins with this process's own prefix; `run()` removes the one it started in a
+# `finally`, and the process removes every container of its prefix at exit and when it is sent
+# SIGTERM, SIGHUP or SIGINT (the caller that starts one with Popen, or runs one from a thread,
+# is covered by that). SIGKILL cannot be caught, by anyone: a process killed that way leaves its
+# containers, and `reap(prefix)` is how the next run, or a person, removes them.
+_COUNTER = itertools.count(1)
+_GUARDED = False
+_GUARD_LOCK = threading.Lock()
+
+
+def _prefix(pid=None):
+    return "ghoti-oracle-%d-" % (os.getpid() if pid is None else pid)
+
+
+def _container_name(name):
+    return "%s%s-%d" % (_prefix(), name, next(_COUNTER))
+
+
+def _engine_quietly(args):
+    try:
+        done = subprocess.run([ENGINE] + args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
+        return done.stdout.decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
+def remove(names):
+    """Kill and remove the named containers (those that are already gone are not an error)."""
+    names = [n for n in names if n]
+    if names:
+        _engine_quietly(["kill"] + names)
+        _engine_quietly(["rm", "-f"] + names)
+
+
+def reap(prefix=None):
+    """Remove every container whose name begins with `prefix` (default: this process's own); returns how many were found."""
+    prefix = _prefix() if prefix is None else prefix
+    listed = _engine_quietly(["ps", "-a", "--filter", "name=^" + prefix, "--format", "{{.Names}}"])
+    found = [l.strip() for l in listed.splitlines() if l.strip().startswith(prefix)]
+    remove(found)
+    return len(found)
+
+
+def _on_signal(number, frame):
+    # At once, not only at exit: the interpreter joins a driver's other threads before it runs its exit handlers, and those threads are waiting for containers.
+    reap()
+    raise SystemExit(128 + number)
+
+
+def guard():
+    """Once per process (command() calls it; a driver that asks from threads calls it first, from its main thread, because a signal handler can only be installed there): remove this process's containers at exit, and on a termination signal remove them at once and exit (so that the `finally` blocks and the exit handler run)."""
+    global _GUARDED
+    if MODE != "container":
+        return
+    with _GUARD_LOCK:
+        if _GUARDED:
+            return
+        _GUARDED = True
+    atexit.register(reap)
+    if threading.current_thread() is threading.main_thread():
+        for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            if signal.getsignal(number) in (signal.SIG_DFL, signal.default_int_handler):
+                signal.signal(number, _on_signal)
+
+
+def run(argv, **kwargs):
+    """`subprocess.run(argv, **kwargs)` for a command() argv: when the call ends in an exception (a signal turned into an exit, a timeout, an interrupt) the container it named
+    is killed and removed before the exception goes on. A call that returns has run its container to the end, and `--rm` removed it."""
+    name = argv[argv.index("--name") + 1] if "--name" in argv else None
+    try:
+        return subprocess.run(argv, **kwargs)
+    except BaseException:
+        if name is not None and argv and argv[0] == ENGINE:
+            remove([name])
+        raise
+
+
 def command(name, argv=None, scratch=None, readonly=None, env=None):
     """The argv prefix that runs `name`'s reference.
 
@@ -395,7 +481,8 @@ def command(name, argv=None, scratch=None, readonly=None, env=None):
     if MODE in ("host", "inside"):
         return list(inner)
     image = runnable(name)
-    out = [ENGINE, "run", "--rm", "-i",
+    guard()
+    out = [ENGINE, "run", "--rm", "-i", "--name", _container_name(name),
            "--network", "none",
            "--volume", "%s:%s:ro" % (ROOT, ROOT)]
     for path in ([readonly] if isinstance(readonly, str) else (readonly or [])):
@@ -414,7 +501,7 @@ def version(name):
     if key in _cache:
         return _cache[key]
     probe, expect, select = _probe(name, ([name, "--version"], "", None))
-    finished = subprocess.run(command(name, probe), capture_output=True,
+    finished = run(command(name, probe), capture_output=True,
                               text=True)
     #
     # stdout only. `docker` on this machine is a podman shim that prints a

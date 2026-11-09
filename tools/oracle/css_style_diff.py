@@ -128,7 +128,7 @@ def style_driver_command(engine, mode):
 
 def run_engine(engine, docs, scheme):
     data = "".join(json.dumps({"mode": d["mode"], "text": d["text"], "queries": d["queries"]}, ensure_ascii=False) + "\n" for d in docs).encode("utf-8", "surrogatepass")
-    run = subprocess.run(style_driver_command(engine, scheme), input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    run = oracle_env.run(style_driver_command(engine, scheme), input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if run.returncode != 0:
         raise SystemExit("css_style_diff: the %s driver exited %d:\n%s" % (engine, run.returncode, oracle_env.reference_stderr(run.stderr.decode("utf-8", "replace"))[-1500:]))
     lines = run.stdout.decode("utf-8", "replace").split("\n")
@@ -143,7 +143,7 @@ def run_engine(engine, docs, scheme):
 
 
 def run_metrics(engine, path):
-    run = subprocess.run(style_driver_command(engine, "metrics"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    run = oracle_env.run(style_driver_command(engine, "metrics"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if run.returncode != 0:
         raise SystemExit("css_style_diff: the %s metrics run exited %d:\n%s" % (engine, run.returncode, run.stderr.decode("utf-8", "replace")[-1500:]))
     lines = run.stdout.decode("utf-8").split("\n")

@@ -67,7 +67,7 @@ def _run_batch(cmd, lines):
     time on one input is a finding, not a failure of the run), the batch is halved until the request that kills it is
     alone, and that request is answered {"crash": "the driver died"}."""
     payload = ("\n".join(lines) + "\n").encode("ascii")
-    done = subprocess.run(cmd, input=payload, capture_output=True)
+    done = oracle_env.run(cmd, input=payload, capture_output=True)
     if done.returncode == 0:
         answers = [l for l in done.stdout.decode("ascii").split("\n") if l]
         if len(answers) == len(lines):

@@ -178,7 +178,7 @@ def ask_reference(texts):
         body = text.encode("utf-8")
         request.append(b"%d\n" % len(body))
         request.append(body)
-    finished = subprocess.run(argv, input=b"".join(request),
+    finished = oracle_env.run(argv, input=b"".join(request),
                               capture_output=True)
     if finished.returncode != 0:
         raise oracle_env.OracleUnavailable(
