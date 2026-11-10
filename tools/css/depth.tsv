@@ -213,7 +213,7 @@ property	appearance	1	1	1	0
 property	aspect-ratio	1	1	1	1	
 property	backdrop-filter	1	1	1	1	
 property	backface-visibility	1	1	1	1	
-property	background	1	1	1	0	
+property	background	1	1	1	1	
 property	background-attachment	1	1	1	1	
 property	background-blend-mode	1	1	1	1	
 property	background-clip	1	1	1	1	
@@ -343,7 +343,7 @@ property	break-inside	1	1	1	1
 property	caption-side	1	1	1	1	
 property	caret	1	1	1	0	
 property	caret-animation	1	1	1	1	
-property	caret-color	1	1	1	0	
+property	caret-color	1	1	1	1	
 property	caret-shape	1	1	1	1	
 property	clear	1	1	1	1	
 property	clip	1	1	1	1	
@@ -373,7 +373,7 @@ property	column-rule-inset-start	1	1	1	0
 property	column-rule-style	1	1	1	1	
 property	column-rule-visibility-items	1	1	1	0	
 property	column-rule-width	1	1	1	1	
-property	column-span	1	1	1	0	
+property	column-span	1	1	1	1	
 property	column-width	1	1	1	0	
 property	column-wrap	1	1	1	0	
 property	columns	1	1	1	1	
@@ -390,10 +390,10 @@ property	content	1	1	1	1
 property	content-visibility	1	1	1	1	
 property	continue	1	1	1	1	
 property	copy-into	1	1	1	0	
-property	corner	1	1	1	0	
+property	corner	1	1	1	1	
 property	corner-block-end	1	1	1	0	
 property	corner-block-end-shape	1	1	1	0	
-property	corner-block-start	1	1	1	0	
+property	corner-block-start	1	1	1	1	
 property	corner-block-start-shape	1	1	1	0	
 property	corner-bottom	1	1	1	0	
 property	corner-bottom-left	1	1	1	0	
@@ -418,8 +418,8 @@ property	corner-start-end	1	1	1	0
 property	corner-start-end-shape	1	1	1	0	
 property	corner-start-start	1	1	1	0	
 property	corner-start-start-shape	1	1	1	0	
-property	corner-top	1	1	1	0	
-property	corner-top-left	1	1	1	0	
+property	corner-top	1	1	1	1	
+property	corner-top-left	1	1	1	1	
 property	corner-top-left-shape	1	1	1	0	
 property	corner-top-right	1	1	1	0	
 property	corner-top-right-shape	1	1	1	0	
@@ -454,7 +454,7 @@ property	fill-repeat	1	1	1	0
 property	fill-rule	1	1	1	0	
 property	fill-size	1	1	1	0	
 property	filter	1	1	1	1	
-property	fit-tolerance	1	1	1	0	
+property	fit-tolerance	1	1	1	1	
 property	flex	1	1	1	1	
 property	flex-basis	1	1	1	1	
 property	flex-direction	1	1	1	1	
@@ -567,7 +567,7 @@ property	line-height	1	1	1	1
 property	line-height-step	1	1	1	0	
 property	line-padding	1	1	1	0	
 property	line-snap	1	1	1	0	
-property	link-parameters	1	1	1	1	
+property	link-parameters	1	1	1	0	
 property	list-style	1	1	1	1	
 property	list-style-image	1	1	1	1	
 property	list-style-position	1	1	1	1	
@@ -614,13 +614,13 @@ property	max-block-size	1	1	1	1
 property	max-height	1	1	1	1	
 property	max-inline-size	1	1	1	1	
 property	max-lines	1	1	1	0	
-property	max-size	1	1	1	0	
+property	max-size	1	1	1	1	
 property	max-width	1	1	1	1	
 property	min-block-size	1	1	1	1	
 property	min-height	1	1	1	1	
 property	min-inline-size	1	1	1	1	
 property	min-intrinsic-sizing	1	1	1	0	
-property	min-size	1	1	1	0	
+property	min-size	1	1	1	1	
 property	min-width	1	1	1	1	
 property	mix-blend-mode	1	1	1	1	
 property	nav-down	1	1	1	0	
@@ -691,7 +691,7 @@ property	pause-before	1	1	1	0
 property	perspective	1	1	1	1	
 property	perspective-origin	1	1	1	1	
 property	place-content	1	1	1	1	
-property	place-items	1	1	1	1	
+property	place-items	1	1	1	0	
 property	place-self	1	1	1	1	
 property	pointer-events	1	1	1	0	
 property	pointer-timeline	1	1	1	0	
@@ -707,7 +707,7 @@ property	position-visibility	1	1	1	1
 property	print-color-adjust	1	1	1	1	
 property	quotes	1	1	1	0	
 property	r	1	1	1	0	
-property	reading-flow	1	1	1	1	
+property	reading-flow	1	1	1	0	
 property	reading-order	1	1	1	1	
 property	region-fragment	1	1	1	0	
 property	resize	1	1	1	1	
@@ -734,7 +734,7 @@ property	row-rule-visibility-items	1	1	1	0
 property	row-rule-width	1	1	1	0	
 property	ruby-align	1	1	1	1	
 property	ruby-merge	1	1	1	1	
-property	ruby-overhang	1	1	1	0	
+property	ruby-overhang	1	1	1	1	
 property	ruby-position	1	1	1	1	
 property	rule	1	1	1	0	
 property	rule-break	1	1	1	0	
@@ -916,7 +916,7 @@ property	voice-stress	1	1	1	0
 property	voice-volume	1	1	1	0	
 property	white-space	1	1	1	1	
 property	white-space-collapse	1	1	1	1	
-property	white-space-trim	1	1	1	0	
+property	white-space-trim	1	1	1	1	
 property	widows	1	1	1	1	
 property	width	1	1	1	0	
 property	will-change	1	1	1	1	

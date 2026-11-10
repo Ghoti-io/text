@@ -9,13 +9,13 @@ css/css-anchor-position/try-tactic-alignment.html	6	the pin has no property flip
 css/css-color/color-mix-currentcolor-visited-getcomputedstyle.html	1	the page cannot be modeled: a selector this cannot match (a:link: the selector layer is not used here)
 css/css-color/relative-currentcolor-visited-getcomputedstyle.html	1	the page cannot be modeled: a selector this cannot match (a:link: the selector layer is not used here)
 css/css-fonts/parsing/font-size-adjust-computed.html	17	the page cannot be modeled: an at-rule in a style sheet
-css/css-grid/grid-lanes/tentative/parsing/flow-tolerance-computed.html	7	the pin has no property flow-tolerance
 css/css-grid/grid-lanes/tentative/parsing/grid-lanes-direction-computed.html	11	the pin has no property grid-lanes-direction
 css/css-grid/grid-lanes/tentative/parsing/grid-lanes-pack-computed.html	2	the pin has no property grid-lanes-pack
 css/css-grid/grid-lanes/tentative/parsing/grid-lanes-shorthand-computed.html	14	the pin has no property grid-lanes
 css/css-properties-values-api/registered-property-computation.html	66	the page cannot be modeled: a page with 0 elements with the id target
 css/css-pseudo/parsing/marker-supported-properties.html	68	a pseudo-element (selectors)
 css/css-shapes/shape-functions/shape-function-computed.html	35	the page cannot be modeled: a script that changes the document before the vectors (.remove()
+css/css-text/parsing/text-autospace-size-computed.html	5	the pin has no property text-autospace-size
 css/css-ui/parsing/resize-computed.html	2	a pseudo-element (selectors)
 css/css-values/attr-serialization.html	1	the call is about a used value
 css/css-values/calc-angle-values.html	27	the call compares transform matrices within an epsilon

@@ -35,7 +35,7 @@ css/css-color/parsing/color-invalid-relative-color.html	39	test_invalid_value: t
 css/css-color/parsing/color-invalid-rgb.html	1	test_invalid_value: id 'test'
 css/css-color/parsing/color-valid-color-function.html	34	test_valid_value: template with a substitution
 css/css-color/parsing/color-valid-color-layers-function.html	1	test_valid_value: id 'parsed'
-css/css-color/parsing/color-valid-color-mix-function.html#colour	398	scored by tools/conformance/run-css-values.sh through its own interpreter (fuzzy_test_valid_color)
+css/css-color/parsing/color-valid-color-mix-function.html#colour	404	scored by tools/conformance/run-css-values.sh through its own interpreter (fuzzy_test_valid_color)
 css/css-color/parsing/color-valid-hsl.html#colour	1	scored by tools/conformance/run-css-values.sh through its own interpreter (fuzzy_test_valid_color)
 css/css-color/parsing/color-valid-hwb.html#colour	1	scored by tools/conformance/run-css-values.sh through its own interpreter (fuzzy_test_valid_color)
 css/css-color/parsing/color-valid-lab.html	1	test_valid_value: id 'test'
@@ -128,7 +128,7 @@ css/css-text-decor/parsing/text-emphasis-computed.html	5	test_computed_value: te
 css/css-text-decor/text-shadow/parsing/text-shadow-computed.html	6	test_computed_value: id 'currentColor'; test_computed_value: id 'lime'; test_computed_value: id 'red'
 css/css-transforms/parsing/transform-computed.html	3	test_computed_value: id 'prop'
 css/css-transitions/parsing/transition-property-invalid.html	3	test_invalid_value: template with a substitution
-css/css-ui/parsing/caret-color-computed.html	7	test_computed_value: id 'currentColor'
+css/css-ui/parsing/caret-color-computed.html	4	test_computed_value: id 'currentColor'
 css/css-ui/parsing/outline-color-computed.html	1	test_computed_value: id 'currentColor'
 css/css-ui/parsing/outline-width-computed.html	3	test_computed_value: id 'getComputedStyle'
 css/css-values/acos-asin-atan-atan2-invalid.html	1	test_invalid_value: template with a substitution
