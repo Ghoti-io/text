@@ -612,6 +612,7 @@ TEST(CssShorthandBlock, TheKeywordShorthandsComeBackAsTheirKeywords) {
   EXPECT_EQ(through("min-size: 100px 200px"), "min-width: 100px; min-height: 200px;");
   EXPECT_EQ(through("max-size: 50px"), "max-width: 50px; max-height: 50px;");
   EXPECT_EQ(through("min-width: 100px; min-height: 200px"), "min-width: 100px; min-height: 200px;");
+  EXPECT_EQ(through("max-size: var(--x)"), "max-size: var(--x);") << "longhands that are pending because the shorthand holds var() have no text of their own";
   EXPECT_EQ(through("white-space: pre-wrap"), "white-space: pre-wrap;");
   EXPECT_EQ(through("white-space: discard-before"), "white-space: discard-before;") << "the trimming is a longhand of the shorthand, and a legacy keyword is written only when it is none";
   EXPECT_EQ(through("white-space: preserve nowrap discard-inner"), "white-space: preserve nowrap discard-inner;");

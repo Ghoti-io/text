@@ -146,7 +146,53 @@ bool holds_unclosed_token(const GTEXT_CSS_Component_Value * v, size_t n) {
 }
 
 /// The parts of two rules that a fixed point must keep, beside the text: the kind, the descriptors in order with their text, the nested rules, "defines nothing".
+/// Two `@font-feature-values` rules that serialize alike: the font-display declaration and the value maps, each map in the order of its names (Fonts 4, "serialize a font feature values rule" writes a
+/// rule as its maps, in a fixed order of the block types, so several blocks of a type are one block when it is read again).
+bool same_feature_values(const GTEXT_CSS_Atrule * a, const GTEXT_CSS_Atrule * b) {
+  GTEXT_CSS_Atrule_Descriptor x, y;
+  const bool dx = gtext_css_atrule_descriptor_find(a, "font-display", 12, &x), dy = gtext_css_atrule_descriptor_find(b, "font-display", 12, &y);
+  if (dx != dy || (dx && (x.text.length != y.text.length || (x.text.length && std::memcmp(x.text.data, y.text.data, x.text.length) != 0)))) {
+    return false;
+  }
+  GTEXT_CSS_Feature_Values *ma = nullptr, *mb = nullptr;
+  if (gtext_css_feature_values_from_atrule(a, &ma) != GTEXT_CSS_OK || gtext_css_feature_values_from_atrule(b, &mb) != GTEXT_CSS_OK) {
+    gtext_css_feature_values_free(ma);
+    gtext_css_feature_values_free(mb);
+    return false;
+  }
+  bool same = true;
+  for (size_t t = 0; same && t < GTEXT_CSS_FEATURE_TYPE_COUNT; t++) {
+    // the entries of a map: a name once, at the place it first had, with its last value
+    auto entries = [&](const GTEXT_CSS_Feature_Values * m) {
+      std::vector<std::pair<std::string, std::vector<uint32_t>>> out;
+      for (size_t i = 0; i < m->value_count[t]; i++) {
+        const GTEXT_CSS_Feature_Value & f = m->values[t][i];
+        const std::string name(f.name.data, f.name.length);
+        const std::vector<uint32_t> vals(f.values, f.values + f.value_count);
+        bool found = false;
+        for (auto & e : out) {
+          if (e.first == name) {
+            e.second = vals;
+            found = true;
+          }
+        }
+        if (!found) {
+          out.emplace_back(name, vals);
+        }
+      }
+      return out;
+    };
+    same = entries(ma) == entries(mb);
+  }
+  gtext_css_feature_values_free(ma);
+  gtext_css_feature_values_free(mb);
+  return same;
+}
+
 bool same_rule(const GTEXT_CSS_Atrule * a, const GTEXT_CSS_Atrule * b) {
+  if (gtext_css_atrule_kind(a) == GTEXT_CSS_ATRULE_FONT_FEATURE_VALUES && gtext_css_atrule_kind(b) == GTEXT_CSS_ATRULE_FONT_FEATURE_VALUES) {
+    return gtext_css_atrule_defines_nothing(a) == gtext_css_atrule_defines_nothing(b) && same_feature_values(a, b);
+  }
   if (gtext_css_atrule_kind(a) != gtext_css_atrule_kind(b) || gtext_css_atrule_descriptor_count(a) != gtext_css_atrule_descriptor_count(b) ||
       gtext_css_atrule_child_count(a) != gtext_css_atrule_child_count(b) || gtext_css_atrule_defines_nothing(a) != gtext_css_atrule_defines_nothing(b)) {
     return false;

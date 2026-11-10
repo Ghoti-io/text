@@ -365,7 +365,7 @@ PLANTS += [
     ("canon-equal-radii-of-a-slash-are-two", "css_property_canon.c", "    if (!sp_eq(t[0], t[2])) {\n      cb_putc(out, ' ');", "    if (1) {\n      cb_putc(out, ' ');", ["canon"]),
     ("canon-a-legacy-value-alias-is-written-as-it-is", "css_property_canon.c", "  if (n == 1 && ieq(t[0], \"none\")) {\n    cb_put(out, \"spaces\", 6);", "  if (0 && n == 1 && ieq(t[0], \"none\")) {\n    cb_put(out, \"spaces\", 6);", ["canon"]),
     ("shorthand-outline-is-written-color-first", "css_shorthand_serialize.c", '{"outline", "outline-width,outline-style,outline-color", "outline-style"}', '{"outline", "outline-color,outline-style,outline-width", "outline-style"}', ["shorthand"]),
-    ("shorthand-min-size-is-formed-from-its-longhands", "css_shorthand_serialize.c", "!nm(&c, (GTEXT_CSS_Property_Id)id, \"min-size\") && ", "", ["shorthand"]),
+    ("shorthand-min-size-is-formed-from-its-longhands", "css_shorthand_serialize.c", "      if (present && (nm(&c, (GTEXT_CSS_Property_Id)id, \"min-size\") ||", "      if (0 && present && (nm(&c, (GTEXT_CSS_Property_Id)id, \"min-size\") ||", ["shorthand"]),
     ("shorthand-white-space-is-written-without-its-trim", "css_shorthand_serialize.c", "    if (nm(c, sh, \"white-space\") && trim && !texteq(trim, \"none\")) {\n      continue;\n    }",
      "    if (0 && nm(c, sh, \"white-space\") && trim && !texteq(trim, \"none\")) {\n      continue;\n    }", ["shorthand"]),
     ("custom-a-brace-is-a-fallback-only-at-its-start", "css_property.c", "              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;",

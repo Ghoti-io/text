@@ -2395,16 +2395,24 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
   for (size_t id = 1; status == GTEXT_CSS_OK && id <= np; id++) {
     GTEXT_CSS_Property_Info info;
     gtext_css_registry_property_info(c.reg, (GTEXT_CSS_Property_Id)id, &info);
-    /* the sizing shorthands are expanded and not formed: "The size, min-size and max-size shorthands expand to their dimension longhands, but those longhands never serialize back into the
-       shorthand" (css/css-sizing/size-shorthand-serialization.tentative.html, csswg-drafts issue 820: a tentative page; neither Chromium 156.0.8078.47 nor Firefox 158.0.1 has the properties,
-       and both write the longhands). The value of the shorthand itself is still serialized by getPropertyValue(). */
-    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.flags & GTEXT_CSS_PROP_ALIAS) && !nm(&c, (GTEXT_CSS_Property_Id)id, "min-size") && !nm(&c, (GTEXT_CSS_Property_Id)id, "max-size") &&
-        !nm(&c, (GTEXT_CSS_Property_Id)id, "size") && gtext_css_shorthand_kind(c.reg, (GTEXT_CSS_Property_Id)id) != GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {
+    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.flags & GTEXT_CSS_PROP_ALIAS) &&
+        gtext_css_shorthand_kind(c.reg, (GTEXT_CSS_Property_Id)id) != GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {
       GTEXT_CSS_Property_Id lv[CSS_LEAF_CAP];
       size_t nl = 0;
       bool present = leaves_under(&c, (GTEXT_CSS_Property_Id)id, lv, CSS_LEAF_CAP, &nl) && nl > 0;
       for (size_t m = 0; present && m < nl; m++) {
         present = lv[m] <= np && c.last[lv[m]] != 0;
+      }
+      /* the sizing shorthands are expanded and not formed: "The size, min-size and max-size shorthands expand to their dimension longhands, but those longhands never serialize back into the
+         shorthand" (css/css-sizing/size-shorthand-serialization.tentative.html, csswg-drafts issue 820: a tentative page; neither Chromium 156.0.8078.47 nor Firefox 158.0.1 has the properties,
+         and both write the longhands). The value of the shorthand itself is still serialized by getPropertyValue(), and longhands that are pending because the shorthand holds var() have no
+         text of their own, so they are written as the shorthand that set them. */
+      if (present && (nm(&c, (GTEXT_CSS_Property_Id)id, "min-size") || nm(&c, (GTEXT_CSS_Property_Id)id, "max-size") || nm(&c, (GTEXT_CSS_Property_Id)id, "size"))) {
+        bool pend = false;
+        for (size_t m = 0; m < nl; m++) {
+          pend = pend || block->items[c.last[lv[m]] - 1].outcome == GTEXT_CSS_PROP_RESULT_PENDING;
+        }
+        present = pend;
       }
       /* a shorthand that is also held as written (an opaque declaration) is not formed from longhands as well: it would be written twice, and read back the second would not stand */
       for (size_t i = 0; present && i < n; i++) {
