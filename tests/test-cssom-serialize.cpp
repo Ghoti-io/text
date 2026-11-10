@@ -258,7 +258,7 @@ TEST(CssomSerializeAtRules, TheTypedRulesAreTheirModelsSerialization) {
   EXPECT_EQ(first("@property --p { syntax: '<length>'; inherits: false; initial-value: 0px }"), "@property --p { syntax: \"<length>\"; inherits: false; initial-value: 0px; }");
   EXPECT_EQ(first("@position-try --x { top: 1px }"), "@position-try --x { top: 1px; }");
   EXPECT_EQ(first("@font-palette-values --p { font-family: x; base-palette: 1 }"), "@font-palette-values --p { font-family: x; base-palette: 1; }");
-  EXPECT_EQ(first("@font-feature-values Foo { @styleset { a: 1 2 } }"), "@font-feature-values Foo {\n  @styleset { a: 1 2; }\n}");
+  EXPECT_EQ(first("@font-feature-values Foo { @styleset { a: 1 2 } }"), "@font-feature-values Foo { @styleset { a: 1 2; } }");
   EXPECT_EQ(first("@font-face {}"), "@font-face { }");
   EXPECT_EQ(first("@page :first { margin: 1px }"), "@page :first { margin: 1px; }");
 }

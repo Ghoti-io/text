@@ -816,3 +816,30 @@ TEST(CssComputedCompletionBrowserRecorded, StepsCountsBelowTheLeastAreInvalid) {
 }
 
 } // namespace
+
+/* Text 4, white-space: "Value: normal | pre | pre-wrap | pre-line | <'white-space-collapse'> || <'text-wrap-mode'> || <'white-space-trim'>", "a shorthand for the white-space-collapse, text-wrap-mode, and
+   white-space-trim properties" (css/css-text/parsing/white-space-shorthand-longhands.html, test by test): the longhands a value does not give are their initial values, the four legacy keywords
+   leave the trimming at none, and the keywords of the longhands (nowrap, break-spaces) are the longhands' values. Neither Chromium 156.0.8078.47 nor Firefox 158.0.1 has white-space-trim. */
+TEST(CssComputedCompletionWhiteSpace, TheShorthandSetsTheCollapsingTheWrappingAndTheTrimming) {
+  struct Row {
+    const char * value, * collapse, * wrap, * trim;
+  };
+  const Row rows[] = {
+      {"normal", "collapse", "wrap", "none"}, {"pre", "preserve", "nowrap", "none"}, {"pre-wrap", "preserve", "wrap", "none"}, {"pre-line", "preserve-breaks", "wrap", "none"},
+      {"nowrap", "collapse", "nowrap", "none"}, {"break-spaces", "break-spaces", "wrap", "none"}, {"collapse", "collapse", "wrap", "none"}, {"preserve", "preserve", "wrap", "none"},
+      {"preserve-breaks", "preserve-breaks", "wrap", "none"}, {"wrap", "collapse", "wrap", "none"}, {"discard-before", "collapse", "wrap", "discard-before"},
+      {"discard-after", "collapse", "wrap", "discard-after"}, {"discard-inner", "collapse", "wrap", "discard-inner"},
+      {"preserve nowrap discard-inner", "preserve", "nowrap", "discard-inner"}, {"discard-before discard-after", "collapse", "wrap", "discard-before discard-after"},
+      {"discard-inner discard-after discard-before", "collapse", "wrap", "discard-before discard-after discard-inner"},
+      {"collapse wrap discard-before discard-after discard-inner", "collapse", "wrap", "discard-before discard-after discard-inner"},
+  };
+  for (const Row & r : rows) {
+    const std::string decl = std::string("white-space: ") + r.value;
+    EXPECT_EQ(root_computed(decl.c_str(), "white-space-collapse"), r.collapse) << decl;
+    EXPECT_EQ(root_computed(decl.c_str(), "text-wrap-mode"), r.wrap) << decl;
+    EXPECT_EQ(root_computed(decl.c_str(), "white-space-trim"), r.trim) << decl;
+  }
+  EXPECT_EQ(root_computed("white-space-trim: discard-inner; white-space: pre", "white-space-trim"), "none") << "the shorthand overwrites a trimming set before it";
+  EXPECT_EQ(root_computed("white-space: pre; white-space-trim: discard-inner", "white-space-trim"), "discard-inner") << "and not one set after it";
+}
+

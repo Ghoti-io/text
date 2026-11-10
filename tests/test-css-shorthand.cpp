@@ -337,11 +337,11 @@ TEST(CssShorthandExpand, OffsetPutsThePositionBeforeThePathAndTheDistanceAfterIt
   EXPECT_NE(c.find("offset-rotate=auto 30deg"), std::string::npos) << c;
 }
 
-TEST(CssShorthandExpand, WhiteSpaceKeywordsStandForTwoLonghands) {
-  EXPECT_EQ(items_of(Block(R(), "white-space: pre")), "white-space-collapse=preserve; text-wrap-mode=nowrap");
-  EXPECT_EQ(items_of(Block(R(), "white-space: pre-line")), "white-space-collapse=preserve-breaks; text-wrap-mode=wrap");
-  EXPECT_EQ(items_of(Block(R(), "white-space: normal")), "white-space-collapse=collapse; text-wrap-mode=wrap");
-  EXPECT_EQ(items_of(Block(R(), "white-space: nowrap")), "white-space-collapse=collapse; text-wrap-mode=nowrap");
+TEST(CssShorthandExpand, WhiteSpaceKeywordsStandForThreeLonghands) {
+  EXPECT_EQ(items_of(Block(R(), "white-space: pre")), "white-space-collapse=preserve; text-wrap-mode=nowrap; white-space-trim=none");
+  EXPECT_EQ(items_of(Block(R(), "white-space: pre-line")), "white-space-collapse=preserve-breaks; text-wrap-mode=wrap; white-space-trim=none");
+  EXPECT_EQ(items_of(Block(R(), "white-space: normal")), "white-space-collapse=collapse; text-wrap-mode=wrap; white-space-trim=none");
+  EXPECT_EQ(items_of(Block(R(), "white-space: nowrap")), "white-space-collapse=collapse; text-wrap-mode=nowrap; white-space-trim=none");
   EXPECT_EQ(items_of(Block(R(), "text-spacing: none")), "text-spacing-trim=space-all; text-autospace=no-autospace");
 }
 
@@ -608,7 +608,13 @@ TEST(CssShorthandBlock, OffsetWritesThePathOnlyWhenSomethingFollowsIt) {
 }
 
 TEST(CssShorthandBlock, TheKeywordShorthandsComeBackAsTheirKeywords) {
+  // css/css-sizing/size-shorthand-serialization.tentative.html: "those longhands never serialize back into the shorthand" (the pair of lengths of min-size and max-size is expanded, not formed)
+  EXPECT_EQ(through("min-size: 100px 200px"), "min-width: 100px; min-height: 200px;");
+  EXPECT_EQ(through("max-size: 50px"), "max-width: 50px; max-height: 50px;");
+  EXPECT_EQ(through("min-width: 100px; min-height: 200px"), "min-width: 100px; min-height: 200px;");
   EXPECT_EQ(through("white-space: pre-wrap"), "white-space: pre-wrap;");
+  EXPECT_EQ(through("white-space: discard-before"), "white-space: discard-before;") << "the trimming is a longhand of the shorthand, and a legacy keyword is written only when it is none";
+  EXPECT_EQ(through("white-space: preserve nowrap discard-inner"), "white-space: preserve nowrap discard-inner;");
   EXPECT_EQ(through("white-space: nowrap"), "white-space: nowrap;");
   EXPECT_EQ(through("text-spacing: no-autospace space-all"), "text-spacing: none;");
   EXPECT_EQ(through("text-spacing: no-autospace trim-start"), "text-spacing: trim-start no-autospace;");

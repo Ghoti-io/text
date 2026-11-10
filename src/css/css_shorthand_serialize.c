@@ -754,6 +754,7 @@ static int keyword_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, c
     }
     const char * a = NULL;
     const char * b = NULL;
+    const char * trim = NULL;   /* white-space-trim, which the four legacy keywords of white-space leave at none (Text 4) */
     for (size_t i = 0; i < d->nlong; i++) {
       if (nm(c, d->ids[i], table[k].a)) {
         a = v[i].text;
@@ -761,6 +762,12 @@ static int keyword_text(sctx * c, GTEXT_CSS_Property_Id sh, const directs * d, c
       else if (nm(c, d->ids[i], table[k].b)) {
         b = v[i].text;
       }
+      else if (nm(c, d->ids[i], "white-space-trim")) {
+        trim = v[i].text;
+      }
+    }
+    if (nm(c, sh, "white-space") && trim && !texteq(trim, "none")) {
+      continue;
     }
     if (a && b && texteq(a, table[k].av) && texteq(b, table[k].bv)) {
       out->text = dupn(c, table[k].kw, strlen(table[k].kw));
@@ -2388,8 +2395,11 @@ GTEXT_CSS_Status css_block_text(const GTEXT_CSS_Declaration_Block * block, tbuf 
   for (size_t id = 1; status == GTEXT_CSS_OK && id <= np; id++) {
     GTEXT_CSS_Property_Info info;
     gtext_css_registry_property_info(c.reg, (GTEXT_CSS_Property_Id)id, &info);
-    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.flags & GTEXT_CSS_PROP_ALIAS) &&
-        gtext_css_shorthand_kind(c.reg, (GTEXT_CSS_Property_Id)id) != GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {
+    /* the sizing shorthands are expanded and not formed: "The size, min-size and max-size shorthands expand to their dimension longhands, but those longhands never serialize back into the
+       shorthand" (css/css-sizing/size-shorthand-serialization.tentative.html, csswg-drafts issue 820: a tentative page; neither Chromium 156.0.8078.47 nor Firefox 158.0.1 has the properties,
+       and both write the longhands). The value of the shorthand itself is still serialized by getPropertyValue(). */
+    if ((info.flags & GTEXT_CSS_PROP_SHORTHAND) && !(info.flags & GTEXT_CSS_PROP_ALIAS) && !nm(&c, (GTEXT_CSS_Property_Id)id, "min-size") && !nm(&c, (GTEXT_CSS_Property_Id)id, "max-size") &&
+        !nm(&c, (GTEXT_CSS_Property_Id)id, "size") && gtext_css_shorthand_kind(c.reg, (GTEXT_CSS_Property_Id)id) != GTEXT_CSS_SHORTHAND_UNIMPLEMENTED) {
       GTEXT_CSS_Property_Id lv[CSS_LEAF_CAP];
       size_t nl = 0;
       bool present = leaves_under(&c, (GTEXT_CSS_Property_Id)id, lv, CSS_LEAF_CAP, &nl) && nl > 0;

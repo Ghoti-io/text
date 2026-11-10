@@ -62,7 +62,7 @@ PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-gramma
             "cascade-seeds": "test-css-cascade-fuzz-seeds.cpp", "fixes": "test-css-cascade-fixes.cpp", "reference": "test-css-cascade-reference.cpp",
             "custom": "test-css-custom.cpp", "property-rule": "test-css-property-rule.cpp", "custom-oom": "test-css-custom-oom.cpp",
             "custom-seeds": "test-css-custom-fuzz-seeds.cpp", "custom-review": "test-css-custom-review.cpp",
-            "style": "test-css-style.cpp", "shorthand": "test-css-shorthand.cpp", "style-oom": "test-css-style-oom.cpp", "style-seeds": "test-css-style-fuzz-seeds.cpp"}
+            "style": "test-css-style.cpp", "shorthand": "test-css-shorthand.cpp", "completion": "test-css-computed-completion.cpp", "style-oom": "test-css-style-oom.cpp", "style-seeds": "test-css-style-fuzz-seeds.cpp"}
 
 # (name, file under src/css/, old text (exactly once), new text, programs that must fail); old and new may be
 # lists of the same length, for a defect that takes more than one edit
@@ -365,6 +365,9 @@ PLANTS += [
     ("canon-equal-radii-of-a-slash-are-two", "css_property_canon.c", "    if (!sp_eq(t[0], t[2])) {\n      cb_putc(out, ' ');", "    if (1) {\n      cb_putc(out, ' ');", ["canon"]),
     ("canon-a-legacy-value-alias-is-written-as-it-is", "css_property_canon.c", "  if (n == 1 && ieq(t[0], \"none\")) {\n    cb_put(out, \"spaces\", 6);", "  if (0 && n == 1 && ieq(t[0], \"none\")) {\n    cb_put(out, \"spaces\", 6);", ["canon"]),
     ("shorthand-outline-is-written-color-first", "css_shorthand_serialize.c", '{"outline", "outline-width,outline-style,outline-color", "outline-style"}', '{"outline", "outline-color,outline-style,outline-width", "outline-style"}', ["shorthand"]),
+    ("shorthand-min-size-is-formed-from-its-longhands", "css_shorthand_serialize.c", "!nm(&c, (GTEXT_CSS_Property_Id)id, \"min-size\") && ", "", ["shorthand"]),
+    ("shorthand-white-space-is-written-without-its-trim", "css_shorthand_serialize.c", "    if (nm(c, sh, \"white-space\") && trim && !texteq(trim, \"none\")) {\n      continue;\n    }",
+     "    if (0 && nm(c, sh, \"white-space\") && trim && !texteq(trim, \"none\")) {\n      continue;\n    }", ["shorthand"]),
     ("custom-a-brace-is-a-fallback-only-at-its-start", "css_property.c", "              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;",
      "              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;\n            }\n            else {\n              braced = braced || (c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY);", ["property"]),
 ]

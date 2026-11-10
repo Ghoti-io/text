@@ -26,10 +26,12 @@
  * rules, feature blocks) are rules of their own, parsed by the same function one level down (their depth is the depth of the grammar, at most two).
  */
 
+#include <stdio.h>
 #include <string.h>
 
 #include <ghoti.io/text/css/css_condition.h>
 #include <ghoti.io/text/css/css_container.h>
+#include <ghoti.io/text/css/css_font_rules.h>
 
 #include "css_atrule_internal.h"
 #include "css_atrule_tables.h"
@@ -980,7 +982,18 @@ static void free_desc(atrule_desc * d) {
 /// Keep a valid descriptor or declaration: a later one of a name replaces the earlier and takes its place at the end (CSSOM's declaration block).
 static bool add_desc(ctx * c, atrule_desc * d) {
   GTEXT_CSS_Atrule * a = c->a;
-  int old = css_atrule_find_index(a, d->name, d->name_len);
+  if (a->kind == GTEXT_CSS_ATRULE_FEATURE_BLOCK) {
+    /* a feature value block is the entries of a map: its names are <custom-ident>s, which are case-sensitive, and "a repeated name takes its last value without moving its first position"
+       (css/css-fonts/font-feature-values-serialization-order.html, the Map's set()) */
+    for (size_t i = 0; i < a->nds; i++) {
+      if (a->ds[i].name_len == d->name_len && memcmp(a->ds[i].name, d->name, d->name_len) == 0) {
+        free_desc(&a->ds[i]);
+        a->ds[i] = *d;
+        return true;
+      }
+    }
+  }
+  int old = a->kind == GTEXT_CSS_ATRULE_FEATURE_BLOCK ? -1 : css_atrule_find_index(a, d->name, d->name_len);
   if (old >= 0) {
     free_desc(&a->ds[old]);
     memmove(&a->ds[old], &a->ds[old + 1], (a->nds - (size_t)old - 1) * sizeof *a->ds);
@@ -2521,6 +2534,79 @@ static void put_declarations(outp * o, const GTEXT_CSS_Atrule * a) {
 
 static void put_rule(outp * o, const GTEXT_CSS_Atrule * a, size_t indent);
 
+static void put_header(outp * o, const GTEXT_CSS_Atrule * a);
+
+/// "serialize a font feature values rule" (Fonts 4, "Serializing font-related at-rules"): `@font-feature-values`, the family, ` {`, the `font-display` declaration when the rule has one (the last of them: a
+/// later declaration of a name replaces an earlier one), then for each of swash, stylistic, ornaments, annotation, character-variant, styleset and historical-forms, in that order and not in source order,
+/// the blocks of that type read as one map (in the order its names were first written, the later value of a name replacing the earlier one; a type with no entry is left out) as ` @type {` and
+/// ` name: values;` for each entry and ` }`, then ` }`: all on one line, so an empty rule is `@font-feature-values Example { }`.
+static void put_feature_values_rule(outp * o, const GTEXT_CSS_Atrule * a) {
+  static const GTEXT_CSS_Feature_Type order[GTEXT_CSS_FEATURE_TYPE_COUNT] = {GTEXT_CSS_FEATURE_SWASH, GTEXT_CSS_FEATURE_STYLISTIC, GTEXT_CSS_FEATURE_ORNAMENTS, GTEXT_CSS_FEATURE_ANNOTATION,
+      GTEXT_CSS_FEATURE_CHARACTER_VARIANT, GTEXT_CSS_FEATURE_STYLESET, GTEXT_CSS_FEATURE_HISTORICAL_FORMS};
+  static const char * const names[GTEXT_CSS_FEATURE_TYPE_COUNT] = {"stylistic", "historical-forms", "styleset", "character-variant", "swash", "ornaments", "annotation"};
+  put_header(o, a);
+  putz(o, " {");
+  const int di = css_atrule_find_index(a, "font-display", 12);
+  if (di >= 0) {
+    putz(o, " font-display: ");
+    put(o, a->ds[di].text, a->ds[di].text_len);
+    putz(o, ";");
+  }
+  GTEXT_CSS_Feature_Values * model = NULL;
+  const GTEXT_CSS_Status st = gtext_css_feature_values_from_atrule(a, &model);
+  if (st != GTEXT_CSS_OK) {
+    if (o->st == GTEXT_CSS_OK) {
+      o->st = st;
+    }
+    return;
+  }
+  for (size_t k = 0; k < GTEXT_CSS_FEATURE_TYPE_COUNT; k++) {
+    const size_t t = (size_t)order[k];
+    const size_t n = model->value_count[t];
+    const GTEXT_CSS_Feature_Value * vals = model->values[t];
+    /* the entries of the map: a name once, at the place it first had, with its last value */
+    bool any = false;
+    for (size_t i = 0; i < n; i++) {
+      bool first = true;
+      size_t last = i;
+      for (size_t j = 0; j < n; j++) {
+        if (vals[j].name.length == vals[i].name.length && memcmp(vals[j].name.data, vals[i].name.data, vals[i].name.length) == 0) {
+          if (j < i) {
+            first = false;
+          }
+          last = j;
+        }
+      }
+      if (!first) {
+        continue;
+      }
+      if (!any) {
+        putz(o, " @");
+        putz(o, names[t]);
+        putz(o, " {");
+        any = true;
+      }
+      putz(o, " ");
+      put_ident(o, vals[i].name.data, vals[i].name.length);
+      putz(o, ": ");
+      for (size_t v = 0; v < vals[last].value_count; v++) {
+        char buf[16];
+        const int len = snprintf(buf, sizeof buf, "%lu", (unsigned long)vals[last].values[v]);
+        if (v) {
+          putz(o, " ");
+        }
+        put(o, buf, (size_t)len);
+      }
+      putz(o, ";");
+    }
+    if (any) {
+      putz(o, " }");
+    }
+  }
+  gtext_css_feature_values_free(model);
+  putz(o, " }");
+}
+
 static void put_names_prelude(outp * o, const GTEXT_CSS_Atrule * a) {
   for (size_t i = 0; i < a->nnames; i++) {
     if (i) {
@@ -2656,6 +2742,10 @@ static void put_rule(outp * o, const GTEXT_CSS_Atrule * a, size_t indent) {
       putz(o, "; ");
     }
     putz(o, "}");
+    return;
+  }
+  if (a->kind == GTEXT_CSS_ATRULE_FONT_FEATURE_VALUES && !a->statement) {
+    put_feature_values_rule(o, a);
     return;
   }
   put_header(o, a);

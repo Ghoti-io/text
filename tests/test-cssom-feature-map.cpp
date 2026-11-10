@@ -24,7 +24,8 @@
  * CSSFontFeatureValuesMap (CSS Fonts 4, 12.2): the value maps of a `@font-feature-values` rule. "Each value map attribute of CSSFontFeatureValuesRule reflects the values defined via a
  * corresponding feature value block"; "a single unsigned long value is treated as a sequence of a single value"; "If the associated feature value block only allows a limited number of
  * values, the set() method throws an InvalidAccessError exception when the input sequence to set() contains more than the limited number of values." The pinned pages
- * css/css-fonts/font-feature-values-map-live.html and css/cssom/CSSFontFeatureValuesRule.html are carried here.
+ * css/css-fonts/font-feature-values-map-live.html and css/cssom/CSSFontFeatureValuesRule.html are carried here, and so is css/css-fonts/font-feature-values-serialization-order.html: "serialize a font
+ * feature values rule" (CSS Fonts 4, "Serializing font-related at-rules"), which writes the rule on one line, the `font-display` descriptor first and the block types in a fixed order.
  */
 
 #include <string>
@@ -111,12 +112,12 @@ TEST(CssomFeatureMap, SetReplacesInPlaceOrAppendsAndTheRuleKeepsItsIdentity) {
   res = set_values(r.r, GTEXT_CSS_FEATURE_ANNOTATION, "circled", {9});
   ASSERT_EQ(res.st, GTEXT_CSS_OK);
   EXPECT_EQ(keys(r.r, GTEXT_CSS_FEATURE_ANNOTATION), "circled,black-boxed") << "a name set again keeps its place even when it is the first";
-  EXPECT_EQ(css(r.r), "@font-feature-values MyFamily {\n  @annotation { circled: 9; black-boxed: 42; }\n}");
+  EXPECT_EQ(css(r.r), "@font-feature-values MyFamily { @annotation { circled: 9; black-boxed: 42; } }");
   res = set_values(r.r, GTEXT_CSS_FEATURE_ANNOTATION, "circled", {1});
   res = set_values(r.r, GTEXT_CSS_FEATURE_ANNOTATION, "new", {7});
   ASSERT_EQ(res.st, GTEXT_CSS_OK);
   EXPECT_EQ(keys(r.r, GTEXT_CSS_FEATURE_ANNOTATION), "circled,black-boxed,new");
-  EXPECT_EQ(css(r.r), "@font-feature-values MyFamily {\n  @annotation { circled: 1; black-boxed: 42; new: 7; }\n}");
+  EXPECT_EQ(css(r.r), "@font-feature-values MyFamily { @annotation { circled: 1; black-boxed: 42; new: 7; } }");
   EXPECT_EQ(path(s, {0}).r, r.r) << "the same object";
   res = set_values(r.r, GTEXT_CSS_FEATURE_ANNOTATION, "new", {7});
   EXPECT_EQ(res.o.kind, GTEXT_CSSOM_UNCHANGED) << "a set that says what the map says is not a change";
@@ -171,7 +172,7 @@ TEST(CssomFeatureMap, DeleteAndClear) {
   EXPECT_EQ(res.st, GTEXT_CSS_OK);
   EXPECT_EQ(keys(r.r, GTEXT_CSS_FEATURE_SWASH), "");
   EXPECT_EQ(keys(r.r, GTEXT_CSS_FEATURE_ORNAMENTS), "o") << "the other maps stay";
-  EXPECT_EQ(css(r.r), "@font-feature-values F {\n  @ornaments { o: 4; }\n}");
+  EXPECT_EQ(css(r.r), "@font-feature-values F { @ornaments { o: 4; } }");
   res.st = gtext_cssom_feature_map_clear(r.r, GTEXT_CSS_FEATURE_SWASH, &res.o);
   EXPECT_EQ(res.o.kind, GTEXT_CSSOM_UNCHANGED);
 }
@@ -233,9 +234,36 @@ TEST(CssomFeatureMap, NamesAreCaseSensitiveIdentifiersAndWrittenEscaped) {
   EXPECT_EQ(keys(r.r, GTEXT_CSS_FEATURE_SWASH), "Foo,foo") << "feature value names are case-sensitive";
   ASSERT_EQ(set_values(r.r, GTEXT_CSS_FEATURE_SWASH, "a b", {3}).st, GTEXT_CSS_OK);
   EXPECT_EQ(read_entry(r.r, GTEXT_CSS_FEATURE_SWASH, "a b"), "3");
-  EXPECT_EQ(css(r.r), "@font-feature-values F {\n  @swash { Foo: 1; foo: 2; a\\ b: 3; }\n}");
+  EXPECT_EQ(css(r.r), "@font-feature-values F { @swash { Foo: 1; foo: 2; a\\ b: 3; } }");
   Result res = set_values(r.r, GTEXT_CSS_FEATURE_SWASH, "", {4});
   EXPECT_EQ(res.st, GTEXT_CSS_OK);
   EXPECT_EQ(res.o.kind, GTEXT_CSSOM_IGNORED_INVALID_VALUE) << "the empty name cannot be written as an identifier";
   EXPECT_EQ(keys(r.r, GTEXT_CSS_FEATURE_SWASH), "Foo,foo,a b");
+}
+
+namespace {
+std::string serialized(const std::string & body) {
+  Doc doc;
+  Sheet s(doc, "@font-feature-values Example { " + body + " }");
+  return css(path(s, {0}).r);
+}
+}  // namespace
+
+// css/css-fonts/font-feature-values-serialization-order.html, test by test.
+TEST(CssomFeatureMapSerialization, TheRuleIsWrittenOnOneLineInTheOrderOfTheAlgorithm) {
+  EXPECT_EQ(serialized("@swash {} @styleset {}"), "@font-feature-values Example { }") << "an empty rule serializes with one space between its braces";
+  EXPECT_EQ(serialized("@swash { pretty: 1; } font-display: swap;"), "@font-feature-values Example { font-display: swap; @swash { pretty: 1; } }") << "font-display first";
+  EXPECT_EQ(serialized("@styleset { a: 6; } @character-variant { a: 5 1; } @annotation { a: 4; } @ornaments { a: 3; } @stylistic { a: 2; } @swash { a: 1; }"),
+      "@font-feature-values Example { @swash { a: 1; } @stylistic { a: 2; } @ornaments { a: 3; } @annotation { a: 4; } @character-variant { a: 5 1; } @styleset { a: 6; } }")
+      << "block types in a fixed order and not in source order";
+  EXPECT_EQ(serialized("@annotation { } @styleset { a: 1; } @swash { } @ornaments { b: 2; } @stylistic { } @character-variant { }"), "@font-feature-values Example { @ornaments { b: 2; } @styleset { a: 1; } }")
+      << "empty blocks are omitted without changing the order of the others";
+  EXPECT_EQ(serialized("@styleset { z: 1; a: 2; m: 3; }"), "@font-feature-values Example { @styleset { z: 1; a: 2; m: 3; } }") << "distinct names keep their source order";
+  EXPECT_EQ(serialized("@styleset { a: 1; b: 2; a: 3; }"), "@font-feature-values Example { @styleset { a: 3; b: 2; } }") << "a repeated name takes its last value without moving";
+  EXPECT_EQ(serialized("@swash { pretty: 0; cool: 2; } @styleset { other: 3; } @swash { pretty: 1; extra: 4; cool: 5; }"),
+      "@font-feature-values Example { @swash { pretty: 1; cool: 5; extra: 4; } @styleset { other: 3; } }") << "separate blocks of one type are one map";
+  EXPECT_EQ(serialized("@styleset { a: -1; b: 2; a: 3; b: -1; }"), "@font-feature-values Example { @styleset { b: 2; a: 3; } }") << "an invalid declaration neither reserves a position nor replaces a value";
+  EXPECT_EQ(serialized("@styleset { a: 1; A: 2; b: 3; \\61: 4; }"), "@font-feature-values Example { @styleset { a: 4; A: 2; b: 3; } }") << "names are case-sensitive and an escape is the same name";
+  EXPECT_EQ(serialized("@historical-forms { a: 1; } @styleset { b: 2; }"), "@font-feature-values Example { @styleset { b: 2; } @historical-forms { a: 1; } }") << "historical-forms last";
+  EXPECT_EQ(serialized("@swash { pretty: 0; cool: 2; } @swash { pretty: 1; }"), "@font-feature-values Example { @swash { pretty: 1; cool: 2; } }") << "the example of the draft";
 }
