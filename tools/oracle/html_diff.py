@@ -98,10 +98,13 @@ MIN_FIXED_FREE = 150
 # What the corpora leave uncompared in the default run: the XML suite's documents that are not
 # well formed, the vectors' trees this library's markup cannot hold (a processing instruction, a name XML
 # does not allow), and documents whose dump is ambiguous. A different number is a different corpus.
-# The xmlconf figure was 1100 when it was pinned (2026-10-11) and measured 1019 on 2026-11-10, with the XML tree builder
-# unchanged by that day's work: the reader of XML documents changed between the two dates (commits aaee87e8, 6985cc2d,
-# f58f55db of 2026-10-21 and later ones touch what it accepts), so 81 more documents are read. Not investigated per
-# document; the pin is the measured number, and a further change is again a different corpus.
+# The xmlconf figure was 1100 when it was pinned (2026-10-11) and is 1019 since the XML parser reads XML 1.1
+# (commits 275e00e9, f2887a3f, a05fd725 of 2026-10-15). Established by building the library at each commit and
+# parsing every .xml file of the suite with the default options: 1100 at 1afd1333 and 216d2272, 1024 at 275e00e9,
+# 1021 at f2887a3f, 1019 at a05fd725 and unchanged to now. The 81 documents that parse now and did not are 76 XML 1.1
+# documents (eduni/xml-1.1, eduni/namespaces/1.1, ibm/xml-1.1), four of ibm/xml-1.1/not-wf/P77 (not well formed only
+# through the content of an external subset, which a parser that does not read external subsets, the default, cannot see)
+# and eduni/errata-2e/E50.xml. No document that parsed stopped parsing. A different number is a different corpus.
 CORPUS_PINS = {("xmlconf", "NOTPARSED"): 1019, ("wpt", "UNBUILDABLE"): 6}
 
 

@@ -1171,6 +1171,11 @@ static int emit_item(const char * id, const char * tags, Doc * doc, const char *
   GTEXT_XML_Write_Options o = gtext_xml_write_options_default();
   o.xhtml = true;
   o.xml_declaration = GTEXT_XML_DECLARATION_NEVER;
+  /* The differential holds the references to the tree that was written, so the document type is
+     written with its public and system identifiers (the default drops them, and the XML parser
+     would then read back a tree that is not the source). The writer reports the hazard of such a
+     document type, which is how the divergence list names them. */
+  o.emit_external_identifiers = true;
   /* A fifth of the generated trees are written in US-ASCII, where every character beyond it is a
      numeric reference, and a few in ISO-8859-1: a reference is read by HTML on its own terms. */
   char tagbuf[96];

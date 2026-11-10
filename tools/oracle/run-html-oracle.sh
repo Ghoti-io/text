@@ -395,7 +395,7 @@ check_controls() {
 	tree_plant_lit fragment-tokenizer-state-never-set html_tree_fragment.c '    if (state != GTEXT_HTML_STATE_DATA) {' '    if (0) {'
 	tree_plant_lit fragment-title-is-not-rcdata html_tree_fragment.c 'if (tb->ctx_id == T_TITLE || tb->ctx_id == T_TEXTAREA) {' 'if (tb->ctx_id == T_TEXTAREA) {'
 	tree_plant_lit fragment-mode-not-reset-from-the-context html_tree_fragment.c '  tb->mode = ht_tree_reset_mode(tb);\n  /* Step 21. */' '  tb->mode = M_IN_BODY;\n  /* Step 21. */'
-	tree_plant_lit fragment-reset-ignores-the-context-element html_tree_modes.c '        id = tb->ctx_id;' '        id = tb->stack[0].id;'
+	tree_plant_lit fragment-reset-ignores-the-context-element html_tree_modes.c '      id = tb->ctx_id;' '      id = tb->stack[0].id;'
 	tree_plant_lit fragment-result-not-moved html_tree_fragment.c '  markup_move_children_unchecked(tb->stack[0].node, tb->frag_node);' '  (void)0;'
 	tree_plant_lit fragment-select-context-allows-select html_tree_modes.c '      if (tb->ctx_select) {\n        /* The fragment context element is a select element (fragment case): "Parse error. Ignore\n           the token." */' '      if (0) {\n        /* The fragment context element is a select element (fragment case): "Parse error. Ignore\n           the token." */'
 	tree_plant_lit fragment-select-context-allows-input html_tree_modes.c '      if (tb->ctx_select) {\n        /* The fragment context element is a select element (fragment case). */' '      if (0) {\n        /* The fragment context element is a select element (fragment case). */'
