@@ -17,7 +17,7 @@
 """Which members of the CSSOM interface ledger Chromium and Firefox have.
 
     css_cssom_idl_probe.py [--out FILE]      ask both browsers and write the answers (default: tools/oracle/css_cssom_idl_probe.json)
-    css_cssom_idl_probe.py --check           require the recorded answers to cover exactly the members of tools/css/cssom_ledger.tsv
+    css_cssom_idl_probe.py --check           require the recorded answers to cover exactly the members of tools/css/cssom_ledger.tsv that the pinned IDL has (a row whose status is `ahead` is not asked)
 
 The browsers are the pinned ones (containers/cssprop, one driver, no network). The answers are recorded, not asked in `make test`: a ledger row whose status is `out` for a member
 that a browser ships, or `implemented` for one that neither ships, is a statement the record can be read against. A dictionary key has no object to ask and is recorded as null.
@@ -42,6 +42,8 @@ def rows():
         if line.startswith("#") or not line.strip():
             continue
         f = line.rstrip("\n").split("\t")
+        if len(f) > 4 and f[4] == "ahead":
+            continue   # a member a CSSWG decision adds and the pinned IDL lacks: no record of the browsers' answers covers it, and none is asked for
         out.append((f[0], f[1], f[2]))
     return out
 
