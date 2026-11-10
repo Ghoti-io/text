@@ -39,6 +39,9 @@
  *   with one allocation failed: the call is OOM or untouched by the failure, and an OOM leaves the dump as it was;
  *   nothing leaks, and nothing is read after it is freed (under a sanitizer).
  *
+ * An input that begins with the four bytes `80 4d 58 32` is read as the same format after them, with the pools of mixins (`kInitExt`, `kRulesExt`, `kSheetsExt`) added to the ones that were there: every
+ * other input means what it always meant.
+ *
  * Seeds: tests/fuzz/corpus/cssom-sheet, made by tools/css/make-fuzz-sheet-cssom-seeds.py.
  * Build with: make fuzz-cssom-sheet      Run: make fuzz-run-cssom-sheet
  */
@@ -162,6 +165,38 @@ const char * const kNames[] = {"color", "margin", "margin-top", "width", "bogus"
 const char * const kValues[] = {"red", "1px", "", "nonsense", "1px 2px", "blue !important", "var(--x)"};
 const char * const kMedia[] = {"print", "screen, (min-width: 1px)", "", "(bogus: 1) and", "tv", "not all", "print and (color)"};
 
+/// The second pool (mode "mixins"). An input that begins with the four bytes kExtMagic is read as the same format from the fifth byte on, with these pools added: a rule or a sheet is chosen from the
+/// pool above followed by the one below (the index is taken modulo the size of both), and the sheets begin as kInitExt says. **An input that does not begin with the magic is read exactly as it was
+/// before this mode existed, from the pools above, which must not change** (a seed chooses its texts by an index modulo their size: the replay test pins the pools above, and checks that no seed of the
+/// corpus but the ones of this mode begins with the magic). New texts go here, never in the pools above.
+constexpr unsigned char kExtMagic[4] = {0x80, 'M', 'X', '2'};
+bool g_ext = false;   ///< Set by the entry point for the one input being run.
+
+const char * const kInitExt[] = {
+    "@mixin --q(--v){--out:var(--v)} @mixin --p(--w <length>: 1px){width:var(--w);@apply --q(var(--w))} a{@apply --p(2px)} b > c{margin:1px 2px} @media print{d{@apply --q(1)}}",
+    "@mixin --c(--a, --b: 2){margin-top:var(--b);@contents{color:red}} p{@apply --c(1){color:blue} q{@apply --c;}} @layer l{@mixin --q(--v){--out:2}}", "",
+    "z{@apply --q(1)} @mixin --q(--v){--out:var(--v);@private{--x:1}}"};
+const char * const kRulesExt[] = {"@mixin --p(--w <length>){width:var(--w);@apply --q(var(--w));}", "@mixin --q(--v){--out:var(--v)}", "@mixin --c{@contents{color:red}}",
+    "@mixin --loop{@apply --loop;--s:1}", "p{@apply --p(1px);}", "p{@apply --c{color:blue}}", "p{@media print{@apply --q(2)}}", "p{@apply --q(1, 2, 3)}", "p{@apply --missing}",
+    "@scope (a){@apply --q(1)}", "@media print{@mixin --m{color:red}}", "@layer l{@mixin --q(--v){--out:2}}", "@mixin --d(--a: var(--b), --b: 2){--z:var(--a)}", "@mixin --e(--a, ){}",
+    "@apply --q({a, b});", "a{@apply --q(1);@apply --q(2);b{@apply --c{@apply --q(3)}}}", "@mixin --r(--a <color>: red){color:var(--a);@private{--a:blue}margin-top:var(--a)}",
+    "a{@apply --r;}", "a{@apply --r(green){@apply --q(1)}}", "@mixin --s(--a){@apply --t(var(--a));} @mixin --t(--b){--out:var(--b)}",
+    "@mixin --u(--a: {1px 2px}){margin:var(--a)}", "p{@apply --u({3px 4px});}", "@function --f(--a){result:var(--a)} p{@apply --q(--f(1))}"};
+const char * const kSheetsExt[] = {"@mixin --q(--v){--out:var(--v)} @mixin --p(--w){width:var(--w);@apply --q(var(--w))} a{@apply --p(1px)}",
+    "@mixin --a{@apply --b;--a:1} @mixin --b{@apply --a;--b:1} p{@apply --a}", "@mixin --m0{@apply --m1} @mixin --m1{@apply --m2} @mixin --m2{@apply --m3} @mixin --m3{--leaf:1} p{@apply --m0}",
+    "@mixin --c(--a){@contents{color:var(--a)}} p{@apply --c(red){margin-top:1px}} q{@apply --c(blue)}", "@mixin --x{color:red;& > b{@apply --y}} @mixin --y{width:1px} a{@apply --x}",
+    "@layer a, b; @layer b{@mixin --m{--l:b}} @layer a{@mixin --m{--l:a}} p{@apply --m}", "@mixin --m{--l:1} @mixin --m{--l:2} p{@apply --m}", "a{@apply --q} @mixin --q{--late:1}",
+    "@mixin --z(--a <length>: 1px, --b <length>: var(--a)){--sum:calc(var(--a) + var(--b))} p{@apply --z; q{@apply --z(2px)}}"};
+
+template <size_t A, size_t B>
+const char * pick(const char * const (&base)[A], const char * const (&more)[B], unsigned t) {
+  if (!g_ext) {
+    return base[t % A];
+  }
+  const size_t i = t % (A + B);
+  return i < A ? base[i] : more[i - A];
+}
+
 /// The declarations of a rule's text, each as written, in the order written (the text between the braces split at its semicolons).
 std::vector<std::string> declarations_of(const std::string & rule) {
   std::vector<std::string> out;
@@ -265,6 +300,40 @@ bool rebuild_dump(const std::string & text, std::string & out) {
   out = dump_compiled(compiled);
   gtext_css_sheet_free(compiled);
   return true;
+}
+
+/// The hidden name of a private property (a mixin's parameter among them) carries the number of the sheet that made it, taken from a counter the process shares, so the same text compiled twice has the
+/// same names with other numbers (that is what keeps the names of two sheets apart). What a compile must agree on is the names up to that number: each number is replaced by the order in which it first
+/// appears in the text.
+std::string canon_hidden(const std::string & s) {
+  static const char mark[] = "\xF4\x8F\xBF\xBD";   // CSS_PRIV_MARK: U+10FFFD
+  std::string out;
+  std::vector<std::string> seen;
+  size_t i = 0;
+  while (i < s.size()) {
+    if (s.compare(i, 4, mark) == 0 && i + 4 < s.size() && s[i + 4] == 'p') {
+      size_t j = i + 5;
+      while (j < s.size() && s[j] >= '0' && s[j] <= '9') {
+        j++;
+      }
+      if (j > i + 5 && j < s.size() && s[j] == '_') {
+        const std::string number = s.substr(i + 5, j - i - 5);
+        size_t k = 0;
+        while (k < seen.size() && seen[k] != number) {
+          k++;
+        }
+        if (k == seen.size()) {
+          seen.push_back(number);
+        }
+        out.append(s, i, 5);
+        out += "#" + std::to_string(k);
+        i = j;
+        continue;
+      }
+    }
+    out += s[i++];
+  }
+  return out;
 }
 
 std::string serialize_sheet(const GTEXT_CSSOM_Sheet * s) {
@@ -400,7 +469,8 @@ void check(World & w, const std::string & input, const char * after) {
       if (!rebuild_dump(text, want)) {
         fail("the serialization of a sheet does not compile", text, input);
       }
-      const std::string got = dump_compiled(snap);
+      const std::string got = canon_hidden(dump_compiled(snap));
+      want = canon_hidden(want);
       if (got != want) {
         fail("the snapshot of a sheet is not the compile of its serialization", std::string(after) + " sheet " + std::to_string(k) + "\n" + text + "\n--- snapshot\n" + got + "\n--- rebuild\n" + want, input);
       }
@@ -430,7 +500,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     return 0;
   }
   const std::string input(reinterpret_cast<const char *>(data), size);
-  size_t pos = 0;
+  g_ext = size >= sizeof kExtMagic + 3 && std::memcmp(data, kExtMagic, sizeof kExtMagic) == 0;
+  size_t pos = g_ext ? sizeof kExtMagic : 0;
   auto next = [&]() -> unsigned { return pos < size ? data[pos++] : 0u; };
   const bool use_fault = (next() & 1) != 0;
   const size_t fault_n = 1 + (next() | (next() << 8)) % 600;
@@ -448,11 +519,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       if (m.constructed) {
         gtext_cssom_sheet_new_constructed(w.doc, nullptr, &m.s);
         if (m.s) {
-          gtext_cssom_sheet_replace_sync(m.s, kInit[3], std::strlen(kInit[3]), nullptr);
+          const char * init3 = g_ext ? kInitExt[3] : kInit[3];
+          gtext_cssom_sheet_replace_sync(m.s, init3, std::strlen(init3), nullptr);
         }
       }
       else {
-        const char * init = k == 0 ? kInit[0] : kInit[1];
+        const char * init = g_ext ? (k == 0 ? kInitExt[0] : kInitExt[1]) : (k == 0 ? kInit[0] : kInit[1]);
         gtext_cssom_sheet_new_parsed(w.doc, init, std::strlen(init), nullptr, &m.s);
       }
       if (!m.s) {
@@ -484,7 +556,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       Held made;
       if (op == 0) {
         what = "insertRule";
-        const std::string text = kRules[t % (sizeof kRules / sizeof *kRules)];
+        const std::string text = pick(kRules, kRulesExt, t);
         const size_t at = idx % (m.rules.size() + 3);
         expect_valid = ref_one_rule(w, text, expect_one);
         const bool import = text.rfind("@import", 0) == 0;
@@ -537,7 +609,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       }
       else if (op == 2) {
         what = "replaceSync";
-        const std::string text = kSheets[t % (sizeof kSheets / sizeof *kSheets)];
+        const std::string text = pick(kSheets, kSheetsExt, t);
         want = m.constructed ? GTEXT_CSS_OK : GTEXT_CSS_E_NOT_ALLOWED;
         if (m.constructed) {
           expect_css = ref_rules(w, text);

@@ -127,4 +127,45 @@ TEST_F(CssomSheetFuzzSeeds, EverySeedHoldsEveryProperty) {
   EXPECT_LT(seconds, 120.0 * slow) << files.size() << " seeds took " << seconds << " s";
 }
 
+
+// A seed chooses its rules and sheets by an index modulo the size of a pool, so a pool that grows changes what every seed already written means (a reproducer that failed once would stop
+// reproducing, and nothing would say so). The pools the harness had when the mode of mixins was added are pinned here; new texts go in the pools of that mode.
+uint64_t pool_hash() {
+  uint64_t h = 1469598103934665603ull;
+  auto mix = [&](const char * text) {
+    for (const char * c = text; *c; c++) {
+      h = (h ^ static_cast<unsigned char>(*c)) * 1099511628211ull;
+    }
+    h = (h ^ 0xffu) * 1099511628211ull;
+  };
+  using namespace cssom_sheetfuzz;
+  for (const char * t : kInit) mix(t);
+  for (const char * t : kRules) mix(t);
+  for (const char * t : kSheets) mix(t);
+  for (const char * t : kSelectors) mix(t);
+  for (const char * t : kNames) mix(t);
+  for (const char * t : kValues) mix(t);
+  for (const char * t : kMedia) mix(t);
+  return h;
+}
+
+TEST(CssomSheetFuzzPools, ThePoolsASeedIndexesAreUnchanged) {
+  EXPECT_EQ(sizeof cssom_sheetfuzz::kRules / sizeof *cssom_sheetfuzz::kRules, 30u);
+  EXPECT_EQ(sizeof cssom_sheetfuzz::kSheets / sizeof *cssom_sheetfuzz::kSheets, 7u);
+  EXPECT_EQ(pool_hash(), 0xb01bf9329477ee1bull) << "a text of a pool a seed indexes was changed, added or removed; put new texts in the pools of the mode of mixins (kRulesExt, kSheetsExt, kInitExt)";
+}
+
+// Only the seeds of the mode of mixins begin with the bytes that select it: nothing else in the corpus (a reproducer included) may, or its meaning would change.
+TEST(CssomSheetFuzzPools, OnlyTheSeedsOfTheModeOfMixinsBeginWithItsMagic) {
+  size_t ext = 0;
+  for (const auto & entry : fs::directory_iterator(corpus_dir() + "/cssom-sheet")) {
+    const std::string data = slurp(entry.path().generic_string());
+    const bool magic = data.size() >= sizeof cssom_sheetfuzz::kExtMagic && std::memcmp(data.data(), cssom_sheetfuzz::kExtMagic, sizeof cssom_sheetfuzz::kExtMagic) == 0;
+    const bool named = entry.path().filename().string().rfind("ext-", 0) == 0;
+    EXPECT_EQ(magic, named) << entry.path().generic_string() << (magic ? " begins with the magic of the mode of mixins and is not named for it" : " is named for the mode of mixins and does not begin with its magic");
+    ext += magic && named;
+  }
+  EXPECT_GE(ext, 100u) << "tools/css/make-fuzz-sheet-cssom-seeds.py writes the seeds of the mode of mixins";
+}
+
 } // namespace

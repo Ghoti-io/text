@@ -46,6 +46,9 @@
  *   with one allocation failed: the call is OOM or untouched by the failure, and the next sync ends where an unswept one would;
  *   nothing leaks, and nothing is read after it is freed (under a sanitizer).
  *
+ * An input that begins with the four bytes `80 4d 58 32` is read as the same format after them, with the pools of mixins (`kTextsExt`, `kRulesExt`) added to the ones that were there: every other
+ * input means what it always meant.
+ *
  * Seeds: tests/fuzz/corpus/cssom-document, made by tools/css/make-fuzz-document-cssom-seeds.py.
  * Build with: make fuzz-cssom-document      Run: make fuzz-run-cssom-document
  */
@@ -154,6 +157,40 @@ const GTEXT_CSS_Registry * registry() {
   return r;
 }
 
+/// The hidden name of a private property (a mixin's parameter among them) carries the number of the sheet that made it, taken from a counter the process shares, so the same text compiled twice has the
+/// same names with other numbers (that is what keeps the names of two sheets apart). What a compile must agree on is the names up to that number: each number is replaced by the order in which it first
+/// appears in the text.
+std::string canon_hidden(const std::string & s) {
+  static const char mark[] = "\xF4\x8F\xBF\xBD";   // CSS_PRIV_MARK: U+10FFFD
+  std::string out;
+  std::vector<std::string> seen;
+  size_t i = 0;
+  while (i < s.size()) {
+    if (s.compare(i, 4, mark) == 0 && i + 4 < s.size() && s[i + 4] == 'p') {
+      size_t j = i + 5;
+      while (j < s.size() && s[j] >= '0' && s[j] <= '9') {
+        j++;
+      }
+      if (j > i + 5 && j < s.size() && s[j] == '_') {
+        const std::string number = s.substr(i + 5, j - i - 5);
+        size_t k = 0;
+        while (k < seen.size() && seen[k] != number) {
+          k++;
+        }
+        if (k == seen.size()) {
+          seen.push_back(number);
+        }
+        out.append(s, i, 5);
+        out += "#" + std::to_string(k);
+        i = j;
+        continue;
+      }
+    }
+    out += s[i++];
+  }
+  return out;
+}
+
 const char kHtml[] =
     "<!DOCTYPE html><html><head><style id=s0>p{color:red}</style><style id=s1 media=screen>.a{margin-top:1px}</style></head>"
     "<body><div id=d><p id=p1 class=a>x</p><p id=p2>y</p></div><style id=s2>#p2{color:blue}</style></body></html>";
@@ -166,6 +203,30 @@ const char * const kTypes[] = {"text/css", "TEXT/CSS", "", "text/plain", "text/c
 const char * const kRules[] = {"p{color:red}", ".a{margin-top:9px}", "@media screen{p{color:pink}}", "div p{width:2px}", "}", "@import url(b.css);", "#p2{color:gold}",
     "p{@private{--x:1px;@property --y <length>:2px}--v:var(--x) var(--y)}", "div{@private{--x:3px}p{--v:var(--x)}}"};
 const char * const kProps[] = {"color", "margin-top", "width", "bogus", "--v"};
+
+/// The second pool (mode "mixins"). An input that begins with the four bytes kExtMagic is read as the same format from the fifth byte on, and the text of a style element, an adopted sheet or an inserted
+/// rule is chosen from the pool above followed by the one below (the index is taken modulo the size of both). **An input that does not begin with the magic is read exactly as it was before this mode
+/// existed, from the pools above, which must not change** (a seed chooses by an index modulo the size of a pool: the replay test pins the pools above and checks that only the seeds of this mode
+/// begin with the magic). New texts go here, never in the pools above.
+constexpr unsigned char kExtMagic[4] = {0x80, 'M', 'X', '2'};
+bool g_ext = false;   ///< Set by the entry point for the one input being run.
+
+const char * const kTextsExt[] = {"@mixin --m(--c: red, --w: 1px){color:var(--c);margin-top:var(--w);@contents{width:3px}}", "p{@apply --m(blue, 2px)}", "p{@apply --m(green){width:9px}} .a{@apply --m}",
+    "@layer a, b; @layer a{@mixin --m{color:gold}} @layer b{@mixin --m{color:pink}} #p2{@apply --m}", "@mixin --m{color:orange} p{@apply --m}", "@mixin --n(--x){@apply --m(var(--x))} div p{@apply --n(purple)}",
+    "@mixin --loop{@apply --loop;color:red} p{@apply --loop}", "@media print{@mixin --m{color:black}} p{@apply --m}", "@import url(a.css); p{@apply --m}", "p{color:red;@apply --m(1px);margin-top:4px}",
+    "@mixin --m(--c <color>: red){color:var(--c);@private{--c:blue}width:calc(1px * 2)} .a{@apply --m(green)}", "@mixin --p(--a){width:var(--a);& + p{margin-top:var(--a)}} #p1{@apply --p(5px)}",
+    "@mixin --m(--c: red){color:var(--c)}"};
+const char * const kRulesExt[] = {"@mixin --m(--c: red){color:var(--c)}", "p{@apply --m(blue)}", "@mixin --m{color:teal}", "div p{@apply --m(plum);width:7px}", "@layer b{@mixin --m{margin-top:11px}}",
+    "@apply --m;", "p{@apply --m{width:2px}}", "@media screen{p{@apply --m(navy)}}", "@mixin --z{@apply --m}"};
+
+template <size_t A, size_t B>
+const char * pick(const char * const (&base)[A], const char * const (&more)[B], unsigned t) {
+  if (!g_ext) {
+    return base[t % A];
+  }
+  const size_t i = t % (A + B);
+  return i < A ? base[i] : more[i - A];
+}
 const char * const kValues[] = {"red", "1px", "", "nonsense", "blue !important", "var(--x)"};
 const char * const kInline[] = {"color: red", "margin-top: 1px; color: blue", "", "bogus: 1", "width: 3px !important"};
 const char * const kProbeProps[] = {"color", "margin-top", "width"};
@@ -576,7 +637,7 @@ void check_synced(World & w, const char * after) {
         continue;
       }
       for (const char * prop : kProbeProps) {
-        const std::string a = cascaded(w, live_index, el, prop), b = cascaded(w, fresh_index, el, prop);
+        const std::string a = canon_hidden(cascaded(w, live_index, el, prop)), b = canon_hidden(cascaded(w, fresh_index, el, prop));
         if (a != b) {
           fail("a cascaded value differs from the document built again from the serialized state", std::string(after) + " " + id + " " + prop + ": " + a + " vs " + b, w.input);
         }
@@ -595,6 +656,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     return 0;
   }
   const std::string input(reinterpret_cast<const char *>(data), size);
+  g_ext = size >= sizeof kExtMagic + 4 && std::memcmp(data, kExtMagic, sizeof kExtMagic) == 0;
+  if (g_ext) {
+    data += sizeof kExtMagic;
+    size -= sizeof kExtMagic;
+  }
   const bool armed = (data[0] & 1) != 0;
   const size_t fault_n = 1 + ((static_cast<size_t>(data[1]) | (static_cast<size_t>(data[2]) << 8)) % 3000);
   const size_t fault_op = data[3] % 40;
@@ -653,7 +719,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
           gtext_markup_remove(ch);
           gtext_markup_node_free(ch);
         }
-        const char * txt = kTexts[t % (sizeof kTexts / sizeof *kTexts)];
+        const char * txt = pick(kTexts, kTextsExt, t);
         if (*txt) {
           GTEXT_Markup_Node * tn = nullptr;
           if (gtext_markup_create_text(w.markup, txt, std::strlen(txt), &tn) == GTEXT_MARKUP_OK) {
@@ -703,7 +769,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
         what = "new style";
         GTEXT_Markup_Node * e = nullptr;
         if (gtext_markup_create_element(w.markup, GTEXT_MARKUP_NS_HTML, nullptr, "style", &e) != GTEXT_MARKUP_OK) break;
-        const char * txt = kTexts[t % (sizeof kTexts / sizeof *kTexts)];
+        const char * txt = pick(kTexts, kTextsExt, t);
         GTEXT_Markup_Node * tn = nullptr;
         if (*txt && gtext_markup_create_text(w.markup, txt, std::strlen(txt), &tn) == GTEXT_MARKUP_OK) {
           gtext_markup_append_child(e, tn);
@@ -732,7 +798,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
         if (!style) break;
         GTEXT_CSSOM_Sheet * s = gtext_cssom_markup_sheet_of(w.binding, style);
         if (!s) break;
-        const char * txt = kRules[t % (sizeof kRules / sizeof *kRules)];
+        const char * txt = pick(kRules, kRulesExt, t);
         size_t n = 0;
         const GTEXT_CSSOM_Rule_List * l = nullptr;
         gtext_cssom_sheet_rules(s, &l);
@@ -862,7 +928,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
         if (w.adopted.size() < 4) {
           GTEXT_CSSOM_Sheet * s = nullptr;
           if (gtext_cssom_sheet_new_constructed(w.doc, nullptr, &s) == GTEXT_CSS_OK) {
-            const char * txt = kTexts[t % (sizeof kTexts / sizeof *kTexts)];
+            const char * txt = pick(kTexts, kTextsExt, t);
             gtext_cssom_sheet_replace_sync(s, txt, std::strlen(txt), nullptr);
             w.adopted.push_back(s);
           }
