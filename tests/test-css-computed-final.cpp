@@ -185,33 +185,33 @@ TEST(CssAnchorSize, FlexBasisIsNotASizingPropertyOfAnchorPositioning) {
 /* Link Parameters 1, 2.1: "<param-spec> = color | accent-color | [ <dashed-ident> <css-type>? ]"; Mixins 1, 2.1: "<css-type> = <syntax-component> | <type()>", "<type()> = type( <syntax> )",
    and "To serialize a CSS type ... If the <css-type> consists of a single <syntax-component>, return the corresponding syntax string. Otherwise ... "type(" ... ")"". */
 TEST(CssParam, ATypeIsAComponentOrATypeFunctionAndASingleComponentIsWrittenBare) {
-  EXPECT_EQ(P("link-parameters", "param(--a <color>, orange)"), "valid:param(--a <color>, orange)");
-  EXPECT_EQ(P("link-parameters", "param(--a type(<color>), orange)"), "valid:param(--a <color>, orange)");
-  EXPECT_EQ(P("link-parameters", "param(--a type( <length>+ ), 1px)"), "valid:param(--a <length>+, 1px)");
-  EXPECT_EQ(P("link-parameters", "param(--a <color>#, red)"), "valid:param(--a <color>#, red)");
-  EXPECT_EQ(P("link-parameters", "param(--a type(<color> | <length>), orange)"), "valid:param(--a type(<color> | <length>), orange)");
-  EXPECT_EQ(P("link-parameters", "param(--a type(*), orange)"), "valid:param(--a type(*), orange)");
-  EXPECT_EQ(P("link-parameters", "param(--a auto, orange)"), "valid:param(--a auto, orange)");
-  EXPECT_EQ(P("link-parameters", "param(--a <transform-list>, none)"), "valid:param(--a <transform-list>, none)");
-  EXPECT_EQ(P("link-parameters", "param(color, blue)"), "valid:param(color, blue)");
-  EXPECT_EQ(P("link-parameters", "param(accent-color, blue)"), "valid:param(accent-color, blue)");
-  EXPECT_EQ(P("link-parameters", "param(--a <notatype>, orange)"), "invalid");
-  EXPECT_EQ(P("link-parameters", "param(--a <color> <length>, orange)"), "invalid");
-  EXPECT_EQ(P("link-parameters", "param(--a type(<color> <length>), orange)"), "invalid");
-  EXPECT_EQ(P("link-parameters", "param(--a type(), orange)"), "invalid");
-  EXPECT_EQ(P("link-parameters", "param(--a type(<color> |), orange)"), "invalid");
-  EXPECT_EQ(P("link-parameters", "param(<color>, orange)"), "invalid");
-  EXPECT_EQ(P("link-parameters", "param(--a <transform-list>+, none)"), "invalid");
-  EXPECT_EQ(P("link-parameters", "param(color <color>, blue)"), "invalid");
+  EXPECT_EQ(P("link-parameters", "param(--a <color>: orange)"), "valid:param(--a <color>: orange)");
+  EXPECT_EQ(P("link-parameters", "param(--a type(<color>): orange)"), "valid:param(--a <color>: orange)");
+  EXPECT_EQ(P("link-parameters", "param(--a type( <length>+ ): 1px)"), "valid:param(--a <length>+: 1px)");
+  EXPECT_EQ(P("link-parameters", "param(--a <color>#: red)"), "valid:param(--a <color>#: red)");
+  EXPECT_EQ(P("link-parameters", "param(--a type(<color> | <length>): orange)"), "valid:param(--a type(<color> | <length>): orange)");
+  EXPECT_EQ(P("link-parameters", "param(--a type(*): orange)"), "valid:param(--a type(*): orange)");
+  EXPECT_EQ(P("link-parameters", "param(--a auto: orange)"), "valid:param(--a auto: orange)");
+  EXPECT_EQ(P("link-parameters", "param(--a <transform-list>: none)"), "valid:param(--a <transform-list>: none)");
+  EXPECT_EQ(P("link-parameters", "param(color: blue)"), "valid:param(color: blue)");
+  EXPECT_EQ(P("link-parameters", "param(accent-color: blue)"), "valid:param(accent-color: blue)");
+  EXPECT_EQ(P("link-parameters", "param(--a <notatype>: orange)"), "invalid");
+  EXPECT_EQ(P("link-parameters", "param(--a <color> <length>: orange)"), "invalid");
+  EXPECT_EQ(P("link-parameters", "param(--a type(<color> <length>): orange)"), "invalid");
+  EXPECT_EQ(P("link-parameters", "param(--a type(): orange)"), "invalid");
+  EXPECT_EQ(P("link-parameters", "param(--a type(<color> |): orange)"), "invalid");
+  EXPECT_EQ(P("link-parameters", "param(<color>: orange)"), "invalid");
+  EXPECT_EQ(P("link-parameters", "param(--a <transform-list>+: none)"), "invalid");
+  EXPECT_EQ(P("link-parameters", "param(color <color>: blue)"), "invalid");
 }
 
 TEST(CssParam, TheSameSpecIsReadInAUrlModifier) {
-  EXPECT_EQ(P("background-image", "url(\"icon.svg\" param(--c <color>, green))"), "valid:url(\"icon.svg\" param(--c <color>, green))");
-  EXPECT_EQ(P("background-image", "url(\"icon.svg\" param(--c type(<color>), green))"), "valid:url(\"icon.svg\" param(--c <color>, green))");
-  EXPECT_EQ(P("background-image", "url(\"icon.svg\" param(--c type(<color> | <length>), green))"), "valid:url(\"icon.svg\" param(--c type(<color> | <length>), green))");
-  EXPECT_EQ(P("background-image", "url(\"icon.svg\" param(--c <notatype>, green))"), "invalid");
-  EXPECT_EQ(P("background-image", "url(\"icon.svg\" param(--c type(<nope>), green))"), "invalid");
-  EXPECT_EQ(P("background-image", "url(\"icon.svg\" param(<color>, green))"), "invalid");
+  EXPECT_EQ(P("background-image", "url(\"icon.svg\" param(--c <color>: green))"), "valid:url(\"icon.svg\" param(--c <color>: green))");
+  EXPECT_EQ(P("background-image", "url(\"icon.svg\" param(--c type(<color>): green))"), "valid:url(\"icon.svg\" param(--c <color>: green))");
+  EXPECT_EQ(P("background-image", "url(\"icon.svg\" param(--c type(<color> | <length>): green))"), "valid:url(\"icon.svg\" param(--c type(<color> | <length>): green))");
+  EXPECT_EQ(P("background-image", "url(\"icon.svg\" param(--c <notatype>: green))"), "invalid");
+  EXPECT_EQ(P("background-image", "url(\"icon.svg\" param(--c type(<nope>): green))"), "invalid");
+  EXPECT_EQ(P("background-image", "url(\"icon.svg\" param(<color>: green))"), "invalid");
   // (Values 4, 4.5.3: an unknown modifier stays valid)
   EXPECT_EQ(P("background-image", "url(\"icon.svg\" unknown(<notatype>))"), "valid:url(\"icon.svg\" unknown(<notatype>))");
 }

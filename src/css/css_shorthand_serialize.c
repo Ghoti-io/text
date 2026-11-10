@@ -584,7 +584,7 @@ static const slash_rule slash_rules[] = {
 typedef struct { const char * sh; const char * order; const char * all_initial; } ser_rule;
 static const ser_rule ser_rules[] = {
   {"list-style", "list-style-position,list-style-image,list-style-type", "list-style-position"},
-  {"outline", "outline-color,outline-style,outline-width", "outline-style"},
+  {"outline", "outline-width,outline-style,outline-color", "outline-style"},
   {"vertical-align", "baseline-source,alignment-baseline,baseline-shift", "alignment-baseline"},
   {"box-shadow", NULL, "box-shadow-offset"},
   {"animation", "animation-duration,animation-timing-function,animation-delay,animation-iteration-count,animation-direction,animation-fill-mode,"

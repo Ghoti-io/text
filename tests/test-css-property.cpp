@@ -826,23 +826,36 @@ TEST(CssProperty, ASubstitutionFunctionThatIsNotSyntacticallyValidMakesTheValueI
   EXPECT_EQ(parse(r, "width", "var(--a, 1px)"), "pending:var(--a, 1px)");
   EXPECT_EQ(parse(r, "width", "var(--a,)"), "pending:var(--a,)");
   EXPECT_EQ(parse(r, "width", "env(safe-area-inset-top)"), "pending:env(safe-area-inset-top)");
-  // Environment Variables 1: "env( <custom-ident> <integer [0,∞]>* , <declaration-value>? )": a name, then indexes that are non-negative integers
+  // Environment Variables 1: "The env() function's argument grammar is: <env-args> = env( <declaration-value>, <declaration-value>? )", and the function's own grammar, "env( <custom-ident>
+  // <integer [0,∞]>*, <declaration-value>? )", is the one a substitution reads: "If the name provided by the first argument of the env() function is a recognized environment variable name,
+  // [...] replace the env() function by the value of the named environment variable. Otherwise, if the env() function has a fallback value as its second argument, replace the env()
+  // function by the fallback value", so a first argument that names nothing is valid when the declaration is read and takes the fallback when it is substituted (the pages css-env/env-parsing.html,
+  // indexed-env.tentative.html and syntax.tentative.html of the pin hold the library to it). Chromium 156.0.8078.47 and Firefox 158.0.1 both still drop each of these declarations at parse
+  // time, as they drop `var(--x {--y})`.
   EXPECT_EQ(parse(r, "top", "env(test 0, green)"), "pending:env(test 0, green)");
   EXPECT_EQ(parse(r, "top", "env(test 0,)"), "pending:env(test 0,)");
   EXPECT_EQ(parse(r, "top", "env(test 0 1 2 3 4, green)"), "pending:env(test 0 1 2 3 4, green)");
-  EXPECT_EQ(parse(r, "top", "env(test1 test2, green)"), "invalid");
-  EXPECT_EQ(parse(r, "top", "env(test1 10 20 test2, green)"), "invalid");
-  EXPECT_EQ(parse(r, "top", "env(test 0.1, green)"), "invalid");
-  EXPECT_EQ(parse(r, "top", "env(test -1, green)"), "invalid");
-  EXPECT_EQ(parse(r, "top", "env(1px)"), "invalid");
-  EXPECT_EQ(parse(r, "top", "env(test 1px)"), "invalid");
-  // a substitution function is no <custom-ident> and no <integer>: both pinned browsers drop all of these at parse time (Chromium 156.0.8078.47, Firefox 158.0.1)
-  EXPECT_EQ(parse(r, "top", "env(var(--n) 0, 1px)"), "invalid");
-  EXPECT_EQ(parse(r, "top", "env(env(test))"), "invalid");
-  EXPECT_EQ(parse(r, "top", "env(attr(data-x type(*)), blue)"), "invalid");
-  EXPECT_EQ(parse(r, "top", "env(test var(--n))"), "invalid");
-  EXPECT_EQ(parse(r, "top", "env(test, env(env(x)))"), "invalid") << "a fallback is read for its functions too";
+  for (const char * unnamed : {"env(test1 test2, green)", "env(test1 10 20 test2, green)", "env(test 0.1, green)", "env(test -1, green)", "env(1px)", "env(test 1px)", "env(var(--n) 0, 1px)", "env(env(test))",
+                               "env(attr(data-x type(*)), blue)", "env(test var(--n))", "env(safe-area-inset-top ())", "env(safe-area-inset-top() )", "env(safe-area-inset-top (),)", "env(10px)"}) {
+    EXPECT_EQ(parse(r, "top", unnamed), std::string("pending:") + unnamed) << unnamed << ": valid at parse time, and a fallback or invalid at computed-value time";
+  }
+  EXPECT_EQ(parse(r, "top", "env(test, env(env(x)))"), "pending:env(test, env(env(x)))");
   EXPECT_EQ(parse(r, "top", "env(test, var(--n))"), "pending:env(test, var(--n))");
+  // "A free-form production that does not start with "{" matches neither top-level commas nor {} blocks, so a {} block may not be mixed with other values in the name argument", and
+  // "<declaration-value> is one or more tokens, so an empty name argument is invalid whether or not it is {}-wrapped" (css-env/env-parsing.html): for the four functions alike
+  for (const char * fn : {"env(%s)", "var(%s)", "attr(%s)", "inherit(%s)"}) {
+    char text[96];
+    for (const char * bad : {"--x {--y}", "{--x} --y", "--x {--y}, 10px", "", "{}", "{}, 10px", ", 10px", "{ }"}) {
+      std::snprintf(text, sizeof text, fn, bad);
+      EXPECT_EQ(parse(r, "top", text), "invalid") << text;
+    }
+    for (const char * good : {"{--x}", "{ --x }", "{--x}, 10px", "--x,"}) {
+      std::snprintf(text, sizeof text, fn, good);
+      EXPECT_EQ(parse(r, "top", text).substr(0, 8), "pending:") << text;
+    }
+  }
+  EXPECT_EQ(parse(r, "top", "env(test, {})").substr(0, 8), "pending:") << "an empty block is an empty fallback";
+  EXPECT_EQ(parse(r, "top", "env(test, {)"), "invalid");
   // Cascade 4, on `all`: "It only accepts the CSS-wide keywords." A substitution may yield one, so `all: var(--x)` is pending (a browser takes it) and is
   // invalid at computed-value time unless it does.
   EXPECT_EQ(parse(r, "all", "var(--x)"), "pending:var(--x)");

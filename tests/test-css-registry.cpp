@@ -578,9 +578,9 @@ TEST(CssRegistryNestedTypes, ThePropertiesThatNameANestedTypeAreDecided) {
   EXPECT_EQ(s, GTEXT_CSS_GRAMMAR_OK);
   EXPECT_EQ(parse(r, "link-parameters", "none"), "valid:none");
   // (what the value is written as is the serialization layer's: these only hold that the pin's text is now judged)
-  EXPECT_EQ(parse(r, "link-parameters", "param(--a type(<color>), orange)").substr(0, 6), "valid:");
-  EXPECT_EQ(parse(r, "link-parameters", "param(--a type(<color> | <length>), orange), param(--b, blue)").substr(0, 6), "valid:");
-  EXPECT_EQ(parse(r, "link-parameters", "param(a, orange)"), "invalid") << "the name is a <dashed-ident>";
+  EXPECT_EQ(parse(r, "link-parameters", "param(--a type(<color>): orange)").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "link-parameters", "param(--a type(<color> | <length>): orange), param(--b: blue)").substr(0, 6), "valid:");
+  EXPECT_EQ(parse(r, "link-parameters", "param(a: orange)"), "invalid") << "the name is a <dashed-ident>";
 }
 
 TEST(CssRegistrySelectorsAndKeywords, TheyAreSortedAndFound) {

@@ -62,7 +62,7 @@ PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-gramma
             "cascade-seeds": "test-css-cascade-fuzz-seeds.cpp", "fixes": "test-css-cascade-fixes.cpp", "reference": "test-css-cascade-reference.cpp",
             "custom": "test-css-custom.cpp", "property-rule": "test-css-property-rule.cpp", "custom-oom": "test-css-custom-oom.cpp",
             "custom-seeds": "test-css-custom-fuzz-seeds.cpp", "custom-review": "test-css-custom-review.cpp",
-            "style": "test-css-style.cpp", "style-oom": "test-css-style-oom.cpp", "style-seeds": "test-css-style-fuzz-seeds.cpp"}
+            "style": "test-css-style.cpp", "shorthand": "test-css-shorthand.cpp", "style-oom": "test-css-style-oom.cpp", "style-seeds": "test-css-style-fuzz-seeds.cpp"}
 
 # (name, file under src/css/, old text (exactly once), new text, programs that must fail); old and new may be
 # lists of the same length, for a defect that takes more than one edit
@@ -357,6 +357,14 @@ PLANTS += [
     ("custom-a-token-after-a-brace-fallback-is-valid", "css_property.c", "            if (braced) {\n              *valid = false;\n              break;\n            }",
      "            if (0) {\n              *valid = false;\n              break;\n            }", ["property"]),
     ("grammar-a-function-that-is-not-valid-matches-as-pending", "css_grammar_match.c", "    if (status == GTEXT_CSS_OK && syntax) {\n      did_match = true;", "    if (status == GTEXT_CSS_OK) {\n      did_match = true;", ["grammar"]),
+    ("custom-a-block-beside-a-name-is-valid", "css_value.c", "if (!first || (first_block && (first_count != 1 || first_empty))) {", "if (!first || (first_block && first_empty)) {", ["property"]),
+    ("custom-an-empty-block-is-a-name", "css_value.c", "if (!first || (first_block && (first_count != 1 || first_empty))) {", "if (!first || (first_block && first_count != 1)) {", ["property"]),
+    ("custom-the-name-of-env-is-read-at-parse-time", "css_value.c", "if (!first || (first_block && (first_count != 1 || first_empty))) {",
+     "if (!first || (first_block && (first_count != 1 || first_empty)) || (sub_name_is(v, \"env\") && v->child_count > 0 && v->children[0].kind != GTEXT_CSS_VALUE_TOKEN)) {", ["property"]),
+    ("canon-the-slash-of-a-corner-radius-is-written", "css_property_canon.c", "  if (n == 3 && eq(t[1], \"/\")) {\n    put_sp(out, t[0]);", "  if (0 && n == 3 && eq(t[1], \"/\")) {\n    put_sp(out, t[0]);", ["canon"]),
+    ("canon-equal-radii-of-a-slash-are-two", "css_property_canon.c", "    if (!sp_eq(t[0], t[2])) {\n      cb_putc(out, ' ');", "    if (1) {\n      cb_putc(out, ' ');", ["canon"]),
+    ("canon-a-legacy-value-alias-is-written-as-it-is", "css_property_canon.c", "  if (n == 1 && ieq(t[0], \"none\")) {\n    cb_put(out, \"spaces\", 6);", "  if (0 && n == 1 && ieq(t[0], \"none\")) {\n    cb_put(out, \"spaces\", 6);", ["canon"]),
+    ("shorthand-outline-is-written-color-first", "css_shorthand_serialize.c", '{"outline", "outline-width,outline-style,outline-color", "outline-style"}', '{"outline", "outline-color,outline-style,outline-width", "outline-style"}', ["shorthand"]),
     ("custom-a-brace-is-a-fallback-only-at-its-start", "css_property.c", "              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;",
      "              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;\n            }\n            else {\n              braced = braced || (c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY);", ["property"]),
 ]

@@ -530,7 +530,11 @@ TEST(CssShorthandBlock, TheShorthandLeavesOutWhatIsInitialAndKeepsTheCanonicalOr
   EXPECT_EQ(through("border: red solid 1px"), "border: 1px solid red;");
   EXPECT_EQ(through("border: medium none currentcolor"), "border: medium;") << "all initial: the first component stands for them";
   EXPECT_EQ(through("outline: none"), "outline: none;");
-  EXPECT_EQ(through("outline: auto red"), "outline: red auto;");
+  // UI 4 (served 2026-11-07): "Value: <'outline-width'> || <'outline-style'> || <'outline-color'>", written per grammar (css/css-ui/parsing/outline-valid.html: `dashed thin` is `thin dashed`
+  // and `3px ridge rgba(10, 20, 30, 0.4)` is `3px ridge rgba(10, 20, 30, 0.4)`). Chromium 156.0.8078.47 and Firefox 158.0.1 still write the color first and the width last.
+  EXPECT_EQ(through("outline: auto red"), "outline: auto red;");
+  EXPECT_EQ(through("outline: dashed thin"), "outline: thin dashed;");
+  EXPECT_EQ(through("outline: red solid 3px"), "outline: 3px solid red;");
   EXPECT_EQ(through("list-style: inside none"), "list-style: inside none;");
   EXPECT_EQ(through("list-style: outside outside"), "list-style: outside outside;") << "a type named like a position keyword needs the position";
   EXPECT_EQ(through("vertical-align: baseline"), "vertical-align: baseline;");

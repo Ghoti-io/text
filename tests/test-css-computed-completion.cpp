@@ -409,18 +409,21 @@ TEST(CssComputedCompletionIdent, ACalculationIsTheIntegerItComputesTo) {
   EXPECT_EQ(root_computed("animation-name: ident(\"a\" calc(2px))", "animation-name"), "none");
 }
 
-/* Link Parameters 1 (served 2026-10-30), 2.1: "a completely empty second argument is valid, and is indicated by specifying the comma" and "param(--foo,) explicitly gives
-   the link parameter an empty value"; the first argument is "color | accent-color | [ <dashed-ident> <css-type>? ]", and a <css-type> is `<color>` (CSS Values 5,
-   "<syntax-single-component> = '<' <syntax-type-name> '>'"). The commas of other functions stay omissible (Values 4, 2). */
-TEST(CssComputedCompletionLinkParameters, AnEmptySecondArgumentNeedsItsCommaAndATypeIsWrittenWithoutSpaces) {
-  EXPECT_EQ(root_computed("link-parameters: param(--a, )", "link-parameters"), "param(--a, )");
-  EXPECT_EQ(root_computed("link-parameters: param(--a,)", "link-parameters"), "param(--a, )");
-  EXPECT_EQ(root_computed("link-parameters: param(--a, ), param(--b, )", "link-parameters"), "param(--a, ), param(--b, )");
-  EXPECT_EQ(root_computed("link-parameters: param(--a <color>, orange)", "link-parameters"), "param(--a <color>, orange)");
-  EXPECT_EQ(root_computed("link-parameters: param(--a <length>, currentcolor)", "link-parameters"), "param(--a <length>, currentcolor)");
-  EXPECT_EQ(root_computed("link-parameters: param(--a <color>, orange), param(--b, blue)", "link-parameters"), "param(--a <color>, orange), param(--b, blue)");
-  // without a comma the second argument is not given: not a value of the property
-  EXPECT_EQ(root_computed("link-parameters: param(--a)", "link-parameters"), "none");
+/* Link Parameters 1 (served 2026-11-07), 2.1: "param() = param( <param-spec> [ ':' <declaration-value>? ]? )" and "a completely empty second argument is valid, and is indicated by specifying the
+   colon separating it from the first argument", "param(--foo:) explicitly gives the link parameter an empty value"; the first argument is "color | accent-color | [ <dashed-ident> <css-type>? ]",
+   and a <css-type> is `<color>` (CSS Values 5, "<syntax-single-component> = '<' <syntax-type-name> '>'"). The commas of other functions stay omissible (Values 4, 2). (The form with a comma, which
+   the pinned data of the standard still has and the pages of web-platform-tests had until the pin of 2026-11-10, is not a param() any more; neither Chromium 156.0.8078.47 nor Firefox 158.0.1
+   implements link-parameters at all.) */
+TEST(CssComputedCompletionLinkParameters, AnEmptySecondArgumentNeedsItsColonAndATypeIsWrittenWithoutSpaces) {
+  EXPECT_EQ(root_computed("link-parameters: param(--a: )", "link-parameters"), "param(--a: )");
+  EXPECT_EQ(root_computed("link-parameters: param(--a:)", "link-parameters"), "param(--a: )");
+  EXPECT_EQ(root_computed("link-parameters: param(--a: ), param(--b: )", "link-parameters"), "param(--a: ), param(--b: )");
+  EXPECT_EQ(root_computed("link-parameters: param(--a <color>: orange)", "link-parameters"), "param(--a <color>: orange)");
+  EXPECT_EQ(root_computed("link-parameters: param(--a <length>: currentcolor)", "link-parameters"), "param(--a <length>: currentcolor)");
+  EXPECT_EQ(root_computed("link-parameters: param(--a <color>: orange), param(--b: blue)", "link-parameters"), "param(--a <color>: orange), param(--b: blue)");
+  // "param(--foo) indicates that the link parameter is using the default value, drawing from the --foo custom property on the element": with no colon the second argument is not given, and it is
+  // valid (the page link-parameters-invalid.html of web-platform-tests asks for it to be invalid; the served text decides, and neither browser implements the property)
+  EXPECT_EQ(root_computed("link-parameters: param(--a)", "link-parameters"), "param(--a)");
   // other functions keep the omission rule: a comma that nothing follows is not written
   EXPECT_EQ(root_computed("animation-timing-function: steps(2,)", "animation-timing-function"), "ease");
 }

@@ -46,6 +46,15 @@ struct Row {
 };
 
 const Row kRows[] = {
+    // the radius of one corner (Borders 4, "<slash-separated-border-radius-syntax> = <length-percentage [0,∞]> [ / <length-percentage [0,∞]> ]?"): the slash is the two radii of a corner written
+    // apart, and is not written (css/css-borders/corner-shape/corner-top-left-valid.html: `10px / 5px notch` is `notch 10px 5px`)
+    {"border-top-left-radius", "10px / 5px", "10px 5px"},
+    {"border-top-left-radius", "10px / 10px", "10px"},
+    {"border-bottom-right-radius", "3px / 4%", "3px 4%"},
+    {"border-start-start-radius", "3px / 3px", "3px"},
+    {"ruby-overhang", "none", "spaces"},
+    {"ruby-overhang", "spaces", "spaces"},
+    {"ruby-overhang", "auto", "auto"},
     {"display", "block flow", "block"},
     {"display", "inline flow", "inline"},
     {"display", "flow", "block"},

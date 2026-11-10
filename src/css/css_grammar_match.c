@@ -1028,9 +1028,9 @@ static bool url_modifier_ok(const GTEXT_CSS_Component_Value * fn) {
   const bool integrity = css_ascii_ieq(&fn->value, "integrity");
   const bool policy = css_ascii_ieq(&fn->value, "referrer-policy");
   if (css_ascii_ieq(&fn->value, "param")) {
-    /* Link Parameters 1, 2.1: "param() = param( <param-spec> , <declaration-value>? )": the first argument is a <param-spec>, whose type is a <css-type> */
+    /* Link Parameters 1, 2.1: "param() = param( <param-spec> [ ':' <declaration-value>? ]? )": the first argument is a <param-spec>, whose type is a <css-type> */
     size_t spec_n = 0;
-    while (spec_n < fn->child_count && !cv_tok(&fn->children[spec_n], GTEXT_CSS_TOKEN_COMMA)) {
+    while (spec_n < fn->child_count && !cv_tok(&fn->children[spec_n], GTEXT_CSS_TOKEN_COLON)) {
       spec_n++;
     }
     param_spec ps;
@@ -1219,12 +1219,16 @@ static bool color_item(M * m, uint32_t pos, const xinfo ** out) {
 static uint32_t kid_of(const M * m, const gnode * g, uint32_t i);
 
 /// The first item at or after `pos`, in its view, that is a top-level comma or the end of the view: a calc-size() argument is the run before it.
-static uint32_t run_end(const M * m, uint32_t pos) {
+static uint32_t run_end_at(const M * m, uint32_t pos, GTEXT_CSS_Token_Type stop) {
   uint32_t q = pos;
-  while (m->items[q].cv && !tok(m->items[q].cv, GTEXT_CSS_TOKEN_COMMA)) {
+  while (m->items[q].cv && !tok(m->items[q].cv, stop)) {
     q++;
   }
   return q;
+}
+
+static uint32_t run_end(const M * m, uint32_t pos) {
+  return run_end_at(m, pos, GTEXT_CSS_TOKEN_COMMA);
 }
 
 /// Whether the component values `first` ... (`count` of them, white space included) are the sum of a calc-size() argument: a `<calc-sum>` of the type
@@ -1777,7 +1781,7 @@ static bool terminal_ends(M * m, uint32_t node, uint32_t pos, ends_t * e) {
       if (!v) {
         return true;
       }
-      const uint32_t q = run_end(m, pos);
+      const uint32_t q = run_end_at(m, pos, GTEXT_CSS_TOKEN_COLON);   /* Link Parameters 1: "param( <param-spec> [ ':' <declaration-value>? ]? )" */
       param_spec ps;
       if (q > pos && param_spec_scan(v, (size_t)(m->items[q - 1].orig - it->orig) + 1, &ps)) {
         one_end(e, q);
@@ -2745,7 +2749,7 @@ static bool param_modifier_text(builder * B, const GTEXT_CSS_Component_Value * c
     return false;
   }
   size_t spec_n = 0;
-  while (spec_n < c->child_count && !cv_tok(&c->children[spec_n], GTEXT_CSS_TOKEN_COMMA)) {
+  while (spec_n < c->child_count && !cv_tok(&c->children[spec_n], GTEXT_CSS_TOKEN_COLON)) {
     spec_n++;
   }
   param_spec ps;

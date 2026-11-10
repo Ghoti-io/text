@@ -49,6 +49,8 @@ typedef struct {
   GTEXT_CSS_Status status;
   GTEXT_Allocator alloc;
   GTEXT_Markup_Sink inner; ///< The sink handed to the identifier and string serializers: it counts.
+  bool in_param;           ///< Inside the arguments of a param() (Link Parameters 1): its colon attaches to the name before it, as a comma does.
+  size_t param_nest;       ///< The functions open inside that param(), the colon of which is not its own.
 } vwriter;
 
 static GTEXT_Markup_Status counting_write(void * user, const char * bytes, size_t len) {
@@ -161,6 +163,25 @@ static bool begins_with_comma(const GTEXT_CSS_Value * c) {
   return is_comma_token(c);
 }
 
+static bool is_colon_token(const GTEXT_CSS_Value * c) {
+  return c->kind == GTEXT_CSS_VAL_TOKEN && c->text.length == 1 && c->text.data[0] == ':';
+}
+
+/// Whether the first thing written for `c` is the literal colon of a param() (see vwriter::in_param).
+static bool begins_with_colon(const vwriter * w, const GTEXT_CSS_Value * c) {
+  if (!w->in_param || w->param_nest) {
+    return false;
+  }
+  while (c->kind == GTEXT_CSS_VAL_LIST && c->separator == GTEXT_CSS_SEP_SPACE && c->child_count > 0) {
+    c = &c->children[0];
+  }
+  return is_colon_token(c);
+}
+
+static bool is_param_function(const GTEXT_CSS_Value * v) {
+  return v->kind == GTEXT_CSS_VAL_FUNCTION && !v->math && css_ascii_ieq(&v->text, "param");
+}
+
 /// What is written for `v` before its children; false if it has none to write after.
 static bool open_value(vwriter * w, const GTEXT_CSS_Value * v) {
   switch (v->kind) {
@@ -232,6 +253,13 @@ static bool open_value(vwriter * w, const GTEXT_CSS_Value * v) {
       put(w, v->text.data, v->text.length);
       return false;
     }
+    if (is_param_function(v)) {
+      w->in_param = true;
+      w->param_nest = 0;
+    }
+    else if (w->in_param) {
+      w->param_nest++;
+    }
     put_ident(w, &v->text);
     puts_(w, "(");
     return true;
@@ -260,13 +288,20 @@ static void close_value(vwriter * w, const GTEXT_CSS_Value * v) {
     if (v->math) {
       break;
     }
-    /* a comma with nothing after it (`param(--a, )`: an empty second argument) is followed by the space every comma is: CSSOM writes the arguments separated by ", " */
+    /* a comma with nothing after it (`var(--a, )` written as an empty second argument) is followed by the space every comma is: CSSOM writes the arguments separated by ", "; so is the colon of
+       a param() that nothing follows (`param(--a: )`, "explicitly gives the link parameter an empty value") */
     const GTEXT_CSS_Value * last = v;
     while (last->child_count > 0 && (last == v || last->kind == GTEXT_CSS_VAL_LIST)) {
       last = &last->children[last->child_count - 1];
     }
-    if (is_delim_char(last, ',')) {
+    if (is_delim_char(last, ',') || (is_param_function(v) && is_colon_token(last))) {
       puts_(w, " ");
+    }
+    if (is_param_function(v)) {
+      w->in_param = false;
+    }
+    else if (w->in_param && w->param_nest) {
+      w->param_nest--;
     }
     puts_(w, ")");
     break;
@@ -292,7 +327,7 @@ static void put_separator(vwriter * w, const GTEXT_CSS_Value * parent, const GTE
     case GTEXT_CSS_SEP_SLASH: puts_(w, " / "); return;
     default: break;
     }
-    if (begins_with_comma(child)) {
+    if (begins_with_comma(child) || begins_with_colon(w, child)) {
       return;
     }
     /* a type name is written `<color>` (CSS Values and Units 5, <css-type>: "<syntax-single-component> = '<' <syntax-type-name> '>'"): no white space inside the brackets */

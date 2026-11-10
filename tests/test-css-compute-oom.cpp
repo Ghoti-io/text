@@ -366,7 +366,7 @@ TEST(CssComputeOom, TheShapeFamilyAndTheRewritesAroundItSweptOverEveryAllocation
                        "animation-timing-function: linear(0 calc(min(50%, 60%)), 0.5, 1 100%), steps(3, start), step-end; "
                        "position-area: top span-all; corner-top-left-shape: scoop; position-try-fallbacks: start end, flip-block; text-emphasis-style: filled; "
                        "font-palette: ident(\"--p-\" calc(1em / 1px)); background-position-x: x-end 10px, center; background-position-block: end 5%, 7px; "
-                       "link-parameters: param(--a <color>, orange), param(--b, ); will-change: transform, opacity; color-scheme: foo dark only; grid-row-start: span calc(-1)", 40u);
+                       "link-parameters: param(--a <color>: orange), param(--b: ); will-change: transform, opacity; color-scheme: foo dark only; grid-row-start: span calc(-1)", 40u);
 }
 
 } // namespace

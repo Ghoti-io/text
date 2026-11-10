@@ -701,6 +701,31 @@ static bool rule_pair(cb * out, const sp * t, size_t n) {
   return false;
 }
 
+/* The radius of one corner: `<length-percentage [0,∞]>{1,2}` is the horizontal and the vertical radius ("border-top-left-radius: <border-radius>" with "<slash-separated-border-radius-syntax>
+ * = <length-percentage [0,∞]> [ / <length-percentage [0,∞]> ]?"), so the slash form of one corner is the same two lengths with no slash, and two equal lengths are one:
+ * css/css-borders/corner-shape/corner-top-left-valid.html asks `10px / 5px` of corner-top-left to be written `10px 5px` and `10px / 10px` `10px`. */
+static bool rule_corner_radius(cb * out, const sp * t, size_t n) {
+  if (n == 3 && eq(t[1], "/")) {
+    put_sp(out, t[0]);
+    if (!sp_eq(t[0], t[2])) {
+      cb_putc(out, ' ');
+      put_sp(out, t[2]);
+    }
+    return true;
+  }
+  return rule_pair(out, t, n);
+}
+
+/* Ruby 1 (served 2026-11-07), ruby-overhang: "for compatibility reasons, user agents must support an additional value of none for the 'ruby-overhang' property, as a legacy value alias of
+ * spaces": a value alias is the same value, so it is written as the one it is an alias of (css/css-ruby/parsing/ruby-overhang-valid.html: `none` is `spaces`). */
+static bool rule_ruby_overhang(cb * out, const sp * t, size_t n) {
+  if (n == 1 && ieq(t[0], "none")) {
+    cb_put(out, "spaces", 6);
+    return true;
+  }
+  return false;
+}
+
 /* Anchor Positioning 1 (served 2026-11-01), position-area: "If only a single keyword is given, it behaves as if the second keyword is span-all if the given keyword is
  * unambigous about its axis ... (For example, top is equivalent to top span-all"; the shortest form leaves the span-all out beside a keyword that names its axis (top, left,
  * x-start, self-y-end, block-end, span-inline-start ...) and keeps it beside one that does not (start, end, center). Two equal keywords are one. */
@@ -3101,20 +3126,20 @@ static const canon_row kRows[] = {
   R("background-position", rule_position, MODE_ITEMS),
   R("background-repeat", rule_repeat_style, MODE_ITEMS),
   R("background-size", rule_bg_size, MODE_ITEMS),
-  R("border-bottom-left-radius", rule_pair, MODE_WHOLE),
-  R("border-bottom-right-radius", rule_pair, MODE_WHOLE),
-  R("border-end-end-radius", rule_pair, MODE_WHOLE),
-  R("border-end-start-radius", rule_pair, MODE_WHOLE),
+  R("border-bottom-left-radius", rule_corner_radius, MODE_WHOLE),
+  R("border-bottom-right-radius", rule_corner_radius, MODE_WHOLE),
+  R("border-end-end-radius", rule_corner_radius, MODE_WHOLE),
+  R("border-end-start-radius", rule_corner_radius, MODE_WHOLE),
   R("border-image-outset", rule_box_sides, MODE_WHOLE),
   R("border-image-repeat", rule_pair, MODE_WHOLE),
   R("border-image-slice", rule_box_sides, MODE_WHOLE),
   R("border-image-source", rule_gradient, MODE_ITEMS),
   R("border-image-width", rule_box_sides, MODE_WHOLE),
   R("border-shape", rule_shape, MODE_WHOLE),
-  R("border-start-end-radius", rule_pair, MODE_WHOLE),
-  R("border-start-start-radius", rule_pair, MODE_WHOLE),
-  R("border-top-left-radius", rule_pair, MODE_WHOLE),
-  R("border-top-right-radius", rule_pair, MODE_WHOLE),
+  R("border-start-end-radius", rule_corner_radius, MODE_WHOLE),
+  R("border-start-start-radius", rule_corner_radius, MODE_WHOLE),
+  R("border-top-left-radius", rule_corner_radius, MODE_WHOLE),
+  R("border-top-right-radius", rule_corner_radius, MODE_WHOLE),
   R("color-interpolation-filters", NULL, 0),
   T("clip", rule_clip_rect_commas),
   T("font-palette", rule_palette_mix),
@@ -3168,6 +3193,7 @@ static const canon_row kRows[] = {
   R("position-area", rule_position_area, MODE_WHOLE),
   R("position-try-fallbacks", rule_position_area, MODE_ITEMS),
   R("rotate", rule_rotate, MODE_WHOLE),
+  R("ruby-overhang", rule_ruby_overhang, MODE_WHOLE),
   R("scale", rule_scale, MODE_WHOLE),
   R("scroll-snap-align", rule_pair, MODE_WHOLE),
   R("scroll-snap-type", rule_scroll_snap_type, MODE_WHOLE),

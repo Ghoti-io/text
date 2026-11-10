@@ -540,38 +540,6 @@ static bool random_item_syntax(const GTEXT_CSS_Component_Value * fn) {
 }
 
 /**
- * The argument grammar of env() (Environment Variables 1): "env( <custom-ident> <integer [0,∞]>* , <declaration-value>? )". The part before the first top-level
- * comma is a name and then indexes, each a non-negative integer. A substitution function is neither: Chromium 156.0.8078.47 and Firefox 158.0.1 both drop a declaration with
- * `env(var(--n))`, `env(attr(x type(*)))`, `env(env(test))` or `env(test var(--n))` at parse time (the Environment Variables page syntax.tentative.html asks for
- * `env(env(test))`), where `var(--n)` itself is kept.
- */
-static bool env_name_syntax(const GTEXT_CSS_Component_Value * fn) {
-  bool seen_name = false;
-  for (size_t k = 0; k < fn->child_count; k++) {
-    const GTEXT_CSS_Component_Value * c = &fn->children[k];
-    if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA) {
-      break;
-    }
-    if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE) {
-      continue;
-    }
-    if (c->kind != GTEXT_CSS_VALUE_TOKEN) {
-      return false;   /* a function or a block is no <custom-ident> and no <integer>: `env(var(--n))`, `env(env(test))`, `env(test attr(x))` are not valid, in both pinned browsers */
-    }
-    if (!seen_name) {
-      if (c->type != GTEXT_CSS_TOKEN_IDENT) {
-        return false;
-      }
-      seen_name = true;
-    }
-    else if (!(c->type == GTEXT_CSS_TOKEN_NUMBER && (c->flags & GTEXT_CSS_FLAG_INTEGER) && c->number >= 0)) {
-      return false;
-    }
-  }
-  return true; /* an empty first argument is refused by the caller */
-}
-
-/**
  * Whether every `var()`, `env()` and `attr()` in the values is syntactically valid. Values 5, on the arbitrary substitution functions:
  * "If a property value contains one or more arbitrary substitution functions, and all of those functions are themselves syntactically
  * valid according to their argument grammars, the entire value's grammar must be assumed to be valid at parse time". The argument
@@ -614,7 +582,8 @@ GTEXT_CSS_Status css_substitution_syntax(const GTEXT_CSS_Component_Value * value
         break;
       }
       if (v->kind == GTEXT_CSS_VALUE_FUNCTION && (sub_name_is(v, "var") || sub_name_is(v, "env") || sub_name_is(v, "attr") || sub_name_is(v, "inherit"))) {
-        bool first = false, comma = false, started = false, braced = false;
+        bool first = false, comma = false, started = false, braced = false, first_block = false, first_empty = false;
+        size_t first_count = 0;
         for (size_t k = 0; k < v->child_count; k++) {
           const GTEXT_CSS_Component_Value * c = &v->children[k];
           if (c->kind == GTEXT_CSS_VALUE_TOKEN) {
@@ -629,6 +598,16 @@ GTEXT_CSS_Status css_substitution_syntax(const GTEXT_CSS_Component_Value * value
           }
           if (!comma && !(c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE)) {
             first = true;
+            first_count++;
+            if (c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY) {
+              first_block = true;
+              first_empty = true;
+              for (size_t j = 0; j < c->child_count; j++) {
+                if (!(c->children[j].kind == GTEXT_CSS_VALUE_TOKEN && c->children[j].type == GTEXT_CSS_TOKEN_WHITESPACE)) {
+                  first_empty = false;
+                }
+              }
+            }
           }
           if (comma && !(c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE)) {
             /* Values 5, "Commas in Function Arguments": a free-form production that starts with a "{" token "matches just the {} block that the "{" token opens", so the fallback, which is
@@ -643,7 +622,11 @@ GTEXT_CSS_Status css_substitution_syntax(const GTEXT_CSS_Component_Value * value
             started = true;
           }
         }
-        if (!first || (sub_name_is(v, "env") && !env_name_syntax(v))) {
+        /* The first argument is a <declaration-value>, a free-form production that "does not match any top-level commas or {} blocks" unless it starts with a "{" token, and then "matches just the {} block":
+           `var(--x {--y})` and `env({--x} --y)` are not valid, and `var({})` has nothing in its block (<declaration-value> is one or more tokens). What the argument names is not the syntax check's:
+           env() reads "<custom-ident> <integer [0,∞]>*" when it is substituted (css-env-1: the name that "is a recognized environment variable name", otherwise the fallback), so `env(10px)` and
+           `env(test 0.1, green)` are valid here and take their fallback there. */
+        if (!first || (first_block && (first_count != 1 || first_empty))) {
           *valid = false;
         }
       }
