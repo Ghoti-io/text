@@ -38,6 +38,7 @@
 
 #include "css_grammar_internal.h"
 #include "css_value_internal.h"
+#include "css_readings.h"
 
 /* ---- atoms ------------------------------------------------------------ */
 
@@ -539,6 +540,32 @@ static bool random_item_syntax(const GTEXT_CSS_Component_Value * fn) {
   return group >= 2;  /* the key and at least one item (an item may be empty) */
 }
 
+#if !GTEXT_CSS_READING_ENV_UNKNOWN_NAME_VALID
+/// Whether the first argument of an `env()` reads `<custom-ident> <integer [0,∞]>*` (css_readings.h, GTEXT_CSS_READING_ENV_UNKNOWN_NAME_VALID): a name, then indexes.
+static bool env_first_argument_is_a_name(const GTEXT_CSS_Component_Value * fn) {
+  bool named = false;
+  for (size_t k = 0; k < fn->child_count; k++) {
+    const GTEXT_CSS_Component_Value * c = &fn->children[k];
+    if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA) {
+      break;
+    }
+    if (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE) {
+      continue;
+    }
+    if (!named) {
+      if (c->kind != GTEXT_CSS_VALUE_TOKEN || c->type != GTEXT_CSS_TOKEN_IDENT || gtext_css_wide_keyword_lookup(c->value.data, c->value.length) != 0) {
+        return false;
+      }
+      named = true;
+    }
+    else if (c->kind != GTEXT_CSS_VALUE_TOKEN || c->type != GTEXT_CSS_TOKEN_NUMBER || !(c->flags & GTEXT_CSS_FLAG_INTEGER) || c->number < 0) {
+      return false;
+    }
+  }
+  return named;
+}
+#endif
+
 /**
  * Whether every `var()`, `env()` and `attr()` in the values is syntactically valid. Values 5, on the arbitrary substitution functions:
  * "If a property value contains one or more arbitrary substitution functions, and all of those functions are themselves syntactically
@@ -629,6 +656,11 @@ GTEXT_CSS_Status css_substitution_syntax(const GTEXT_CSS_Component_Value * value
         if (!first || (first_block && (first_count != 1 || first_empty))) {
           *valid = false;
         }
+#if !GTEXT_CSS_READING_ENV_UNKNOWN_NAME_VALID
+        if (sub_name_is(v, "env") && !env_first_argument_is_a_name(v)) {
+          *valid = false;
+        }
+#endif
       }
       if (v->kind == GTEXT_CSS_VALUE_FUNCTION && v->value.length > 2 && v->value.data[0] == '-' && v->value.data[1] == '-' && !dashed_function_syntax(v)) {
         *valid = false;

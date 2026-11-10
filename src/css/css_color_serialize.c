@@ -36,6 +36,7 @@
 #include <string.h>
 
 #include "css_color_internal.h"
+#include "css_readings.h"
 
 typedef GTEXT_CSS_Color color_t;
 typedef GTEXT_CSS_Color_Component comp_t;
@@ -510,6 +511,17 @@ static const char * hue_text(GTEXT_CSS_Hue_Method m) {
   }
 }
 
+/// The share of a color-mix() whose percentage is omitted, when the specified ones add up to `specified_sum` and `omitted` percentages are omitted: Color 5, "serialized percentages" says
+/// `(100% - the sum) / the number omitted`; GTEXT_CSS_READING_MIX_OMITTED_PERCENT_CLAMPED (css_readings.h) says whether a negative one is written as 0%.
+static double mix_omitted_share(double specified_sum, size_t omitted) {
+  const double share = (100.0 - specified_sum) / (double)omitted;
+#if GTEXT_CSS_READING_MIX_OMITTED_PERCENT_CLAMPED
+  return share < 0.0 ? 0.0 : share;
+#else
+  return share;
+#endif
+}
+
 static bool ser_mix(obuf * b, const color_t * c, const char * const * kid_text) {
   if (!puts_(b, "color-mix(")) {
     return false;
@@ -546,7 +558,7 @@ static bool ser_mix(obuf * b, const color_t * c, const char * const * kid_text) 
     const double share = 100.0 / (double)n;
     for (size_t i = 0; i < n; i++) {
       const comp_t * p = &c->percents[i];
-      const double eff = p->kind == GTEXT_CSS_COMP_PERCENT ? p->value : (100.0 - specified_sum) / (double)omitted;
+      const double eff = p->kind == GTEXT_CSS_COMP_PERCENT ? p->value : mix_omitted_share(specified_sum, omitted);
       if (gmath_fabs(eff - share) > 1e-9) {
         all_equal_share = false;
       }
@@ -574,7 +586,7 @@ static bool ser_mix(obuf * b, const color_t * c, const char * const * kid_text) 
       }
     }
     else if (known && omitted) {
-      if (!puts_(b, " ") || !put_num(b, (100.0 - specified_sum) / (double)omitted) || !puts_(b, "%")) {
+      if (!puts_(b, " ") || !put_num(b, mix_omitted_share(specified_sum, omitted)) || !puts_(b, "%")) {
         return false;
       }
     }

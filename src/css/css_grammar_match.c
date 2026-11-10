@@ -74,6 +74,7 @@
 #include "css_math_internal.h"
 #include "css_color_internal.h"
 #include "css_value_internal.h"
+#include "css_readings.h"
 
 /* ---- limits and counters ---------------------------------------------- */
 
@@ -1034,7 +1035,7 @@ static bool url_modifier_ok(const GTEXT_CSS_Component_Value * fn) {
       spec_n++;
     }
     param_spec ps;
-    return param_spec_scan(fn->children, spec_n, &ps);
+    return param_spec_scan(fn->children, spec_n, &ps) && (GTEXT_CSS_READING_PARAM_COLON_OPTIONAL || spec_n < fn->child_count);
   }
   if (!cross && !integrity && !policy) {
     return true;
@@ -1783,7 +1784,8 @@ static bool terminal_ends(M * m, uint32_t node, uint32_t pos, ends_t * e) {
       }
       const uint32_t q = run_end_at(m, pos, GTEXT_CSS_TOKEN_COLON);   /* Link Parameters 1: "param( <param-spec> [ ':' <declaration-value>? ]? )" */
       param_spec ps;
-      if (q > pos && param_spec_scan(v, (size_t)(m->items[q - 1].orig - it->orig) + 1, &ps)) {
+      /* q is at the colon, or at the end of the arguments (no item there) when there is none: `param(--a)` */
+      if (q > pos && param_spec_scan(v, (size_t)(m->items[q - 1].orig - it->orig) + 1, &ps) && (GTEXT_CSS_READING_PARAM_COLON_OPTIONAL || m->items[q].cv)) {
         one_end(e, q);
       }
       return true;
