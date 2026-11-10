@@ -436,9 +436,11 @@ The evaluation of a custom function (`--name()`: the definitions are read, see a
 value of anything; `revert` resolved after a substitution; the `CSS` object of a browser (the registry builder and the `@property` set are what it
 would call). Of `@property`: an `@property` inside `@private` (the draft places one there, "directly inside of a @private rule"; private properties are not built), and
 inside the body of an `@function` or a `@mixin` (the draft does not place one there: a function body "accepts conditional group rules ... the result descriptor ... custom
-properties"). The CSSOM of a prelude that lists names is not decided upstream (the draft's own issue, w3c/csswg-drafts#14227: "The CSSOM for multi-name @property rules has not
-been resolved on by the CSSWG"): such a rule is one rule here, its `name` is the first name, its text lists every name, and the typed model has them all
-(`gtext_css_atrule_name_at()`); a decision upstream is one function (`put_header()` of `css_atrule.c`) and the `name` row of `cssom_setters.c`.
+properties"). The CSSOM of a prelude that lists names follows the CSSWG's resolution of 2026-08-06 (w3c/csswg-drafts#14227): "if single @property has multiple names, it will be represented in CSSOM as a single
+object with a `names` array and not expand into multiple objects and return empty string for the `name` in that case". So `@property --a, --b { ... }` is one rule (`cssRules.length` counts it once, `deleteRule()`
+removes it whole), its `name` is the empty string, `gtext_cssom_property_get_names()` answers `--a` and `--b` (a rule of one name has an array of one), and its text lists every name, so a round trip keeps them. The
+draft this library pins still carries an Issue box that says the question "has not been resolved on by the CSSWG", and its IDL has `name` only; the resolution is ahead of the text (the issue is open, "Needs Edits"), and
+the interface ledger marks `names` as such.
 
 ## `@function` definitions
 

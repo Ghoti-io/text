@@ -47,8 +47,9 @@
  * Of two valid rules for one name the later wins ("the last such one in document order"). Nothing is registered by an `@property` inside a style rule, an `@function` or a `@mixin`: the draft
  * places it at the top of a sheet (and in the group rules the cascade enters) and, with private properties, inside `@private`, which this library does not have.
  *
- * **Unresolved upstream (w3c/csswg-drafts#14227):** the draft says "The CSSOM for multi-name @property rules has not been resolved on by the CSSWG." A rule of several names is one rule here
- * (css_cssom_rule.h: its `name` is the first, its text lists them all, the typed model's names are every one).
+ * **CSSOM of several names (the CSSWG's resolution of w3c/csswg-drafts#14227, 2026-08-06):** the draft's Issue box still says "The CSSOM for multi-name @property rules has not been resolved on by the
+ * CSSWG"; the resolution is "a single object with a `names` array [...] and return empty string for the `name` in that case". A rule of several names is one rule here (css_cssom_rule.h: its `name`
+ * is empty, gtext_cssom_property_get_names() has every name, its text lists them all; the typed model's names are every one).
  *
  * ## A caller's registration wins
  *

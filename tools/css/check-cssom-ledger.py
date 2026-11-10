@@ -26,7 +26,9 @@ tools/css/cssom_idl.py): the interfaces the 27 kinds of rule and the object mode
 
 * ``implemented``: the column names the functions of the installed headers that are the member, and a test program of ``tests/`` that calls the first of them;
 * ``binding``: the member exists only in a script binding (a Promise, an event handler, an event object), with the reason;
-* ``out``: this library has no such member, with the reason.
+* ``out``: this library has no such member, with the reason;
+* ``ahead``: the member is not in the pinned IDL and a decision of the CSSWG (the issue is the ``idl file`` column, e.g. ``csswg-drafts-14227``) adds it; the row is checked as an
+  ``implemented`` one, and the gate fails when the pinned IDL has the member (the row is then ``implemented``).
 
 The gate fails (exit 1, every problem listed) on a member with no row, a row for a member the IDL does not have, a duplicate, a hash of an IDL file that is not the pinned one, an
 ``implemented`` row whose function is not declared in an installed header or whose test does not exist or does not call it, a status that is not one of the three, and a reason
@@ -49,7 +51,7 @@ MANIFEST = os.path.join(HERE, "WEBREF_IDL_SHA256")
 IDL_DIR = os.path.join(ROOT, "third_party", "css", "webref-idl")
 SCOPE = re.compile(r'^(CSS[A-Za-z]*|MediaList|StyleSheet|StyleSheetList|LinkStyle|DocumentOrShadowRoot|ElementCSSInlineStyle|MediaQueryList|MediaQueryListEvent|MediaQueryListEventInit|PropertyDefinition|Window)$')
 WINDOW_MEMBERS = ("getComputedStyle", "matchMedia")
-STATUSES = ("implemented", "binding", "out")
+STATUSES = ("implemented", "binding", "out", "ahead")
 
 
 def idl_members(idl_dir):
@@ -117,14 +119,18 @@ def check(ledger, idl_dir):
         if key in rows:
             problems.append("%s.%s is listed twice" % key)
         rows[key] = f
-        if key not in members:
+        ahead = status == "ahead"
+        if ahead and key in members:
+            problems.append("AHEAD %s.%s: the pinned IDL has this member now (%s); make the row implemented" % (iface, member, members[key][1]))
+            continue
+        if key not in members and not ahead:
             problems.append("STALE %s.%s: the pinned IDL has no such member" % key)
             continue
-        if (kind, idl_file) != members[key]:
+        if not ahead and (kind, idl_file) != members[key]:
             problems.append("%s.%s: the IDL says %s in %s, the row %s in %s" % (iface, member, members[key][0], members[key][1], kind, idl_file))
         if status not in STATUSES:
             problems.append("%s.%s: status %r is not one of %s" % (iface, member, status, ", ".join(STATUSES)))
-        elif status == "implemented":
+        elif status in ("implemented", "ahead"):
             names = detail.split(",")
             for s in names:
                 if s not in syms:
@@ -178,6 +184,8 @@ def main():
     mistakes = {
         "a member with no row": ("MISSING", lambda L: L[:first_impl] + L[first_impl + 1:]),
         "a row for a member the IDL does not have": ("STALE", lambda L: L + ["CSSStyleSheet\tnotAMember\tattribute\tcssom\timplemented\tgtext_cssom_sheet_type\ttest-cssom-sheet.cpp"]),
+        "an ahead row for a member the pinned IDL has": ("AHEAD", lambda L: L[:first_impl] + [L[first_impl].replace("\timplemented\t", "\tahead\t", 1)] + L[first_impl + 1:]),
+        "an ahead row whose function is not declared": ("not declared", lambda L: L + ["CSSPropertyRule\tnames\tattribute\tcsswg-drafts-14227\tahead\tgtext_cssom_nosuch_names\ttest-cssom-setters.cpp"]),
         "a row twice": ("twice", lambda L: L + [L[first_impl]]),
         "an implemented row with no such function": ("not declared", lambda L: L[:first_impl] + [L[first_impl].replace("gtext_cssom_", "gtext_cssom_nosuch_", 1)] + L[first_impl + 1:]),
         "an implemented row whose test does not call it": ("does not call", lambda L: L[:first_impl] + ["\t".join(L[first_impl].split("\t")[:5] + ["gtext_cssom_sheet_type", "test-cssom-util.cpp"])] + L[first_impl + 1:]),

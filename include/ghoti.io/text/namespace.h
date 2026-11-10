@@ -470,6 +470,7 @@
 #define gtext_cssom_feature_map_size GHOTIIO_TEXT(gtext_cssom_feature_map_size)
 #define gtext_cssom_mixin_get_parameters GHOTIIO_TEXT(gtext_cssom_mixin_get_parameters)
 #define gtext_cssom_apply_get_arguments GHOTIIO_TEXT(gtext_cssom_apply_get_arguments)
+#define gtext_cssom_property_get_names GHOTIIO_TEXT(gtext_cssom_property_get_names)
 #define gtext_cssom_feature_map_at GHOTIIO_TEXT(gtext_cssom_feature_map_at)
 #define gtext_cssom_feature_map_get GHOTIIO_TEXT(gtext_cssom_feature_map_get)
 #define gtext_cssom_feature_map_set GHOTIIO_TEXT(gtext_cssom_feature_map_set)

@@ -1,5 +1,6 @@
 # The CSSOM interface ledger: one row for every member of the interfaces of the CSSOM family in the pinned WebIDL (tools/css/WEBREF_IDL_SHA256), checked by tools/css/check-cssom-ledger.py
 # interface	member	kind	idl file	status	api or reason	test
+# ahead: not in the pinned IDL; a CSSWG resolution adds it (the issue is the idl file column); checked like implemented, and a gate failure once the pinned IDL has it
 # implemented: the API (comma separated; each is declared in an installed header) and a test program of tests/ that calls the first; binding: the member is the binding's (a Promise, an event handler, a dictionary of an event), with the reason; out: this library has no such member, with the reason
 MediaList	mediaText	attribute	cssom	implemented	gtext_cssom_media_text,gtext_cssom_media_set_text	test-cssom-media.cpp
 MediaList	length	attribute	cssom	implemented	gtext_cssom_media_length	test-cssom-media.cpp
@@ -185,6 +186,7 @@ CSSPropertyRule	name	attribute	css-properties-values-api	implemented	gtext_cssom
 CSSPropertyRule	syntax	attribute	css-properties-values-api	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
 CSSPropertyRule	inherits	attribute	css-properties-values-api	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
 CSSPropertyRule	initialValue	attribute	css-properties-values-api	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
+CSSPropertyRule	names	attribute	csswg-drafts-14227	ahead	gtext_cssom_property_get_names	test-cssom-setters.cpp
 CSSViewTransitionRule	navigation	attribute	css-view-transitions	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
 CSSViewTransitionRule	types	attribute	css-view-transitions	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp
 CSSPositionTryRule	name	attribute	css-anchor-position	implemented	gtext_cssom_rule_get_attribute	test-cssom-setters.cpp

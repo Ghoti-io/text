@@ -264,7 +264,7 @@ TEST(CssomSetters, TheNamedAttributesOfTheOtherKinds) {
 
 // CSSPropertyRule: `name`, `syntax` ("exactly as specified"), `inherits` and `initialValue` (null when absent). The descriptors are optional, so a rule that omits one has its initial value:
 // the syntax `*` and `inherits` true; a descriptor that is ignored is as omitted; a statement has the syntax and initial value it was written with; of a prelude that lists names the name is
-// the first (unresolved upstream, w3c/csswg-drafts#14227; the names are the typed model's).
+// empty (the CSSWG's resolution of w3c/csswg-drafts#14227, 2026-08-06) and `names` has them all.
 TEST(CssomSetters, ThePropertyRuleHasTheDefaultsOfItsOmittedDescriptors) {
   Doc doc;
   Sheet p(doc, "@property --a {} @property --b { syntax: '<nosuch>'; inherits: maybe; initial-value: 5 } @property --c { syntax: '<length>'; initial-value: red } @property --d <length>: 4px;"
@@ -288,8 +288,100 @@ TEST(CssomSetters, ThePropertyRuleHasTheDefaultsOfItsOmittedDescriptors) {
   EXPECT_EQ(attr(path(p, {4}).r, "name"), "--e");
   EXPECT_EQ(attr(path(p, {4}).r, "syntax"), "*");
   EXPECT_EQ(attr(path(p, {5}).r, "syntax"), "<length> | auto");
-  EXPECT_EQ(attr(path(p, {6}).r, "name"), "--g");
+  EXPECT_EQ(attr(path(p, {6}).r, "name"), "") << "\"return empty string for the `name` in that case\"";
   EXPECT_EQ(attr(path(p, {6}).r, "inherits"), "false");
+}
+
+namespace {
+// CSSPropertyRule.names as the strings of the list, or "<status>" when the call fails.
+std::vector<std::string> names_of(GTEXT_CSSOM_Rule * r, GTEXT_CSS_Status * status = nullptr) {
+  GTEXT_CSSOM_String_List l{};
+  const GTEXT_CSS_Status st = gtext_cssom_property_get_names(r, &l);
+  if (status) {
+    *status = st;
+  }
+  std::vector<std::string> v;
+  if (st != GTEXT_CSS_OK) {
+    return v;
+  }
+  for (size_t i = 0; i < l.count; i++) {
+    v.emplace_back(l.items[i].text, l.items[i].length);
+  }
+  gtext_cssom_buffer_free(&reinterpret_cast<css_obj *>(r)->core->alloc, static_cast<char *>(l.block));
+  return v;
+}
+}  // namespace
+
+// The CSSWG resolved on 2026-08-06 (w3c/csswg-drafts#14227, "Needs Edits"): "if single @property has multiple names, it will be represented in CSSOM as a single object with a `names` array
+// and not expand into multiple objects and return empty string for the `name` in that case". The pinned draft's Issue box still says the question is unresolved; this follows the resolution.
+TEST(CssomSetters, APropertyRuleOfSeveralNamesIsOneObjectWithANamesArrayAndAnEmptyName) {
+  Doc doc;
+  Sheet p(doc, "@property --a, --b, --c { syntax: '<length>'; inherits: false; initial-value: 0px } @property --d { inherits: true } @property --e <length>: 1px; @property --f, --f {}");
+  ASSERT_EQ(p.status, GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_cssom_rule_list_length(p.rules()), 4u) << "not expanded into one object per name";
+  EXPECT_EQ(attr(path(p, {0}).r, "name"), "");
+  EXPECT_EQ(names_of(path(p, {0}).r), (std::vector<std::string>{"--a", "--b", "--c"}));
+  EXPECT_EQ(attr(path(p, {0}).r, "syntax"), "<length>") << "the descriptors are the rule's";
+  EXPECT_EQ(attr(path(p, {1}).r, "name"), "--d");
+  EXPECT_EQ(names_of(path(p, {1}).r), (std::vector<std::string>{"--d"})) << "a rule of one name has an array of one";
+  EXPECT_EQ(names_of(path(p, {2}).r), (std::vector<std::string>{"--e"})) << "the statement defines one name";
+  EXPECT_EQ(attr(path(p, {2}).r, "name"), "--e");
+  EXPECT_EQ(attr(path(p, {3}).r, "name"), "") << "two names, even when they are the same name";
+  EXPECT_EQ(names_of(path(p, {3}).r), (std::vector<std::string>{"--f", "--f"}));
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  Doc d2;
+  Sheet t(d2, "a { color: red } @media print {}");
+  names_of(at(t.rules(), 0).r, &st);
+  EXPECT_EQ(st, GTEXT_CSS_E_UNSUPPORTED) << "only a CSSPropertyRule has names";
+  names_of(at(t.rules(), 1).r, &st);
+  EXPECT_EQ(st, GTEXT_CSS_E_UNSUPPORTED);
+  GTEXT_CSSOM_String_List none{};
+  EXPECT_EQ(gtext_cssom_property_get_names(nullptr, &none), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(gtext_cssom_property_get_names(at(t.rules(), 0).r, nullptr), GTEXT_CSS_E_INVALID);
+  EXPECT_FALSE(gtext_cssom_rule_has_attribute(path(p, {0}).r, "names", 5, nullptr)) << "a list is read through gtext_cssom_property_get_names(), not as a string";
+}
+
+// A text round trip keeps every name, so the document's reading of a changed rule (it re-reads the text) loses none.
+TEST(CssomSetters, TheNamesOfAPropertyRuleSurviveItsText) {
+  Doc doc;
+  Sheet p(doc, "@property --a,--b { syntax: '*' }");
+  const std::string text = css(at(p.rules(), 0).r);
+  EXPECT_EQ(text, "@property --a, --b { syntax: \"*\"; inherits: true; }");
+  Doc d2;
+  Sheet q(d2, text.c_str());
+  EXPECT_EQ(names_of(at(q.rules(), 0).r), (std::vector<std::string>{"--a", "--b"}));
+  EXPECT_EQ(css(at(q.rules(), 0).r), text);
+}
+
+TEST(CssomSettersOom, EveryAllocationOfReadingTheNamesFailsCleanly) {
+  const char * const text = "@property --alpha, --beta, --gamma { syntax: '<length>'; initial-value: 1px }";
+  for (size_t n = 1; n < 1000; n++) {
+    FaultAllocator fa;
+    bool done = false;
+    {
+      Doc doc(nullptr, &fa.alloc);
+      Sheet s(doc, text);
+      ASSERT_EQ(s.status, GTEXT_CSS_OK);
+      Rule r = at(s.rules(), 0);
+      fa.arm(n);
+      GTEXT_CSS_Status st = GTEXT_CSS_OK;
+      const auto v = names_of(r.r, &st);
+      done = !fa.failed;
+      fa.disarm();
+      if (st == GTEXT_CSS_OK) {
+        EXPECT_EQ(v, (std::vector<std::string>{"--alpha", "--beta", "--gamma"})) << n;
+      }
+      else {
+        EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n;
+      }
+      EXPECT_EQ(names_of(r.r), (std::vector<std::string>{"--alpha", "--beta", "--gamma"})) << "with memory again, after " << n;
+    }
+    EXPECT_TRUE(fa.live.empty()) << "allocation " << n << " leaked";
+    EXPECT_EQ(fa.bad_frees, 0u);
+    if (done) {
+      break;
+    }
+  }
 }
 
 TEST(CssomSetters, ACounterStyleDescriptorIsReplacedAsAWhole) {

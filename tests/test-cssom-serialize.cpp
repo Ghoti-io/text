@@ -245,7 +245,7 @@ TEST(CssomSerializeAtRules, AStatementIsWrittenInTheBlockForm) {
   EXPECT_EQ(first("@property --p <length>: red;"), "@property --p { syntax: \"<length>\"; inherits: true; }");
 }
 
-// The CSSOM of a prelude that lists names is unresolved upstream (w3c/csswg-drafts#14227, the Issue in the draft): the rule is one rule, its name is the first, and its text lists them.
+// A prelude that lists names is one rule (the CSSWG's resolution of 2026-08-06 on w3c/csswg-drafts#14227, which the pinned draft's Issue box does not carry): its text lists them, so a round trip keeps them.
 TEST(CssomSerializeAtRules, APropertyRuleOfSeveralNamesIsOneRuleThatListsThem) {
   EXPECT_EQ(first("@property --a,--b ,--c { syntax: '<length>'; inherits: false; initial-value: 0px }"),
       "@property --a, --b, --c { syntax: \"<length>\"; inherits: false; initial-value: 0px; }");

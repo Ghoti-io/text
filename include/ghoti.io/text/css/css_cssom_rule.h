@@ -283,7 +283,7 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_rule_condition_text(GTEXT_CSSOM_Rule * ru
  * | `@scope` | `start`, `end` (null when absent) |
  * | `@container` | `containerName`, `containerQuery`, `conditionText` |
  * | `@media`, `@supports`, `@when`, `@else` | `conditionText` |
- * | `@property` | `name` (the first of a prelude that lists names), `syntax` (unquoted; `*` when omitted), `inherits` (`true` when omitted), `initialValue` (null when absent) |
+ * | `@property` | `name` (empty when the prelude lists more than one name; the names are gtext_cssom_property_get_names()), `syntax` (unquoted; `*` when omitted), `inherits` (`true` when omitted), `initialValue` (null when absent) |
  * | `@counter-style` | `name` w, `system` w, `symbols` w, `additiveSymbols` w, `negative` w, `prefix` w, `suffix` w, `range` w, `pad` w, `speakAs` w, `fallback` w |
  * | `@font-palette-values` | `name`, `fontFamily`, `basePalette`, `overrideColors` |
  * | `@font-feature-values` | `fontFamily` w |
@@ -358,6 +358,20 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_mixin_get_parameters(GTEXT_CSSOM_Rule * r
  * @return As gtext_cssom_mixin_get_parameters(), for an `@apply` rule.
  */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_apply_get_arguments(GTEXT_CSSOM_Rule * rule, GTEXT_CSSOM_String_List * out);
+
+/**
+ * @brief `CSSPropertyRule.names`: the names of the rule, in the order they were written, each as the serialization of the `<custom-property-name>` (a rule of one name has one).
+ *
+ * The CSSWG resolved (2026-08-06, w3c/csswg-drafts#14227): "if single @property has multiple names, it will be represented in CSSOM as a single object with a `names` array and not expand
+ * into multiple objects and return empty string for the `name` in that case". So the rule `@property --a, --b { ... }` is one rule whose `name` (gtext_cssom_rule_get_attribute()) is the
+ * empty string and whose names are `--a` and `--b`. The pinned Properties and Values draft still says the question "has not been resolved on by the CSSWG" and its IDL has `name` only: this
+ * follows the resolution. `cssText` lists every name, so reading it back keeps them.
+ *
+ * @param rule A `@property` rule. Not NULL.
+ * @param out Receives the names; written only on success. Release `out->block` with gtext_cssom_buffer_free(). Not NULL.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_UNSUPPORTED (a rule that is not a `@property` rule); GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_property_get_names(GTEXT_CSSOM_Rule * rule, GTEXT_CSSOM_String_List * out);
 
 /* ---- CSSFontFeatureValuesMap ----------------------------------------------------------------------------------------------------------------- */
 

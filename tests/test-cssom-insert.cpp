@@ -149,6 +149,28 @@ TEST(CssomInsert, APropertyRuleOfAnyOfItsFormsIsInsertedAndOneThatIsNotOneIsSynt
   EXPECT_EQ(gtext_cssom_rule_list_length(f.s.rules()), 5u);
 }
 
+// The CSSWG's resolution of w3c/csswg-drafts#14227: a rule of several names is "a single object with a `names` array and not expand[ed] into multiple objects". insertRule makes one rule (index
+// 0 is the rule, the list grows by one), its `name` is empty, its text keeps every name, and deleteRule removes it whole.
+TEST(CssomInsert, APropertyRuleOfSeveralNamesIsInsertedAndDeletedAsOneRule) {
+  Fixture f("a{}");
+  Ins r = insert_rule(f.s.s, "@property --x, --y, --z { syntax: '<length>'; inherits: false }", 0);
+  ASSERT_EQ(r.st, GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_cssom_rule_list_length(f.s.rules()), 2u) << "one rule, not three";
+  GTEXT_CSSOM_String_List l{};
+  ASSERT_EQ(gtext_cssom_property_get_names(r.rule.r, &l), GTEXT_CSS_OK);
+  ASSERT_EQ(l.count, 3u);
+  EXPECT_EQ(std::string(l.items[2].text, l.items[2].length), "--z");
+  gtext_cssom_buffer_free(&reinterpret_cast<css_obj *>(r.rule.r)->core->alloc, static_cast<char *>(l.block));
+  char * name = nullptr;
+  size_t n = 0;
+  ASSERT_EQ(gtext_cssom_rule_get_attribute(r.rule.r, "name", 4, &name, &n, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(n, 0u);
+  gtext_cssom_buffer_free(&reinterpret_cast<css_obj *>(r.rule.r)->core->alloc, name);
+  EXPECT_EQ(f.text(), "@property --x, --y, --z { syntax: \"<length>\"; inherits: false; } | a { }");
+  ASSERT_EQ(delete_rule(f.s.s, 0), GTEXT_CSS_OK);
+  EXPECT_EQ(f.text(), "a { }");
+}
+
 TEST(CssomInsert, ARuleWithRulesInsideIsInsertedWithAllOfThem) {
   Fixture f("a{}");
   Ins r = insert_rule(f.s.s, "@media print{ b{color:red} @supports (a:b){ c{} } }", 1);

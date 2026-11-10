@@ -651,7 +651,11 @@ static GTEXT_CSS_Status attr_value(css_rule * rule, const attr_row * row, tbuf *
   case SRC_NAME: {
     GTEXT_CSS_String s;
     bool quoted = false;
-    if (gtext_css_atrule_name_count(a) > 0 && gtext_css_atrule_name_at(a, 0, &s, &quoted)) {
+    if (rule->kind == GTEXT_CSSOM_RULE_PROPERTY && gtext_css_atrule_name_count(a) > 1) {
+      /* The CSSWG's resolution of w3c/csswg-drafts#14227: a rule of several names "will be represented in CSSOM as a single object with a `names` array [...] and return empty string for the `name` in that case" */
+      st = GTEXT_CSS_OK;
+    }
+    else if (gtext_css_atrule_name_count(a) > 0 && gtext_css_atrule_name_at(a, 0, &s, &quoted)) {
       st = tb_put(out, s.data, s.length) ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
     }
     else {
@@ -775,6 +779,57 @@ GTEXT_CSS_Status gtext_cssom_rule_get_attribute(GTEXT_CSSOM_Rule * rule, const c
     *is_null = nul;
   }
   return take(&b, out, length);
+}
+
+GTEXT_CSS_Status gtext_cssom_property_get_names(GTEXT_CSSOM_Rule * rule, GTEXT_CSSOM_String_List * out) {
+  if (!rule || !out) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  if (rule->kind != GTEXT_CSSOM_RULE_PROPERTY) {
+    return GTEXT_CSS_E_UNSUPPORTED;
+  }
+  css_core * core = rule->obj.core;
+  GTEXT_CSS_Atrule * a = NULL;
+  GTEXT_CSS_Status st = css_rule_typed(core, rule, true, &a);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  const size_t n = gtext_css_atrule_name_count(a);
+  size_t total = 0;
+  for (size_t i = 0; i < n; i++) {
+    GTEXT_CSS_String s;
+    bool quoted = false;
+    if (!gtext_css_atrule_name_at(a, i, &s, &quoted)) {
+      gtext_css_atrule_free(a);
+      return GTEXT_CSS_E_INTERNAL;
+    }
+    total += s.length;
+  }
+  const size_t head = n * sizeof(GTEXT_CSSOM_String_Item);
+  char * block = gtext_allocator_malloc(&core->alloc, head + total + 1);
+  if (!block) {
+    gtext_css_atrule_free(a);
+    return GTEXT_CSS_E_OOM;
+  }
+  GTEXT_CSSOM_String_Item * items = (GTEXT_CSSOM_String_Item *)(void *)block;
+  char * at = block + head;
+  for (size_t i = 0; i < n; i++) {
+    GTEXT_CSS_String s;
+    bool quoted = false;
+    (void)gtext_css_atrule_name_at(a, i, &s, &quoted);
+    if (s.length) {
+      memcpy(at, s.data, s.length);
+    }
+    items[i].text = at;
+    items[i].length = s.length;
+    at += s.length;
+  }
+  *at = '\0';
+  gtext_css_atrule_free(a);
+  out->items = n ? items : NULL;
+  out->count = n;
+  out->block = block;
+  return GTEXT_CSS_OK;
 }
 
 bool gtext_cssom_rule_has_attribute(const GTEXT_CSSOM_Rule * rule, const char * name, size_t name_length, bool * writable) {
