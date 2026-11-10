@@ -26,7 +26,6 @@
 
 #include <ghoti.io/cutil/atomic.h>
 #include <ghoti.io/text/css/css_parse.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -89,6 +88,20 @@ static int name_cmp(const void * pa, const void * pb) {
     return a->length < b->length ? -1 : 1;
   }
   return a->length ? memcmp(a->data, b->data, a->length) : 0;
+}
+
+/// The decimal digits of a number at `out` (at most 20): how many were written. Integers are written here and not with printf, which is the library's rule for numbers in src/css.
+static size_t put_decimal(char * out, uint64_t v) {
+  char tmp[24];
+  size_t n = 0;
+  do {
+    tmp[n++] = (char)('0' + v % 10u);
+    v /= 10u;
+  } while (v);
+  for (size_t i = 0; i < n; i++) {
+    out[i] = tmp[n - 1 - i];
+  }
+  return n;
 }
 
 static bool is_custom(const GTEXT_CSS_String * n) {
@@ -181,10 +194,13 @@ GTEXT_CSS_Status css_priv_scope_make(css_arena * arena, const GTEXT_Allocator * 
     *epoch = css_priv_next_epoch();
   }
   char keybuf[96];
-  const int kn = snprintf(keybuf, sizeof keybuf, "--" CSS_PRIV_MARK "p%llu_%llu_", (unsigned long long)*epoch, (unsigned long long)serial);
-  if (kn <= 0 || (size_t)kn >= sizeof keybuf) {
-    return GTEXT_CSS_E_INTERNAL;
-  }
+  size_t kn = 0;
+  memcpy(keybuf, "--" CSS_PRIV_MARK "p", 3u + CSS_PRIV_MARK_LEN);
+  kn = 3u + CSS_PRIV_MARK_LEN;
+  kn += put_decimal(keybuf + kn, *epoch);
+  keybuf[kn++] = '_';
+  kn += put_decimal(keybuf + kn, serial);
+  keybuf[kn++] = '_';
   name_vec names;
   memset(&names, 0, sizeof names);
   frame * stack = NULL;
@@ -235,7 +251,7 @@ GTEXT_CSS_Status css_priv_scope_make(css_arena * arena, const GTEXT_Allocator * 
       next = mode == M_BODY || mode == M_GROUP ? M_GROUP : M_PRIV_GROUP;
     }
     else if (mode == M_PRIVATE && css_ascii_ieq(&r->name, "property")) {
-      st = add_def(arena, registry, alloc, r, keybuf, (size_t)kn, &names, regs, first_reg);
+      st = add_def(arena, registry, alloc, r, keybuf, kn, &names, regs, first_reg);
       continue;
     }
     if (next < 0 || !r->has_block || r->content_count == 0) {
@@ -261,7 +277,7 @@ GTEXT_CSS_Status css_priv_scope_make(css_arena * arena, const GTEXT_Allocator * 
   }
   css_priv_scope * sc = css_arena_alloc(arena, sizeof *sc);
   GTEXT_CSS_String * kept = css_arena_alloc(arena, m * sizeof *kept);
-  char * key = css_arena_strdup(arena, keybuf, (size_t)kn);
+  char * key = css_arena_strdup(arena, keybuf, kn);
   if (!sc || !kept || !key) {
     gtext_allocator_free(alloc, names.v);
     return GTEXT_CSS_E_OOM;
@@ -280,7 +296,7 @@ GTEXT_CSS_Status css_priv_scope_make(css_arena * arena, const GTEXT_Allocator * 
   sc->names = kept;
   sc->nnames = m;
   sc->key = key;
-  sc->key_len = (size_t)kn;
+  sc->key_len = kn;
   *out = sc;
   return GTEXT_CSS_OK;
 }
@@ -386,9 +402,9 @@ static bool put_ident(const GTEXT_Allocator * a, bytes * b, const css_priv_scope
         }
       }
       else {
-        char esc[16];
-        const int k = snprintf(esc, sizeof esc, "\\%x ", (unsigned)c);
-        if (k <= 0 || !put(a, b, esc, (size_t)k)) {
+        static const char hex[] = "0123456789abcdef";
+        const char esc[4] = {'\\', hex[c >> 4], hex[c & 15u], ' '};
+        if (!put(a, b, esc, sizeof esc)) {
           return false;
         }
       }
