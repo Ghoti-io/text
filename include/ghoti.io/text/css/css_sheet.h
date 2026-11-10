@@ -203,7 +203,8 @@ typedef struct {
  * @param out Receives the sheet (one owner). Not NULL; written only on success.
  * @param result NULL, or filled.
  * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM; GTEXT_CSS_E_LIMIT_RULE_NESTING, _LIMIT_SHEET_SIZE, _LIMIT_CONDITIONS (`max_conditions`), and the limits of selectors,
- *   layers and conditions.
+ *   layers and conditions; GTEXT_CSS_E_LIMIT_WORK and GTEXT_CSS_E_LIMIT_RULE_NESTING for the expansion of mixins (`max_mixin_expansions`, `max_mixin_depth`); GTEXT_CSS_E_LIMIT_REGISTRY for a
+ *   `@property` rule inside an `@private` rule whose name is longer than the registry's limit.
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_sheet_compile(const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Sheet_Options * options,
     GTEXT_CSS_Sheet ** out, GTEXT_CSS_Sheet_Result * result);

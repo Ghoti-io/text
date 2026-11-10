@@ -543,3 +543,21 @@ TEST(CssomPrivateOom, EveryAllocationOfReadingThePrivatePropertiesIsFailedInTurn
 }
 
 }  // namespace
+
+// A `@property` inside an `@private` rule whose name is longer than the registry takes (found by libFuzzer in the compile of a sheet): the registry's limit is the compile's error, as it is for the
+// rule at the top of a sheet in a set of registrations, and not a rule that is silently different.
+TEST(CssomPrivate, APrivatePropertyNameLongerThanTheRegistryTakesIsTheRegistrysLimit) {
+  GTEXT_CSS_Registry * registry = nullptr;
+  ASSERT_EQ(gtext_css_registry_new(nullptr, &registry), GTEXT_CSS_OK);
+  const std::string text = "a { @private { @property --" + std::string(100000, 'n') + " <length>: 2px; } }";
+  GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+  GTEXT_CSS_Tree * tree = nullptr;
+  ASSERT_EQ(gtext_css_parse_stylesheet(text.data(), text.size(), &po, &tree, nullptr), GTEXT_CSS_OK);
+  GTEXT_CSS_Sheet * sheet = nullptr;
+  GTEXT_CSS_Sheet_Result sr;
+  EXPECT_EQ(gtext_css_sheet_compile(tree, registry, nullptr, &sheet, &sr), GTEXT_CSS_E_LIMIT_REGISTRY);
+  EXPECT_EQ(sheet, nullptr);
+  gtext_css_sheet_free(sheet);
+  gtext_css_tree_free(tree);
+  gtext_css_registry_free(registry);
+}

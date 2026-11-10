@@ -137,6 +137,7 @@ bool tolerated(GTEXT_CSS_Status st) {
   case GTEXT_CSS_E_LIMIT_WORK:
   case GTEXT_CSS_E_LIMIT_CONDITION_DEPTH:
   case GTEXT_CSS_E_LIMIT_CONDITIONS:
+  case GTEXT_CSS_E_LIMIT_REGISTRY:   // a `@property` in an `@private` rule whose name is longer than the registry takes
   case GTEXT_CSS_E_LIMIT_LIST: return true;
   default: return false;
   }
