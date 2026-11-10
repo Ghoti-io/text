@@ -328,6 +328,80 @@ static GTEXT_CSS_Status build_functions(css_core * core, GTEXT_CSS_Function_Set 
   return GTEXT_CSS_OK;
 }
 
+/* ---- the @mixin rules ----------------------------------------------------------------------------------------------------------------------------- */
+
+typedef struct {
+  css_mixin_scan * scan;
+  const css_scope * scope;
+} mixin_walk;
+
+static GTEXT_CSS_Status collect_mixins_live_fn(css_core * core, void * user, css_sheet * sheet, const css_scope * scope, const void * implicit_root) {
+  (void)implicit_root;
+  mixin_walk * w = user;
+  if (scope != w->scope) {
+    return GTEXT_CSS_OK;   /* "The name of a @mixin rule is a tree-scoped name": the sheets of another tree scope are not this one's */
+  }
+  bool yes = false;
+  const GTEXT_CSS_Status st = takes_part(core, sheet, &yes);
+  if (st != GTEXT_CSS_OK || !yes) {
+    return st;
+  }
+  return css_mixin_scan_sheet(w->scan, sheet);
+}
+
+GTEXT_CSS_Status css_index_mixin_scan(css_core * core, css_sheet * target, css_mixin_scan ** out) {
+  css_mixin_scan * scan = NULL;
+  GTEXT_CSS_Status st = css_mixin_scan_new(core, &scan);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  /* the sheet an `@import` chain starts from is the one the scope lists */
+  css_sheet * root = target;
+  for (size_t guard = 0; root->owner_rule && guard < 1024; guard++) {
+    css_sheet * up = css_rule_sheet(root->owner_rule);
+    if (!up) {
+      break;
+    }
+    root = up;
+  }
+  const css_scope * scope = css_sheet_scope(root);
+  for (size_t i = 0; !scope && i < core->nscopes; i++) {
+    for (size_t k = 0; k < core->scopes[i]->nadopted; k++) {
+      if (core->scopes[i]->adopted[k] == root) {
+        scope = core->scopes[i];
+      }
+    }
+  }
+  bool part = false;
+  if (scope) {
+    st = takes_part(core, root, &part);
+  }
+  if (st == GTEXT_CSS_OK && (!scope || !part)) {
+    st = css_mixin_scan_sheet(scan, root);   /* a sheet that is in no document's cascade reads its own mixins and those of what it imports */
+  }
+  else if (st == GTEXT_CSS_OK) {
+    mixin_walk w = {scan, scope};
+    st = walk_live(core, collect_mixins_live_fn, &w);
+  }
+  if (st != GTEXT_CSS_OK) {
+    css_mixin_scan_free(scan);
+    return st;
+  }
+  *out = scan;
+  return GTEXT_CSS_OK;
+}
+
+void css_index_dependency(css_core * core, uint64_t out[4]) {
+  uint64_t stamp = 0;
+  if (compute_stamp(core, &stamp) != GTEXT_CSS_OK) {
+    stamp = ~(uint64_t)0;   /* a graph that cannot be stamped is one nothing is current for */
+  }
+  out[0] = stamp;
+  out[1] = core->structure_version;
+  out[2] = core->registration_version;
+  out[3] = core->conditions_epoch;
+}
+
 /* ---- the @keyframes rules ------------------------------------------------------------------------------------------------------------------------- */
 
 static GTEXT_CSS_Status keyframes_live_fn(css_core * core, void * user, css_sheet * sheet, const css_scope * scope, const void * implicit_root) {

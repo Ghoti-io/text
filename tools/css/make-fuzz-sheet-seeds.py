@@ -81,6 +81,18 @@ SHEETS = [
     "a { @private { @property --k { syntax: '<length>'; inherits: false; initial-value: 3px; } @property --k <number>: 4; @property --j, --l { initial-value: 1 } } }",
     "a { @private { --\\2e a: 1; --b\\ c: 2 } --d: var(--\\2e a) var(--b\\ c) var(--\\10FFFD a) }",
     "a { @private { --x: 1 } } \x01 a { @private { --x: 2 } --y: var(--x) }",
+    # CSS Functions and Mixins 1, `@mixin`, `@apply` and `@contents`: applications with parameters, defaults and types, bodies with nested rules and group rules, contents blocks and their fallbacks,
+    # mixins in mixins, cycles, mixins that are not found, arguments that are too many, and what is not valid
+    "@mixin --m(--a <length>: 1px, --b: 2) { width: var(--a); --c: var(--b); } p { @apply --m(3px); } q { @apply --m; margin-top: 1px }",
+    "@mixin --m { @private { --t: 1; @property --u <length>: 3px; } --o: var(--t) var(--u); & > i { color: red } @media print { --p: 1 } } a { @private { --t: 2 } @apply --m; --q: var(--t) }",
+    "@mixin --w { @media all { @contents; } @supports (display: block) { @contents { --f: 1 } } } a { @apply --w { --x: 1 } @apply --w {} @apply --w; }",
+    "@mixin --a(--p) { @apply --b(var(--p)); } @mixin --b(--q <color>: red) { color: var(--q); @apply --a(1); } c { @apply --a(blue); @apply --b; @apply --c; }",
+    "@mixin --s { @apply --s; --x: 1; @contents { @apply --s; } } a { @apply --s { @apply --s; } }",
+    "@layer l { @mixin --m { --x: 1; @layer z { --y: 1 } } } @mixin --m { --x: 2; } @media all { @mixin --h { --h: 1 } } a { @apply --m; @apply --h; @apply --m(1, 2); @apply --M; @apply --m {}; @contents; }",
+    "@mixin --m(--a, --a) { --x: 1 } @mixin m { --y: 1 } @mixin --n(--a <length>: red) { --z: 1 } a { @apply --m; @apply --n; @apply --n(1px); @apply m; @apply --m(!important); }",
+    "@mixin --m(--a: 1,) { @scope (.x) { & b { --y: var(--a) } } & + * { --z: var(--a, red) } } a { @apply --m(,); @apply --m({ 1, 2 }); @apply --m( ); } @apply --m; @media all { @apply --m }",
+    "@mixin --m(--a) { --x: var(--a) } @mixin --m(--a, --b) { --y: var(--b) } a { @media print { @apply --m(1, 2); b { @apply --m(3) { color: red } } } @apply --m(1,) }",
+    "@mixin --\\2e a(--\\2e b: 1) { --c: var(--\\2e b) } a { @apply --\\2e a(2); @private { --d: 1 } @apply --\\2e a; }",
 ]
 
 

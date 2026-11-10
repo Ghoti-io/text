@@ -356,6 +356,8 @@ void css_trim_value_text(const char ** s, size_t * n);
 /// The text of a custom property's value, as the value is to be written: the parse of a declaration trims it, and a computed value is not a declaration's (a substituted value keeps the blank
 /// that substitution left at an end of it), so a caller that parsed the text of a computed value puts the whole text back.
 GTEXT_CSS_Status css_property_value_keep_text(GTEXT_CSS_Property_Value * out, const char * text, size_t length);
+/// Whether a compiled sheet, or a sheet it imports, has an `@apply` that looked for a mixin (css_sheet.h): what it compiled to depends on the `@mixin` rules the compile was given.
+bool css_sheet_uses_mixins(const GTEXT_CSS_Sheet * sheet);
 /// The text a value is kept as (a custom property's value, or a value that has a substitution function in it and is read when the function is replaced): false for a value with none.
 bool css_property_value_text(const GTEXT_CSS_Property_Value * value, const char ** text, size_t * length);
 

@@ -97,6 +97,29 @@ GTEXT_CSS_Status css_sheet_collect_functions(css_core * core, css_sheet * sheet,
 /// The same for the `@keyframes` rules (and the group and layer rules that hold them): added to `*set`, made first when it is NULL (cssom_index.c freezes it).
 GTEXT_CSS_Status css_sheet_collect_keyframes(css_core * core, css_sheet * sheet, GTEXT_CSS_Atrule_Set ** set);
 
+/// The `@mixin` rules `@apply` may name (css_sheet.h, GTEXT_CSS_Sheet_Options::mixins), read from the live sheets of one tree scope (cssom_snapshot.c): a set of rules borrowed from the live
+/// sheets and from the trees of the rules that were read again, which live as long as the scan does.
+typedef struct css_mixin_scan css_mixin_scan;
+
+/// A scan that holds nothing yet.
+GTEXT_CSS_Status css_mixin_scan_new(css_core * core, css_mixin_scan ** out);
+
+/// Read the `@mixin` rules of a sheet into the scan, after those it has: first those of the sheets it imports (an import is at the top of a sheet), then its own. The layer of an
+/// imported sheet's rules is the one they are in there, whatever `layer()` the import has, and the conditions of an import are not read.
+GTEXT_CSS_Status css_mixin_scan_sheet(css_mixin_scan * scan, css_sheet * sheet);
+
+/// The set the scan made (frozen; owned by the scan).
+const GTEXT_CSS_Function_Set * css_mixin_scan_set(const css_mixin_scan * scan);
+
+void css_mixin_scan_free(css_mixin_scan * scan);
+
+/// The mixins visible to the sheet `target` (cssom_index.c): the `@mixin` rules of the sheets of the tree scope it is in, in the order of the cascade ("The name of a @mixin rule is a tree-scoped
+/// name"), or its own and its imports' when it takes part in no document.
+GTEXT_CSS_Status css_index_mixin_scan(css_core * core, css_sheet * target, css_mixin_scan ** out);
+
+/// What a snapshot that applies mixins depends on besides its own sheet: the stamp, the structure, the registrations and the conditions the index is built for.
+void css_index_dependency(css_core * core, uint64_t out[4]);
+
 /* ---- imports (cssom_snapshot.c, cssom_sheet.c, cssom_insert.c) -------------------------------------------------------------------------- */
 
 /// Ask the document's import callback for the sheet of the `@import` rule `rule`, which is for `sheet`: `*made` is the new sheet (one reference, the callback's) or NULL, with `*pending` true when

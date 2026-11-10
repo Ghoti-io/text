@@ -123,7 +123,7 @@ array-compile-source-id-not-on-the-diagnostic	css_sheet.c	  d->source_id = b->sr
 array-compile-source-index-not-on-the-diagnostic	css_sheet.c	  d->source_index = b->src_index;\n	  d->source_index = 0;\n	compilerules
 array-compile-never-takes-the-sources-id	css_sheet.c	        b.src_id = sources[i].source_id;\n	        b.src_id = 0;\n	compilerules,snapshot
 array-compile-source-index-not-advanced	css_sheet.c	      b.src_index = i;\n	      b.src_index = 0;\n	compilerules
-snapshot-ignores-its-cache	cssom_snapshot.c	  if (sheet->snap && sheet->snap_stamp == stamp) {	  if (0) {	snapshot,snapshotcost,snapshotoom
+snapshot-ignores-its-cache	cssom_snapshot.c	  if (sheet->snap && sheet->snap_stamp == stamp && (!applies	  if (0 && (!applies	snapshot,snapshotcost,snapshotoom
 snapshot-cache-stamp-is-never-current	cssom_snapshot.c	  sheet->snap_stamp = stamp;\n	  sheet->snap_stamp = stamp + 1;\n	snapshot,snapshotcost
 snapshot-reads-a-changed-rule-from-its-old-node	cssom_snapshot.c	    const bool own = !r->mod && r->node	    const bool own = r->node	snapshot,snapshotcost
 snapshot-rereads-every-rule	cssom_snapshot.c	    const bool own = !r->mod && r->node	    const bool own = false && r->node	snapshotcost,snapshot
@@ -503,7 +503,7 @@ private-name-in-a-style-query-not-written-with-the-hidden-name	css_private.c	if 
 private-name-of-inherit-not-written-with-the-hidden-name	css_private.c	if (css_ascii_ieq(&v->value, "var") || css_ascii_ieq(&v->value, "inherit")) {	if (css_ascii_ieq(&v->value, "var")) {	private
 private-rule-takes-a-property-that-is-not-custom	css_sheet.c	if (custom_only && !is_custom) {	if (0 && custom_only && !is_custom) {	private
 private-rule-takes-the-rules-inside-it	css_sheet.c	if (cur->in_private && !(rule->kind == GTEXT_CSS_RULE_AT && conditional_name(&rule->name))) {	if (0 && cur->in_private && !(rule->kind == GTEXT_CSS_RULE_AT && conditional_name(&rule->name))) {	private
-private-rule-in-a-group-rule-of-a-style-rule-is-nothing	css_sheet.c	      found = true;\n    }\n    else if (conditional_name(&r->name) && r->content_count) {	      found = false;\n    }\n    else if (conditional_name(&r->name) && r->content_count) {	private
+private-rule-in-a-group-rule-of-a-style-rule-is-nothing	css_sheet.c	      found = true;   /* an `@apply` (or an `@contents`, which a mixin's body has) is replaced by declarations and rules: the group rule holds styles */\n    }\n    else if (conditional_name(&r->name) && r->content_count) {	      found = false;\n    }\n    else if (conditional_name(&r->name) && r->content_count) {	private
 private-property-is-listed	css_custom.c	return raw_count(style) - hidden;	return raw_count(style);	private
 private-property-moves-the-index-of-the-others	css_custom.c	return raw_at(style, index < first ? index : index + hidden, name, value);	return raw_at(style, index, name, value);	private
 private-registration-not-collected	css_at_property.c	for (size_t i = 0; i < cur->npregs && st == GTEXT_CSS_OK; i++) {	for (size_t i = 0; i < 0 && st == GTEXT_CSS_OK; i++) {	private
@@ -514,3 +514,31 @@ private-rule-text-has-no-contents	cssom_rule_serialize.c	for (size_t i = 0; i < 
 property-rule-in-a-private-rule-is-invalid	css_atrule.c	      where = GTEXT_CSS_ATRULE_PARENT_PRIVATE;	      where = GTEXT_CSS_ATRULE_PARENT_STYLE;	private,mixin
 group-rule-in-a-private-rule-is-invalid	css_atrule.c	if (parent->kind == GTEXT_CSS_RULE_AT && css_ascii_ieq(&parent->name, "private") && css_ascii_ieq(&rule->name, "property")) {	if (parent->kind == GTEXT_CSS_RULE_AT && css_ascii_ieq(&parent->name, "private")) {	private
 private-dump-keeps-the-sheets-number	css_private.c	if (d > k && d < length && text[d] == '_') {	if (0 && d > k && d < length && text[d] == '_') {	private
+mixin-is-never-found	css_sheet.c	bool does = def != NULL && ap.nargs <= def->nparams;	bool does = def != NULL && ap.nargs <= def->nparams && 0;	mixineval,sheetmixin
+too-many-arguments-are-applied	css_sheet.c	bool does = def != NULL && ap.nargs <= def->nparams;	bool does = def != NULL;	mixineval
+a-cycle-is-applied-again	css_sheet.c	    does = i->def != def;   /* a mixin applied inside its own body	    does = true;   /* a mixin applied inside its own body	mixineval,sheetmixin
+mixin-depth-is-not-bounded	css_sheet.c	  if (depth > max_depth) {	  if (0 && depth > max_depth) {	sheetmixin
+mixin-expansions-are-not-counted	css_sheet.c	  if (b->expansions >= max_exp) {	  if (0 && b->expansions >= max_exp) {	sheetmixin
+mixin-work-is-not-charged	css_sheet.c	if (top->inst && !account(b, 16, NULL)) {	if (0 && top->inst && !account(b, 16, NULL)) {	sheetmixin
+parameter-is-declared-with-its-plain-name	css_sheet.c	    char * hidden = css_priv_name(&s->arena, own_scope, p->name, p->name_len, &hidden_len);	    hidden_len = p->name_len;\n    char * hidden = css_arena_strdup(&s->arena, p->name, p->name_len);	mixineval,sheetmixin
+argument-is-read-in-the-mixins-scope	css_sheet.c	st = css_priv_rewrite_text(&s->alloc, cur->priv, text, text_len, &rewritten, &len);	st = css_priv_rewrite_text(&s->alloc, scope, text, text_len, &rewritten, &len);	mixineval
+default-is-read-in-the-applys-scope	css_sheet.c	st = css_priv_rewrite_text(&s->alloc, scope, text, text_len, &rewritten, &len);\n      if (st == GTEXT_CSS_OK && rewritten) {\n        text = rewritten;\n        text_len = len;\n      }\n    }\n    else {	st = css_priv_rewrite_text(&s->alloc, cur->priv, text, text_len, &rewritten, &len);\n      if (st == GTEXT_CSS_OK && rewritten) {\n        text = rewritten;\n        text_len = len;\n      }\n    }\n    else {	mixineval
+missing-argument-does-not-take-its-default	css_sheet.c	    else if (p->has_default) {	    else if (0) {	mixineval
+typed-parameter-is-not-registered	css_sheet.c	universal) && !universal) {	universal) && 0) {	mixineval
+parameter-registration-does-not-inherit	css_sheet.c	        r.inherits = true;\n        if (!r.syntax	        r.inherits = false;\n        if (!r.syntax	mixineval
+contents-block-is-read-in-the-mixins-scope	css_sheet.c	    f.priv = cur->inst->outer_priv;	    f.priv = cur->priv;	mixineval
+contents-block-ignored-when-passed	css_sheet.c	  if (cur->inst->has_cont) {\n    /* the block is the invoker's	  if (0) {\n    /* the block is the invoker's	mixineval
+empty-contents-block-is-no-block	css_sheet.c	  inst->has_cont = rule->has_block;	  inst->has_cont = rule->has_block && rule->content_count > 0;	mixineval
+contents-block-takes-rules	css_sheet.c	if (top->decls_only && it->kind != GTEXT_CSS_ITEM_DECLARATIONS) {	if (0 && top->decls_only && it->kind != GTEXT_CSS_ITEM_DECLARATIONS) {	mixineval
+group-rule-that-holds-only-an-apply-is-nothing	css_sheet.c	css_ascii_ieq(&r->name, "private") || css_ascii_ieq(&r->name, "apply") ||	css_ascii_ieq(&r->name, "private") ||	mixineval
+mixin-rules-are-attributed-to-themselves	css_sheet.c	    b->attrib = top->inst ? top->inst->apply : NULL;	    b->attrib = NULL;	sheetmixin
+mixin-in-a-conditional-group-rule-is-read	css_custom_function.c	if (ctx->in_style || ctx->unresolved) {\n      return GTEXT_CSS_OK;\n    }\n    const GTEXT_CSS_Status st = handle_mixin	if (ctx->in_style) {\n      return GTEXT_CSS_OK;\n    }\n    const GTEXT_CSS_Status st = handle_mixin	mixineval,sheetmixin
+earlier-mixin-of-a-name-wins	css_custom_function.c	    css_fn_def_free(s->mdefs[at]);\n    s->mdefs[at] = d;\n    return GTEXT_CSS_OK;	    css_fn_def_free(d);\n    return GTEXT_CSS_OK;	mixineval
+weaker-layer-mixin-wins	css_custom_function.c	if (layer_compare(s, layer, s->mdefs[at]->layer) < 0) {	if (layer_compare(s, layer, s->mdefs[at]->layer) > 0) {	mixineval,sheetmixin
+snapshot-ignores-what-the-mixins-were	cssom_snapshot.c	(!applies || memcmp(dep, sheet->snap_dep, sizeof dep) == 0)	(1)	mixineval
+mixins-of-other-sheets-are-not-read	cssom_index.c	if (st == GTEXT_CSS_OK && (!scope || !part)) {	if (st == GTEXT_CSS_OK) {	mixineval
+mixins-of-another-tree-scope-are-read	cssom_index.c	  if (scope != w->scope) {\n    return GTEXT_CSS_OK;	  if (0 && scope != w->scope) {\n    return GTEXT_CSS_OK;	mixinscope
+sheet-with-an-apply-is-not-read-for-registrations	cssom_snapshot.c	    if (r->kind == GTEXT_CSSOM_RULE_APPLY ||	    if (0 ||	mixineval
+mixin-parameters-are-not-private-names	css_private.c	for (size_t i = 0; def && i < def->nparams; i++) {	for (size_t i = 0; def && i < 0; i++) {	mixineval,sheetmixin
+mixin-body-private-names-are-not-read	css_private.c	    const GTEXT_CSS_Rule * r = items[i].kind == GTEXT_CSS_ITEM_RULE ? items[i].rule : NULL;\n    any = r &&	    const GTEXT_CSS_Rule * r = NULL;\n    any = r &&	mixineval
+uses-mixins-is-not-passed-up-from-an-import	css_sheet.c	            s->uses_mixins = s->uses_mixins || got->uses_mixins;	            	mixinscope

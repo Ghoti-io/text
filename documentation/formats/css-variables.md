@@ -389,8 +389,73 @@ as before. The statement form (`@property --two <color>: blue;`) is read as it i
 - *`@layer` and `@scope` inside `@private`.* The draft lists "nested group rules"; the layers and scopes of a sheet are placed by the layer walker, which does not enter `@private`, so they are ignored.
 - *The rule's own text.* "It is not exposed to the page via any CSSOM APIs" is read of the computed style (the one place a private property has a value). The declarations the author wrote in a style rule,
   those of the rule itself included (`--size: 4px` where `--size` is private), are the rule's text: its `style` and `cssText` keep them as written, so that a rule reads back as it was.
-- *Mixin parameters.* "A mixin's parameters define private properties in the mixin body" is the evaluation of `@apply`, which is not built; the rule is read, and a mixin body's `@private` rule is
-  the mixin's own, not any style rule's.
+- *Mixin parameters.* "A mixin's parameters define private properties in the mixin body": see the next section. A mixin body's `@private` rule is the mixin's own application's, not the style
+  rule's it is substituted into.
+
+## Mixins: `@mixin`, `@apply` and `@contents`
+
+CSS Functions and Mixins 1 defines a mixin as a body of declarations and nested rules that an `@apply` substitutes into a style rule, "in place of the `@apply` rule itself", with arguments for its
+parameters and a block of the invoker's own that an `@contents` in the body puts where it is wanted. "`@apply` rules are processed before any styles are applied, as they effectively modify the
+stylesheet itself", so the sheet compiler does it (`gtext_css_sheet_compile()` and the CSSOM document's snapshot), and the cascade, the specificity, the layers, the conditions and everything that
+follows handle the result as they handle a style rule that had been written out.
+
+```css
+@mixin --card(--pad <length>: 8px, --accent: teal) {
+  @private { --shadow: 0 1px 2px var(--accent); }     /* a private property of the application */
+  padding: var(--pad);
+  box-shadow: var(--shadow);
+  & > h2 { color: var(--accent); }                    /* a rule nested in the one the mixin is applied in */
+  @media (width < 600px) { @contents; }               /* the block the invoker passed, where it is wanted */
+}
+.tile  { @apply --card(1em) { font-size: smaller; } }
+.tile2 { @apply --card; color: red; }                 /* a declaration after the @apply wins over one of the mixin */
+```
+
+**What an `@apply` does.** In a style rule (or in a conditional group rule in one, or in a mixin's body) the `@apply` is replaced by the body of the `@mixin` of that name: the body's declarations are
+the style rule's own, in the place the `@apply` was among its other declarations (so a declaration of the rule after it wins over the mixin's and one before it loses, and an important
+declaration of the body beats a normal one of the rule), with the specificity of the rule; the nested rules and group rules of the body are nested in the style rule, so `&` is its selector; and an
+`@apply` in the body is applied in turn. "If no such mixin exists, the `@apply` does nothing", and "if more arguments are passed than the length of the mixin's argument list, the `@apply`
+application does nothing". The CSSOM does not change: `cssRules` shows the `@mixin` and the `@apply` as they were written.
+
+**Parameters.** "A mixin's parameters define private properties in the mixin body, set to the value passed for the argument", and "these are accessible using `var()`, and shadow any same-named
+custom properties". Each application of a mixin has its own private names (a hidden custom property for each parameter and for each name of the body's `@private` rules, made as `@private` makes them),
+and the parameters are declared on the element the style rule selects, at the place of the `@apply`, before the body: a parameter takes the argument written for it (read in the scope of the `@apply`: a
+`var()` in an argument names what the style rule's `var()` would), else its default (read in the mixin's scope, so a default may name an earlier parameter: `--right <color>: var(--left)`). A typed parameter
+is registered with its type, "an inherit flag of true, and no initial value", so a typed value is computed where it is declared (`--size <length>` with `.2em` on an element of `font-size: 10px` is `2px`
+on the element and every descendant), and an untyped one is the tokens, resolved at each element. A parameter that is not passed and has no default has no value (`var()` of it falls back). The draft's
+own examples hold: the element's own `--color2` is not the parameter and is not changed, a private property of the body overrides a parameter of the same name, and a following sibling does not see the
+argument ("The .foo element will get `color: green` [...] but its following sibling will get `color: red`"). The parameters are private properties, so `getComputedStyle()` shows none of them. A mixin
+sees the private properties of the rule it is substituted into, unless it has a parameter or a `@private` property of the name.
+
+**`@contents`.** "If the `@apply` rule invoking the mixin passed a contents block, the `@contents` is replaced with the contents block [...] Otherwise [...] its fallback block", the statement form
+(`@contents;`) has none, "passing an empty block will substitute the empty block", and a mixin may use the block in several places, or in none. The block is a declaration list (a rule in it is not read) and
+it is read in the scope of the `@apply`: a private property of the style rule is visible to it and a parameter of the mixin is not. Outside a mixin body an `@contents` is invalid and ignored.
+
+**Which mixin.** "If more than one `@mixin` exists for a given name, then the rule in the stronger cascade layer wins, and rules defined later win within the same layer", and "the name of a `@mixin` rule is a
+tree-scoped name": an `@apply` finds the mixins of every sheet of its tree scope that takes part in the cascade, before or after its own sheet, in the order of the cascade (the sheets an `@import`
+brings in are read first, at the place of the import), and not those of a shadow tree's sheets or of the document's. A sheet that applies a mixin is compiled again when any sheet of the scope
+changes (a rule inserted, removed or changed, a sheet disabled), and only such sheets are; the compiler of a sheet given by itself reads the `@mixin` rules of that sheet. A set of mixins can be given to the
+compiler instead (`GTEXT_CSS_Sheet_Options::mixins`, a `GTEXT_CSS_Function_Set` made with `GTEXT_CSS_Function_Options::mixins`; `gtext_css_mixin_find()`).
+
+**Limits.** A mixin that applies itself, directly or through others, is a cycle, which is not an error: the `@apply` that would close it does nothing (the draft is silent; `mixin-cycle.tentative.html` is
+written with `@result`). Otherwise the expansion is bounded as the rest of the compile is: `GTEXT_CSS_Sheet_Options::max_mixin_depth` (16, at most 256) is the deepest chain of mixins applied inside
+one another and `max_mixin_expansions` (65,536) the most applications in a sheet (the applications inside a body count, so a mixin that applies two others, each two more, is stopped by the count); both are
+`GTEXT_CSS_E_LIMIT_RULE_NESTING` and `GTEXT_CSS_E_LIMIT_WORK` with the name of the option in the result. What an expansion reads (each item of a body) is charged to `max_compiled_bytes` as the compiled form is, so an
+application of a large body many times cannot run for long either, and `max_rule_depth` bounds the stack of rules the expansion lives on.
+
+**Where the pinned text is silent, and what was chosen** ("Evaluating Mixins" is still marked "TODO rewrite to use the new `@private` concepts" and is written with the dropped `@result`; twenty-two of the
+twenty-seven pinned web-platform-tests pages are too, and neither Chromium 156 nor Firefox 158 implements `@mixin`; every reading is the conservative one and has one place to change):
+
+- *A mixin in a conditional group rule* (`@media`, `@supports`, `@container`, `@when`) is not read: where a mixin is applied is decided when the sheet is compiled, before a condition is evaluated. Change: `walk_rule()` of `css_custom_function.c`.
+- *An `@apply` directly in an `@scope`* (not in a style rule) does nothing: "only valid in the body of a style rule or nested group rule" and an `@scope` is neither.
+- *A mixin of an imported sheet* is read as unlayered, whatever `layer()` the `@import` has, and the conditions of the import are not read.
+- *A cycle* does nothing (above); the draft names no behavior.
+- *The argument or the default of a typed parameter that is not a value of the type* is declared and is invalid at computed-value time (the registration's rule), so `var()` of it falls back; the draft's "the default value must parse successfully according to that parameter type's syntax" is the check of the `@mixin` rule that has one.
+- *A parameter with no argument and no default* has no value. The draft says only that "the missing arguments take their default values".
+- *Custom functions and private properties.* A custom function called in a mixin's body does not see the application's private properties (the parameters), as for `@private`: "Issue: What about custom functions? [...] I'm inclined to say yes" is an open issue in the pinned text, and the CSS Working Group's discussion of it (w3c/csswg-drafts#14408) closed with no resolution. The decision is kept open; the place is the call in `css_substitute.c`'s function scope.
+- *`@container style()` naming a parameter or a private property* is not built: the editor said yes in w3c/csswg-drafts#14410 with no text and no resolution.
+- *Diagnostics* of what a body makes the compile read (a selector that is not valid) are the `@apply`'s: the id and the span are those of the rule of the sheet's own tree.
+- *An `@property` in a mixin body's `@private`* registers the application's private property, as `@private` does in a style rule.
 
 ## The budget
 

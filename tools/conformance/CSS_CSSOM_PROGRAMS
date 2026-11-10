@@ -18,3 +18,6 @@ shapecompute	test-css-shape-compute.cpp
 mixin	test-cssom-mixin.cpp
 transition	test-cssom-transition.cpp
 private	test-cssom-private.cpp
+mixineval	test-cssom-mixin-eval.cpp
+sheetmixin	test-css-sheet-mixin.cpp
+mixinscope	test-cssom-mixin-scope.cpp

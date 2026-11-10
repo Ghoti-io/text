@@ -91,9 +91,9 @@ typedef enum {
   GTEXT_CSS_ATRULE_KEYFRAME,      ///< One block of `@keyframes`: its offsets and its declarations.
   GTEXT_CSS_ATRULE_VIEW_TRANSITION, ///< `@view-transition`.
   GTEXT_CSS_ATRULE_POSITION_TRY,  ///< `@position-try`.
-  GTEXT_CSS_ATRULE_MIXIN,         ///< `@mixin`: a name, parameters and a body that is read as a style rule's is. Recognized and inactive: nothing applies it yet.
-  GTEXT_CSS_ATRULE_APPLY,         ///< `@apply`: a mixin's name, its arguments, and a block of contents when it has one. Recognized and inactive.
-  GTEXT_CSS_ATRULE_CONTENTS,      ///< `@contents`: where a mixin takes the block an `@apply` passes, with a fallback block when it has one. Recognized and inactive.
+  GTEXT_CSS_ATRULE_MIXIN,         ///< `@mixin`: a name, parameters and a body that is read as a style rule's is. Applied by `@apply` when a sheet is compiled (css_sheet.h).
+  GTEXT_CSS_ATRULE_APPLY,         ///< `@apply`: a mixin's name, its arguments, and a block of contents when it has one. Expanded when a sheet is compiled (css_sheet.h).
+  GTEXT_CSS_ATRULE_CONTENTS,      ///< `@contents`: where a mixin takes the block an `@apply` passes, with a fallback block when it has one. Substituted when a sheet is compiled (css_sheet.h).
   GTEXT_CSS_ATRULE_PRESERVED,     ///< Recognized and inactive: `@function`, `@private`, `@custom-selector`, `@navigation`, `@location`, `@supports-condition`.
   GTEXT_CSS_ATRULE_KIND_COUNT     ///< The number of kinds; not a kind.
 } GTEXT_CSS_Atrule_Kind;

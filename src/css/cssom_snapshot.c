@@ -427,11 +427,13 @@ static GTEXT_CSS_Status gather_nodes(css_core * core, css_sheet * sheet, holds_f
   return GTEXT_CSS_OK;
 }
 
-/// Whether a sheet has an `@private` rule anywhere: the style rules of a sheet that has none have no private property, and the sheet is not compiled for it.
+/// Whether a sheet has an `@private` rule or an `@apply` rule anywhere: the style rules of a sheet that has neither have no private property (a mixin's parameter is one), and the sheet is not
+/// compiled for them.
 static bool sheet_has_private(const css_sheet * sheet) {
   css_rule * r = css_rule_list_first(&sheet->rules);
   while (r) {
-    if (r->kind == GTEXT_CSSOM_RULE_PRESERVED && r->node && r->node->kind == GTEXT_CSS_RULE_AT && css_ascii_ieq(&r->node->name, "private")) {
+    if (r->kind == GTEXT_CSSOM_RULE_APPLY ||
+        (r->kind == GTEXT_CSSOM_RULE_PRESERVED && r->node && r->node->kind == GTEXT_CSS_RULE_AT && css_ascii_ieq(&r->node->name, "private"))) {
       return true;
     }
     if (r->rules.count) {
@@ -530,6 +532,105 @@ GTEXT_CSS_Status css_sheet_collect_functions(css_core * core, css_sheet * sheet,
   return st;
 }
 
+/* ---- the @mixin rules ----------------------------------------------------------------------------------------------------------------------------- */
+
+/// Whether a rule of the sheet matters to the reader of `@mixin` rules (css_custom_function.h): the rule itself, a group rule it enters, and an `@layer` rule of either form.
+static bool can_hold_mixin(const css_rule * r) {
+  return r->kind == GTEXT_CSSOM_RULE_MIXIN || can_hold_property(r);
+}
+
+struct css_mixin_scan {
+  css_core * core;
+  GTEXT_CSS_Function_Set * set;
+  snap_ctx ** ctxs;               ///< The trees of the rules read again, one context for each sheet read: the set's rules point into them.
+  size_t nctx, capctx;
+};
+
+GTEXT_CSS_Status css_mixin_scan_new(css_core * core, css_mixin_scan ** out) {
+  GTEXT_Allocator a = core->alloc;
+  css_mixin_scan * scan = gtext_allocator_calloc(&a, 1, sizeof *scan);
+  if (!scan) {
+    return GTEXT_CSS_E_OOM;
+  }
+  scan->core = core;
+  GTEXT_CSS_Function_Options o = gtext_css_function_options_default();
+  o.allocator = &a;
+  o.mixins = true;
+  o.no_functions = true;
+  /* no `active` callback: a mixin in a conditional group rule is not read, and the layers of a sheet are the ones its rules say */
+  const GTEXT_CSS_Status st = gtext_css_function_set_new(core->registry, &o, &scan->set);
+  if (st != GTEXT_CSS_OK) {
+    gtext_allocator_free(&a, scan);
+    return st;
+  }
+  *out = scan;
+  return GTEXT_CSS_OK;
+}
+
+void css_mixin_scan_free(css_mixin_scan * scan) {
+  if (!scan) {
+    return;
+  }
+  GTEXT_Allocator a = scan->core->alloc;
+  gtext_css_function_set_free(scan->set);
+  for (size_t i = 0; i < scan->nctx; i++) {
+    ctx_free(scan->ctxs[i]);
+    gtext_allocator_free(&a, scan->ctxs[i]);
+  }
+  gtext_allocator_free(&a, scan->ctxs);
+  gtext_allocator_free(&a, scan);
+}
+
+const GTEXT_CSS_Function_Set * css_mixin_scan_set(const css_mixin_scan * scan) {
+  return scan ? scan->set : NULL;
+}
+
+static GTEXT_CSS_Status scan_levels(css_mixin_scan * scan, css_sheet * sheet, size_t levels) {
+  size_t n[4];
+  css_rule_list_totals(&sheet->rules, n);
+  for (size_t k = 0; k < n[CSS_CLASS_IMPORT]; k++) {
+    const css_rule * r = css_rule_list_nth_of_class(&sheet->rules, CSS_CLASS_IMPORT, k);
+    if (!r || !r->import_sheet) {
+      continue;
+    }
+    if (levels == 0) {
+      return GTEXT_CSS_E_LIMIT_RULE_NESTING;
+    }
+    const GTEXT_CSS_Status st = scan_levels(scan, r->import_sheet, levels - 1);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+  }
+  GTEXT_Allocator a = scan->core->alloc;
+  if (scan->nctx == scan->capctx) {
+    const size_t cap = scan->capctx ? scan->capctx * 2 : 4;
+    snap_ctx ** grown = gtext_allocator_realloc(&a, scan->ctxs, cap * sizeof *grown);
+    if (!grown) {
+      return GTEXT_CSS_E_OOM;
+    }
+    scan->ctxs = grown;
+    scan->capctx = cap;
+  }
+  snap_ctx * c = gtext_allocator_calloc(&a, 1, sizeof *c);
+  if (!c) {
+    return GTEXT_CSS_E_OOM;
+  }
+  c->core = scan->core;
+  scan->ctxs[scan->nctx++] = c;
+  const GTEXT_CSS_Rule ** nodes = NULL;
+  size_t count = 0;
+  GTEXT_CSS_Status st = gather_nodes(scan->core, sheet, can_hold_mixin, c, &nodes, &count);
+  if (st == GTEXT_CSS_OK && count > 0) {
+    st = gtext_css_function_collect_rules(scan->set, nodes, count, NULL);
+  }
+  gtext_allocator_free(&a, (void *)nodes);
+  return st;
+}
+
+GTEXT_CSS_Status css_mixin_scan_sheet(css_mixin_scan * scan, css_sheet * sheet) {
+  return scan_levels(scan, sheet, depth_of(sheet));
+}
+
 /* ---- the @keyframes rules ------------------------------------------------------------------------------------------------------------------------- */
 
 /// Whether a rule of the sheet matters to the reader of `@keyframes` rules: the rule itself, a group rule it enters, and an `@layer` rule (a statement puts layers in their order, which orders the rules).
@@ -597,6 +698,19 @@ static GTEXT_CSS_Sheet * import_thunk(void * user, const GTEXT_CSS_Import_Reques
   return got;
 }
 
+/// What the compile of a sheet asks of the document for its `@apply` rules.
+typedef struct {
+  css_core * core;
+  css_sheet * target;
+  css_mixin_scan * scan;
+} mixin_source;
+
+static const GTEXT_CSS_Function_Set * mixin_thunk(void * user, GTEXT_CSS_Status * status) {
+  mixin_source * ms = user;
+  *status = css_index_mixin_scan(ms->core, ms->target, &ms->scan);
+  return *status == GTEXT_CSS_OK ? css_mixin_scan_set(ms->scan) : NULL;
+}
+
 /// The snapshot of the sheet and a reference for the caller; compiled when the cache is not current.
 static GTEXT_CSS_Status snapshot(css_sheet * sheet, size_t levels, GTEXT_CSS_Sheet ** out) {
   css_core * core = sheet->obj.core;
@@ -605,7 +719,12 @@ static GTEXT_CSS_Status snapshot(css_sheet * sheet, size_t levels, GTEXT_CSS_She
   if (st != GTEXT_CSS_OK) {
     return st;
   }
-  if (sheet->snap && sheet->snap_stamp == stamp) {
+  uint64_t dep[4] = {0, 0, 0, 0};
+  const bool applies = sheet->snap && css_sheet_uses_mixins(sheet->snap);
+  if (applies) {
+    css_index_dependency(core, dep);   /* an `@apply` is replaced by rules of other sheets: the snapshot is current only while they are */
+  }
+  if (sheet->snap && sheet->snap_stamp == stamp && (!applies || memcmp(dep, sheet->snap_dep, sizeof dep) == 0)) {
     core->counters.snapshot_hits++;
     *out = gtext_css_sheet_retain(sheet->snap);
     return GTEXT_CSS_OK;
@@ -623,6 +742,12 @@ static GTEXT_CSS_Status snapshot(css_sheet * sheet, size_t levels, GTEXT_CSS_She
   o.allocator = &core->alloc;
   o.import = import_thunk;
   o.import_user = &c;
+  mixin_source ms;
+  memset(&ms, 0, sizeof ms);
+  ms.core = core;
+  ms.target = sheet;
+  o.mixins = mixin_thunk;
+  o.mixins_user = &ms;
   o.max_rule_depth = core->config.max_rule_nesting;
   o.max_diagnostics = core->config.max_diagnostics;
   o.max_import_depth = levels ? levels : 1;   /* the compile counts the depth of the sheets below this one against it (0 would be its default; at 0 the callback has refused already) */
@@ -633,6 +758,7 @@ static GTEXT_CSS_Status snapshot(css_sheet * sheet, size_t levels, GTEXT_CSS_She
     gtext_css_sheet_free(made);
     st = c.error;
   }
+  css_mixin_scan_free(ms.scan);
   ctx_free(&c);
   if (st != GTEXT_CSS_OK) {
     return st;
@@ -641,6 +767,9 @@ static GTEXT_CSS_Status snapshot(css_sheet * sheet, size_t levels, GTEXT_CSS_She
   GTEXT_CSS_Sheet * old = sheet->snap;
   sheet->snap = made;
   sheet->snap_stamp = stamp;
+  if (css_sheet_uses_mixins(made)) {
+    css_index_dependency(core, sheet->snap_dep);
+  }
   gtext_css_sheet_free(old);
   *out = gtext_css_sheet_retain(made);
   return GTEXT_CSS_OK;

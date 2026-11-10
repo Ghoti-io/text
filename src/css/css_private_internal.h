@@ -55,6 +55,8 @@ extern "C" {
 /// Whether a custom property name is a hidden (private) one.
 bool css_priv_hidden(const char * name, size_t length);
 
+struct css_fn_def;
+
 /// A style rule's private property names, and the scope it makes: the nearest enclosing scope is the `parent`.
 typedef struct css_priv_scope {
   const struct css_priv_scope * parent;
@@ -91,6 +93,11 @@ bool css_priv_group_name(const GTEXT_CSS_String * name);
 /// registrations of the `@property` rules directly inside them (appended to `regs`; a later rule of a name replaces an earlier one). `*out` is NULL when the rule has no private name.
 /// `serial` makes the hidden names unique within the sheet and `*epoch` among sheets (it is 0 until the sheet has a private name: this takes the sheet's number then). All memory is the arena's (and `regs`' vector the allocator's).
 GTEXT_CSS_Status css_priv_scope_make(css_arena * arena, const GTEXT_Allocator * alloc, const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Rule * style, const css_priv_scope * parent,
+    uint64_t * epoch, uint64_t serial, css_priv_regvec * regs, const css_priv_scope ** out);
+
+/// The scope of an application of a mixin (CSS Functions and Mixins 1, "A mixin's parameters define private properties in the mixin body"): the names of the parameters of `def` and of the
+/// `@private` rules of its body, below `parent` (the scope of the rule it is substituted into). As css_priv_scope_make(); `*out` is NULL when the mixin has neither.
+GTEXT_CSS_Status css_priv_scope_make_mixin(css_arena * arena, const GTEXT_Allocator * alloc, const GTEXT_CSS_Registry * registry, const struct css_fn_def * def, const css_priv_scope * parent,
     uint64_t * epoch, uint64_t serial, css_priv_regvec * regs, const css_priv_scope ** out);
 
 /// The scope that has `name` in its private property names, nearest first (NULL: the name is not private here).

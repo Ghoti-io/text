@@ -103,6 +103,12 @@ typedef struct {
   /** Keep a copy of each rule the set defines (the body is read from it when a call is evaluated), so that the trees given to the set need not outlive it. The copy is the rule
    *  written by gtext_css_serialize_rule() and read again, so a declaration's value is the one the serializer writes. Default false: the set borrows the trees. */
   bool own_rules;
+  /** Also read the `@mixin` rules (CSS Functions and Mixins 1, "Defining Mixins": "If more than one @mixin exists for a given name, then the rule in the stronger cascade layer wins, and rules
+   *  defined later win within the same layer"), found with gtext_css_mixin_find(). A mixin in a conditional group rule is read only when the set has an `active` callback that says the rule holds (as for
+   *  `@function`); a sheet's compile (css_sheet.h) gives its set none, because where a mixin is applied is decided when the sheet is compiled, before any condition is evaluated. Default false. */
+  bool mixins;
+  /** Read no `@function` rule (a set made for its mixins). Default false. */
+  bool no_functions;
 } GTEXT_CSS_Function_Options;
 
 /** @brief The defaults, spelled out. */
@@ -185,6 +191,15 @@ GTEXT_API bool gtext_css_function_find(const GTEXT_CSS_Function_Set * set, const
 
 /** @brief The `index`th parameter of a function of the set; false for an index the function does not have. */
 GTEXT_API bool gtext_css_function_parameter(const GTEXT_CSS_Function_Set * set, const char * name, size_t length, size_t index, GTEXT_CSS_Function_Parameter * out);
+
+/** @brief How many mixins the rules defined (GTEXT_CSS_Function_Options::mixins). NULL is 0. */
+GTEXT_API size_t gtext_css_mixin_count(const GTEXT_CSS_Function_Set * set);
+
+/** @brief The mixin of a name (case-sensitive); false if the rules defined none. The info is a function's: `has_returns` and `has_result` are false, `rule` is the `@mixin` rule, whose block is its body. */
+GTEXT_API bool gtext_css_mixin_find(const GTEXT_CSS_Function_Set * set, const char * name, size_t length, GTEXT_CSS_Function_Info * info);
+
+/** @brief The `index`th parameter of a mixin of the set; false for an index the mixin does not have. */
+GTEXT_API bool gtext_css_mixin_parameter(const GTEXT_CSS_Function_Set * set, const char * name, size_t length, size_t index, GTEXT_CSS_Function_Parameter * out);
 
 /** @brief How many diagnostics were raised in all (kept or not). NULL is 0. */
 GTEXT_API size_t gtext_css_function_diagnostic_total(const GTEXT_CSS_Function_Set * set);

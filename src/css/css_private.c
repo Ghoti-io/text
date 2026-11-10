@@ -30,6 +30,7 @@
 #include <string.h>
 
 #include "css_atrule_internal.h"
+#include "css_fndef.h"
 #include "css_private_internal.h"
 
 bool css_priv_hidden(const char * name, size_t length) {
@@ -178,14 +179,20 @@ static GTEXT_CSS_Status add_def(css_arena * arena, const GTEXT_CSS_Registry * re
   return st;
 }
 
-GTEXT_CSS_Status css_priv_scope_make(css_arena * arena, const GTEXT_Allocator * alloc, const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Rule * style, const css_priv_scope * parent,
-    uint64_t * epoch, uint64_t serial, css_priv_regvec * regs, const css_priv_scope ** out) {
+/// The scope of a body: the `@private` rules among `rules` (a style rule's nested rules) or `items` (an at-rule's contents: a mixin's body), and `def`'s parameters when it has any.
+static GTEXT_CSS_Status scope_build(css_arena * arena, const GTEXT_Allocator * alloc, const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Rule * rules, size_t nrules,
+    const GTEXT_CSS_Block_Item * items, size_t nitems, const css_fn_def * def, const css_priv_scope * parent, uint64_t * epoch, uint64_t serial, css_priv_regvec * regs,
+    const css_priv_scope ** out) {
   *out = NULL;
   /* the rule's private names are only read when it holds an at-rule that can lead to one: the common rule has none */
-  bool any = false;
-  for (size_t i = 0; i < style->rule_count && !any; i++) {
-    const GTEXT_CSS_Rule * r = &style->rules[i];
+  bool any = def && def->nparams > 0;
+  for (size_t i = 0; i < nrules && !any; i++) {
+    const GTEXT_CSS_Rule * r = &rules[i];
     any = r->kind == GTEXT_CSS_RULE_AT && (css_ascii_ieq(&r->name, "private") || css_priv_group_name(&r->name));
+  }
+  for (size_t i = 0; i < nitems && !any; i++) {
+    const GTEXT_CSS_Rule * r = items[i].kind == GTEXT_CSS_ITEM_RULE ? items[i].rule : NULL;
+    any = r && r->kind == GTEXT_CSS_RULE_AT && (css_ascii_ieq(&r->name, "private") || css_priv_group_name(&r->name));
   }
   if (!any) {
     return GTEXT_CSS_OK;
@@ -210,7 +217,21 @@ GTEXT_CSS_Status css_priv_scope_make(css_arena * arena, const GTEXT_Allocator * 
   if (!grow(alloc, (void **)&stack, &scap, 1, sizeof *stack)) {
     return GTEXT_CSS_E_OOM;
   }
-  stack[sp++] = (frame){NULL, style->rules, style->rule_count, 0, M_BODY};
+  if (items) {
+    stack[sp++] = (frame){items, NULL, nitems, 0, M_BODY};
+  }
+  else {
+    stack[sp++] = (frame){NULL, rules, nrules, 0, M_BODY};
+  }
+  /* "A mixin's parameters define private properties in the mixin body": the names of the parameters are names of the scope, however the body uses them */
+  for (size_t i = 0; def && i < def->nparams; i++) {
+    if (!grow(alloc, (void **)&names.v, &names.cap, names.n + 1, sizeof *names.v)) {
+      gtext_allocator_free(alloc, stack);
+      gtext_allocator_free(alloc, names.v);
+      return GTEXT_CSS_E_OOM;
+    }
+    names.v[names.n++] = (name_ref){def->params[i].name, def->params[i].name_len};
+  }
   while (sp && st == GTEXT_CSS_OK) {
     frame * f = &stack[sp - 1];
     if (f->pos >= f->n) {
@@ -299,6 +320,16 @@ GTEXT_CSS_Status css_priv_scope_make(css_arena * arena, const GTEXT_Allocator * 
   sc->key_len = kn;
   *out = sc;
   return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status css_priv_scope_make(css_arena * arena, const GTEXT_Allocator * alloc, const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Rule * style, const css_priv_scope * parent,
+    uint64_t * epoch, uint64_t serial, css_priv_regvec * regs, const css_priv_scope ** out) {
+  return scope_build(arena, alloc, registry, style->rules, style->rule_count, NULL, 0, NULL, parent, epoch, serial, regs, out);
+}
+
+GTEXT_CSS_Status css_priv_scope_make_mixin(css_arena * arena, const GTEXT_Allocator * alloc, const GTEXT_CSS_Registry * registry, const css_fn_def * def, const css_priv_scope * parent,
+    uint64_t * epoch, uint64_t serial, css_priv_regvec * regs, const css_priv_scope ** out) {
+  return scope_build(arena, alloc, registry, NULL, 0, def->rule->contents, def->rule->content_count, def, parent, epoch, serial, regs, out);
 }
 
 const css_priv_scope * css_priv_find(const css_priv_scope * chain, const char * name, size_t length) {

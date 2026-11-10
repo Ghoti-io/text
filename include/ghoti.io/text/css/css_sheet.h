@@ -46,6 +46,16 @@
  * The caller's import callback is asked for **every** import, with the conditions parsed in the request, so that a caller can decline to fetch what is false for its environment; the index drops
  * the imports and the records whose conditions are false.
  *
+ * **`@apply` is expanded when the sheet is compiled** (CSS Functions and Mixins 1, "The @apply Rule": "''@apply'' rules are processed <em>before</em> any styles are applied, as they effectively
+ * modify the stylesheet itself"). An `@apply` in a style rule, or in a conditional group rule in one, is replaced in place by the body of the `@mixin` it names: the declarations of the body
+ * are the style rule's own, in the place the `@apply` was among its other declarations (so a later declaration of the rule wins over the mixin's, and an earlier one loses), and the nested
+ * rules and group rules of the body are nested in the style rule. The parameters of the mixin are **private properties** of the application (css_private_internal.h, the hygiene is the one of
+ * `@private`: a parameter is a custom property of a name no author can write, declared on the element the rule selects with the value of the argument, or the default of the parameter,
+ * and a typed parameter is registered with its type, so that the value is computed where it is declared); an `@contents` in the body is replaced by the block the `@apply` passed, or by its own
+ * fallback block, and the block is read in the scope of the `@apply`. An `@apply` that names no mixin, that passes more arguments than the mixin has parameters, or that names a mixin that
+ * is being applied already (a cycle) does nothing. Where `@apply` finds its mixins is GTEXT_CSS_Sheet_Options::mixins; GTEXT_CSS_Sheet_Options::max_mixin_depth and
+ * ::max_mixin_expansions bound the expansion.
+ *
  * ## The index
  *
  * An index is built for one @ref GTEXT_CSS_Conditions (GTEXT_CSS_Rule_Index_Options::conditions, required when a sheet holds a condition node). It evaluates every node
@@ -80,6 +90,7 @@
 #include <ghoti.io/text/css/css_cascade.h>
 #include <ghoti.io/text/css/css_condition.h>
 #include <ghoti.io/text/css/css_core.h>
+#include <ghoti.io/text/css/css_custom_function.h>
 #include <ghoti.io/text/css/css_element.h>
 #include <ghoti.io/text/css/css_layer.h>
 #include <ghoti.io/text/css/css_match.h>
@@ -126,6 +137,12 @@ typedef struct {
  */
 typedef GTEXT_CSS_Sheet * (*GTEXT_CSS_Import_Fn)(void * user, const GTEXT_CSS_Import_Request * request);
 
+/**
+ * @brief Give the set that holds the `@mixin` rules `@apply` may name (a GTEXT_CSS_Function_Set made with GTEXT_CSS_Function_Options::mixins), or NULL for none. Called at most once in a
+ *   compile, the first time it meets an `@apply`; the set must live until the compile returns. A failure is `*status`, and is the compile's.
+ */
+typedef const GTEXT_CSS_Function_Set * (*GTEXT_CSS_Mixin_Source_Fn)(void * user, GTEXT_CSS_Status * status);
+
 /** @brief What compiling a sheet may be told. A zeroed struct is the default. */
 typedef struct {
   const GTEXT_Allocator * allocator;  ///< NULL for the registry's.
@@ -139,6 +156,10 @@ typedef struct {
   size_t max_import_depth;            ///< Deepest chain of imports (an imported sheet's own imports); default 16.
   size_t max_conditions;              ///< Most condition nodes in a sheet. Default 1,048,576. One more is GTEXT_CSS_E_LIMIT_CONDITIONS.
   GTEXT_CSS_Media_Options condition;  ///< The limits of reading a condition (css_media.h): queries, nodes, depth, diagnostics. Zeroed fields are the defaults.
+  GTEXT_CSS_Mixin_Source_Fn mixins;   ///< Where `@apply` finds the mixins: asked once, the first time the compile meets an `@apply`. NULL: the `@mixin` rules among the sheet's own rules (top level, and in `@layer` blocks).
+  void * mixins_user;                 ///< Passed to `mixins`.
+  size_t max_mixin_depth;             ///< Deepest chain of mixins applied inside one another. Default 16; at most 256. One more is GTEXT_CSS_E_LIMIT_RULE_NESTING.
+  size_t max_mixin_expansions;        ///< Most `@apply` rules expanded in a sheet (each application of a mixin, those inside a mixin's body included). Default 65,536. One more is GTEXT_CSS_E_LIMIT_WORK.
 } GTEXT_CSS_Sheet_Options;
 
 /** @brief The defaults, spelled out. */

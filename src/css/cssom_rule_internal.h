@@ -292,6 +292,7 @@ struct GTEXT_CSSOM_Sheet {
   size_t max_import_depth;         ///< The sheet option; 0 is the default.
   GTEXT_CSS_Sheet * snap;          ///< The snapshot last made (one owner held), or NULL; valid while `snap_stamp` is the composite stamp (cssom_snapshot.c).
   uint64_t snap_stamp;
+  uint64_t snap_dep[4];            ///< What the document looked like when `snap` was compiled (css_index_dependency()): read only when the snapshot has an `@apply`, whose mixins are other sheets' rules.
   css_parse_diag * diags;
   size_t ndiags, capdiags, diag_total;
 };

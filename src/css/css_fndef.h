@@ -86,6 +86,9 @@ GTEXT_CSS_Status css_read_type(const GTEXT_CSS_Registry * registry, const GTEXT_
 /// the same diagnostics counted. A NULL set defines none.
 bool css_function_sets_equal(const GTEXT_CSS_Function_Set * x, const GTEXT_CSS_Function_Set * y);
 
+/// The mixin of a name, or NULL (GTEXT_CSS_Function_Options::mixins). `work` (may be NULL) counts the probes.
+const css_fn_def * css_mixin_set_find(const GTEXT_CSS_Function_Set * set, const char * name, size_t length, size_t * work);
+
 /// The function of a name, or NULL. `work` (may be NULL) counts the probes.
 const css_fn_def * css_function_set_find(const GTEXT_CSS_Function_Set * set, const char * name, size_t length, size_t * work);
 

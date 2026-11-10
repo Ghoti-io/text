@@ -169,6 +169,7 @@ struct GTEXT_CSS_Sheet {
   size_t ndiags, capdiags, diag_total;
   size_t bytes;
   bool quirks;
+  bool uses_mixins;                     ///< The sheet, or a sheet it imports, has an `@apply` that was expanded or looked for a mixin: what it compiled to depends on the `@mixin` rules it was given.
 };
 
 /// The layer registry's id of a layer number of the sheet (0 stays 0).

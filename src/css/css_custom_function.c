@@ -61,6 +61,8 @@ struct GTEXT_CSS_Function_Set {
   GTEXT_CSS_Function_Options opt;
   css_fn_def ** defs;          ///< Sorted by the bytes of the name.
   size_t ndefs, defcap;
+  css_fn_def ** mdefs;         ///< The `@mixin` rules, likewise (GTEXT_CSS_Function_Options::mixins).
+  size_t nmdefs, mdefcap;
   diag_rec * diags;
   size_t ndiags, diagcap;
   size_t total;
@@ -135,6 +137,10 @@ void gtext_css_function_set_free(GTEXT_CSS_Function_Set * s) {
     css_fn_def_free(s->defs[i]);
   }
   gtext_allocator_free(&a, s->defs);
+  for (size_t i = 0; i < s->nmdefs; i++) {
+    css_fn_def_free(s->mdefs[i]);
+  }
+  gtext_allocator_free(&a, s->mdefs);
   for (size_t i = 0; i < s->ndiags; i++) {
     gtext_allocator_free(&a, s->diags[i].name);
   }
@@ -231,12 +237,12 @@ static int name_cmp(const char * a, size_t al, const char * b, size_t bl) {
   return al < bl ? -1 : al > bl ? 1 : 0;
 }
 
-/// The place of a name in the sorted array: its index when there, else where it goes. `*found` says which.
-static size_t search(const GTEXT_CSS_Function_Set * s, const char * name, size_t length, bool * found, size_t * work) {
-  size_t lo = 0, hi = s->ndefs;
+/// The place of a name in a sorted array of definitions (`v`, `n` of them): its index when there, else where it goes. `*found` says which.
+static size_t search_in(css_fn_def * const * v, size_t n, const char * name, size_t length, bool * found, size_t * work) {
+  size_t lo = 0, hi = n;
   while (lo < hi) {
     const size_t mid = lo + (hi - lo) / 2;
-    const css_fn_def * d = s->defs[mid];
+    const css_fn_def * d = v[mid];
     if (work) {
       (*work)++;
     }
@@ -254,6 +260,19 @@ static size_t search(const GTEXT_CSS_Function_Set * s, const char * name, size_t
   }
   *found = false;
   return lo;
+}
+
+static size_t search(const GTEXT_CSS_Function_Set * s, const char * name, size_t length, bool * found, size_t * work) {
+  return search_in(s->defs, s->ndefs, name, length, found, work);
+}
+
+const css_fn_def * css_mixin_set_find(const GTEXT_CSS_Function_Set * s, const char * name, size_t length, size_t * work) {
+  if (!s || !name) {
+    return NULL;
+  }
+  bool found = false;
+  const size_t at = search_in(s->mdefs, s->nmdefs, name, length, &found, work);
+  return found ? s->mdefs[at] : NULL;
 }
 
 const css_fn_def * css_function_set_find(const GTEXT_CSS_Function_Set * s, const char * name, size_t length, size_t * work) {
@@ -300,6 +319,41 @@ bool gtext_css_function_find(const GTEXT_CSS_Function_Set * s, const char * name
 
 bool gtext_css_function_parameter(const GTEXT_CSS_Function_Set * s, const char * name, size_t length, size_t index, GTEXT_CSS_Function_Parameter * out) {
   const css_fn_def * d = css_function_set_find(s, name, length, NULL);
+  if (!d || !out || index >= d->nparams) {
+    return false;
+  }
+  const css_fn_param * p = &d->params[index];
+  memset(out, 0, sizeof *out);
+  out->name.data = p->name;
+  out->name.length = p->name_len;
+  out->has_type = p->type != NULL;
+  if (p->type) {
+    out->type.data = p->type->text;
+    out->type.length = p->type->len;
+  }
+  out->has_default = p->has_default;
+  if (p->has_default) {
+    out->default_value.data = p->default_text;
+    out->default_value.length = p->default_len;
+  }
+  return true;
+}
+
+size_t gtext_css_mixin_count(const GTEXT_CSS_Function_Set * s) {
+  return s ? s->nmdefs : 0;
+}
+
+bool gtext_css_mixin_find(const GTEXT_CSS_Function_Set * s, const char * name, size_t length, GTEXT_CSS_Function_Info * info) {
+  const css_fn_def * d = css_mixin_set_find(s, name, length, NULL);
+  if (!d || !info) {
+    return false;
+  }
+  fill_info(d, info);
+  return true;
+}
+
+bool gtext_css_mixin_parameter(const GTEXT_CSS_Function_Set * s, const char * name, size_t length, size_t index, GTEXT_CSS_Function_Parameter * out) {
+  const css_fn_def * d = css_mixin_set_find(s, name, length, NULL);
   if (!d || !out || index >= d->nparams) {
     return false;
   }
@@ -859,11 +913,11 @@ bool css_function_sets_equal(const GTEXT_CSS_Function_Set * x, const GTEXT_CSS_F
     return true;
   }
   const size_t nx = x ? x->ndefs : 0, ny = y ? y->ndefs : 0;
-  if (nx != ny || (x ? x->total : 0) != (y ? y->total : 0)) {
+  if (nx != ny || (x ? x->total : 0) != (y ? y->total : 0) || (x ? x->nmdefs : 0) != (y ? y->nmdefs : 0)) {
     return false;
   }
-  for (size_t i = 0; i < nx; i++) {
-    const css_fn_def * a = x->defs[i], * b = y->defs[i];
+  for (size_t i = 0; i < nx + (x ? x->nmdefs : 0); i++) {
+    const css_fn_def * a = i < nx ? x->defs[i] : x->mdefs[i - nx], * b = i < nx ? y->defs[i] : y->mdefs[i - nx];
     if (a->name_len != b->name_len || memcmp(a->name, b->name, a->name_len) != 0 || a->layer != b->layer) {
       return false;
     }
@@ -953,6 +1007,60 @@ static GTEXT_CSS_Status handle_function(GTEXT_CSS_Function_Set * s, const GTEXT_
   if (defined) {
     *defined = true;
   }
+  return GTEXT_CSS_OK;
+}
+
+/// One `@mixin` rule: its prelude is read, a rule that is not valid is not a mixin (the at-rule reader drops it too), and of two of one name "the rule in the stronger cascade layer wins,
+/// and rules defined later win within the same layer". The body is read when the mixin is applied (css_sheet.c), since what is in it is the compile's to place.
+static GTEXT_CSS_Status handle_mixin(GTEXT_CSS_Function_Set * s, const GTEXT_CSS_Rule * rule, GTEXT_CSS_Layer_Id layer) {
+  s->work++;
+  if (!rule->has_block) {
+    return GTEXT_CSS_OK;
+  }
+  css_fn_def * d = NULL;
+  bool valid = false;
+  GTEXT_CSS_Status st = css_mixin_prelude_read(s->registry, &s->alloc, rule, &d, &valid);
+  if (st != GTEXT_CSS_OK || !valid || !d) {
+    css_fn_def_free(d);
+    return st;
+  }
+  if (d->nparams > s->opt.max_parameters) {
+    css_fn_def_free(d);
+    return GTEXT_CSS_OK;   /* too many parameters: not a mixin (as a function with that many is not valid) */
+  }
+  d->layer = layer;
+  d->sheet = s->sheets ? s->sheets - 1 : 0;
+  d->rule_id = rule->id;
+  d->rule_span = rule->span;
+  d->rule = rule;
+  bool found = false;
+  const size_t at = search_in(s->mdefs, s->nmdefs, d->name, d->name_len, &found, &s->work);
+  if (found) {
+    if (layer_compare(s, layer, s->mdefs[at]->layer) < 0) {
+      css_fn_def_free(d);   /* a later rule in a weaker layer does not replace it */
+      return GTEXT_CSS_OK;
+    }
+    css_fn_def_free(s->mdefs[at]);
+    s->mdefs[at] = d;
+    return GTEXT_CSS_OK;
+  }
+  if (s->nmdefs >= s->opt.max_functions) {
+    css_fn_def_free(d);
+    return GTEXT_CSS_E_LIMIT_REGISTRY;
+  }
+  if (s->nmdefs == s->mdefcap) {
+    const size_t cap = s->mdefcap ? s->mdefcap * 2 : 8;
+    css_fn_def ** bigger = gtext_allocator_realloc(&s->alloc, s->mdefs, cap * sizeof *bigger);
+    if (!bigger) {
+      css_fn_def_free(d);
+      return GTEXT_CSS_E_OOM;
+    }
+    s->mdefs = bigger;
+    s->mdefcap = cap;
+  }
+  memmove(&s->mdefs[at + 1], &s->mdefs[at], (s->nmdefs - at) * sizeof *s->mdefs);
+  s->mdefs[at] = d;
+  s->nmdefs++;
   return GTEXT_CSS_OK;
 }
 
@@ -1177,7 +1285,20 @@ static bool walk_active(void * user, const GTEXT_CSS_Rule * rule) {
 
 static GTEXT_CSS_Status walk_rule(void * user, const GTEXT_CSS_Rule * rule, const GTEXT_CSS_Layer_Rule_Context * ctx) {
   walk_state * w = user;
-  if (!ieq(&rule->name, "function")) {
+  if (w->set->opt.mixins && ieq(&rule->name, "mixin")) {
+    w->set->work++;
+    /* "A @mixin rule cannot be a nested group rule; it is invalid within the body of a style rule", and a mixin in a conditional group rule is not read: what a mixin is, where it is applied,
+       is decided when a sheet is compiled, before any condition is evaluated (css_sheet.h) */
+    if (ctx->in_style || ctx->unresolved) {
+      return GTEXT_CSS_OK;
+    }
+    const GTEXT_CSS_Status st = handle_mixin(w->set, rule, ctx->layer);
+    if (st != GTEXT_CSS_OK) {
+      w->failing = rule;
+    }
+    return st;
+  }
+  if (w->set->opt.no_functions || !ieq(&rule->name, "function")) {
     return GTEXT_CSS_OK;
   }
   w->set->work++;

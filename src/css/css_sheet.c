@@ -31,10 +31,14 @@
 
 #include <string.h>
 
+#include "css_fndef.h"
 #include "css_private_internal.h"
 #include "css_registry_internal.h"
 #include "css_sheet_internal.h"
 
+#define DEF_MIXIN_DEPTH ((size_t)16)
+#define MAX_MIXIN_DEPTH ((size_t)256)
+#define DEF_MIXIN_EXPANSIONS ((size_t)65536)
 #define DEF_RULE_DEPTH ((size_t)64)
 #define MAX_RULE_DEPTH ((size_t)4096)
 #define DEF_BYTES ((size_t)256 * 1024 * 1024)
@@ -54,6 +58,8 @@ GTEXT_CSS_Sheet_Options gtext_css_sheet_options_default(void) {
   o.max_import_depth = DEF_IMPORT_DEPTH;
   o.max_conditions = DEF_CONDITIONS;
   o.condition = gtext_css_media_options_default();
+  o.max_mixin_depth = DEF_MIXIN_DEPTH;
+  o.max_mixin_expansions = DEF_MIXIN_EXPANSIONS;
   return o;
 }
 
@@ -133,6 +139,18 @@ static bool grow(const GTEXT_Allocator * a, void ** p, size_t * cap, size_t need
 
 /* ---- the build -------------------------------------------------------------------------------------------- */
 
+/// One application of a mixin (CSS Functions and Mixins 1, "The @apply Rule") that the walk is inside of: what an `@contents` in its body needs, and what makes an `@apply` of the same mixin a cycle.
+typedef struct mixin_inst {
+  const struct mixin_inst * outer;     ///< The application whose body the `@apply` was in (NULL: it was in a style rule of the sheet).
+  const css_fn_def * def;              ///< The mixin.
+  const GTEXT_CSS_Rule * apply;        ///< The `@apply` rule of the sheet's own tree that this application is, by way of the ones around it: every diagnostic, record and declaration it makes is said to be its.
+  const GTEXT_CSS_Block_Item * cont;   ///< "the contents block" the `@apply` passed (its block's items), when `has_cont`.
+  size_t ncont;
+  bool has_cont;                       ///< The `@apply` had a block, empty or not ("passing an empty block will substitute the empty block").
+  const css_priv_scope * outer_priv;   ///< The private property names the `@apply` was read with: the scope the contents block is read in.
+  size_t depth;                        ///< 1 for an `@apply` in a style rule of the sheet.
+} mixin_inst;
+
 typedef struct {
   const GTEXT_CSS_Rule * rules;
   size_t nrules;
@@ -152,6 +170,8 @@ typedef struct {
   uint32_t chain;                 ///< The condition node of the `@when` or `@else` rule just before, if the last thing read here was one (the chain an `@else` joins).
   const css_priv_scope * priv;    ///< The private property names of the style rule being read and of those it is nested in (css_private_internal.h); NULL: none.
   bool in_private;                ///< Inside an `@private` rule: only custom properties and conditional group rules are read.
+  const mixin_inst * inst;        ///< The mixin application whose body (or contents block, with the outer application) this frame reads; NULL: the sheet's own rules.
+  bool decls_only;                ///< The items are a `<declaration-list>` (a contents block): a rule among them is not read.
 } frame;
 
 typedef struct {
@@ -179,9 +199,19 @@ typedef struct {
   uint64_t priv_epoch;       ///< This sheet's number for the hidden names of its private properties, taken the first time it has one.
   uint64_t priv_serial;      ///< The number of style rules that had private names so far.
   css_priv_regvec priv_regs; ///< The registrations of the private properties.
+  const GTEXT_CSS_Rule_Source * sources; ///< The compile's sources (the array form), or NULL.
+  size_t nsources;
+  const GTEXT_CSS_Function_Set * mixins;   ///< Where `@apply` finds a mixin: asked for at the first one.
+  GTEXT_CSS_Function_Set * own_mixins;     ///< The set this compile made itself of its own rules, when no source was given.
+  bool mixins_asked;
+  size_t expansions;                       ///< `@apply` rules expanded so far.
+  const GTEXT_CSS_Rule * attrib;           ///< The rule of the sheet's own tree that what is read now (a mixin's body) is said to come from; NULL: the rule itself.
 } build;
 
 static GTEXT_CSS_Status bfail(build * b, GTEXT_CSS_Status st, const GTEXT_CSS_Span * span, const char * name, const char * detail) {
+  if (b->attrib && span) {
+    span = &b->attrib->span;   /* a rule of a mixin is in another tree than the sheet's: the place is the `@apply` */
+  }
   if (b->status == GTEXT_CSS_OK) {
     b->status = st;
   }
@@ -201,6 +231,10 @@ static GTEXT_CSS_Status bfail(build * b, GTEXT_CSS_Status st, const GTEXT_CSS_Sp
 
 static bool diag(build * b, GTEXT_CSS_Sheet_Diag_Kind kind, GTEXT_CSS_Span span, GTEXT_CSS_Id id, const char * reference) {
   GTEXT_CSS_Sheet * s = b->sheet;
+  if (b->attrib) {
+    span = b->attrib->span;   /* a rule of a mixin is in another tree than the sheet's: the diagnostic is the `@apply`'s */
+    id = b->attrib->id;
+  }
   s->diag_total++;
   if (s->ndiags >= b->max_diag) {
     return true;
@@ -536,8 +570,8 @@ static GTEXT_CSS_Status make_run(build * b, const GTEXT_CSS_Declaration * d, siz
     o->pv = pv;
     o->name = nm;
     o->name_len = nm_len;
-    o->id = d[i].id;
-    o->span = d[i].span;
+    o->id = b->attrib ? b->attrib->id : d[i].id;
+    o->span = b->attrib ? b->attrib->span : d[i].span;
     o->important = d[i].important;
     o->custom = is_custom;
   }
@@ -551,8 +585,8 @@ static GTEXT_CSS_Status make_run(build * b, const GTEXT_CSS_Declaration * d, siz
   sheet_run * r = &s->runs[s->nruns];
   r->decls = out;
   r->ndecl = m;
-  r->rule_id = rule_id;
-  r->span = span;
+  r->rule_id = b->attrib ? b->attrib->id : rule_id;
+  r->span = b->attrib ? b->attrib->span : span;
   r->source_id = b->src_id;
   r->source_index = b->src_index;
   *run_index = (uint32_t)s->nruns;
@@ -771,8 +805,9 @@ static bool holds_styles(build * b, const GTEXT_CSS_Rule * rule, bool * oom) {
       found = true;
       continue;
     }
-    if (css_ascii_ieq(&r->name, "layer") || css_ascii_ieq(&r->name, "scope") || css_ascii_ieq(&r->name, "private")) {
-      found = true;
+    if (css_ascii_ieq(&r->name, "layer") || css_ascii_ieq(&r->name, "scope") || css_ascii_ieq(&r->name, "private") || css_ascii_ieq(&r->name, "apply") ||
+        css_ascii_ieq(&r->name, "contents")) {
+      found = true;   /* an `@apply` (or an `@contents`, which a mixin's body has) is replaced by declarations and rules: the group rule holds styles */
     }
     else if (conditional_name(&r->name) && r->content_count) {
       if (!grow(&b->sheet->alloc, (void **)&st, &cap, sp + 1, sizeof *st)) {
@@ -970,7 +1005,7 @@ static GTEXT_CSS_Status new_cond(build * b, sheet_cond_kind kind, uint32_t paren
   c->kind = (uint8_t)kind;
   c->parent = parent;
   c->prev = prev;
-  c->span = span;
+  c->span = b->attrib ? b->attrib->span : span;
   if (parent) {
     c->flags = (uint8_t)(s->conds[parent - 1].flags & (SCF_STARTING | SCF_ELEMENT));
   }
@@ -1110,6 +1145,293 @@ static GTEXT_CSS_Status emit_declarations(build * b, const GTEXT_CSS_Rule * rule
   return GTEXT_CSS_OK;
 }
 
+
+/* ---- mixins ------------------------------------------------------------------------------------------------------------ */
+
+/// The set of mixins `@apply` finds, asked for at the first `@apply` (css_sheet.h): the caller's, or one made of the sheet's own rules.
+static GTEXT_CSS_Status mixin_set(build * b, const GTEXT_CSS_Function_Set ** out) {
+  if (!b->mixins_asked) {
+    b->mixins_asked = true;
+    if (b->opt->mixins) {
+      GTEXT_CSS_Status st = GTEXT_CSS_OK;
+      b->mixins = b->opt->mixins(b->opt->mixins_user, &st);
+      if (st != GTEXT_CSS_OK) {
+        b->mixins = NULL;
+        return bfail(b, st, NULL, NULL, "the source of mixins failed");
+      }
+    }
+    else {
+      GTEXT_CSS_Function_Options fo = gtext_css_function_options_default();
+      fo.allocator = &b->sheet->alloc;
+      fo.mixins = true;
+      fo.no_functions = true;
+      fo.max_rule_depth = b->max_depth;
+      GTEXT_CSS_Status st = gtext_css_function_set_new(b->sheet->registry, &fo, &b->own_mixins);
+      for (size_t i = 0; st == GTEXT_CSS_OK && b->sources && i < b->nsources; i++) {
+        st = gtext_css_function_collect_rules(b->own_mixins, &b->sources[i].rule, 1, NULL);
+      }
+      if (st == GTEXT_CSS_OK && b->tree && !b->sources) {
+        st = gtext_css_function_collect(b->own_mixins, b->tree, NULL);
+      }
+      if (st != GTEXT_CSS_OK) {
+        return bfail(b, st == GTEXT_CSS_E_LIMIT_DEPTH ? GTEXT_CSS_E_LIMIT_RULE_NESTING : st, NULL, NULL, "the @mixin rules of the sheet could not be read");
+      }
+      b->mixins = b->own_mixins;
+    }
+  }
+  *out = b->mixins;
+  return GTEXT_CSS_OK;
+}
+
+/// One declaration `name: text` made by the compile itself (a mixin's parameter), in a run of the style rule's own place: parsed as any declaration is, and said to be the `@apply`'s.
+static GTEXT_CSS_Status synthetic_declaration(build * b, const frame * cur, const GTEXT_CSS_Rule * who, const char * name, size_t name_len, const char * text, size_t text_len) {
+  const GTEXT_Allocator * a = &b->sheet->alloc;
+  const size_t total = name_len + 1 + text_len;
+  char * line = gtext_allocator_malloc((GTEXT_Allocator *)a, total + 1);
+  if (!line) {
+    return bfail(b, GTEXT_CSS_E_OOM, NULL, NULL, NULL);
+  }
+  memcpy(line, name, name_len);
+  line[name_len] = ':';
+  if (text_len) {
+    memcpy(line + name_len + 1, text, text_len);
+  }
+  line[total] = '\0';
+  GTEXT_CSS_Parse_Options po = gtext_css_parse_options_default();
+  po.allocator = a;
+  po.count_errors_only = true;
+  GTEXT_CSS_Tree * tree = NULL;
+  GTEXT_CSS_Status st = gtext_css_parse_declaration(line, total, &po, &tree, NULL);
+  gtext_allocator_free((GTEXT_Allocator *)a, line);
+  if (st != GTEXT_CSS_OK) {
+    return bfail(b, st, &who->span, NULL, NULL);
+  }
+  if (tree->declaration_count != 1) {
+    gtext_css_tree_free(tree);
+    return GTEXT_CSS_OK;   /* an argument that is not a declaration value: nothing is declared (the value is "not valid", as a declaration with such a value is dropped) */
+  }
+  const GTEXT_CSS_Rule * saved = b->attrib;
+  b->attrib = who;
+  bool made = false;
+  uint32_t run = 0;
+  st = make_run(b, tree->declarations, 1, who->id, who->span, NULL, false, &made, &run);
+  if (st == GTEXT_CSS_OK && made) {
+    st = add_records(b, cur, cur->plist, cur->pspec, cur->pnest, run, true, who->span);
+  }
+  b->attrib = saved;
+  gtext_css_tree_free(tree);
+  return st;
+}
+
+/// `@apply`: "applies a mixin, causing it to substitute into the rule in place of the @apply rule itself" (CSS Functions and Mixins 1, "The @apply Rule").
+static GTEXT_CSS_Status apply_rule(build * b, const GTEXT_CSS_Rule * rule, const frame * cur) {
+  if (cur->decl_ctx != 1) {
+    return GTEXT_CSS_OK;   /* "The @apply rule is only valid in the body of a style rule or nested group rule: using it in any other context causes it to be invalid and ignored" */
+  }
+  GTEXT_CSS_Sheet * s = b->sheet;
+  css_apply_prelude ap;
+  bool valid = false;
+  GTEXT_CSS_Status st = css_apply_prelude_read(&s->alloc, rule, &ap, &valid);
+  if (st != GTEXT_CSS_OK) {
+    return bfail(b, st, &rule->span, NULL, NULL);
+  }
+  if (!valid) {
+    return GTEXT_CSS_OK;   /* the prelude is not `<dashed-ident> | <dashed-function>`: the rule is invalid */
+  }
+  s->uses_mixins = true;
+  const GTEXT_CSS_Function_Set * set = NULL;
+  st = mixin_set(b, &set);
+  if (st != GTEXT_CSS_OK) {
+    css_apply_prelude_free(&s->alloc, &ap);
+    return st;
+  }
+  const css_fn_def * def = css_mixin_set_find(set, ap.name.data, ap.name.length, NULL);
+  /* "If no such mixin exists, the @apply does nothing", and "if more arguments are passed than the length of the mixin's argument list, the @apply application does nothing" */
+  bool does = def != NULL && ap.nargs <= def->nparams;
+  for (const mixin_inst * i = cur->inst; does && i; i = i->outer) {
+    does = i->def != def;   /* a mixin applied inside its own body (or inside what it applies): a cycle, which does nothing */
+  }
+  if (!does) {
+    css_apply_prelude_free(&s->alloc, &ap);
+    return GTEXT_CSS_OK;
+  }
+  const size_t depth = (cur->inst ? cur->inst->depth : 0) + 1;
+  const size_t max_depth = b->opt->max_mixin_depth ? (b->opt->max_mixin_depth > MAX_MIXIN_DEPTH ? MAX_MIXIN_DEPTH : b->opt->max_mixin_depth) : DEF_MIXIN_DEPTH;
+  const size_t max_exp = b->opt->max_mixin_expansions ? b->opt->max_mixin_expansions : DEF_MIXIN_EXPANSIONS;
+  if (depth > max_depth) {
+    css_apply_prelude_free(&s->alloc, &ap);
+    return bfail(b, GTEXT_CSS_E_LIMIT_RULE_NESTING, &rule->span, "max_mixin_depth", "mixins are applied inside one another deeper than max_mixin_depth");
+  }
+  if (b->expansions >= max_exp) {
+    css_apply_prelude_free(&s->alloc, &ap);
+    return bfail(b, GTEXT_CSS_E_LIMIT_WORK, &rule->span, "max_mixin_expansions", "the sheet applies mixins more often than max_mixin_expansions");
+  }
+  b->expansions++;
+  if (!account(b, sizeof(mixin_inst) + 64 * (def->nparams + 1), &rule->span)) {
+    css_apply_prelude_free(&s->alloc, &ap);
+    return b->status;
+  }
+  /* what this application is said to be: the `@apply` of the sheet's own tree it comes from */
+  const GTEXT_CSS_Rule * who = cur->inst ? cur->inst->apply : rule;
+  mixin_inst * inst = css_arena_alloc(&s->arena, sizeof *inst);
+  if (!inst) {
+    css_apply_prelude_free(&s->alloc, &ap);
+    return bfail(b, GTEXT_CSS_E_OOM, NULL, NULL, NULL);
+  }
+  inst->outer = cur->inst;
+  inst->def = def;
+  inst->apply = who;
+  inst->has_cont = rule->has_block;
+  inst->cont = rule->has_block ? rule->contents : NULL;
+  inst->ncont = rule->has_block ? rule->content_count : 0;
+  inst->outer_priv = cur->priv;
+  inst->depth = depth;
+  /* "A mixin's parameters define private properties in the mixin body", and the private properties of the body: one scope, below the scope of the rule the mixin is substituted into */
+  const css_priv_scope * scope = cur->priv;
+  {
+    const css_priv_scope * own = NULL;
+    st = css_priv_scope_make_mixin(&s->arena, &s->alloc, s->registry, def, cur->priv, &b->priv_epoch, b->priv_serial, &b->priv_regs, &own);
+    if (st != GTEXT_CSS_OK) {
+      css_apply_prelude_free(&s->alloc, &ap);
+      return bfail(b, st, &rule->span, NULL, NULL);
+    }
+    if (own) {
+      b->priv_serial++;
+      scope = own;
+    }
+  }
+  /* the parameters: each takes the argument it was passed (written in the scope of the `@apply`), or its default (written in the mixin's scope), and a typed one is registered with its type
+     ("a custom property registration with that name, a syntax of the parameter type, an inherit flag of true, and no initial value"), so that its value is computed where it is declared */
+  for (size_t i = 0; i < def->nparams && st == GTEXT_CSS_OK; i++) {
+    const css_fn_param * p = &def->params[i];
+    const css_priv_scope * own_scope = scope != cur->priv ? scope : NULL;
+    if (!own_scope) {
+      break;   /* a mixin with parameters always has a scope: nothing to declare otherwise */
+    }
+    size_t hidden_len = 0;
+    char * hidden = css_priv_name(&s->arena, own_scope, p->name, p->name_len, &hidden_len);
+    if (!hidden) {
+      st = bfail(b, GTEXT_CSS_E_OOM, NULL, NULL, NULL);
+      break;
+    }
+    const char * text = NULL;
+    size_t text_len = 0;
+    char * owned = NULL;
+    char * rewritten = NULL;
+    if (i < ap.nargs) {
+      GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+      so.allocator = &s->alloc;
+      size_t len = 0;
+      if (ap.args[i].count) {
+        st = gtext_css_serialize_values_buffer(ap.args[i].values, ap.args[i].count, &so, &owned, &len);
+        if (st == GTEXT_CSS_E_WRITE) {
+          st = GTEXT_CSS_E_OOM;
+        }
+        if (st != GTEXT_CSS_OK) {
+          bfail(b, st, &rule->span, NULL, NULL);
+          break;
+        }
+      }
+      text = owned ? owned : "";
+      text_len = len;
+      st = css_priv_rewrite_text(&s->alloc, cur->priv, text, text_len, &rewritten, &len);
+      if (st == GTEXT_CSS_OK && rewritten) {
+        text = rewritten;
+        text_len = len;
+      }
+    }
+    else if (p->has_default) {
+      text = p->default_text;
+      text_len = p->default_len;
+      size_t len = 0;
+      st = css_priv_rewrite_text(&s->alloc, scope, text, text_len, &rewritten, &len);
+      if (st == GTEXT_CSS_OK && rewritten) {
+        text = rewritten;
+        text_len = len;
+      }
+    }
+    else {
+      continue;   /* no argument and no default: the property has no value, and `var()` of it falls back */
+    }
+    if (st == GTEXT_CSS_OK) {
+      st = synthetic_declaration(b, cur, who, hidden, hidden_len, text, text_len);
+    }
+    else {
+      bfail(b, st, &rule->span, NULL, NULL);
+    }
+    gtext_allocator_free(&s->alloc, rewritten);
+    gtext_allocator_free(&s->alloc, owned);
+    if (st == GTEXT_CSS_OK) {
+      const char * type = NULL;
+      size_t type_len = 0;
+      bool wrapped = false, universal = false;
+      if (css_fn_param_css_type(p, &type, &type_len, &wrapped, &universal) && !universal) {
+        css_priv_reg r;
+        memset(&r, 0, sizeof r);
+        r.name = hidden;
+        r.name_len = hidden_len;
+        r.syntax = css_arena_strdup(&s->arena, p->type->text, p->type->len);
+        r.syntax_len = p->type->len;
+        r.has_syntax = true;
+        r.inherits = true;
+        if (!r.syntax || !grow(&s->alloc, (void **)&b->priv_regs.v, &b->priv_regs.cap, b->priv_regs.n + 1, sizeof *b->priv_regs.v)) {
+          st = bfail(b, GTEXT_CSS_E_OOM, NULL, NULL, NULL);
+        }
+        else {
+          b->priv_regs.v[b->priv_regs.n++] = r;
+        }
+      }
+    }
+  }
+  css_apply_prelude_free(&s->alloc, &ap);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  frame f = *cur;
+  f.rules = NULL;
+  f.nrules = 0;
+  f.items = def->rule->contents;
+  f.nitems = def->rule->content_count;
+  f.pos = 0;
+  f.chain = 0;
+  f.priv = scope;
+  f.inst = inst;
+  f.decls_only = false;
+  return push(b, &f, &rule->span);
+}
+
+/// `@contents`: "If the @apply rule invoking the mixin passed a contents block, the @contents is replaced with the contents block, treating it as a nested declarations rule. Otherwise [...] the
+/// @contents rule is replaced with its fallback block". "Outside of a mixin body, the @contents rule is invalid and ignored."
+static GTEXT_CSS_Status contents_rule(build * b, const GTEXT_CSS_Rule * rule, const frame * cur) {
+  if (!cur->inst || cur->decl_ctx != 1) {
+    return GTEXT_CSS_OK;
+  }
+  frame f = *cur;
+  f.rules = NULL;
+  f.nrules = 0;
+  f.pos = 0;
+  f.chain = 0;
+  f.decls_only = true;
+  if (cur->inst->has_cont) {
+    /* the block is the invoker's: it is read in the scope of the `@apply` and inside the application the `@apply` was in */
+    f.items = cur->inst->cont;
+    f.nitems = cur->inst->ncont;
+    f.priv = cur->inst->outer_priv;
+    f.inst = cur->inst->outer;
+  }
+  else {
+    if (!rule->has_block) {
+      return GTEXT_CSS_OK;   /* the statement form: "behaves identically to passing an empty block" */
+    }
+    f.items = rule->contents;
+    f.nitems = rule->content_count;
+  }
+  if (f.nitems == 0) {
+    return GTEXT_CSS_OK;
+  }
+  return push(b, &f, &rule->span);
+}
+
 /// One rule that is not an import, a namespace or a charset.
 static GTEXT_CSS_Status visit(build * b, const GTEXT_CSS_Rule * rule, const frame * cur) {
   b->chain_out = 0;
@@ -1123,6 +1445,16 @@ static GTEXT_CSS_Status visit(build * b, const GTEXT_CSS_Rule * rule, const fram
   }
   if (rule->kind == GTEXT_CSS_RULE_NESTED_DECLARATIONS) {
     return declarations_of_parent(b, cur, rule->declarations, rule->declaration_count, rule->id, rule->span);
+  }
+  if (css_ascii_ieq(&rule->name, "apply")) {
+    return apply_rule(b, rule, cur);
+  }
+  if (css_ascii_ieq(&rule->name, "contents")) {
+    return contents_rule(b, rule, cur);
+  }
+  if (cur->inst && css_ascii_ieq(&rule->name, "layer")) {
+    /* "@layer is not valid within a mixin body. The contents of any @layer within a mixin body are dropped when the mixin is applied." */
+    return GTEXT_CSS_OK;
   }
   if (css_ascii_ieq(&rule->name, "layer")) {
     GTEXT_CSS_Status st = emit_declarations(b, rule, cur->cond);
@@ -1478,6 +1810,7 @@ static GTEXT_CSS_Status import_rule(build * b, const GTEXT_CSS_Rule * rule, bool
             s->import_cond[s->nimports] = node;
             s->import_scope[s->nimports] = isc;
             s->nimports++;
+            s->uses_mixins = s->uses_mixins || got->uses_mixins;
             if (got->import_depth + 1 > s->import_depth) {
               s->import_depth = got->import_depth + 1;
             }
@@ -1579,12 +1912,19 @@ static GTEXT_CSS_Status drain(build * b, size_t base) {
   while (b->sp > base && b->status == GTEXT_CSS_OK) {
     frame * top = &b->stack[b->sp - 1];
     const GTEXT_CSS_Rule * next = NULL;
+    b->attrib = top->inst ? top->inst->apply : NULL;   /* what is read from a mixin is said to come from the `@apply` that put it here */
     if (top->items) {
       if (top->pos >= top->nitems) {
         b->sp--;
         continue;
       }
       const GTEXT_CSS_Block_Item * it = &top->items[top->pos++];
+      if (top->inst && !account(b, 16, NULL)) {
+        return b->status;   /* what a mixin's body makes the compile read is charged as the compiled form is, so that an application of a large body many times is bounded in time as well as in size */
+      }
+      if (top->decls_only && it->kind != GTEXT_CSS_ITEM_DECLARATIONS) {
+        continue;   /* a contents block is a <declaration-list>: it has no rule */
+      }
       if (it->kind == GTEXT_CSS_ITEM_DECLARATIONS) {
         const frame cur = *top;
         top->chain = 0; /* anything but a rule between two conditional group rules ends a chain */
@@ -1607,9 +1947,11 @@ static GTEXT_CSS_Status drain(build * b, size_t base) {
     const GTEXT_CSS_Status st = visit(b, next, &cur);
     top->chain = b->chain_out; /* the frame's slot stays where it is: push() copies into the next slot */
     if (st != GTEXT_CSS_OK) {
+      b->attrib = NULL;
       return st;
     }
   }
+  b->attrib = NULL;
   return b->status;
 }
 
@@ -1635,6 +1977,8 @@ static GTEXT_CSS_Status compile_impl(const GTEXT_CSS_Tree * tree, const GTEXT_CS
   b.res = result;
   b.tree = tree;
   b.multi = multi;
+  b.sources = multi ? sources : NULL;
+  b.nsources = multi ? count : 0;
   GTEXT_CSS_Sheet * s = gtext_allocator_calloc(&alloc, 1, sizeof *s);
   if (!s) {
     return bfail(&b, GTEXT_CSS_E_OOM, NULL, NULL, NULL);
@@ -1744,12 +2088,17 @@ done:
   gtext_allocator_free(&s->alloc, b.decl_count);
   gtext_allocator_free(&s->alloc, b.decl_layers);
   gtext_allocator_free(&s->alloc, b.touched);
+  gtext_css_function_set_free(b.own_mixins);
   if (b.status != GTEXT_CSS_OK) {
     sheet_destroy(s);
     return b.status;
   }
   *out = s;
   return GTEXT_CSS_OK;
+}
+
+bool css_sheet_uses_mixins(const GTEXT_CSS_Sheet * sheet) {
+  return sheet && sheet->uses_mixins;
 }
 
 GTEXT_CSS_Status gtext_css_sheet_compile(const GTEXT_CSS_Tree * tree, const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Sheet_Options * options,
