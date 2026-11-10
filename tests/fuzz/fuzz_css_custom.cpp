@@ -330,7 +330,8 @@ std::string dump_of(const GTEXT_CSS_Computed_Style * s, const std::string & inpu
 }
 
 /// The properties and the custom properties of a style, written as declarations. `ok` is false when a value holds a character that the block reader splits on.
-std::string declarations_of(const GTEXT_CSS_Computed_Style * s, bool * ok, const GTEXT_CSS_Computed_Style * parent) {
+std::string declarations_of(const GTEXT_CSS_Computed_Style * s, bool * ok, const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_At_Property_Set * rules,
+    std::vector<std::string> * invalid_names) {
   std::string out;
   const GTEXT_CSS_Registry * r = registry();
   const size_t n = gtext_css_registry_property_count(r);
@@ -379,6 +380,22 @@ std::string declarations_of(const GTEXT_CSS_Computed_Style * s, bool * ok, const
     out += ": ";
     out += text;
     out += ";\n";
+  }
+  // A registration with the syntax `*` and an initial value that the style does not hold is a property whose computed value is the guaranteed-invalid value (Values 5, "invalid at computed-value
+  // time": for a registered custom property with universal syntax the computed value is the guaranteed-invalid value, as for an unregistered one). Leaving it out would give it its initial
+  // value, and `initial` does the same, so it is written as the one declaration that makes it invalid at computed-value time: a reference to a property that nothing here names.
+  for (size_t i = 0; rules && i < gtext_css_at_property_count(rules); i++) {
+    GTEXT_CSS_Custom_Info at;
+    if (!gtext_css_at_property_at(rules, i, &at) || !at.universal || !at.has_initial) {
+      continue;
+    }
+    const GTEXT_CSS_Custom_Value * held = nullptr;
+    if (gtext_css_computed_custom_find(s, at.name, at.name_length, &held)) {
+      continue;
+    }
+    out.append(at.name, at.name_length);
+    out += ": var(--no-such-property-anywhere);\n";
+    invalid_names->push_back(std::string(at.name, at.name_length));
   }
   // a custom property the parent has and the child has not is the guaranteed-invalid value (`--a: initial`), which no declaration of the child's own values can say by
   // leaving it out: the child would inherit it
@@ -500,7 +517,8 @@ void check_compute(const std::vector<Decl> & parent_decls, const std::vector<Dec
   }
   if (st == GTEXT_CSS_OK && !fa.failed) {
     bool splittable = true;
-    const std::string decls = declarations_of(child, &splittable, parent);
+    std::vector<std::string> invalid_names;
+    const std::string decls = declarations_of(child, &splittable, parent, rules, &invalid_names);
     GTEXT_CSS_Declaration_Block * rb = nullptr;
     if (splittable && build(declarations(decls), nullptr, &rb, input) == GTEXT_CSS_OK) {
       GTEXT_CSS_Computed_Style * second = nullptr;
@@ -509,6 +527,12 @@ void check_compute(const std::vector<Decl> & parent_decls, const std::vector<Dec
       if (s2 == GTEXT_CSS_OK) {
         again = dump_of(second, input);
         fixed_checked = true;
+        for (const std::string & name : invalid_names) {
+          const GTEXT_CSS_Custom_Value * held = nullptr;
+          if (gtext_css_computed_custom_find(second, name.data(), name.size(), &held)) {
+            fail("a declaration that is invalid at computed-value time did not make a universal registration the guaranteed-invalid value", name, input);
+          }
+        }
       }
       else if (!allowed_status(s2)) {
         fail("a status a computation must not return", gtext_css_status_string(s2), input);

@@ -663,3 +663,25 @@ TEST(CssCustomReview, TheDefaultDepthTakesAboutThirtyThreeThousandLinks) {
 }
 
 }  // namespace
+
+/* Values 5, "invalid at computed-value time": "the computed value is one of the following depending on the property's type: the property is a non-registered custom property, or a registered custom property
+   with universal syntax: the computed value is the guaranteed-invalid value". The initial value of a registration with the syntax `*` is what a property that no declaration names computes to, and
+   not what a declaration that is invalid at computed-value time falls back to: nothing a declaration can say makes a style with this value again, so a style that holds it cannot be written out as
+   declarations that leave the property out (the fixed point of tests/fuzz/fuzz_css_custom.cpp, which writes it as a declaration that is invalid at computed-value time). */
+TEST(CssCustomReview, AUniversalRegistrationsInitialValueIsNotWhatAnInvalidDeclarationFallsBackTo) {
+  Scene s({}, {{"--u", "*", "x", false, true, false}, {"--e", "*", "", true, true, false}, {"--t", "<length>", "5px", false, true, false}});
+  Computed none;
+  compute_pairs(s.w, none, {});
+  EXPECT_EQ(none.custom("--u"), "x") << "no declaration: the initial value";
+  EXPECT_EQ(none.custom("--e"), "") << "the empty initial value is a value, and present";
+  const GTEXT_CSS_Custom_Value * v = nullptr;
+  EXPECT_TRUE(gtext_css_computed_custom_find(none.s, "--e", 3, &v)) << "an empty value is not the guaranteed-invalid value";
+  Computed bad;
+  compute_pairs(s.w, bad, {{"--u", "var(--missing)"}, {"--e", "var(-"}, {"--t", "var(--missing)"}});
+  EXPECT_FALSE(gtext_css_computed_custom_find(bad.s, "--u", 3, &v)) << "universal: the guaranteed-invalid value, as for an unregistered property";
+  EXPECT_FALSE(gtext_css_computed_custom_find(bad.s, "--e", 3, &v)) << "a var() that is not a valid reference of a universal registration";
+  EXPECT_EQ(bad.custom("--t"), "5px") << "a registered property of another syntax: its initial value (the control: the rule is about the universal syntax)";
+  Computed init;
+  compute_pairs(s.w, init, {{"--u", "initial"}});
+  EXPECT_EQ(init.custom("--u"), "x") << "`initial` is the registration's initial value (what a declaration can say, and the guaranteed-invalid value it cannot)";
+}

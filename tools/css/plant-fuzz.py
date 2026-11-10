@@ -105,6 +105,7 @@ The plants of fuzz_css_custom.cpp (CUSTOM_PLANTS; each is found by replaying its
   attr-taint-scan-stops-at-thirty-two the scan for a URL that attr() made looks at the first thirty-two options of a function: the dump.
   join-ignores-a-failed-allocation  a join that cannot allocate is taken as the guaranteed-invalid value: the status.
   rules-are-found-by-the-wrong-name  a rule found by name is looked up by a prefix of the name: it is not the one at its index.
+  a-universal-registration-falls-back-to-its-initial-value  a declaration of a registration with the syntax `*` that is invalid at computed-value time computes to the initial value, where Values 5 says the guaranteed-invalid value: a style cannot be written out again.
 
 The plants of fuzz_css_style.cpp (STYLE_PLANTS; each is found by replaying its seed from tests/fuzz/corpus/css-style):
 
@@ -378,6 +379,9 @@ COMPUTE_PLANTS = {
 
 # The same shape, for tests/fuzz/fuzz_css_custom.cpp; the seeds are in tests/fuzz/corpus/css-custom.
 CUSTOM_PLANTS = {
+    "a-universal-registration-falls-back-to-its-initial-value": ("css_substitute.c", "  const GTEXT_CSS_Custom_Value * initial_cv = typed ? reg->initial : NULL;",
+                                                                 "  const GTEXT_CSS_Custom_Value * initial_cv = reg ? reg->initial : NULL;",
+                                                                 "reproducer-universal-registration-invalid-declaration.seed"),
     "cascade-takes-any-custom-name": ("css_cascade.c", "name[1] == '-' && !css_custom_name_ok(name, name_length)) {\n    /* a name written as text", "name[1] == '-' && 0) {\n    /* a name written as text",
                                       "reproducer-custom-name-with-a-space-7e867aea.seed"),
     "rope-release-leaks-its-leaves": ("css_rope.c", "    css_rope * kids[2] = {n->a, n->b};\n    GTEXT_Allocator a = n->alloc;\n    gtext_allocator_free(&a, n);\n",
