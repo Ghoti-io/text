@@ -100,6 +100,19 @@ TEST(CssGrammarMatrix, AValueWithVarIsPendingSubstitution) {
   EXPECT_EQ(run("auto", "VAR(--x)"), "pending:VAR(--x)");
 }
 
+TEST(CssGrammarMatrix, AFunctionThatIsNotSyntacticallyValidMatchesNoGrammar) {
+  // Values 5: "If a property value contains one or more arbitrary substitution functions, and all of those functions are themselves syntactically valid according to their argument grammars, the
+  // entire value's grammar must be assumed to be valid at parse time": the converse is that one that is not makes the value match nothing (css/css-values/attr-fallback-braces.html asks it of
+  // `attr(data-missing type(<color>), {rgb(1, 2, 3)} rgb(4, 5, 6))` against <color>).
+  EXPECT_EQ(run("<color>", "attr(data-missing type(<color>), {rgb(1, 2, 3)})"), "pending:attr(data-missing type(<color>), {rgb(1, 2, 3)})");
+  EXPECT_EQ(run("<color>", "attr(data-missing type(<color>), {rgb(1, 2, 3)} rgb(4, 5, 6))"), "no match");
+  EXPECT_EQ(run("<color>", "var(--missing, {rgb(1, 2, 3)} red)"), "no match");
+  EXPECT_EQ(run("<color>", "env(missing-name, {rgb(1, 2, 3)}, red)"), "no match");
+  EXPECT_EQ(run("<length>", "var()"), "no match");
+  EXPECT_EQ(run("<length>", "calc(1px + attr())"), "no match");
+  EXPECT_EQ(run("auto", "var(--a,!)"), "no match");
+}
+
 TEST(CssGrammarMatrix, UnitsAndTheUnitlessZero) {
   EXPECT_EQ(run("<length>", "10foo"), "no match");
   EXPECT_EQ(run("<length>", "0"), "dim:0px");

@@ -3663,9 +3663,14 @@ GTEXT_CSS_Status gtext_css_match(const GTEXT_CSS_Compiled * compiled, const GTEX
     status = gtext_css_has_arbitrary_substitution(values, count, &m.alloc, &pending);
   }
   if (status == GTEXT_CSS_OK && pending) {
-    did_match = true;
-    if (out) {
-      status = pending_set(&m, values, count, &set);
+    /* "all of those functions are themselves syntactically valid according to their argument grammars": a value whose function is not (`attr(x, {a} b)`, `var()`) matches no grammar */
+    bool syntax = true;
+    status = css_substitution_syntax(values, count, &m.alloc, &syntax);
+    if (status == GTEXT_CSS_OK && syntax) {
+      did_match = true;
+      if (out) {
+        status = pending_set(&m, values, count, &set);
+      }
     }
   }
   else if (status == GTEXT_CSS_OK) {

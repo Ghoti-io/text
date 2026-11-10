@@ -61,6 +61,11 @@ bool css_vset_depend(GTEXT_CSS_Value_Set * set, const GTEXT_CSS_Value_Set * othe
 /// Whether a function name is var, env or attr (ASCII case-insensitive).
 bool css_is_substitution_name(const GTEXT_CSS_String * name);
 
+/// Whether every var(), env(), attr() and inherit() in `values`, a dashed function and random-item() meets its argument grammar (Values 5: "If a property value contains one or more arbitrary
+/// substitution functions, and all of those functions are themselves syntactically valid according to their argument grammars, the entire value's grammar must be assumed to be valid at parse
+/// time"): `*valid` is false when one does not, and the value is not valid at parse time whatever the grammar it would be matched against. Everything else is left to the substitution.
+GTEXT_CSS_Status css_substitution_syntax(const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_Allocator * allocator, bool * valid);
+
 #ifdef __cplusplus
 }
 #endif

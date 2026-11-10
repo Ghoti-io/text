@@ -356,6 +356,7 @@ PLANTS += [
      "  }\n  return seq_start(sub, fi, slot, f->csrc, vals, n, false);\n}", ["custom-review"]),
     ("custom-a-token-after-a-brace-fallback-is-valid", "css_property.c", "            if (braced) {\n              *valid = false;\n              break;\n            }",
      "            if (0) {\n              *valid = false;\n              break;\n            }", ["property"]),
+    ("grammar-a-function-that-is-not-valid-matches-as-pending", "css_grammar_match.c", "    if (status == GTEXT_CSS_OK && syntax) {\n      did_match = true;", "    if (status == GTEXT_CSS_OK) {\n      did_match = true;", ["grammar"]),
     ("custom-a-brace-is-a-fallback-only-at-its-start", "css_property.c", "              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;",
      "              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;\n            }\n            else {\n              braced = braced || (c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY);", ["property"]),
 ]
