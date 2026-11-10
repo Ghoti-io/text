@@ -209,7 +209,21 @@ def main():
     tests = {}   # (page, index) -> (name, state)
     for _, f in tsv_lines(os.path.join(vdir, 'script-tests.tsv')):
         tests[(f[0], int(f[1]))] = (unesc(f[2]), f[3])
-    pages = sorted({p for p, _ in tests})
+    # The pages no browser finishes (UNRECORDED_PAGES, beside the exceptions): they have no entry in the page record, and have to have no test that is scored, so that nothing rests on an answer the
+    # record does not have; a line for a page that is not a page of the program, or that has a scored test, fails.
+    unrecorded_path = os.path.join(os.path.dirname(os.path.abspath(exc_path)), 'UNRECORDED_PAGES')
+    unrecorded = {}
+    for n, f in tsv_lines(unrecorded_path):
+        if len(f) != 3 or len(f[2].split()) < 5:
+            out.append('SUITE PROBLEMS: %s:%d is not <page> TAB <engine> TAB <a reason of a few words>' % (os.path.basename(unrecorded_path), n))
+            continue
+        unrecorded[f[0]] = f
+    for page, f in sorted(unrecorded.items()):
+        if not any(k[0] == page for k in tests):
+            out.append('UNRECORDED: %s is not a page of the program (stale)' % page)
+        elif any(v[1] == 'model' for k, v in tests.items() if k[0] == page):
+            out.append('UNRECORDED: %s has a test that is scored, and is held to the record' % page)
+    pages = sorted({p for p, _ in tests} - set(unrecorded))
     modeled = {k for k, v in tests.items() if v[1] == 'model'}
     program = open(os.path.join(vdir, 'script.tsv'), 'rb').read()
     def run_all(ua=None):

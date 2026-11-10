@@ -38,6 +38,12 @@ CASES = os.path.join(HERE, 'eval-corpus', 'cases.txt')
 
 # name, file, text (exactly once), replacement: the planted defects of the evaluator
 PLANTS = [
+    ('margin-trim-written-as-any-property', 'cssom_eval.py',
+     "    if key in ('marginTrim', 'margin-trim') and not st.computed:",
+     "    if False and key in ('marginTrim', 'margin-trim') and not st.computed:"),
+    ('guard-lets-a-push-to-an-array-of-the-page-through', 'cssom_eval.py',
+     "            if isinstance(callee, tuple) and callee[0] == 'mem' and callee[2] in ARRAY_MUTATORS and not (isinstance(callee[1], tuple) and callee[1][0] == 'id' and callee[1][1] in declared):\n                return False",
+     "            if False:\n                return False"),
     ('loop-unrolled-one-short', 'cssom_eval.py',
      "            if test is not None and not truthy(self.eval(test, loop)):\n                break\n            # a fresh binding",
      "            if test is not None and not truthy(self.eval(test, loop)):\n                break\n            if test is not None and test[0] == 'bin' and test[1] == '<' and truthy(self.eval(('bin', '>=', test[2], ('bin', '-', test[3], ('num', 1))), loop)):\n                break\n            # a fresh binding"),

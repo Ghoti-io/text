@@ -1,10 +1,10 @@
 # tools/css/census-wpt-script-pages.py: the pages of the pinned web-platform-tests css/ that touch the CSSOM IDL (and the pages whose rule vectors the extractor runs), with the
 # tests the extractor gives each, the test calls the census counts on its own, the markers of the page and the helper scripts it loads. See the script for the columns.
-# pin	2f17dec1f36194d1c236120fd38b3556be466072
-# pages	5398
-# tests	24272
-# calls	14008
-# calls-differ-pages	1136
+# pin	569958747e678ad0f7b5e8452c7ae3097e714bbe
+# pages	5585
+# tests	25120
+# calls	14462
+# calls-differ-pages	1188
 css/CSS2/abspos/adjacent-to-relpos-inline-in-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/adjacent-to-relpos-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/remove-block-between-inline-and-abspos.html	1	1	layout-geometry,reftest	
@@ -59,7 +59,9 @@ css/CSS2/floats/crashtests/float-dynamic-change-5.html	1	1	crash,layout-geometry
 css/CSS2/floats/crashtests/float-dynamic-change-6.html	1	1	crash,layout-geometry	
 css/CSS2/floats/crashtests/float-dynamic-change-7.html	1	1	crash,layout-geometry	
 css/CSS2/floats/float-dynamic-formatting-context.html	12	2	function,layout-geometry,loop	
+css/CSS2/floats/float-in-block-in-inline-001.html	1	1	function,layout-geometry,reftest	
 css/CSS2/floats/float-paint-relayout.html	1	1	layout-geometry,reftest	
+css/CSS2/floats/floats-in-inline-content-intrinsic-size-001.html	1	1	function,layout-geometry,loop	
 css/CSS2/floats/floats-wrap-bfc-with-margin-001.html	1	1	function,loop,reftest	
 css/CSS2/floats/floats-wrap-bfc-with-margin-001a.tentative.html	1	1	function,loop,reftest	
 css/CSS2/floats/floats-wrap-bfc-with-margin-002.tentative.html	1	1	function,loop,reftest	
@@ -181,6 +183,7 @@ css/CSS2/tables/table-anonymous-objects-152.xht	1	1	function,reftest
 css/CSS2/tables/table-anonymous-objects-153.xht	1	1	function,reftest	
 css/CSS2/tables/table-anonymous-objects-154.xht	1	1	function,reftest	
 css/CSS2/tables/table-anonymous-text-indent.xht	1	1	function,reftest	
+css/CSS2/tables/table-background-color-dynamic.html	1	1	reftest,timing	/common/reftest-wait.js,/common/rendering-utils.js
 css/CSS2/tables/table-cell-dynamic-color.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/CSS2/tables/tables-101.xht	1	1	function,layout-geometry,manual	
 css/CSS2/tables/tables-102.xht	1	1	function,manual,timing	
@@ -259,6 +262,7 @@ css/css-align/gaps/gap-animation-004.html	1	1	computed,function
 css/css-align/gaps/gap-normal-computed-001.html	6	6	computed,function	
 css/css-align/gaps/gap-parsing-001.html	26	26	computed,function	
 css/css-align/gaps/gap-parsing-002.html	8	16	function	/css/support/parsing-testcommon.js
+css/css-align/gaps/gap-serialization-cssom.html	3	3	function	
 css/css-align/gaps/grid-column-gap-parsing-001.html	18	18	computed,function	
 css/css-align/gaps/grid-gap-parsing-001.html	26	26	computed,function	
 css/css-align/gaps/grid-row-gap-parsing-001.html	18	18	computed,function	
@@ -268,19 +272,19 @@ css/css-align/gaps/row-gap-animation-003.html	1	1	computed,function
 css/css-align/gaps/row-gap-parsing-001.html	18	18	computed,function	
 css/css-align/multicol/align-content-multicol.html	32	1	function,layout-geometry,loop	
 css/css-align/parsing/align-content-computed.html	18	18	computed	/css/support/computed-testcommon.js
-css/css-align/parsing/align-items-computed.html	17	17	computed	/css/support/computed-testcommon.js
-css/css-align/parsing/align-self-computed.html	18	18	computed	/css/support/computed-testcommon.js
+css/css-align/parsing/align-items-computed.html	19	19	computed	/css/support/computed-testcommon.js
+css/css-align/parsing/align-self-computed.html	20	20	computed	/css/support/computed-testcommon.js
 css/css-align/parsing/column-gap-computed.html	5	5	computed	/css/support/computed-testcommon.js
 css/css-align/parsing/gap-computed.html	11	11	computed	/css/support/computed-testcommon.js
 css/css-align/parsing/grid-column-gap-computed.html	5	5	computed	/css/support/computed-testcommon.js
 css/css-align/parsing/grid-gap-computed.html	11	11	computed	/css/support/computed-testcommon.js
 css/css-align/parsing/grid-row-gap-computed.html	6	6	computed	/css/support/computed-testcommon.js
 css/css-align/parsing/justify-content-computed.html	18	18	computed	/css/support/computed-testcommon.js
-css/css-align/parsing/justify-items-computed.html	23	24	computed,function	/css/support/computed-testcommon.js
-css/css-align/parsing/justify-self-computed.html	20	20	computed	/css/support/computed-testcommon.js
+css/css-align/parsing/justify-items-computed.html	25	26	computed,function	/css/support/computed-testcommon.js
+css/css-align/parsing/justify-self-computed.html	22	22	computed	/css/support/computed-testcommon.js
 css/css-align/parsing/place-content-computed.html	25	25	computed	/css/support/computed-testcommon.js
-css/css-align/parsing/place-items-computed.html	20	21	computed,function	/css/support/computed-testcommon.js
-css/css-align/parsing/place-self-computed.html	18	18	computed	/css/support/computed-testcommon.js
+css/css-align/parsing/place-items-computed.html	24	25	computed,function	/css/support/computed-testcommon.js
+css/css-align/parsing/place-self-computed.html	23	23	computed	/css/support/computed-testcommon.js
 css/css-align/parsing/row-gap-computed.html	6	6	computed	/css/support/computed-testcommon.js
 css/css-align/self-alignment/parse-align-self-002.html	11	7	function	/css/css-align/resources/alignment-parsing-utils.js
 css/css-align/self-alignment/parse-align-self-003.html	5	1	function,loop	/css/css-align/resources/alignment-parsing-utils.js
@@ -293,6 +297,7 @@ css/css-anchor-position/anchor-center-offset-change.html	2	2	function,layout-geo
 css/css-anchor-position/anchor-center-visibility-change.html	1	1	frame-or-popup,function,reftest	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-anchor-position/anchor-display-none-crash.html	1	1	crash,function,timing	
 css/css-anchor-position/anchor-fallback-scroll-axis.html	1	1	function,layout-geometry,timing	
+css/css-anchor-position/anchor-fixedpos-nested-scroll-001.html	1	1	function,layout-geometry,loop,reftest,timing	support/test-common.js
 css/css-anchor-position/anchor-function-pseudo-element-basic.html	2	2	computed,function	
 css/css-anchor-position/anchor-function-pseudo-element-implicit-anchor.html	2	2	computed,function	
 css/css-anchor-position/anchor-function-zero-fallback.html	8	2	function	
@@ -316,6 +321,9 @@ css/css-anchor-position/anchor-scope-dynamic.html	4	4	computed,function
 css/css-anchor-position/anchor-scope-shadow-all.html	1	1	computed,function,shadow	
 css/css-anchor-position/anchor-scope-shadow-flat-tree.html	1	1	computed,function,shadow	
 css/css-anchor-position/anchor-scope-shadow-names.html	5	5	computed,function,shadow	
+css/css-anchor-position/anchor-scroll-012.html	1	1	function,layout-geometry,timing	/common/rendering-utils.js
+css/css-anchor-position/anchor-scroll-013.html	1	1	function,layout-geometry,timing	/common/rendering-utils.js
+css/css-anchor-position/anchor-scroll-014.html	1	1	function,layout-geometry,timing	/common/rendering-utils.js
 css/css-anchor-position/anchor-scroll-cleanup.html	3	3	function,layout-geometry,timing	support/test-common.js
 css/css-anchor-position/anchor-scroll-composited-scrolling-002-crash.html	1	1	crash,function,timing	
 css/css-anchor-position/anchor-scroll-composited-scrolling-003-crash.html	1	1	crash,function,timing	
@@ -473,6 +481,7 @@ css/css-animations/animation-delay-009.html	1	1	computed,function,reftest,timing
 css/css-animations/animation-delay-010.html	1	1	function,reftest,timing	
 css/css-animations/animation-important-001.html	9	7	computed,function,register-property,timing	
 css/css-animations/animation-important-with-transition.html	5	5	computed,function,timing	
+css/css-animations/animation-in-offscreen-iframe.html	1	1	function,timing	/web-animations/testcommon.js
 css/css-animations/animation-iteration-count-009.html	1	4	computed,function,timing	support/testcommon.js
 css/css-animations/animation-iteration-count-010.html	1	1	computed,function,loop	
 css/css-animations/animation-iteration-count-calc.html	1	1	computed,function	
@@ -606,7 +615,7 @@ css/css-backgrounds/parsing/background-position-computed.html	32	32	computed	/cs
 css/css-backgrounds/parsing/background-position-x-computed.html	19	19	computed	/css/support/computed-testcommon.js
 css/css-backgrounds/parsing/background-position-y-computed.html	19	19	computed	/css/support/computed-testcommon.js
 css/css-backgrounds/parsing/background-repeat-computed.html	13	13	computed	/css/support/computed-testcommon.js
-css/css-backgrounds/parsing/background-shorthand-serialization.html	11	11	function	
+css/css-backgrounds/parsing/background-shorthand-serialization.html	24	24	computed,function,loop	
 css/css-backgrounds/parsing/background-size-computed.html	16	16	computed	/css/support/computed-testcommon.js
 css/css-backgrounds/parsing/border-color-computed.html	8	8	computed	/css/support/computed-testcommon.js
 css/css-backgrounds/parsing/border-image-outset-computed.html	7	7	computed	/css/support/computed-testcommon.js
@@ -625,20 +634,22 @@ css/css-borders/border-shape/border-shape-outline-invalidation.html	1	1	function
 css/css-borders/border-shape/border-shape-stroke-invalidation.html	1	1	function,reftest,timing	
 css/css-borders/border-width-hairline.html	4	5	computed,function	/css/support/parsing-testcommon.js
 css/css-borders/border-width-rounding.tentative.html	22	2	computed,function,loop	
-css/css-borders/corner-shape/corner-block-start-writing-modes.html	3	1	computed,function	
+css/css-borders/corner-shape/corner-block-start-writing-modes.html	5	1	computed,function,loop	
+css/css-borders/corner-shape/corner-shape-ancestor-clip-dynamic.html	1	1	function,loop,reftest,timing	/common/reftest-wait.js,/common/rendering-utils.js
+css/css-borders/corner-shape/corner-shape-outside-content-box.html	7	1	function,layout-geometry,loop	
+css/css-borders/corner-shape/corner-shape-outside-corners.html	5	1	function,layout-geometry,loop	
 css/css-borders/corner-shape/corner-shape-outside-left.html	8	1	function,layout-geometry,loop	
+css/css-borders/corner-shape/corner-shape-outside-margin-box.html	7	1	function,layout-geometry,loop	
+css/css-borders/corner-shape/corner-shape-outside-padding-box.html	7	1	function,layout-geometry,loop	
 css/css-borders/corner-shape/corner-shape-outside-right.html	8	1	function,layout-geometry,loop	
+css/css-borders/corner-shape/corner-shape-outside-shape-margin.html	7	1	function,layout-geometry,loop	
+css/css-borders/corner-shape/corner-valid.html	26	27	function	/css/support/parsing-testcommon.js,/css/support/shorthand-testcommon.js
 css/css-borders/outline-offset-rounding.tentative.html	30	2	computed,function,loop	
+css/css-box/margin-trim/block-container-block-end-propagation-boundaries.html	10	2	computed,function,layout-geometry,loop	
 css/css-box/margin-trim/block-container-style-change-triggers-layout-block-end.html	1	1	layout-geometry,reftest	
 css/css-box/margin-trim/block-container-style-change-triggers-layout-block-start.html	1	1	layout-geometry,reftest	
 css/css-box/margin-trim/block-container-style-change-triggers-layout-block.html	1	1	layout-geometry,reftest	
-css/css-box/margin-trim/computed-margin-values/flexbox-column-style-change-triggers-layout-block-start.html	4	1	layout-geometry	/resources/check-layout-th.js
-css/css-box/margin-trim/flex-column-style-change-triggers-layout-block-end.html	1	1	layout-geometry,reftest	
-css/css-box/margin-trim/flex-column-style-change-triggers-layout-block-start.html	1	1	layout-geometry,reftest	
-css/css-box/margin-trim/flex-column-style-change-triggers-layout-block.html	1	1	layout-geometry,reftest	
-css/css-box/margin-trim/flex-row-style-change-triggers-layout-inline-end.html	1	1	layout-geometry,reftest	
-css/css-box/margin-trim/flex-row-style-change-triggers-layout-inline-start.html	1	1	layout-geometry,reftest	
-css/css-box/margin-trim/flex-row-style-change-triggers-layout-inline.html	1	1	layout-geometry,reftest	
+css/css-box/margin-trim/computed-margin-values/block-container-style-change-triggers-layout-block.html	4	4	computed,function	
 css/css-box/margin-trim/margin-trim-computed-value.html	9	9	computed,function,layout-geometry	
 css/css-box/negative-margin.html	8	8	function	
 css/css-box/parsing/clear-computed.html	6	6	computed	/css/support/computed-testcommon.js
@@ -666,6 +677,8 @@ css/css-break/chrome-bug-1287342-crash.html	1	1	crash,layout-geometry
 css/css-break/chrome-bug-1288769-000-crash.html	1	1	crash,layout-geometry	
 css/css-break/chrome-bug-1288769-001-crash.html	1	1	crash,layout-geometry	
 css/css-break/chrome-bug-1318455-crash.html	1	1	crash,function,timing	
+css/css-break/flexbox/auto-block-size-with-max-block-size-dynamic.html	2	2	function,layout-geometry,loop	
+css/css-break/flexbox/auto-block-size-with-max-block-size.html	3	2	function,layout-geometry,loop	
 css/css-break/flexbox/fixed-flex-item-inside-abs-flex-in-multicol-crash.html	1	1	crash,layout-geometry	
 css/css-break/flexbox/increase-fragmentainer-size-flex-item-trailing-margin.html	1	1	layout-geometry,reftest	
 css/css-break/float-012.html	1	1	layout-geometry,reftest	
@@ -705,6 +718,8 @@ css/css-cascade/all-prop-revert-layer.html	4	1	computed,function,loop,sheets,vie
 css/css-cascade/all-prop-revert-noop.html	2	1	computed,function,loop	/common/subset-tests-by-key.js,/html/resources/common.js
 css/css-cascade/at-scope-parsing.html	43	2	function,layout-geometry,sheets	
 css/css-cascade/at-scope-relative-syntax.html	8	1	function,loop,sheets	
+css/css-cascade/declaration-context.html	20	12	computed,function,loop,sheets	
+css/css-cascade/duplicate-stylesheets.html	17	17	computed,function,loop	
 css/css-cascade/idlharness.html	1	1	function,sheets	/resources/WebIDLParser.js,/resources/idlharness.js
 css/css-cascade/import-conditions.html	2	1	computed,function,loop,timing	
 css/css-cascade/import-mime-type-quirks.html	8	7	computed,function,timing	/common/get-host-info.sub.js
@@ -717,6 +732,7 @@ css/css-cascade/inline-style-background.html	1	1	function,layout-geometry
 css/css-cascade/inline-style-revert-layer-crash.html	1	1	crash,layout-geometry	
 css/css-cascade/layer-basic.html	34	1	computed,function,loop	
 css/css-cascade/layer-counter-style-override.html	2	1	computed,function,layout-geometry,loop	
+css/css-cascade/layer-cssom-insert-after-style.html	12	2	computed,function,loop,shadow,sheets	
 css/css-cascade/layer-cssom-order-reverse-at-property.html	2	1	computed,function,loop,sheets	
 css/css-cascade/layer-cssom-order-reverse.html	2	1	computed,fonts,function,layout-geometry,loop,sheets,timing	
 css/css-cascade/layer-font-face-override.html	2	1	computed,fonts,function,layout-geometry,loop,timing	
@@ -725,6 +741,7 @@ css/css-cascade/layer-important.html	9	1	computed,function,loop
 css/css-cascade/layer-keyframes-override.html	2	1	computed,function,layout-geometry,loop	
 css/css-cascade/layer-media-query.html	4	1	computed,frame-or-popup,function,loop,timing	
 css/css-cascade/layer-media-toggle.html	1	1	layout-geometry,reftest	
+css/css-cascade/layer-order-invalidation-shadow-dom.html	3	3	computed,function,shadow,sheets	
 css/css-cascade/layer-property-override.html	2	1	computed,function,layout-geometry,loop	
 css/css-cascade/layer-replaceSync-clears-stale.html	1	1	computed,function,loop,sheets	
 css/css-cascade/layer-rule-invalid-name.html	4	4	function,sheets	
@@ -774,6 +791,7 @@ css/css-cascade/scope-import-parent-pseudo.html	2	2	computed,function
 css/css-cascade/scope-import-scope-end.html	2	2	computed,function	
 css/css-cascade/scope-import-scope-pseudo.html	1	1	computed,function	
 css/css-cascade/scope-import-scope-start.html	2	2	computed,function	
+css/css-cascade/scope-insert-rule.html	5	5	computed,function,sheets	
 css/css-cascade/scope-invalidation.html	32	1	computed,function,loop,sheets	
 css/css-cascade/scope-layer.html	1	1	computed,function	
 css/css-cascade/scope-media.html	1	1	computed,function	
@@ -802,6 +820,7 @@ css/css-color-adjust/rendering/dark-color-scheme/color-scheme-iframe-preferred-c
 css/css-color-adjust/rendering/dark-color-scheme/color-scheme-iframe-preferred-nested.sub.html	7	1	computed,function,timing	
 css/css-color-adjust/rendering/dark-color-scheme/color-scheme-root-background.html	1	1	computed,function	
 css/css-color-adjust/rendering/dark-color-scheme/color-scheme-system-colors.html	1	1	computed,function	
+css/css-color-adjust/rendering/dark-color-scheme/prefers-color-scheme-meta-dynamic.html	3	2	function,media,timing	
 css/css-color/body-opacity-0-to-1-stacking-context.html	1	1	function,reftest	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-color/canvas-change-opacity.html	1	1	function,reftest	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-color/color-initial-canvastext.html	2	2	computed,function	
@@ -817,7 +836,7 @@ css/css-color/currentcolor-005.html	1	1	function,reftest,timing
 css/css-color/filters-under-will-change-opacity.html	1	1	function,reftest	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-color/light-dark-basic.html	4	1	computed,function,loop,media	
 css/css-color/light-dark-currentcolor-in-color.html	1	1	computed,function	
-css/css-color/light-dark-image.html	32	6	computed,function,loop	
+css/css-color/light-dark-image.html	35	6	computed,function,loop,media	
 css/css-color/nested-color-mix-with-currentcolor.html	2	2	computed,function	
 css/css-color/parsing/alpha-color-computed.html	34	28	function	/css/support/color-testcommon.js,/css/support/computed-testcommon.js
 css/css-color/parsing/color-computed-color-function.html	234	1	function,loop	/css/support/computed-testcommon.js
@@ -862,6 +881,7 @@ css/css-conditional/container-queries/container-for-shadow-dom.html	1	21	compute
 css/css-conditional/container-queries/container-inner-at-rules.html	1	6	computed,fonts,function,timing	support/cq-testcommon.js
 css/css-conditional/container-queries/container-inside-multicol-with-table.html	1	2	computed,function	support/cq-testcommon.js
 css/css-conditional/container-queries/container-longhand-animation-type.html	1	3	computed,function	support/cq-testcommon.js
+css/css-conditional/container-queries/container-name-host-slotted-tree-scoped.html	2	2	computed,function,shadow	
 css/css-conditional/container-queries/container-name-invalidation.html	1	2	computed,function	support/cq-testcommon.js
 css/css-conditional/container-queries/container-name-tree-scoped.html	1	4	computed,function,shadow	support/cq-testcommon.js
 css/css-conditional/container-queries/container-nested.html	1	14	computed,function	support/cq-testcommon.js
@@ -1034,6 +1054,7 @@ css/css-conditional/container-queries/size-container-auto-height.html	1	1	comput
 css/css-conditional/container-queries/size-container-no-principal-box.html	1	6	computed,function	support/cq-testcommon.js
 css/css-conditional/container-queries/size-container-writing-mode-change.html	1	2	computed,function	support/cq-testcommon.js
 css/css-conditional/container-queries/size-feature-evaluation.html	29	1	computed,function,loop	support/cq-testcommon.js
+css/css-conditional/container-queries/size-feature-fractional.html	19	1	computed,function,loop	support/cq-testcommon.js
 css/css-conditional/container-queries/size-query-with-var.html	1	1	computed,function,loop	support/cq-testcommon.js
 css/css-conditional/container-queries/style-change-in-container.html	1	1	computed,function	support/cq-testcommon.js
 css/css-conditional/container-queries/style-container-for-shadow-dom.html	1	12	computed,function,shadow	support/cq-testcommon.js
@@ -1042,8 +1063,10 @@ css/css-conditional/container-queries/style-not-sharing-float.html	1	1	computed,
 css/css-conditional/container-queries/style-query-attr-change-svg.html	1	3	computed,function	support/cq-testcommon.js
 css/css-conditional/container-queries/style-query-change-with-ancestor-zoom.html	1	3	computed,function	support/cq-testcommon.js
 css/css-conditional/container-queries/style-query-container-name-change.html	1	1	computed,function	support/cq-testcommon.js
+css/css-conditional/container-queries/style-query-custom-attr-braces-change.html	1	4	computed,function	support/cq-testcommon.js
 css/css-conditional/container-queries/style-query-custom-attr-change-named-container.html	1	2	computed,function	support/cq-testcommon.js
 css/css-conditional/container-queries/style-query-custom-attr-change.html	1	2	computed,function	support/cq-testcommon.js
+css/css-conditional/container-queries/style-query-custom-attr-nested-name-change.html	1	2	computed,function	support/cq-testcommon.js
 css/css-conditional/container-queries/style-query-document-element.html	1	1	computed,function	support/cq-testcommon.js
 css/css-conditional/container-queries/style-query-guaranteed-invalid.tentative.html	1	1	computed,function	support/cq-testcommon.js
 css/css-conditional/container-queries/style-query-no-cycle.html	1	1	computed,function	support/cq-testcommon.js
@@ -1079,7 +1102,7 @@ css/css-conditional/js/CSS-supports-CSSStyleDeclaration.html	1495	4	function,loo
 css/css-conditional/js/conditional-CSSGroupingRule.html	17	17	function,loop,sheets	
 css/css-conditional/js/supports-conditionText.html	15	1	function,sheets	
 css/css-conditional/match-container-change-event.tentative.html	17	17	frame-or-popup,function,shadow,timing	/common/rendering-utils.js
-css/css-conditional/match-container.tentative.html	14	16	computed,frame-or-popup,function,layout-geometry,loop,timing	
+css/css-conditional/match-container.tentative.html	13	15	computed,frame-or-popup,function,layout-geometry,loop,timing	
 css/css-conditional/supports-basic.html	1	1	function,layout-geometry,sheets	
 css/css-contain/contain-flexbox-outline.html	1	1	function,layout-geometry	
 css/css-contain/contain-inline-size-removed.html	1	1	function,reftest,timing	
@@ -1128,6 +1151,7 @@ css/css-contain/content-visibility/content-visibility-animation-in-auto-subtree.
 css/css-contain/content-visibility/content-visibility-animation-with-scroll-timeline-in-auto-subtree.html	1	1	computed,function,layout-geometry,timing	/web-animations/testcommon.js
 css/css-contain/content-visibility/content-visibility-animation-with-scroll-timeline-in-hidden-subtree.html	1	1	computed,function,layout-geometry,timing	/web-animations/testcommon.js
 css/css-contain/content-visibility/content-visibility-auto-state-changed-first-observation.html	2	2	function,timing	
+css/css-contain/content-visibility/content-visibility-hidden-backdrop.html	1	1	frame-or-popup,reftest	
 css/css-contain/content-visibility/content-visibility-hidden-boundingbox-query.html	1	1	function,layout-geometry,timing	
 css/css-contain/content-visibility/content-visibility-hidden-offsetTop-left-width-height.html	1	1	function,layout-geometry	
 css/css-contain/content-visibility/content-visibility-hidden-scrollTop-left-width-height.html	1	1	function,layout-geometry	
@@ -1141,6 +1165,9 @@ css/css-contain/content-visibility/content-visibility-paint-containment-004.html
 css/css-contain/content-visibility/content-visibility-resize-observer-no-error.html	1	1	function,reftest	
 css/css-contain/content-visibility/content-visibility-size-containment-001.html	14	13	function,layout-geometry,timing	/common/rendering-utils.js
 css/css-contain/content-visibility/content-visibility-style-containment-001.html	8	8	fonts,function,layout-geometry,timing	/common/rendering-utils.js
+css/css-contain/content-visibility/content-visibility-svg-gradient-unlock.html	1	1	function,reftest,timing	/common/reftest-wait.js
+css/css-contain/content-visibility/content-visibility-svg-gradient.html	1	1	function,reftest,timing	/common/reftest-wait.js
+css/css-contain/content-visibility/content-visibility-svg-resources.html	1	1	function,reftest,shadow,timing	/common/reftest-wait.js
 css/css-contain/content-visibility/content-visibility-vs-scrollIntoView-002.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-contain/content-visibility/content-visibility-web-animation-in-auto-subtree.html	1	1	function,timing	/web-animations/testcommon.js
 css/css-contain/content-visibility/crashtests/area-focus-in-hidden.html	1	1	crash,function,layout-geometry,timing	/common/rendering-utils.js
@@ -1172,10 +1199,12 @@ css/css-content/crashtests/content-disallowed-url.html	1	1	computed,crash
 css/css-content/element-replacement-dynamic-002.html	1	1	computed,function,layout-geometry	/css/support/interpolation-testcommon.js
 css/css-content/element-replacement-gradient-scale-root-crash.html	1	1	crash,function	
 css/css-content/parsing/content-computed.html	30	5	computed,function	/css/support/computed-testcommon.js
+css/css-content/quotes-030.html	1	1	reftest	
 css/css-counter-styles/cssom/cssom-additive-symbols-setter-invalid.html	1	1	layout-geometry,reftest,sheets	
 css/css-counter-styles/cssom/cssom-additive-symbols-setter.html	1	1	layout-geometry,reftest,sheets	
 css/css-counter-styles/cssom/cssom-fallback-setter-invalid.html	1	1	layout-geometry,reftest,sheets	
 css/css-counter-styles/cssom/cssom-fallback-setter.html	1	1	layout-geometry,reftest,sheets	
+css/css-counter-styles/cssom/cssom-name-setter-getter.html	4	4	function,sheets	
 css/css-counter-styles/cssom/cssom-name-setter-invalid.html	1	1	layout-geometry,reftest,sheets	
 css/css-counter-styles/cssom/cssom-name-setter.html	1	1	layout-geometry,reftest,sheets	
 css/css-counter-styles/cssom/cssom-negative-setter-invalid.html	1	1	layout-geometry,reftest,sheets	
@@ -1207,6 +1236,7 @@ css/css-display/display-contents-dynamic-flex-003-inline.html	1	1	function,refte
 css/css-display/display-contents-dynamic-flex-003-none.html	1	1	function,reftest	support/util.js
 css/css-display/display-contents-dynamic-inline-flex-001-inline.html	1	1	function,reftest	support/util.js
 css/css-display/display-contents-dynamic-inline-flex-001-none.html	1	1	function,reftest	support/util.js
+css/css-display/display-contents-dynamic-inline-parent-style.html	1	1	layout-geometry,reftest	
 css/css-display/display-contents-dynamic-list-001-inline.html	1	1	function,reftest	support/util.js
 css/css-display/display-contents-dynamic-list-001-none.html	1	1	function,reftest	support/util.js
 css/css-display/display-contents-dynamic-multicol-001-inline.html	1	1	function,reftest	support/util.js
@@ -1219,6 +1249,7 @@ css/css-display/display-contents-focusable-001.html	1	1	computed,function,layout
 css/css-display/display-contents-parsing-001.html	1	1	computed,function	
 css/css-display/display-contents-shadow-dom-1.html	1	1	function,layout-geometry,reftest,shadow,timing	
 css/css-display/display-contents-svg-pseudo-crash.html	1	1	crash,function,layout-geometry	
+css/css-display/display-contents-svg-tspan-child-display-changed.html	1	1	function	
 css/css-display/display-contents-text-inherit-002.html	1	1	layout-geometry,reftest	
 css/css-display/display-first-letter-001.html	1	1	computed,function	
 css/css-display/display-first-line-001.html	1	1	computed,function	
@@ -1236,8 +1267,9 @@ css/css-display/empty-text-baseline-002.html	1	2	fonts,function,layout-geometry,
 css/css-display/order-dynamic.html	1	1	function,reftest	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-display/parsing/display-computed.html	113	109	computed,function,loop	/css/support/computed-testcommon.js
 css/css-display/parsing/tentative/display-computed.html	11	7	computed,function	/css/support/computed-testcommon.js
-css/css-display/reading-flow/tentative/reading-flow-computed.html	7	7	computed	/css/support/computed-testcommon.js
-css/css-display/reading-flow/tentative/reading-order-computed.html	4	4	computed	/css/support/computed-testcommon.js
+css/css-display/reading-flow/reading-flow-computed.html	7	7	computed	/css/support/computed-testcommon.js
+css/css-display/reading-flow/reading-flow-grid-lanes-computed.tentative.html	3	3	computed	/css/support/computed-testcommon.js
+css/css-display/reading-flow/reading-order-computed.html	4	4	computed	/css/support/computed-testcommon.js
 css/css-display/textarea-display.html	1	1	computed,function	
 css/css-easing/cubic-bezier-timing-functions-output.html	1	4	computed,function,timing	testcommon.js
 css/css-easing/linear-timing-functions-output.html	1	5	computed,function,timing	support/util.js,testcommon.js
@@ -1249,9 +1281,9 @@ css/css-env/env-fallback-substitution.html	11	3	computed,function,loop
 css/css-env/env-in-custom-properties.tentative.html	2	2	computed,function	
 css/css-env/env-revert-rule.html	1	1	computed,function,media	
 css/css-env/fallback-nested-var.tentative.html	1	1	computed,function	
-css/css-env/indexed-env.tentative.html	8	2	function,loop	
+css/css-env/indexed-env.tentative.html	11	2	function,loop	
 css/css-env/seralization-round-tripping.tentative.html	1	1	function	
-css/css-env/syntax.tentative.html	18	1	computed,function,loop	
+css/css-env/syntax.tentative.html	25	1	computed,function,loop	
 css/css-env/unknown-env-names-override-previous.tentative.html	1	1	computed,function	
 css/css-flexbox/abspos/abspos-descendent-001.html	1	1	function,layout-geometry	/resources/check-layout-th.js
 css/css-flexbox/abspos/dynamic-align-self-001.html	1	1	layout-geometry,reftest	
@@ -1297,7 +1329,12 @@ css/css-flexbox/flex-aspect-ratio-img-row-016.html	1	1	layout-geometry,reftest
 css/css-flexbox/flex-aspect-ratio-percentage-height-stale-width.html	1	1	layout-geometry,reftest	
 css/css-flexbox/flex-aspect-ratio-resize-001.html	1	1	layout-geometry,reftest	
 css/css-flexbox/flex-basis-013.html	4	1	loop	/resources/check-layout-th.js
+css/css-flexbox/flex-basis-min-content-dynamic-001.html	2	1	layout-geometry	/resources/check-layout-th.js
 css/css-flexbox/flex-column-relayout-assert.html	1	1	layout-geometry	/resources/check-layout-th.js
+css/css-flexbox/flex-item-aspect-ratio-svg-use-symbol-002.html	1	1	layout-geometry,reftest	
+css/css-flexbox/flex-item-min-max-width-intrinsic-contribution-001.html	4	1	layout-geometry,loop	/resources/check-layout-th.js
+css/css-flexbox/flex-item-z-ordering-003.html	1	1	function,reftest	/common/reftest-wait.js,/common/rendering-utils.js
+css/css-flexbox/flex-item-z-ordering-004.html	1	1	function,reftest	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-flexbox/flex-minimum-height-flex-items-009.html	1	1	function,layout-geometry	/resources/check-layout-th.js
 css/css-flexbox/flex-minimum-height-flex-items-010.html	1	1	function,layout-geometry	/resources/check-layout-th.js
 css/css-flexbox/flex-minimum-height-flex-items-019.html	1	1	function,layout-geometry,reftest	
@@ -1387,7 +1424,10 @@ css/css-flexbox/getcomputedstyle/flexbox_computedstyle_order-negative.html	1	1	c
 css/css-flexbox/getcomputedstyle/flexbox_computedstyle_order.html	1	1	computed,function	
 css/css-flexbox/grid-flex-item-005.html	1	1	layout-geometry,reftest	
 css/css-flexbox/intrinsic-size/col-wrap-009.html	1	1	layout-geometry,reftest	
+css/css-flexbox/intrinsic-size/col-wrap-dynamic-002.html	4	1	layout-geometry,loop	/resources/check-layout-th.js
 css/css-flexbox/intrinsic-size/col-wrap-dynamic.html	1	1	layout-geometry,reftest	
+css/css-flexbox/intrinsic-size/col-wrap-percentage-001.html	2	1	layout-geometry,loop	/resources/check-layout-th.js
+css/css-flexbox/intrinsic-size/percentage-gap-001.html	2	1	layout-geometry,loop	/resources/check-layout-th.js
 css/css-flexbox/intrinsic-size/row-008.html	1	1	function,loop	/resources/check-layout-th.js
 css/css-flexbox/justify-content-rounding.html	1	1	function,layout-geometry,loop	
 css/css-flexbox/main-axis-margin-rounding.html	1	1	function,layout-geometry,loop	
@@ -1404,7 +1444,7 @@ css/css-flexbox/parsing/flex-flow-computed.html	2	2	computed	/css/support/comput
 css/css-flexbox/parsing/flex-grow-computed.html	4	4	computed	/css/support/computed-testcommon.js
 css/css-flexbox/parsing/flex-shrink-computed.html	4	4	computed	/css/support/computed-testcommon.js
 css/css-flexbox/parsing/flex-wrap-computed.html	3	3	computed	/css/support/computed-testcommon.js
-css/css-flexbox/parsing/order-computed.html	3	3	computed	/css/support/computed-testcommon.js
+css/css-flexbox/parsing/order-computed.html	7	7	computed	/css/support/computed-testcommon.js
 css/css-flexbox/percent-height-flex-items-cross-sizes-with-mutations.html	5	1	function,layout-geometry,loop	
 css/css-flexbox/percentage-heights-011.html	2	1	function,layout-geometry	/resources/check-layout-th.js
 css/css-flexbox/percentage-heights-012.html	1	1	function	/resources/check-layout-th.js
@@ -1417,6 +1457,7 @@ css/css-flexbox/stretch-after-sibling-size-change.html	2	1	function	/resources/c
 css/css-flexbox/table-as-item-change-cell.html	1	1	layout-geometry,reftest	
 css/css-font-loading/fontface-css-connected-descriptors.html	1	12	fonts,function,timing	
 css/css-font-loading/fontface-descriptor-updates-2.html	3	3	fonts,function,layout-geometry,loop,timing	
+css/css-font-loading/fontfaceset-check-error-status.html	1	1	fonts,function,layout-geometry,timing	
 css/css-fonts/animations/font-palette-animation-not-specified-endpoints.html	2	2	computed,fonts,function,timing	
 css/css-fonts/animations/font-palette-interpolation.html	4	6	computed,function,loop,timing	/css/support/interpolation-testcommon.js
 css/css-fonts/animations/font-stretch-interpolation.html	9	10	computed,function,timing	/css/support/interpolation-testcommon.js
@@ -1433,7 +1474,9 @@ css/css-fonts/font-family-comma.html	5	5	function
 css/css-fonts/font-family-src-quoted.html	1	1	fonts,function,sheets	
 css/css-fonts/font-feature-settings-serialization-001.html	2	2	computed,function	
 css/css-fonts/font-feature-values-map-live.html	2	2	function,sheets	
+css/css-fonts/font-feature-values-map-order.html	6	6	function,loop,sheets	
 css/css-fonts/font-feature-values-sameobject.tentative.html	1	1	function,loop,sheets	
+css/css-fonts/font-feature-values-serialization-order.html	10	10	function,sheets	
 css/css-fonts/font-palette-add-2.html	1	1	fonts,function,reftest,timing	
 css/css-fonts/font-palette-add.html	1	1	fonts,function,reftest,timing	
 css/css-fonts/font-palette-modify-2.html	1	1	fonts,function,reftest,timing	
@@ -1510,7 +1553,7 @@ css/css-fonts/variable-in-font-variation-settings.html	1	1	computed,function
 css/css-fonts/variations/at-font-face-descriptors.html	4	1	fonts,function,loop,sheets	
 css/css-fonts/variations/at-font-face-font-matching.html	7	2	fonts,function,layout-geometry,loop,timing	
 css/css-fonts/variations/font-shorthand.html	22	1	computed,function,loop,media	
-css/css-fonts/variations/font-stretch.html	51	5	computed,function,loop,media	
+css/css-fonts/variations/font-stretch.html	50	5	computed,function,loop,media	
 css/css-fonts/variations/font-style-interpolation.html	2	2	computed,function,timing	
 css/css-fonts/variations/font-style-parsing.html	43	2	computed,function,loop,media	
 css/css-fonts/variations/font-variation-settings-inherit.html	3	3	computed,function	
@@ -1681,11 +1724,14 @@ css/css-grid/chrome-crash-001.html	1	1	function,layout-geometry
 css/css-grid/computed-grid-column.html	1	1	computed,function	
 css/css-grid/dynamic-grid-with-auto-fill.html	1	1	layout-geometry,reftest	
 css/css-grid/dynamic-grid-within-flexbox.html	1	1	layout-geometry,reftest	
+css/css-grid/firefox-bug-2084787.html	1	1	frame-or-popup,function,layout-geometry,timing	
 css/css-grid/grid-definition/fit-content-track-sizing.html	13	13	computed,function	
+css/css-grid/grid-definition/grid-auto-fit-out-of-flow-shrink-crash.html	1	1	crash,layout-geometry	
 css/css-grid/grid-definition/grid-auto-repeat-dynamic-001.html	1	1	layout-geometry,reftest	
 css/css-grid/grid-definition/grid-auto-repeat-dynamic-002.html	1	1	layout-geometry,reftest	
 css/css-grid/grid-definition/grid-auto-repeat-dynamic-003.html	1	1	layout-geometry,reftest	
 css/css-grid/grid-definition/grid-auto-repeat-positioned-container-001.html	1	1	computed,reftest	
+css/css-grid/grid-definition/grid-auto-repeat-rows-dynamic-height-001.html	4	1	layout-geometry,loop	/resources/check-layout-th.js
 css/css-grid/grid-definition/grid-change-auto-repeat-tracks.html	24	1	function,loop	/resources/check-layout-th.js
 css/css-grid/grid-definition/grid-change-fit-content-argument-001.html	3	1	fonts,function,timing	/resources/check-layout-th.js
 css/css-grid/grid-definition/grid-change-intrinsic-size-with-auto-repeat-tracks-001.html	5	1	function,loop	/resources/check-layout-th.js
@@ -1711,6 +1757,7 @@ css/css-grid/grid-important.html	1	1	function
 css/css-grid/grid-items/aspect-ratio-grid-item-dynamic-container-shrink-001.html	1	1	layout-geometry,reftest	
 css/css-grid/grid-items/grid-item-dynamic-min-contribution-001.html	7	1	computed,function,loop	
 css/css-grid/grid-items/grid-item-min-auto-size-001.html	3	1	computed,function,loop	
+css/css-grid/grid-items/grid-item-min-block-size-dynamic-container-shrink-001.html	1	1	function,layout-geometry	
 css/css-grid/grid-items/grid-items-percentage-margins-003.html	1	1	layout-geometry,reftest	
 css/css-grid/grid-items/grid-items-percentage-margins-004.html	1	1	layout-geometry,reftest	
 css/css-grid/grid-items/grid-items-percentage-margins-005.html	1	1	layout-geometry,reftest	
@@ -1756,7 +1803,7 @@ css/css-grid/grid-lanes/invalidation/grid-lanes-grid-template-columns-changes-00
 css/css-grid/grid-lanes/invalidation/grid-lanes-grid-template-rows-changes-001.html	1	1	function	/resources/check-layout-th.js
 css/css-grid/grid-lanes/invalidation/grid-lanes-pack-dynamic-change.html	1	1	layout-geometry,reftest	
 css/css-grid/grid-lanes/invalidation/grid-lanes-row-tracks-recompute-child-positions-001.html	1	1	function,loop	/resources/check-layout-th.js
-css/css-grid/grid-lanes/item-placement/flow-tolerance/flow-tolerance-dynamic-update.html	1	1	function,reftest	
+css/css-grid/grid-lanes/item-placement/fit-tolerance/fit-tolerance-dynamic-update.html	1	1	function,reftest	
 css/css-grid/grid-lanes/item-placement/grid-lanes-rows-with-grid-width-changed.html	1	1	layout-geometry,reftest	
 css/css-grid/grid-lanes/items/column-automatic-minimum-for-auto.html	2	4	computed,fonts,function,timing	
 css/css-grid/grid-lanes/items/column-fit-content-percentage.html	1	1	computed,function,layout-geometry,loop	
@@ -1767,6 +1814,9 @@ css/css-grid/grid-lanes/items/row-automatic-minimum-for-auto.html	2	4	computed,f
 css/css-grid/grid-lanes/items/row-flex-track-intrinsic-sizes.html	105	1	function	../../grid-definition/support/testing-utils.js
 css/css-grid/grid-lanes/items/row-intrinsic-track-sizes.html	1	1	fonts,function,timing	../../grid-definition/support/testing-utils.js
 css/css-grid/grid-lanes/items/row-minimum-contribution-with-percentages.html	8	1	computed,function	
+css/css-grid/grid-lanes/subgrid/grid-lanes-subgridded-to-grid-lanes/track-sizing/column-auto-placed-subgrid-standalone-rows-007.html	1	1	function,layout-geometry,reftest,timing	
+css/css-grid/grid-lanes/subgrid/grid-lanes-subgridded-to-grid-lanes/track-sizing/row-subgrid-with-scrollbar-002.html	2	2	function,layout-geometry,loop	
+css/css-grid/grid-lanes/subgrid/grid-lanes-subgridded-to-grid-lanes/track-sizing/row-subgrid-with-scrollbar-003.html	1	1	function,layout-geometry,loop	
 css/css-grid/grid-lanes/subgrid/grid-subgridded-to-grid-lanes/alignment/column-subgrid-alignment-in-subgridded-axis-002.html	1	1	loop,reftest	
 css/css-grid/grid-lanes/subgrid/grid-subgridded-to-grid-lanes/alignment/row-subgrid-alignment-in-subgridded-axis-002.html	1	1	loop,reftest	
 css/css-grid/grid-lanes/subgrid/grid-subgridded-to-grid-lanes/column-subgrid-placement-invalidation-001.html	3	1	layout-geometry	/resources/check-layout-th.js
@@ -1801,7 +1851,7 @@ css/css-grid/grid-lanes/subgrid/grid-subgridded-to-grid-lanes/track-sizing/row-s
 css/css-grid/grid-lanes/subgrid/grid-subgridded-to-grid-lanes/track-sizing/row-subgrid-auto-repeat-auto-002.html	1	1	computed,function	
 css/css-grid/grid-lanes/subgrid/grid-subgridded-to-grid-lanes/track-sizing/row-subgrid-auto-repeat-auto-003.html	1	1	computed,function	
 css/css-grid/grid-lanes/subgrid/grid-subgridded-to-grid-lanes/track-sizing/row-subgrid-auto-repeat-auto-004.html	1	1	computed,function	
-css/css-grid/grid-lanes/tentative/parsing/flow-tolerance-computed.html	7	7	computed	/css/support/computed-testcommon.js
+css/css-grid/grid-lanes/tentative/parsing/fit-tolerance-computed.html	7	7	computed	/css/support/computed-testcommon.js
 css/css-grid/grid-lanes/tentative/parsing/grid-lanes-direction-computed.html	11	11	computed	/css/support/computed-testcommon.js,/css/support/inheritance-testcommon.js
 css/css-grid/grid-lanes/tentative/parsing/grid-lanes-pack-computed.html	2	2	computed	/css/support/computed-testcommon.js,/css/support/inheritance-testcommon.js
 css/css-grid/grid-lanes/tentative/parsing/grid-lanes-shorthand-computed.html	14	14	computed	/css/support/computed-testcommon.js,/css/support/inheritance-testcommon.js
@@ -1844,6 +1894,8 @@ css/css-grid/layout-algorithm/baseline-alignment-affects-intrinsic-size-003.html
 css/css-grid/layout-algorithm/baseline-alignment-affects-intrinsic-size-004.html	1	1	fonts,function,loop,timing	/resources/check-layout-th.js
 css/css-grid/layout-algorithm/baseline-alignment-affects-intrinsic-size-005.html	1	1	fonts,function,loop,timing	/resources/check-layout-th.js
 css/css-grid/layout-algorithm/baseline-alignment-affects-intrinsic-size-006.html	1	1	fonts,function,loop,timing	/resources/check-layout-th.js
+css/css-grid/layout-algorithm/flex-sizing-rows-min-max-height-002.html	14	14	computed,function,layout-geometry	
+css/css-grid/layout-algorithm/grid-auto-row-regrows-after-container-height-shrinks-001.html	1	1	function,layout-geometry	
 css/css-grid/layout-algorithm/grid-automatic-minimum-for-auto-columns-001.html	2	4	computed,fonts,function,timing	
 css/css-grid/layout-algorithm/grid-automatic-minimum-for-auto-rows-001.html	2	4	computed,fonts,function,timing	
 css/css-grid/layout-algorithm/grid-fit-content-percentage.html	1	1	computed,function,layout-geometry,loop	
@@ -1905,6 +1957,7 @@ css/css-grid/subgrid/grid-template-computed-nogrid.html	50	50	computed	/css/supp
 css/css-grid/subgrid/line-names-001.html	1	1	computed,function,loop,reftest	
 css/css-grid/subgrid/line-names-004.html	1	1	computed,function,loop,reftest	
 css/css-grid/subgrid/line-names-005.html	1	1	computed,function,loop,reftest	
+css/css-grid/subgrid/nested-grid-subgrid-resize.html	1	1	function,layout-geometry,loop	
 css/css-grid/subgrid/parent-repeat-auto-fit-001.html	1	1	computed,function,loop,reftest	
 css/css-grid/subgrid/parent-repeat-auto-fit-002.html	1	1	computed,function,loop,reftest	
 css/css-grid/subgrid/placement-invalidation-001.html	3	1	layout-geometry	/resources/check-layout-th.js
@@ -1919,8 +1972,9 @@ css/css-grid/table-grid-item-dynamic-003.html	1	1	function,layout-geometry,refte
 css/css-grid/table-grid-item-dynamic-004.html	1	1	function,layout-geometry,reftest	
 css/css-grid/whitespace-reattach.html	1	1	layout-geometry,reftest	
 css/css-highlight-api/HighlightRegistry-highlightsFromPoint.html	8	8	function,layout-geometry	
-css/css-highlight-api/custom-highlight-universal-escaped-star.tentative.html	1	1	computed,function	
-css/css-highlight-api/custom-highlight-universal-parsing-and-computed-style.tentative.html	8	10	computed,function	/css/support/parsing-testcommon.js
+css/css-highlight-api/custom-highlight-animation-properties.tentative.html	4	1	computed,function,loop	
+css/css-highlight-api/custom-highlight-universal-escaped-star.html	1	1	computed,function	
+css/css-highlight-api/custom-highlight-universal-parsing-and-computed-style.html	8	10	computed,function	/css/support/parsing-testcommon.js
 css/css-highlight-api/highlight-pseudo-computed.html	12	3	computed,function,loop	
 css/css-highlight-api/highlight-pseudo-from-font-computed.html	10	3	computed,function	
 css/css-highlight-api/painting/custom-highlight-dynamic-font-metrics-001.html	1	1	function,reftest,timing	
@@ -1958,7 +2012,11 @@ css/css-images/image-orientation/image-orientation-none-cross-origin-canvas-patt
 css/css-images/image-orientation/image-orientation-none-cross-origin-canvas.html	1	1	function,loop,reftest	/common/get-host-info.sub.js
 css/css-images/image-orientation/image-orientation-none-cross-origin-svg.html	1	1	function,loop,reftest	/common/get-host-info.sub.js,/common/reftest-wait.js,/common/rendering-utils.js
 css/css-images/linear-gradient-viewport-units-invalidation.html	1	1	frame-or-popup,function,reftest,timing	/common/reftest-wait.js
+css/css-images/object-fit-change-svg-001o.html	1	1	function,reftest,timing	
+css/css-images/object-fit-embedded-svg-dynamic-change.html	1	1	function,layout-geometry,loop,reftest,timing	
+css/css-images/object-fit-embedded-svg-root-will-change-dynamic-change.html	1	1	function,layout-geometry,loop,reftest,timing	
 css/css-images/object-view-box-auto-size-relayout.html	1	1	function,reftest,timing	
+css/css-images/object-view-box-embedded-svg-dynamic-change.html	1	1	function,layout-geometry,loop,reftest,timing	
 css/css-images/object-view-box-property-changed.html	1	1	function,reftest,timing	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-images/object-view-box-transition-mutation.html	1	1	computed,function	
 css/css-images/parsing/gradient-interpolation-method-computed.html	17	4	computed,function,loop	/css/support/computed-testcommon.js
@@ -1966,6 +2024,7 @@ css/css-images/parsing/image-orientation-computed.html	2	2	computed	/css/support
 css/css-images/parsing/image-rendering-computed.html	5	5	computed	/css/support/computed-testcommon.js
 css/css-images/parsing/object-fit-computed.html	6	6	computed	/css/support/computed-testcommon.js
 css/css-images/parsing/object-position-computed.html	16	16	computed	/css/support/computed-testcommon.js
+css/css-inline/atomic-inline-intrinsic-size-001.html	1	1	function,layout-geometry,loop	
 css/css-inline/baseline-source/baseline-source-vertical-align.html	1	1	computed,function	
 css/css-inline/change-inline-change-abspos-crash.html	1	1	crash,layout-geometry	
 css/css-inline/empty-span-height.html	1	1	layout-geometry,reftest	
@@ -1973,7 +2032,7 @@ css/css-inline/float-becomes-inflow-crash.html	1	1	computed,crash,layout-geometr
 css/css-inline/parsing/alignment-baseline-computed.html	9	9	computed	/css/support/computed-testcommon.js
 css/css-inline/parsing/baseline-shift-computed.html	8	8	computed	/css/support/computed-testcommon.js
 css/css-inline/parsing/dominant-baseline-computed.html	9	9	computed	/css/support/computed-testcommon.js
-css/css-inline/parsing/line-height-computed.html	13	13	computed	/css/support/computed-testcommon.js
+css/css-inline/parsing/line-height-computed.html	15	15	computed	/css/support/computed-testcommon.js
 css/css-inline/parsing/vertical-align-computed.html	23	23	computed	/css/support/computed-testcommon.js
 css/css-inline/text-box-trim/parsing/text-box-computed.html	38	38	computed	/css/support/computed-testcommon.js
 css/css-inline/text-box-trim/parsing/text-box-edge-computed.html	2	2	computed,loop	/css/support/computed-testcommon.js,values.js
@@ -1990,11 +2049,13 @@ css/css-layout-api/inline-style-layout-function.https.html	3	3	function
 css/css-layout-api/layout-child/inlines-dynamic.https.html	1	1	computed,function,timing	/common/worklet-reftest.js
 css/css-link-params/link-parameters-computed.html	12	12	computed	/css/support/computed-testcommon.js
 css/css-link-params/link-parameters-dynamic.html	1	1	computed,function	
+css/css-link-params/link-parameters-substitution.html	5	5	computed,function	
 css/css-lists/change-list-style-position-001.html	1	1	layout-geometry,reftest	
 css/css-lists/change-list-style-position-003.html	1	1	layout-geometry,reftest	
 css/css-lists/container-list-items-crash.html	1	1	crash,layout-geometry	
 css/css-lists/counter-important.html	1	1	function	
 css/css-lists/counter-set-002.html	1	1	layout-geometry,reftest	
+css/css-lists/crashtests/list-item-marker-list-style-type-change-crash.html	1	1	crash,layout-geometry	
 css/css-lists/inherit-overwrites.html	2	1	computed,function,loop	
 css/css-lists/li-counter-increment-computed-style.html	1	1	computed,function,loop	
 css/css-lists/li-value-counter-reset-002.html	1	1	layout-geometry,reftest	
@@ -2003,10 +2064,17 @@ css/css-lists/list-inside-contain.html	1	1	function,timing
 css/css-lists/list-item-counter-crash.html	1	1	crash,function	
 css/css-lists/list-item-dynamic-padding.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-lists/list-marker-counter-style-mutation.html	1	1	function,layout-geometry,reftest,sheets	/common/reftest-wait.js
+css/css-lists/list-marker-font-size-mutation.html	1	1	layout-geometry,reftest	
 css/css-lists/list-style-type-string-004.html	1	1	function,loop,reftest,timing	/common/reftest-wait.js
 css/css-lists/list-style-type-transition-tree-scope-custom-ident.html	1	1	computed,function,loop,shadow,timing	
 css/css-lists/list-style-type-transition-tree-scope-keyword.html	1	1	computed,function,shadow,timing	
 css/css-lists/list-with-image-display-changed-001.html	1	1	layout-geometry,reftest	
+css/css-lists/outside-marker-container-becomes-boundary.html	1	1	layout-geometry,reftest	
+css/css-lists/outside-marker-container-changed-by-float-style.html	1	1	layout-geometry,reftest	
+css/css-lists/outside-marker-from-inside-position.html	1	1	layout-geometry,reftest	
+css/css-lists/outside-marker-list-item-becomes-multicol.html	1	1	layout-geometry,reftest	
+css/css-lists/outside-marker-multicol-destroyed.html	1	1	layout-geometry,reftest	
+css/css-lists/outside-marker-with-block-content.html	3	2	function,layout-geometry	
 css/css-lists/parsing/counter-increment-computed.html	10	10	computed	/css/support/computed-testcommon.js
 css/css-lists/parsing/counter-reset-computed.html	10	10	computed	/css/support/computed-testcommon.js
 css/css-lists/parsing/counter-set-computed.html	10	10	computed	/css/support/computed-testcommon.js
@@ -2071,6 +2139,7 @@ css/css-masking/parsing/mask-composite-computed.html	4	4	computed	/css/support/c
 css/css-masking/parsing/mask-computed.html	32	32	computed	/css/support/computed-testcommon.js
 css/css-masking/parsing/mask-image-computed.html	47	47	computed	/css/support/computed-testcommon.js
 css/css-masking/parsing/mask-repeat-computed.html	22	22	computed	/css/support/computed-testcommon.js
+css/css-masking/parsing/mask-shorthand-serialization.html	4	4	function,loop	
 css/css-masking/parsing/mask-size-computed.html	16	16	computed	/css/support/computed-testcommon.js
 css/css-masking/parsing/mask-type-computed.html	2	2	computed	/css/support/computed-testcommon.js
 css/css-mixins/function-property-context.html	4	1	computed,function,loop	
@@ -2113,6 +2182,8 @@ css/css-mixins/mixins/mixin-shared-across-documents.html	1	1	computed,function,t
 css/css-mixins/mixins/mixin-shared-sheet-no-mixins-in-scope.html	2	2	computed,function,shadow,sheets	
 css/css-mixins/private/private-cssom-insert-rule.tentative.html	4	3	function,loop,sheets	
 css/css-mixins/private/private-cssom-serialization.tentative.html	16	1	function,sheets	
+css/css-mixins/private/private-cssom-style-api.tentative.html	10	10	function,sheets	
+css/css-mixins/private/private-shared-stylesheet.tentative.html	1	1	function,sheets,timing	
 css/css-multicol/abspos-in-multicol-with-spanner-crash.html	1	1	function	
 css/css-multicol/ancestor-toggle-spanner-001.html	1	1	layout-geometry,reftest	
 css/css-multicol/ancestor-toggle-spanner-002.html	1	1	layout-geometry,reftest	
@@ -2132,6 +2203,7 @@ css/css-multicol/columns-shorthand-reset-wrap.html	3	3	computed,function,sheets
 css/css-multicol/content-visibility-001-crash.html	1	1	crash,function,layout-geometry,timing	
 css/css-multicol/crashtests/add-list-item-marker.html	1	1	crash,layout-geometry	
 css/css-multicol/crashtests/ancestor-toggle-spanner-remove-child.html	1	1	crash,layout-geometry	
+css/css-multicol/crashtests/block-break-before.html	1	1	crash,function,layout-geometry,loop	
 css/css-multicol/crashtests/block-in-inline-become-float.html	1	1	crash,layout-geometry	
 css/css-multicol/crashtests/block-in-inline-with-abspos-after-spanner.html	1	1	crash	
 css/css-multicol/crashtests/body-becomes-spanner-html-becomes-vertical-rl.html	1	1	crash,layout-geometry	
@@ -2274,9 +2346,14 @@ css/css-overflow/line-clamp/block-ellipsis-repaint-001.html	1	1	function,reftest
 css/css-overflow/line-clamp/block-ellipsis-repaint-002.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-overflow/line-clamp/block-ellipsis-repaint-003.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-overflow/line-clamp/block-ellipsis-repaint-004.html	1	1	function,reftest,timing	/common/reftest-wait.js
+css/css-overflow/line-clamp/line-clamp-043.html	1	1	layout-geometry,reftest	
 css/css-overflow/line-clamp/line-clamp-auto-038.html	1	1	function,reftest	
 css/css-overflow/line-clamp/line-clamp-auto-049.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-overflow/line-clamp/line-clamp-auto-050.html	1	1	function,reftest,timing	/common/reftest-wait.js
+css/css-overflow/line-clamp/line-clamp-dynamic-removal.html	1	1	layout-geometry,reftest	
+css/css-overflow/line-clamp/line-clamp-dynamic-width-change.html	1	1	layout-geometry,reftest	
+css/css-overflow/line-clamp/line-clamp-invalidation-001.html	1	1	function,layout-geometry,reftest,timing	
+css/css-overflow/line-clamp/line-clamp-invalidation-002.html	1	1	function,layout-geometry,reftest,timing	
 css/css-overflow/line-clamp/line-clamp-with-floats-013.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-overflow/line-clamp/line-clamp-with-floats-014.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-overflow/line-clamp/webkit-line-clamp-017.html	1	1	function,reftest	
@@ -2333,11 +2410,13 @@ css/css-overflow/resizer-transform.tentative.html	2	2	computed,function,input-dr
 css/css-overflow/scroll-axis-lock-dynamic-change.html	1	1	function,input-driver,loop,timing	./support/scroll-axis-lock.js,/dom/events/scrolling/scroll_support.js,/resources/testdriver-actions.js
 css/css-overflow/scroll-marker-group-hover-from-marker.html	1	1	computed,function,input-driver,layout-geometry,timing	/resources/testdriver-actions.js
 css/css-overflow/scroll-marker-group-hover.html	1	1	computed,function,input-driver,layout-geometry,timing	/resources/testdriver-actions.js
+css/css-overflow/scroll-markers/chrome-570167919-crash.html	1	1	crash,function,layout-geometry,shadow,timing	
 css/css-overflow/scroll-markers/column-scroll-marker-011.html	1	1	function,reftest,timing	
 css/css-overflow/scroll-markers/column-scroll-marker-012.html	1	1	function,reftest,timing	
 css/css-overflow/scroll-markers/column-scroll-marker-013.html	1	1	function,reftest,timing	
 css/css-overflow/scroll-markers/column-scroll-marker-015-crash.html	1	1	crash,layout-geometry	
 css/css-overflow/scroll-markers/column-scroll-marker-focus-003.html	7	5	function,input-driver,layout-geometry,timing	/resources/testdriver-actions.js
+css/css-overflow/scroll-markers/column-scroll-marker-manual-slot-recalc-crash.html	1	1	crash,layout-geometry,shadow	
 css/css-overflow/scroll-markers/html-scroll-marker-target-before-after.html	3	1	computed,function,loop,timing	/css/css-transitions/support/helper.js
 css/css-overflow/scroll-markers/root-scroll-marker-activation-and-scroll-tracking.html	1	1	computed,function,input-driver,timing	/resources/testdriver-actions.js
 css/css-overflow/scroll-markers/scroll-button-argument-case-insensitive.html	3	3	computed,function,loop	
@@ -2359,12 +2438,20 @@ css/css-overflow/scroll-markers/scroll-marker-focus-visible.html	1	1	computed,fu
 css/css-overflow/scroll-markers/scroll-marker-focus-within.html	1	1	computed,function,input-driver,layout-geometry,timing	/resources/testdriver-actions.js
 css/css-overflow/scroll-markers/scroll-marker-group-002.html	1	1	layout-geometry,reftest	
 css/css-overflow/scroll-markers/scroll-marker-group-003.html	19	5	computed,function,layout-geometry	
+css/css-overflow/scroll-markers/scroll-marker-group-body-overflow-propagation-001-crash.html	1	1	crash,layout-geometry	
+css/css-overflow/scroll-markers/scroll-marker-group-body-overflow-propagation-001.html	1	1	layout-geometry,reftest	
+css/css-overflow/scroll-markers/scroll-marker-group-body-overflow-propagation-002-crash.html	1	1	crash,layout-geometry	
+css/css-overflow/scroll-markers/scroll-marker-group-body-overflow-propagation-002.html	1	1	layout-geometry,reftest	
+css/css-overflow/scroll-markers/scroll-marker-group-body-overflow-propagation-003.html	1	1	layout-geometry,reftest	
+css/css-overflow/scroll-markers/scroll-marker-group-body-overflow-propagation-004.html	1	1	layout-geometry,reftest	
 css/css-overflow/scroll-markers/scroll-marker-group-position-change-001.html	1	1	layout-geometry,reftest	
 css/css-overflow/scroll-markers/scroll-marker-group-position-change-002.html	1	1	layout-geometry,reftest	
 css/css-overflow/scroll-markers/scroll-marker-group-position-change-003.html	1	1	layout-geometry,reftest	
 css/css-overflow/scroll-markers/scroll-marker-group-position-change-crash.html	1	1	crash,layout-geometry	
 css/css-overflow/scroll-markers/scroll-marker-group-scroll-container-change-001.html	1	1	layout-geometry,reftest	
 css/css-overflow/scroll-markers/scroll-marker-group-scroll-container-change-002.html	1	1	layout-geometry,reftest	
+css/css-overflow/scroll-markers/scroll-marker-group-scroll-container-change-003.html	1	1	layout-geometry,reftest	
+css/css-overflow/scroll-markers/scroll-marker-group-scroll-container-change-004.html	1	1	layout-geometry,reftest	
 css/css-overflow/scroll-markers/scroll-marker-group-scroll-container-change-crash.html	1	1	crash,layout-geometry	
 css/css-overflow/scroll-markers/scroll-marker-group-size-container-query-root.html	1	1	computed,function	
 css/css-overflow/scroll-markers/scroll-marker-group-size-container-query.html	1	1	computed,function	
@@ -2390,6 +2477,7 @@ css/css-overflow/scroll-markers/target-current-scroll-marker-update.html	1	1	com
 css/css-overflow/scroll-markers/targeted-scroll-marker-selection-with-transition.tentative.html	7	2	computed,function,layout-geometry,timing	/dom/events/scrolling/scroll_support.js,support/scroll-marker-support.js
 css/css-overflow/scroll-markers/targeted-scroll-marker-selection.tentative.html	9	4	computed,function,input-driver,layout-geometry,timing	/css/css-transitions/support/helper.js,/dom/events/scrolling/scroll_support.js,/resources/testdriver-actions.js,support/scroll-marker-support.js
 css/css-overflow/scroll-overflow-padding-block-001.html	1	1	computed,function,layout-geometry,loop	
+css/css-overflow/scrollable-overflow-abspos-in-inline-containing-block.html	5	1	function,layout-geometry,loop	
 css/css-overflow/scrollable-overflow-fixed-positioned-initial-containing-block.html	1	1	function,layout-geometry,timing	
 css/css-overflow/scrollable-overflow-height-with-flex-item-margin-inline-end-rtl.html	8	8	function,layout-geometry	
 css/css-overflow/scrollable-overflow-height-with-flex-item-margin-inline-end.html	8	8	function,layout-geometry	
@@ -2484,9 +2572,12 @@ css/css-position/box-insets-top-right-bottom-left.html	8	8	function
 css/css-position/change-insets-inside-strict-containment-nested.html	1	1	layout-geometry,reftest	
 css/css-position/containing-block-change-button.html	1	1	layout-geometry,reftest	
 css/css-position/containing-block-change-scrollframe.html	1	1	layout-geometry,reftest	
+css/css-position/crashtests/content-visibility-abspos-continuations-crash.html	1	1	crash,frame-or-popup,function,layout-geometry,loop	
 css/css-position/crashtests/dynamic-change-inset-svg-text-subtree.html	1	1	crash,layout-geometry	
 css/css-position/crashtests/dynamic-fixed-in-nested-absolutes-crash.html	1	1	crash,function,layout-geometry	
+css/css-position/crashtests/inline-containing-block-delete-continuations-001.html	1	1	crash,function,layout-geometry	
 css/css-position/crashtests/inline-containing-block-dynamic-change-2.html	1	1	crash,function	
+css/css-position/crashtests/inline-containing-block-dynamic-change-3.html	1	1	computed,crash,function,layout-geometry	
 css/css-position/crashtests/inline-containing-block-dynamic-change.html	1	1	crash,function,sheets	
 css/css-position/crashtests/nested-scroll-in-activating-scroll-container.html	1	1	crash,function,timing	
 css/css-position/crashtests/sticky-in-activating-scroll-container.html	1	1	crash,function,timing	
@@ -2496,6 +2587,7 @@ css/css-position/hypothetical-dynamic-change-002.html	1	1	function,layout-geomet
 css/css-position/hypothetical-dynamic-change-003.html	1	1	function,layout-geometry,reftest	
 css/css-position/invalidate-opacity-negative-z-index.html	1	1	function,reftest,timing	
 css/css-position/nested-positions-crash.html	1	1	crash,layout-geometry	
+css/css-position/out-of-flow-in-inline-content-intrinsic-size-001.html	2	2	function,layout-geometry,loop	
 css/css-position/overlay/author-overlay-top-layer-removal.html	1	1	frame-or-popup,layout-geometry,reftest	
 css/css-position/overlay/overlay-computed.html	6	6	computed	/css/support/computed-testcommon.js
 css/css-position/overlay/overlay-transition-finished.html	1	1	computed,frame-or-popup,function,layout-geometry,reftest,timing	/common/reftest-wait.js
@@ -2538,6 +2630,8 @@ css/css-position/position-absolute-dynamic-static-position-margin-001.html	1	1	l
 css/css-position/position-absolute-dynamic-static-position-margin-002.html	1	1	layout-geometry,reftest	/common/reftest-wait.js
 css/css-position/position-absolute-dynamic-static-position-table-cell.html	1	1	layout-geometry,reftest	
 css/css-position/position-absolute-dynamic-static-position.html	1	1	layout-geometry,reftest	/common/reftest-wait.js
+css/css-position/position-absolute-in-inline-dynamic.html	12	4	computed,function,layout-geometry,loop	
+css/css-position/position-absolute-in-inline-vertical-lr.html	5	1	computed,function,layout-geometry,loop	
 css/css-position/position-absolute-percentage-height.html	3	2	function,layout-geometry	
 css/css-position/position-change.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-position/position-fixed-at-bottom-right-on-viewport.html	1	1	computed,function	
@@ -2587,6 +2681,7 @@ css/css-properties-values-api/animation/registered-neutral-keyframe.html	2	1	com
 css/css-properties-values-api/animation/registered-var-to-registered-animating.html	1	1	computed,function,loop,register-property,timing	
 css/css-properties-values-api/at-property-animation.html	19	19	computed,function,timing	./resources/utils.js
 css/css-properties-values-api/at-property-cssom.html	40	7	function,loop,sheets	
+css/css-properties-values-api/at-property-media-query.html	1	1	computed,frame-or-popup,function,timing	
 css/css-properties-values-api/at-property-optional-initial-value.html	1	1	computed,function	
 css/css-properties-values-api/at-property-shadow.html	1	1	computed,function,shadow	./resources/utils.js
 css/css-properties-values-api/at-property-stylesheets.html	5	5	computed,function	./resources/utils.js
@@ -2598,6 +2693,7 @@ css/css-properties-values-api/crashtests/consume-color-contrast-crash.html	1	1	c
 css/css-properties-values-api/crashtests/initial-in-audio-crash.html	1	1	computed,crash,register-property	
 css/css-properties-values-api/crashtests/transition-to-none-crash-001.html	1	1	computed,crash	
 css/css-properties-values-api/crashtests/transition-to-none-crash-002.html	1	1	computed,crash	
+css/css-properties-values-api/custom-property-explicit-inherit-invalidation.html	2	2	computed,function	
 css/css-properties-values-api/determine-registration.html	15	15	computed,function,register-property	./resources/utils.js
 css/css-properties-values-api/font-property-unit-cycles.tentative.html	6	3	computed,function,loop	
 css/css-properties-values-api/font-size-animation.html	2	1	computed,function,register-property	
@@ -2624,7 +2720,7 @@ css/css-properties-values-api/var-reference-registered-properties-002.html	1	1	c
 css/css-properties-values-api/var-reference-registered-properties-cycles.html	5	5	computed,function,register-property	
 css/css-properties-values-api/var-reference-registered-properties.html	18	12	computed,function,register-property	./resources/utils.js
 css/css-properties-values-api/var-reference-unit-cycles.html	2	2	computed,function	
-css/css-pseudo/CSSPseudoElement-scroll-button.html	12	12	function,loop	
+css/css-pseudo/CSSPseudoElement-scroll-button.html	8	8	function,loop	
 css/css-pseudo/CSSPseudoElement-selectorText.html	4	4	function,loop	
 css/css-pseudo/CSSPseudoElement-view-transitions-scoped.tentative.html	2	2	function,timing,view-transition	
 css/css-pseudo/CSSPseudoElement-view-transitions.tentative.html	5	5	function,loop,timing,view-transition	
@@ -2635,16 +2731,19 @@ css/css-pseudo/chrome-486467574.html	1	1	computed,function
 css/css-pseudo/chrome-first-letter-container-query-crash.html	1	1	crash,layout-geometry	
 css/css-pseudo/chrome-first-letter-inside-replaced-crash.html	1	1	crash,layout-geometry	
 css/css-pseudo/crashtests/chrome-536997542-crash.html	1	1	crash,layout-geometry	
+css/css-pseudo/crashtests/placeholder-style-sharing-crash.html	1	1	computed,crash,layout-geometry	
 css/css-pseudo/events-on-pseudo-element-mutation.tentative.html	2	1	computed,function,input-driver,layout-geometry,timing	/resources/testdriver-actions.js
 css/css-pseudo/events-on-view-transition-pseudos.tentative.html	2	2	computed,function,input-driver,timing,view-transition	/resources/testdriver-actions.js
 css/css-pseudo/file-selector-button-inherit.html	1	1	computed,function	
-css/css-pseudo/first-letter-allowed-properties.html	36	2	computed,function,loop,sheets	
+css/css-pseudo/first-letter-allowed-properties.html	45	2	computed,function,loop,sheets	
 css/css-pseudo/first-letter-and-sibling-display-change.html	1	1	layout-geometry,reftest	
+css/css-pseudo/first-letter-animate.html	5	3	computed,function,timing	
 css/css-pseudo/first-letter-background-image-dynamic.html	1	1	computed,reftest	
 css/css-pseudo/first-letter-block-to-inline.html	1	1	layout-geometry,reftest	
 css/css-pseudo/first-letter-of-html-root-refcrash.html	1	1	layout-geometry,reftest	
 css/css-pseudo/first-letter-width-2.html	1	1	function,reftest	
-css/css-pseudo/first-line-allowed-properties.html	112	2	computed,function,loop,sheets	
+css/css-pseudo/first-line-allowed-properties.html	139	2	computed,function,loop,sheets	
+css/css-pseudo/first-line-animate.html	5	3	computed,function,timing	
 css/css-pseudo/first-line-nested-gcs.html	1	1	computed,reftest	
 css/css-pseudo/focus-visible-originating-element.html	1	1	computed,function,input-driver,layout-geometry,timing	/resources/testdriver-actions.js
 css/css-pseudo/get-computed-style-crash.html	1	1	computed,crash	
@@ -2652,6 +2751,7 @@ css/css-pseudo/highlight-cascade/highlight-cascade-007.html	19	12	computed,funct
 css/css-pseudo/highlight-cascade/highlight-cascade-009.html	9	5	computed,function	../support/selections.js
 css/css-pseudo/highlight-cascade/highlight-cascade-010.html	1	1	computed,function,register-property,timing	
 css/css-pseudo/highlight-cascade/highlight-cascade-011.html	4	2	computed,function	../support/selections.js
+css/css-pseudo/highlight-cascade/highlight-cascade-currentcolor-color-mix.html	2	2	computed,function	
 css/css-pseudo/highlight-cascade/highlight-cascade-parent-style-change.html	1	1	computed,function	
 css/css-pseudo/highlight-cascade/highlight-cascade-shadow-boundary.html	4	2	computed,function,shadow	
 css/css-pseudo/highlight-cascade/highlight-currentcolor-computed-inheritance.html	6	1	computed,function,loop	
@@ -2714,6 +2814,7 @@ css/css-scroll-anchoring/basic.html	1	1	function,layout-geometry
 css/css-scroll-anchoring/clamp-negative-overflow.html	1	1	function,layout-geometry	
 css/css-scroll-anchoring/clipped-scrollers-skipped.html	1	1	function,layout-geometry	
 css/css-scroll-anchoring/contain-paint-offscreen-container.html	1	1	function,layout-geometry	
+css/css-scroll-anchoring/content-visibility-hidden-in-size-container.html	2	2	function,loop	
 css/css-scroll-anchoring/descend-into-container-with-float.html	1	1	function,layout-geometry	
 css/css-scroll-anchoring/descend-into-container-with-overflow.html	1	1	function,layout-geometry	
 css/css-scroll-anchoring/device-pixel-adjustment.html	1	1	function,layout-geometry,loop	
@@ -2747,6 +2848,7 @@ css/css-scroll-anchoring/reading-scroll-forces-anchoring.html	1	1	function,timin
 css/css-scroll-anchoring/scroll-anchoring-editing-content-change.html	4	3	function,input-driver,layout-geometry,timing	/dom/events/scrolling/scroll_support.js,/resources/testdriver-actions.js
 css/css-scroll-anchoring/scroll-padding-affects-anchoring.html	1	1	function,layout-geometry	
 css/css-scroll-anchoring/subtree-exclusion.html	1	1	function,layout-geometry	
+css/css-scroll-anchoring/suppress-for-top-change.html	1	1	function,layout-geometry	
 css/css-scroll-anchoring/table-col-and-dead-row-group-crash.html	1	1	crash	
 css/css-scroll-anchoring/text-anchor-in-vertical-rl.html	1	1	function,layout-geometry	
 css/css-scroll-anchoring/vertical-rl-viewport-size-change-000.html	1	1	frame-or-popup,function,layout-geometry,reftest	
@@ -2817,6 +2919,7 @@ css/css-scroll-snap/snap-events/scrollsnapchange/scrollsnapchange-after-layout-c
 css/css-scroll-snap/snap-events/scrollsnapchange/scrollsnapchange-same-targets-after-layout-changed.html	2	2	function,layout-geometry,timing	/css/css-scroll-snap/snap-events/resources/common.js,/dom/events/scrolling/scroll_support.js
 css/css-scroll-snap/snap-events/scrollsnapchange/scrollsnapchange-scroll-snap-type-change.html	1	1	function,timing	/css/css-scroll-snap/support/common.js
 css/css-scroll-snap/snap-events/scrollsnapchanging/scrollsnapchanging-after-layout-change.tentative.html	1	1	computed,function,input-driver,layout-geometry,timing	/css/css-scroll-snap/snap-events/resources/common.js,/css/css-scroll-snap/snap-events/resources/user-scroll-common.js,/dom/events/scrolling/scroll_support.js,/resources/testdriver-actions.js,/web-animations/testcommon.js
+css/css-scroll-snap/snap-events/snap-events-with-disposed-pseudo-target.tentative.html	1	1	computed,function,input-driver,layout-geometry,loop,timing	/css/css-scroll-snap/snap-events/resources/common.js,/css/css-scroll-snap/snap-events/resources/user-scroll-common.js,/dom/events/scrolling/scroll_support.js,/resources/testdriver-actions.js
 css/css-scroll-snap/snap-events/snap-events-with-shadow-dom.html	6	4	function,input-driver,layout-geometry,shadow,timing	/css/css-scroll-snap/snap-events/resources/common.js,/css/css-scroll-snap/snap-events/resources/user-scroll-common.js,/dom/events/scrolling/scroll_support.js,/resources/testdriver-actions.js
 css/css-scroll-snap/snap-inline-block.html	4	4	computed,function,layout-geometry,loop	
 css/css-scroll-snap/snap-to-transformed-target.html	3	3	function,layout-geometry	
@@ -2886,7 +2989,7 @@ css/css-shadow/part/multiple-parts.html	4	3	computed,function	support/shadow-hel
 css/css-shadow/part/multiple-scopes.html	10	10	computed,function,shadow	
 css/css-shadow/part/part-mutation-pseudo.html	2	1	computed,function	support/shadow-helper.js
 css/css-shadow/part/precedence-part-vs-part.html	3	1	computed,function	support/shadow-helper.js
-css/css-shadow/part/pseudo-elements-after-part.html	46	26	computed,fonts,frame-or-popup,function,layout-geometry,shadow,timing,view-transition	/css/support/parsing-testcommon.js
+css/css-shadow/part/pseudo-elements-after-part.html	46	26	computed,fonts,frame-or-popup,function,layout-geometry,shadow,timing,view-transition	/css/support/parsing-testcommon.js,/html/resources/common.js
 css/css-shadow/part/serialization.html	3	3	function,sheets	
 css/css-shadow/part/simple-forward-shorthand.html	3	1	computed,function	support/shadow-helper.js
 css/css-shadow/part/simple-forward.html	3	1	computed,function	support/shadow-helper.js
@@ -2938,6 +3041,7 @@ css/css-shapes/shape-outside-invalid-inset-001.html	1	1	computed,function
 css/css-shapes/shape-outside-invalid-inset-002.html	1	1	computed,function	
 css/css-shapes/shape-outside-invalid-inset-003.html	1	1	computed,function	
 css/css-shapes/shape-outside-invalid-inset-004.html	1	1	computed,function	
+css/css-shapes/shape-outside-shape-function.html	5	1	function,layout-geometry,loop	
 css/css-shapes/shape-outside/supported-shapes/inset/shape-outside-inset-refcrash.html	1	1	layout-geometry,reftest	
 css/css-shapes/shape-outside/supported-shapes/polygon/shape-outside-polygon-crash.html	1	1	function,layout-geometry	
 css/css-shapes/shape-outside/values/shape-image-threshold-003.html	3	3	computed,function	support/parsing-utils.js
@@ -2946,13 +3050,20 @@ css/css-shapes/shape-outside/values/shape-outside-computed-shape-000.html	6	1	co
 css/css-shapes/shape-outside/values/shape-outside-gradient-computed.html	6	6	computed	/css/support/computed-testcommon.js
 css/css-shapes/shape-outside/values/shape-outside-shape-inherit-000.html	1	1	computed,function	support/parsing-utils.js
 css/css-size-adjust/parsing/text-size-adjust-computed.html	6	6	computed	/css/support/computed-testcommon.js
+css/css-sizing/animation/aspect-ratio-interpolation-degenerate.html	14	3	computed,function,loop,timing	
 css/css-sizing/aspect-ratio-affects-container-width-when-height-changes.html	1	1	function,layout-geometry	/resources/check-layout-th.js
 css/css-sizing/aspect-ratio.html	11	11	function	
+css/css-sizing/aspect-ratio/abspos-intrinsic-block-size.html	32	1	function,layout-geometry,loop	
 css/css-sizing/aspect-ratio/block-aspect-ratio-024.html	1	1	layout-geometry,reftest	
 css/css-sizing/aspect-ratio/block-aspect-ratio-028.html	1	1	layout-geometry,reftest	
 css/css-sizing/aspect-ratio/block-aspect-ratio-031.html	1	1	layout-geometry,reftest	
+css/css-sizing/aspect-ratio/block-aspect-ratio-shrink-to-fit-ancestor-relayout.html	1	1	layout-geometry,loop,reftest	
 css/css-sizing/aspect-ratio/flex-aspect-ratio-042.html	1	1	layout-geometry,reftest	
+css/css-sizing/aspect-ratio/flex-aspect-ratio-056.html	1	1	layout-geometry,reftest	
+css/css-sizing/aspect-ratio/flex-aspect-ratio-orthogonal-percentage-child.html	4	1	function,layout-geometry,loop	
+css/css-sizing/aspect-ratio/flex-aspect-ratio-shrink-to-fit-ancestor-relayout.html	1	1	fonts,function,layout-geometry,loop,timing	
 css/css-sizing/aspect-ratio/grid-aspect-ratio-040.html	1	1	layout-geometry,reftest	
+css/css-sizing/aspect-ratio/grid-aspect-ratio-043.html	1	1	layout-geometry,reftest	
 css/css-sizing/aspect-ratio/intrinsic-size-008.html	1	1	layout-geometry,reftest	
 css/css-sizing/aspect-ratio/select-element-001.html	1	1	reftest	
 css/css-sizing/contain-intrinsic-size/auto-001.html	3	1	function,layout-geometry,timing	
@@ -2969,7 +3080,11 @@ css/css-sizing/dynamic-change-inline-size-001.html	1	1	layout-geometry,reftest
 css/css-sizing/dynamic-change-inline-size-002.html	1	1	layout-geometry,reftest	
 css/css-sizing/dynamic-change-inline-size-003.html	1	1	layout-geometry,reftest	
 css/css-sizing/dynamic-change-inline-size-004.html	1	1	function,reftest	
+css/css-sizing/fieldset-intrinsic-size-percent.html	3	2	function,layout-geometry,loop,timing	
 css/css-sizing/fit-content-percentage-padding.html	3	3	function,layout-geometry	
+css/css-sizing/form-control-in-inline-content-intrinsic-size-001.html	3	1	computed,function,layout-geometry,loop	
+css/css-sizing/image-min-max-content-intrinsic-size-change-009.html	2	1	function,layout-geometry,loop,timing	
+css/css-sizing/intrinsic-percent-replaced-037.html	1	1	reftest,timing	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-sizing/intrinsic-percent-replaced-dynamic-001.html	1	1	layout-geometry,reftest	
 css/css-sizing/intrinsic-percent-replaced-dynamic-002.html	1	1	layout-geometry,reftest	
 css/css-sizing/intrinsic-percent-replaced-dynamic-003.html	1	1	layout-geometry,reftest	
@@ -2983,15 +3098,17 @@ css/css-sizing/intrinsic-percent-replaced-dynamic-010.html	1	1	layout-geometry,r
 css/css-sizing/intrinsic-percent-replaced-dynamic-011.html	1	1	layout-geometry,reftest	
 css/css-sizing/intrinsic-percent-replaced-dynamic-012.html	1	1	layout-geometry,reftest	
 css/css-sizing/min-width-max-width-precedence.html	1	1	computed,function	
+css/css-sizing/min-width-min-content-contribution.html	6	2	function,layout-geometry,loop	
 css/css-sizing/parsing/box-sizing-computed.html	2	2	computed	/css/support/computed-testcommon.js
 css/css-sizing/parsing/max-height-computed.html	12	12	computed	/css/support/computed-testcommon.js
 css/css-sizing/parsing/max-width-computed.html	12	12	computed	/css/support/computed-testcommon.js
 css/css-sizing/parsing/min-height-computed.html	11	11	computed	/css/support/computed-testcommon.js
 css/css-sizing/parsing/min-width-computed.html	11	11	computed	/css/support/computed-testcommon.js
 css/css-sizing/percentage-height-in-flexbox.html	2	2	function,layout-geometry	
+css/css-sizing/responsive-iframe/responsive-iframe-icb.html	1	1	frame-or-popup,function,layout-geometry,timing	/common/rendering-utils.js
 css/css-sizing/responsive-iframe/responsive-iframe-navigation.html	6	1	function,layout-geometry,loop,timing	/common/get-host-info.sub.js
-css/css-sizing/responsive-iframe/responsive-iframe-value.html	5	1	frame-or-popup,function,layout-geometry,timing	
-css/css-sizing/size-shorthand-serialization.tentative.html	5	5	function	
+css/css-sizing/responsive-iframe/responsive-iframe-value.html	10	1	frame-or-popup,function,layout-geometry,timing	/common/rendering-utils.js
+css/css-sizing/size-shorthand-serialization.tentative.html	15	15	function	
 css/css-sizing/stretch/block-height-008.html	3	1	loop	/resources/check-layout-th.js
 css/css-sizing/stretch/cache-miss-001.html	1	1	layout-geometry,reftest	
 css/css-sizing/stretch/stretch-alias-block-size-001.tentative.html	1	1	function,loop	/resources/check-layout-th.js
@@ -3010,6 +3127,7 @@ css/css-sizing/stretch/stretch-max-block-size-001.html	1	1	function,loop	/resour
 css/css-sizing/stretch/stretch-max-inline-size-001.html	1	1	function,loop	/resources/check-layout-th.js
 css/css-sizing/stretch/stretch-min-block-size-001.html	1	1	function,loop	/resources/check-layout-th.js
 css/css-sizing/stretch/stretch-min-inline-size-001.html	1	1	function,loop	/resources/check-layout-th.js
+css/css-sizing/stretch/stretch-with-huge-padding-avoiding-float.html	1	1	computed,function	
 css/css-syntax/anb-parsing.html	67	1	function,sheets	
 css/css-syntax/anb-serialization.html	20	1	function,sheets	
 css/css-syntax/at-rule-in-declaration-list.html	6	6	fonts,function,sheets	
@@ -3041,7 +3159,9 @@ css/css-syntax/escaped-eof.html	5	5	function,sheets
 css/css-syntax/ident-three-code-points.html	2	1	computed,function,loop	
 css/css-syntax/inclusive-ranges.html	7	2	function,loop,sheets	
 css/css-syntax/input-preprocessing.html	10	1	function,sheets	
+css/css-syntax/invalid-margin-trim-block-balancing.html	1	1	computed,function	
 css/css-syntax/invalid-nested-rules.html	1	1	function,sheets	
+css/css-syntax/invalid-shape-block-balancing.html	1	1	computed,function	
 css/css-syntax/non-ascii-codepoints.html	3	2	function,loop	
 css/css-syntax/parse-invalid-input.html	8	1	function,loop	
 css/css-syntax/serialize-consecutive-tokens.html	72	3	computed,function	
@@ -3059,6 +3179,7 @@ css/css-tables/border-collapse-dynamic-section.html	1	1	layout-geometry,reftest
 css/css-tables/caption-writing-mode-001.html	2	2	computed,function	
 css/css-tables/collapsed-border-color-change-with-compositing.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-tables/collapsed-border-writing-mode-color.html	1	1	function,layout-geometry	
+css/css-tables/crashtests/border-collapse-dynamic-crash.html	1	1	crash,function,layout-geometry,loop,timing	
 css/css-tables/crashtests/dynamic-recompute-baseline.html	1	1	crash,layout-geometry	
 css/css-tables/crashtests/dynamic_col_width_crash.html	1	1	crash,layout-geometry	
 css/css-tables/crashtests/dynamic_table_layout_crash.html	1	1	crash,layout-geometry	
@@ -3067,12 +3188,13 @@ css/css-tables/crashtests/move-oof-inside-section-row-with-borders.html	1	1	cras
 css/css-tables/crashtests/rtl-replace-cells-with-colspan-crash.html	1	1	crash,layout-geometry	
 css/css-tables/crashtests/table-column-display-change-chrome-crash.html	1	1	crash,layout-geometry	
 css/css-tables/crashtests/transition-table-row-group-crash.html	1	1	crash,layout-geometry	
+css/css-tables/dynamic-table-cell-block-size-vertical-rl.html	1	1	layout-geometry,reftest	
 css/css-tables/dynamic-table-cell-height.html	1	1	layout-geometry,reftest	/common/reftest-wait.js
 css/css-tables/fixed-layout-2.html	2	1	computed,function,layout-geometry,loop,media	
 css/css-tables/html-to-css-mapping-2.html	4	1	computed,function,loop	
 css/css-tables/paint/table-border-paint-caption-change.html	1	1	function,reftest,timing	
 css/css-tables/parsing/border-collapse-computed.html	2	2	computed	/css/support/computed-testcommon.js
-css/css-tables/parsing/border-spacing-computed.html	4	4	computed	/css/support/computed-testcommon.js
+css/css-tables/parsing/border-spacing-computed.html	6	6	computed	/css/support/computed-testcommon.js
 css/css-tables/parsing/caption-side-computed.html	2	2	computed	/css/support/computed-testcommon.js
 css/css-tables/parsing/empty-cells-computed.html	2	2	computed	/css/support/computed-testcommon.js
 css/css-tables/parsing/table-layout-computed.html	2	2	computed	/css/support/computed-testcommon.js
@@ -3083,6 +3205,7 @@ css/css-tables/tentative/table-limited-quirks.html	3	1	computed,fonts,function,l
 css/css-tables/tentative/table-quirks.html	3	1	computed,fonts,function,loop,timing	/resources/check-layout-th.js
 css/css-tables/toggle-row-display-property-001.html	1	1	layout-geometry,loop,reftest	
 css/css-tables/visibility-collapse-col-004-dynamic.html	4	1	function,layout-geometry,loop	
+css/css-tables/visibility-collapse-colgroup-crash.html	1	1	crash	
 css/css-tables/visibility-collapse-colspan-crash.html	1	1	function	
 css/css-tables/visibility-collapse-row-002-dynamic.html	4	1	function,layout-geometry,loop	
 css/css-tables/visibility-collapse-row-003-dynamic.html	4	1	function,layout-geometry,loop	
@@ -3101,6 +3224,8 @@ css/css-text-decor/parsing/text-emphasis-computed.html	7	7	computed	/css/support
 css/css-text-decor/parsing/text-underline-position-computed.html	7	7	computed	/css/support/computed-testcommon.js
 css/css-text-decor/text-decoration-color-recalc-002.html	1	1	layout-geometry,reftest	
 css/css-text-decor/text-decoration-color-recalc.html	1	1	function,reftest	
+css/css-text-decor/text-decoration-inset-percentage-negative-grow.html	1	1	function,reftest,timing	
+css/css-text-decor/text-decoration-inset-percentage-negative-repaint.html	1	1	function,reftest,timing	
 css/css-text-decor/text-decoration-line-recalc.html	1	1	function,reftest	
 css/css-text-decor/text-decoration-lines-001.html	1	1	loop,reftest	
 css/css-text-decor/text-decoration-skip-ink.html	2	2	computed,function,media	
@@ -3209,6 +3334,7 @@ css/css-text/parsing/tab-size-computed.html	10	10	computed	/css/support/computed
 css/css-text/parsing/text-align-computed.html	7	7	computed	/css/support/computed-testcommon.js
 css/css-text/parsing/text-align-last-computed.html	8	8	computed	/css/support/computed-testcommon.js
 css/css-text/parsing/text-autospace-computed.html	32	32	computed	/css/support/computed-testcommon.js
+css/css-text/parsing/text-autospace-size-computed.html	5	5	computed	/css/support/computed-testcommon.js
 css/css-text/parsing/text-fit-computed.html	10	10	computed	/css/support/computed-testcommon.js
 css/css-text/parsing/text-indent-computed.html	10	10	computed	/css/support/computed-testcommon.js
 css/css-text/parsing/text-justify-computed-legacy.html	1	1	computed	/css/support/computed-testcommon.js
@@ -3221,6 +3347,7 @@ css/css-text/parsing/text-wrap-mode-computed.html	2	2	computed	/css/support/comp
 css/css-text/parsing/text-wrap-style-computed.html	3	3	computed	/css/support/computed-testcommon.js
 css/css-text/parsing/white-space-collapse-computed.html	4	4	computed	/css/support/computed-testcommon.js
 css/css-text/parsing/white-space-computed.html	6	6	computed	/css/support/computed-testcommon.js
+css/css-text/parsing/white-space-shorthand-longhands.html	19	3	computed,function	
 css/css-text/parsing/white-space-shorthand-text-wrap.html	6	6	computed,function	
 css/css-text/parsing/word-break-computed.html	5	5	computed	/css/support/computed-testcommon.js
 css/css-text/parsing/word-space-transform-computed.html	5	5	computed	/css/support/computed-testcommon.js
@@ -3234,9 +3361,12 @@ css/css-text/text-indent/percentage-value-intrinsic-size.html	3	1	layout-geometr
 css/css-text/text-justify/distribute-alias.tentative.html	1	1	function	
 css/css-text/text-justify/text-justify-cjk-ideograph-extensions.html	3	1	function,layout-geometry,loop	
 css/css-text/text-spacing-trim/text-spacing-trim-combinations-001.html	5	1	computed,fonts,function,loop,media,timing	../support/get-char-advances.js,support/variant-class.js
+css/css-text/text-transform/text-transform-georgian.html	5	1	function,loop	
 css/css-text/white-space/append-whitespace-only-node-crash-001.html	2	1	function,layout-geometry,loop	
 css/css-text/white-space/pre-001.html	1	1	function,layout-geometry,reftest	
 css/css-text/white-space/text-wrap-balance-overflow-002.html	1	1	reftest	
+css/css-text/white-space/white-space-trim-dynamic.html	1	1	layout-geometry,reftest	
+css/css-text/white-space/white-space-trim-inline-block-dynamic.html	1	1	layout-geometry,reftest	
 css/css-text/word-break/word-break-break-all-000.html	1	1	layout-geometry,reftest	
 css/css-text/word-break/word-break-break-all-001.html	1	1	layout-geometry,reftest	
 css/css-text/word-break/word-break-break-all-002.html	1	1	layout-geometry,reftest	
@@ -3271,6 +3401,9 @@ css/css-text/word-break/word-break-normal-tdd-000.html	1	1	layout-geometry,refte
 css/css-text/word-break/word-break-normal-th-000.html	1	1	layout-geometry,reftest	
 css/css-text/word-break/word-break-normal-zh-000.html	1	1	layout-geometry,reftest	
 css/css-text/word-spacing/word-spacing-computed-001.html	12	1	computed,function	
+css/css-text/wrap-inside/wrap-inside-avoid-dynamic.html	1	1	layout-geometry,reftest	
+css/css-text/wrap-inside/wrap-inside-avoid-removed-dynamic.html	1	1	layout-geometry,reftest	
+css/css-text/wrap-inside/wrap-inside-computed.html	6	6	computed,function	
 css/css-transforms/2d-rotate-js.html	1	1	computed,function	
 css/css-transforms/2d-transform-inline-js.html	1	1	computed,function,loop	
 css/css-transforms/3d-scene-with-iframe-001.html	1	1	frame-or-popup,function,reftest	
@@ -3342,6 +3475,7 @@ css/css-transforms/transform_translate_min.html	1	1	computed,function
 css/css-transforms/transform_translate_neg.html	1	1	computed,function	
 css/css-transforms/transform_translate_second_omited.html	1	1	computed,function	
 css/css-transforms/transform_translate_zero.html	1	1	computed,function	
+css/css-transforms/transformed-table-section-containing-block.html	6	2	function,layout-geometry,loop	
 css/css-transforms/transforms-support-calc.html	7	7	computed,function	
 css/css-transforms/translate-getComputedStyle.html	1	1	computed,function	
 css/css-transitions/AnimationEffect-getComputedTiming.tentative.html	1	22	computed,function,timing	/web-animations/testcommon.js,support/helper.js
@@ -3438,8 +3572,13 @@ css/css-transitions/transitioncancel-002.html	1	1	computed,function,timing	./sup
 css/css-transitions/transitioncancel-003.html	1	1	computed,function,timing	./support/helper.js
 css/css-transitions/transitionevent-interface.html	42	42	computed,function,timing	
 css/css-transitions/transitions-retarget.html	1	1	function,layout-geometry,timing	
+css/css-transitions/ua-important-001.tentative.html	1	1	computed,function,timing	
+css/css-transitions/ua-important-002.tentative.html	1	1	computed,frame-or-popup,function,input-driver,layout-geometry,timing	
+css/css-transitions/ua-important-003.tentative.html	1	1	computed,function,timing	
 css/css-transitions/unregistered-custom-property-transition.html	3	3	computed,function,timing	./support/helper.js
 css/css-transitions/zero-duration-multiple-transition.html	1	1	computed,function,timing	
+css/css-typed-om/crashtests/chrome-575201060.html	1	1	crash,function	
+css/css-typed-om/crashtests/chrome-575201475.html	1	1	crash,function	
 css/css-typed-om/idlharness.html	1	1	function,sheets,typed-om	/resources/WebIDLParser.js,/resources/idlharness.js
 css/css-typed-om/stylevalue-normalization/normalize-numeric.tentative.html	6	6	function,typed-om	../resources/testhelper.js
 css/css-typed-om/stylevalue-normalization/transformvalue-normalization.tentative.html	6	5	function,loop,typed-om	../resources/comparisons.js,../resources/testhelper.js
@@ -3447,16 +3586,19 @@ css/css-typed-om/stylevalue-serialization/cssKeywordValue.tentative.html	4	4	fun
 css/css-typed-om/stylevalue-serialization/cssMathValue.tentative.html	2	1	function,loop	../resources/testhelper.js
 css/css-typed-om/stylevalue-serialization/cssTransformValue.tentative.html	3	2	function,loop,typed-om	../resources/testhelper.js
 css/css-typed-om/stylevalue-serialization/cssUnparsedValue.html	6	6	computed,function,typed-om	
+css/css-typed-om/the-stylepropertymap/append-space-separated.tentative.html	4	4	function,loop	../resources/testhelper.js
 css/css-typed-om/the-stylepropertymap/computed/computed.tentative.html	8	7	computed,function,loop,typed-om	../../resources/testhelper.js
 css/css-typed-om/the-stylepropertymap/computed/get.html	6	6	function,typed-om	../../resources/testhelper.js
 css/css-typed-om/the-stylepropertymap/computed/iterable.tentative.html	5	5	computed,function,typed-om	../../resources/testhelper.js
+css/css-typed-om/the-stylepropertymap/declared/append.tentative.html	9	8	function,loop,typed-om	../../resources/testhelper.js
 css/css-typed-om/the-stylepropertymap/declared/clear.html	3	3	function	../../resources/testhelper.js
 css/css-typed-om/the-stylepropertymap/declared/declared.tentative.html	8	7	function,sheets	../../resources/testhelper.js
 css/css-typed-om/the-stylepropertymap/declared/delete-shorthand.html	3	3	function	../../resources/testhelper.js
 css/css-typed-om/the-stylepropertymap/declared/delete.html	5	5	function	../../resources/testhelper.js
 css/css-typed-om/the-stylepropertymap/declared/get.html	7	7	function,typed-om	../../resources/testhelper.js
 css/css-typed-om/the-stylepropertymap/declared/set-shorthand.html	4	3	function,loop,typed-om	../../resources/testhelper.js
-css/css-typed-om/the-stylepropertymap/inline/attribute-changed-callback.html	12	10	custom-element,function,timing,typed-om	
+css/css-typed-om/the-stylepropertymap/inline/append.tentative.html	8	7	function,loop,typed-om	../../resources/testhelper.js
+css/css-typed-om/the-stylepropertymap/inline/attribute-changed-callback.html	13	11	custom-element,function,timing,typed-om	
 css/css-typed-om/the-stylepropertymap/inline/clear.html	3	3	function	../../resources/testhelper.js
 css/css-typed-om/the-stylepropertymap/inline/delete-shorthand.html	3	3	function	../../resources/testhelper.js
 css/css-typed-om/the-stylepropertymap/inline/delete.html	5	5	function	../../resources/testhelper.js
@@ -3468,8 +3610,13 @@ css/css-typed-om/the-stylepropertymap/properties/letter-spacing.html	1	1	compute
 css/css-typed-om/the-stylepropertymap/properties/text-emphasis-position.html	3	1	function,loop,typed-om	../../resources/testhelper.js,resources/testsuite.js
 css/css-ui/accent-color-computed.html	7	7	computed	/css/support/computed-testcommon.js
 css/css-ui/accent-color-invalidation-currentcolor.html	1	1	function,reftest,timing	
+css/css-ui/accent-color-keyword-animation.html	3	3	computed,function,timing	
+css/css-ui/accent-color-keyword-cyclic.html	4	4	computed,function	
+css/css-ui/accent-color-keyword-resolution.html	6	6	computed,function,register-property	
+css/css-ui/accent-color-text-keyword-resolution.html	3	3	computed,function	
 css/css-ui/animation/outline-offset-interpolation-rounding.tentative.html	2	2	computed,function,loop,media,timing	
 css/css-ui/appearance-cssom-001.html	3	1	computed,frame-or-popup,function,loop	/common/subset-tests-by-key.js
+css/css-ui/appearance-display-001.html	2	1	computed,function,loop,media	
 css/css-ui/appearance-initial-value-001.html	4	2	computed,function,loop	
 css/css-ui/appearance-parsing.html	3	3	function,sheets	
 css/css-ui/appearance-progress-bar-002.html	1	1	layout-geometry,reftest	
@@ -4301,7 +4448,7 @@ css/css-ui/outline-auto-dynamic-change.html	1	1	function,reftest
 css/css-ui/outline-width-rounding.tentative.html	4	1	computed,function,loop	
 css/css-ui/parsing/box-sizing-computed.html	2	2	computed	/css/support/computed-testcommon.js
 css/css-ui/parsing/canonical-order-outline-sub-properties-001.html	2	1	computed,function	
-css/css-ui/parsing/caret-color-computed.html	12	12	computed	/css/support/computed-testcommon.js
+css/css-ui/parsing/caret-color-computed.html	9	9	computed	/css/support/computed-testcommon.js
 css/css-ui/parsing/cursor-computed.html	39	39	computed	/css/support/computed-testcommon.js
 css/css-ui/parsing/field-sizing-computed.html	2	2	computed	/css/support/computed-testcommon.js
 css/css-ui/parsing/outline-color-computed.html	2	3	computed,function	/css/support/computed-testcommon.js
@@ -4341,8 +4488,8 @@ css/css-values/absolute-length-units-001.html	7	1	computed,function,loop
 css/css-values/animations/calc-interpolation.html	6	6	computed,function	/css/support/interpolation-testcommon.js
 css/css-values/animations/line-height-lh-transition.html	2	1	computed,function,layout-geometry,timing	
 css/css-values/attr-IACVT.html	1	1	computed,function	
-css/css-values/attr-all-types.html	140	3	computed,function,loop	
-css/css-values/attr-argument-grammar.html	15	1	computed,function	
+css/css-values/attr-all-types.html	137	3	computed,function,loop	
+css/css-values/attr-argument-grammar.html	18	1	computed,function	
 css/css-values/attr-container-style-query.html	1	1	computed,function	
 css/css-values/attr-crash.html	1	1	computed,crash	
 css/css-values/attr-css-wide-keywords.html	21	1	computed,function	
@@ -4357,10 +4504,11 @@ css/css-values/attr-pseudo-elem-invalidation-2.html	4	1	computed,frame-or-popup,
 css/css-values/attr-pseudo-elem-invalidation.html	6	1	computed,function,loop	
 css/css-values/attr-pseudo-element-originating.html	9	6	computed,custom-element,function,shadow	
 css/css-values/attr-revert-rule.html	1	1	computed,function,media	
-css/css-values/attr-security-animation.html	6	6	computed,function,loop,timing	
+css/css-values/attr-security-animation.html	9	9	computed,function,loop,timing	
 css/css-values/attr-security-if.html	14	1	computed,function,media	
 css/css-values/attr-security-transition-2.html	1	1	computed,function,layout-geometry	
 css/css-values/attr-security-transition-interpolated.html	3	3	computed,function	
+css/css-values/attr-security-transition-retarget-taint.html	1	1	computed,function,timing	
 css/css-values/attr-security-transition.html	1	1	computed,function	
 css/css-values/attr-security.html	35	3	computed,function,media,register-property	
 css/css-values/attr-universal-selector.html	1	1	computed,function	
@@ -4428,6 +4576,7 @@ css/css-values/if-style-invalidation.html	6	1	computed
 css/css-values/if-supports-quirks.html	2	1	computed,function	
 css/css-values/inherit-function-basic.html	6	6	computed,function	
 css/css-values/inherit-function-invalidation.html	3	3	computed,function	
+css/css-values/inherit-function-rule-recovery.html	6	2	function,loop,sheets	
 css/css-values/inline-cache-base-uri-cssom.html	1	1	reftest,sheets	
 css/css-values/integer_interpolation_round_half_001.html	1	1	computed,function	
 css/css-values/integer_interpolation_round_half_002.html	1	1	computed,function	
@@ -4443,7 +4592,7 @@ css/css-values/minmax-length-computed.html	82	1	function	../support/numeric-test
 css/css-values/minmax-length-percent-computed.html	50	50		../support/numeric-testcommon.js
 css/css-values/position/position-computed.tentative.html	30	29	computed,function,loop,media	/css/support/computed-testcommon.js
 css/css-values/random-alias-property.tentative.html	1	1	computed,function	
-css/css-values/random-computed.tentative.html	193	44	computed,frame-or-popup,function,loop,media,typed-om,view-transition	../support/computed-testcommon.js
+css/css-values/random-computed.tentative.html	192	44	computed,frame-or-popup,function,loop,media,typed-om,view-transition	../support/computed-testcommon.js
 css/css-values/random-in-animations.tentative.html	2	4	computed,function,loop,timing	/css/support/interpolation-testcommon.js
 css/css-values/random-in-container-query.tentative.html	2	9	computed,function	/css/css-conditional/container-queries/support/cq-testcommon.js
 css/css-values/random-in-custom-function.tentative.html	74	63	computed,function	../support/computed-testcommon.js
@@ -4466,7 +4615,7 @@ css/css-values/ric-invalidation.html	1	1	fonts,function,layout-geometry,timing
 css/css-values/rlh-invalidation.html	1	1	fonts,function,layout-geometry,timing	
 css/css-values/rlh-on-root-lengths.html	1	1	computed,function	
 css/css-values/sign-in-keyframes-with-relative-units.html	2	2	computed,fonts,function	
-css/css-values/signs-abs-computed.html	194	146	function	../support/numeric-testcommon.js
+css/css-values/signs-abs-computed.html	200	146	function	../support/numeric-testcommon.js
 css/css-values/tree-counting/calc-sibling-function-in-shadow-dom.html	5	3	computed,function,shadow	
 css/css-values/tree-counting/calc-sibling-function.html	7	7	computed,function	
 css/css-values/tree-counting/sibling-function-container-query-invalidation.html	8	8	computed,function	
@@ -4537,6 +4686,7 @@ css/css-variables/variable-animation-substitute-within-keyframe-fallback.html	3	
 css/css-variables/variable-animation-substitute-within-keyframe-multiple.html	3	2	computed,function,layout-geometry,timing	
 css/css-variables/variable-animation-substitute-within-keyframe.html	3	2	computed,function,layout-geometry,timing	
 css/css-variables/variable-animation-to-only.html	3	2	computed,function,layout-geometry,timing	
+css/css-variables/variable-animation-visited-link.html	1	1	computed,function,loop,reftest,timing	
 css/css-variables/variable-created-document.html	5	2	computed,function	
 css/css-variables/variable-created-element.html	3	3	computed,function	
 css/css-variables/variable-css-wide-keywords-after-substitution.html	6	2	computed,function,loop	
@@ -4548,8 +4698,8 @@ css/css-variables/variable-definition-cascading.html	9	1	computed,function,loop
 css/css-variables/variable-definition-keywords.html	8	2	computed,function,loop	
 css/css-variables/variable-definition.html	73	4	computed,function,loop	
 css/css-variables/variable-exponential-blowup.html	1	1	computed,function,loop	
-css/css-variables/variable-first-letter.html	6	1	computed,function,loop	
-css/css-variables/variable-first-line.html	6	1	computed,function,loop	
+css/css-variables/variable-first-letter.html	4	1	computed,function,loop	
+css/css-variables/variable-first-line.html	4	1	computed,function,loop	
 css/css-variables/variable-invalidation.html	4	4	computed,function,sheets	
 css/css-variables/variable-presentation-attribute.html	4	2	computed,function,loop	
 css/css-variables/variable-pseudo-element.html	1	1	computed,function,loop	
@@ -4577,6 +4727,7 @@ css/css-variables/variables-substitute-guaranteed-invalid.html	3	3	computed,func
 css/css-variables/vars-border-shorthand-serialize.html	3	3	function	
 css/css-view-transitions/animating-new-content-subset.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-view-transitions/animating-new-content.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js,/common/rendering-utils.js
+css/css-view-transitions/clear-pseudo-elements-nested-style-update.html	1	1	computed,function,layout-geometry,timing,view-transition	
 css/css-view-transitions/composite-accumulate.html	2	1	computed,function,timing,view-transition	
 css/css-view-transitions/computed-style-no-active-transition.html	3	3	computed,function,loop,view-transition	
 css/css-view-transitions/content-visibility-auto-ancestor-skipped-after-finish.html	3	1	function,timing,view-transition	
@@ -4610,6 +4761,7 @@ css/css-view-transitions/modify-style-via-cssom.html	1	1	function,reftest,sheets
 css/css-view-transitions/navigation/at-rule-cssom.html	6	6	function,loop,sheets,view-transition	
 css/css-view-transitions/navigation/opt-in-removed-during-transition.html	3	1	frame-or-popup,function,sheets,timing,view-transition	
 css/css-view-transitions/navigation/pagereveal-setup-transition.html	3	1	computed,frame-or-popup,function,timing,view-transition	
+css/css-view-transitions/navigation/pageswap-after-media-change.html	1	1	function,media,timing,view-transition	
 css/css-view-transitions/navigation/pageswap-fired-before-old-state-capture.html	3	1	computed,frame-or-popup,function,timing,view-transition	
 css/css-view-transitions/navigation/pageswap-traverse-navigation-no-bfcache.https.html	7	1	frame-or-popup,function,sheets,timing,view-transition	resources/common.js
 css/css-view-transitions/navigation/root-element-transition-iframe-with-startVT-on-main.html	1	1	frame-or-popup,function,reftest,timing,view-transition	/common/reftest-wait.js,resources/common.js
@@ -4623,6 +4775,7 @@ css/css-view-transitions/new-content-from-root-display-none.html	1	1	function,re
 css/css-view-transitions/new-content-has-scrollbars.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js
 css/css-view-transitions/new-content-is-empty-div.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js
 css/css-view-transitions/new-content-transform-change-001.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js
+css/css-view-transitions/new-element-hidden-during-animation-skips-transition.html	1	1	function,timing,view-transition	
 css/css-view-transitions/new-element-on-start.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js
 css/css-view-transitions/new-root-vertical-writing-mode.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js
 css/css-view-transitions/no-painting-while-render-blocked.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js
@@ -4640,12 +4793,21 @@ css/css-view-transitions/only-child-no-transition.html	1	1	computed,function,loo
 css/css-view-transitions/only-child-old.html	6	6	computed,function,timing,view-transition	
 css/css-view-transitions/only-child-on-root-element-with-view-transition.html	1	1	computed,function,timing,view-transition	
 css/css-view-transitions/only-child-view-transition.html	1	1	computed,function,timing,view-transition	
+css/css-view-transitions/paint-holding-in-iframe-ancestor-opacity.html	1	1	frame-or-popup,function,reftest,timing,view-transition	/common/reftest-wait.js,/common/rendering-utils.js
+css/css-view-transitions/paint-holding-in-iframe-named-element.html	1	1	frame-or-popup,function,reftest,timing,view-transition	/common/reftest-wait.js,/common/rendering-utils.js
+css/css-view-transitions/paint-holding-in-iframe-no-captured-elements.html	1	1	frame-or-popup,function,reftest,timing,view-transition	/common/reftest-wait.js,/common/rendering-utils.js
+css/css-view-transitions/paint-holding-in-iframe-overlap.html	1	1	frame-or-popup,function,reftest,timing,view-transition	/common/reftest-wait.js,/common/rendering-utils.js
+css/css-view-transitions/paint-holding-in-iframe-scrolled-into-view.html	1	1	frame-or-popup,function,layout-geometry,reftest,timing,view-transition	/common/reftest-wait.js,/common/rendering-utils.js
+css/css-view-transitions/paint-holding-in-iframe-skipped.html	1	1	frame-or-popup,function,reftest,timing,view-transition	/common/reftest-wait.js,/common/rendering-utils.js
+css/css-view-transitions/paint-holding-in-iframe-transformed.html	1	1	frame-or-popup,function,loop,reftest,timing,view-transition	/common/reftest-wait.js,/common/rendering-utils.js
+css/css-view-transitions/paint-holding-in-iframe-transparent.html	1	1	frame-or-popup,function,reftest,timing,view-transition	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-view-transitions/paint-holding-in-iframe.html	1	1	frame-or-popup,function,reftest,timing,view-transition	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-view-transitions/pseudo-computed-style-stays-in-sync-with-new-element.html	1	1	computed,function,timing,view-transition	
 css/css-view-transitions/pseudo-element-animations.html	1	3	computed,function,sheets,timing,view-transition	../css-animations/support/testcommon.js
 css/css-view-transitions/pseudo-get-computed-style-clean-style.html	1	1	computed,function,layout-geometry,timing,view-transition	/dom/events/scrolling/scroll_support.js
 css/css-view-transitions/pseudo-get-computed-style-escaped-star.html	1	1	computed,function,timing,view-transition	
 css/css-view-transitions/pseudo-get-computed-style.html	2	2	computed,function,timing,view-transition	
+css/css-view-transitions/render-pass-backing-logical-bounds.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js
 css/css-view-transitions/reset-state-after-scrolled-view-transition.html	1	1	function,layout-geometry,reftest,timing,view-transition	
 css/css-view-transitions/root-captured-as-different-tag.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js
 css/css-view-transitions/root-style-change-during-animation.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js
@@ -4664,6 +4826,8 @@ css/css-view-transitions/scoped/display-inline-block.html	1	1	computed,function,
 css/css-view-transitions/scoped/display-none-during-transition.html	1	1	function,loop,timing,view-transition	
 css/css-view-transitions/scoped/element-scoped-containment-invalid-state.html	5	5	function,timing,view-transition	
 css/css-view-transitions/scoped/fill-forwards.html	1	1	function,loop,timing,view-transition	/css/css-view-transitions/support/common.js
+css/css-view-transitions/scoped/hit-test-captured-scope.html	4	1	function,layout-geometry,loop,timing,view-transition	
+css/css-view-transitions/scoped/hit-test-overflow-clipped-scope.html	4	1	function,layout-geometry,loop,timing,view-transition	
 css/css-view-transitions/scoped/implicit-contain.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js,/web-animations/testcommon.js
 css/css-view-transitions/scoped/missing-view-transition-name.html	1	1	function,timing,view-transition	/css/css-view-transitions/support/common.js
 css/css-view-transitions/scoped/negative-playback-rate.html	1	1	function,loop,timing,view-transition	/dom/events/scrolling/scroll_support.js
@@ -4689,6 +4853,7 @@ css/css-view-transitions/web-animations-api-parse-pseudo-argument.html	1	1	funct
 css/css-view-transitions/web-animations-api.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js
 css/css-viewport/animations/zoom-interpolation.html	10	12	computed,function,input-driver,layout-geometry,timing	/css/support/interpolation-testcommon.js,/resources/testdriver-actions.js
 css/css-viewport/computedStyle-zoom.html	6	6	computed,function,loop	
+css/css-viewport/zoom/calc-computed.html	2	2		/css/support/computed-testcommon.js
 css/css-viewport/zoom/computed-border-width-keywords.html	2	1	computed,function,loop	
 css/css-viewport/zoom/computed-column-rule-width-keywords.html	2	1	computed,function,loop	
 css/css-viewport/zoom/computed-initial.html	3	1	computed,function,loop	
@@ -4737,38 +4902,39 @@ css/css-writing-modes/forms/select-multiple-scrolling.optional.html	3	1	function
 css/css-writing-modes/forms/select-size-scrolling-and-sizing.optional.html	4	2	function,layout-geometry,loop,media	
 css/css-writing-modes/forms/text-input-baseline.html	2	1	fonts,function,layout-geometry,loop,media,timing	
 css/css-writing-modes/forms/text-input-block-size.optional.html	1	1	fonts,function,layout-geometry,loop,media,timing	
+css/css-writing-modes/forms/text-input-scroll-on-blur.html	1	1	function,layout-geometry,loop,timing	
 css/css-writing-modes/forms/text-input-vertical-overflow-no-scroll.html	1	1	computed,function,input-driver,layout-geometry,loop,media,timing	
 css/css-writing-modes/forms/textarea-rows-cols-sizing.html	2	2	function,layout-geometry,loop,media	
 css/css-writing-modes/orthogonal-child-with-border.html	1	1	function,reftest	
 css/css-writing-modes/orthogonal-child-with-padding.html	1	1	function,reftest	
 css/css-writing-modes/orthogonal-containing-block-height-changes.html	1	1	layout-geometry,reftest	
 css/css-writing-modes/orthogonal-dynamic-size-001.html	1	1	layout-geometry,reftest	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001a.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001b.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001c.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001d.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001e.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001f.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001g.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001h.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001i.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001j.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001k.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001l.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001m.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001n.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001o.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001p.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001q.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001r.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001s.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001t.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001u.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001v.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001w.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-001x.html	2	1	computed,function,layout-geometry,loop,timing	
-css/css-writing-modes/orthogonal-parent-shrink-to-fit-002.html	2	1	computed,function,layout-geometry,loop	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001a.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001b.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001c.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001d.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001e.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001f.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001g.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001h.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001i.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001j.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001k.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001l.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001m.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001n.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001o.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001p.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001q.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001r.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001s.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001t.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001u.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001v.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001w.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-001x.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
+css/css-writing-modes/orthogonal-parent-shrink-to-fit-002.html	3	1	computed,fonts,function,layout-geometry,loop,timing	
 css/css-writing-modes/orthogonal-root-resize-icb-001.html	1	1	frame-or-popup,function,reftest,timing	
 css/css-writing-modes/orthogonal-root-resize-icb-002.html	1	1	frame-or-popup,function,reftest,timing	
 css/css-writing-modes/orthogonal-root-resize-icb-003.html	1	1	frame-or-popup,function,reftest,timing	
@@ -4794,6 +4960,7 @@ css/css-writing-modes/text-orientation-parsing-001.html	1	1	computed,function,lo
 css/css-writing-modes/text-orientation-parsing-sideways-right-001.html	1	1	computed,function,loop	
 css/css-writing-modes/unicode-bidi-parsing-001.html	1	1	computed,function,loop	
 css/css-writing-modes/unicode-bidi-parsing-002.html	1	1	computed,function,loop	
+css/css-writing-modes/vertical-containing-block-width-changes.html	1	1	layout-geometry,reftest	
 css/css-writing-modes/vrl-inline-paint-invalidation.html	1	1	function,reftest	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-writing-modes/wm-propagation-body-computed-direction-001.html	1	1	computed,function	
 css/css-writing-modes/wm-propagation-body-computed-direction-002.html	1	1	computed,function	
@@ -4815,7 +4982,7 @@ css/cssom-view/MediaQueryList-extends-EventTarget.html	7	7	function,media,timing
 css/cssom-view/MediaQueryListEvent.html	6	6	function,media,timing	resources/matchMedia.js
 css/cssom-view/add-background-attachment-fixed-during-smooth-scroll.html	1	1	function,layout-geometry,reftest,timing	/common/reftest-wait.js
 css/cssom-view/background-change-during-smooth-scroll.html	1	1	function,layout-geometry,timing	
-css/cssom-view/checkVisibility.html	16	15	function,layout-geometry,loop,shadow,timing	
+css/cssom-view/checkVisibility.html	24	21	function,layout-geometry,loop,shadow,timing	
 css/cssom-view/cssom-geometryutils-connected-callback.html	3	2	custom-element,function,layout-geometry,loop	resources/geometry-utils.js
 css/cssom-view/cssom-geometryutils-getBoxQuads-options.html	8	8	computed,function,layout-geometry,loop	resources/geometry-utils.js
 css/cssom-view/cssom-geometryutils-lifecycle.html	4	4	frame-or-popup,function,layout-geometry,timing	
@@ -4859,6 +5026,7 @@ css/cssom-view/scrollingElement-quirks-dynamic-002.html	1	1	layout-geometry,reft
 css/cssom-view/scrollingElement.html	3	2	function,loop,timing	
 css/cssom-view/smooth-scroll-in-load-event.html	1	1	function,layout-geometry,timing	/dom/events/scrolling/scroll_support.js
 css/cssom-view/subpixel-sizes-and-offsets.tentative.html	15	15	function,layout-geometry	
+css/cssom-view/user-scroll-interrupts-smooth-scroll.html	8	3	function,input-driver,layout-geometry,timing	/resources/testdriver-actions.js,support/scroll-behavior.js
 css/cssom/CSS-escape-numeric-id.html	2	2	function	
 css/cssom/CSS-supports.html	11	11	computed,function,media	
 css/cssom/CSSConditionRule-conditionText.html	1	1	computed,function,sheets	
@@ -4903,6 +5071,7 @@ css/cssom/CSSStyleSheet-constructable-invalidation.html	3	3	computed,function,sh
 css/cssom/CSSStyleSheet-constructable-replace-cssRules.html	2	1	computed,function,loop,sheets,timing	
 css/cssom/CSSStyleSheet-constructable-replace-on-regular-sheet.html	3	3	computed,function,sheets,timing	
 css/cssom/CSSStyleSheet-constructable-replace-thenable.html	1	1	function,sheets,timing	
+css/cssom/CSSStyleSheet-constructable-replaceSync-detached.html	5	5	function,sheets	
 css/cssom/CSSStyleSheet-constructable.html	41	32	computed,function,layout-geometry,shadow,sheets,timing	
 css/cssom/CSSStyleSheet-insertRule-computed.html	1	1	computed,function,sheets	
 css/cssom/CSSStyleSheet-modify-after-removal.html	2	2	frame-or-popup,function,layout-geometry,sheets	
@@ -4956,7 +5125,7 @@ css/cssom/css-style-declaration-modifications.html	4	4	computed,function,loop,sh
 css/cssom/css-style-reparse.html	2	2	computed,function,sheets	
 css/cssom/cssimportrule-parent.html	1	1	function,sheets,timing	
 css/cssom/cssimportrule-sheet-identity.html	1	1	function,sheets,timing	
-css/cssom/cssimportrule.html	11	11	function,sheets	
+css/cssom/cssimportrule.html	12	12	function,sheets	
 css/cssom/cssom-cssText-serialize.html	1	1	function	
 css/cssom/cssom-cssstyledeclaration-set.html	1	1	function	
 css/cssom/cssom-fontfacerule-constructors.html	2	2	fonts,function,loop,sheets	
@@ -5006,6 +5175,8 @@ css/cssom/getComputedStyle-display-none-shadow-invalidation.html	2	2	computed,fu
 css/cssom/getComputedStyle-dynamic-subdoc.html	1	1	computed,frame-or-popup,function,layout-geometry	
 css/cssom/getComputedStyle-getter-v-properties.tentative.html	3	2	computed,function,loop	
 css/cssom/getComputedStyle-important.html	2	2	computed,function	
+css/cssom/getComputedStyle-in-unrendered-subframe-with-query-container-crash.html	1	1	computed,crash,frame-or-popup,function,layout-geometry	
+css/cssom/getComputedStyle-inset-inline-containing-block-vertical.html	4	2	computed,function,layout-geometry	
 css/cssom/getComputedStyle-insets-absolute-crash.html	1	1	computed,crash,layout-geometry	
 css/cssom/getComputedStyle-insets-absolute-logical-crash.html	1	1	computed,crash	
 css/cssom/getComputedStyle-insets-absolute-roundtrip.html	4	4	computed,function	
@@ -5015,6 +5186,8 @@ css/cssom/getComputedStyle-insets-grid.html	7	1	computed,function,loop,timing
 css/cssom/getComputedStyle-insets-multicol-absolute-crash.html	1	1	computed,crash	
 css/cssom/getComputedStyle-insets-nobox.html	2	1	computed	
 css/cssom/getComputedStyle-insets-relative.html	2	1	computed	
+css/cssom/getComputedStyle-insets-relpos-block-in-inline.html	4	1	computed,function	
+css/cssom/getComputedStyle-insets-relpos-inline-002.html	4	1	computed,function	
 css/cssom/getComputedStyle-insets-relpos-inline.html	1	4	computed,fonts,function,timing	
 css/cssom/getComputedStyle-insets-static.html	2	1	computed	
 css/cssom/getComputedStyle-insets-sticky-container-for-abspos.html	2	1	computed	
@@ -5069,6 +5242,7 @@ css/cssom/insertRule-import-trailing-garbage-crash.html	1	1	crash,sheets
 css/cssom/insertRule-namespace-after-import.html	2	2	function,sheets	
 css/cssom/insertRule-namespace-no-index.html	3	3	function,sheets	
 css/cssom/insertRule-no-index.html	2	2	function,sheets	
+css/cssom/insertRule-page-detached-grouping-rule-crash.html	1	1	crash,sheets	
 css/cssom/insertRule-syntax-error-01.html	1	1	computed,function,sheets	
 css/cssom/invalid-pseudo-elements.html	1	1	function,sheets	
 css/cssom/link-element-stylesheet-title.html	2	2	function,loop,sheets	
@@ -5098,11 +5272,13 @@ css/cssom/serialize-custom-props.html	10	4	computed,function,register-property
 css/cssom/serialize-media-rule.html	12	13	function,sheets	
 css/cssom/serialize-namespaced-type-selectors.html	60	60	function,layout-geometry,sheets	
 css/cssom/serialize-values.html	4	1	function,loop,timing	
+css/cssom/serialize-variable-reference-whitespace.html	8	8	function	
 css/cssom/serialize-variable-reference.html	4	4	function	
 css/cssom/serialize-whitespace.html	1	1	function	
 css/cssom/set-selector-text-attachment.html	1	1	computed,function,sheets	
 css/cssom/set-selector-text-detached-rule-delete-crash.html	1	1	crash,sheets	
 css/cssom/set-selector-text-detached-rule-replace-crash.html	1	1	crash,sheets	
+css/cssom/setproperty-custom-property-override-important.html	5	5	computed,function,sheets	
 css/cssom/setproperty-null-undefined.html	4	4	function	
 css/cssom/shadow-dom-style-sheet.html	3	3	function,shadow,sheets	
 css/cssom/shorthand-serialization.html	7	7	function	
@@ -5135,6 +5311,7 @@ css/cssom/style-width-calc-vh-vw.html	1	1	function,loop
 css/cssom/stylesheet-cross-origin-redirect-quirks.sub.html	5	4	computed,function,timing	
 css/cssom/stylesheet-same-origin.sub.html	14	7	function,sheets	
 css/cssom/stylesheet-title.html	2	2	computed,function,loop,sheets	
+css/cssom/stylesheets-in-non-rendered-document.html	3	3	function,sheets	
 css/cssom/system-color-inherit.html	2	2	computed,function	
 css/cssom/system-color-lowercase.html	4	4	computed,function	
 css/cssom/ttwf-cssom-doc-ext-load-count.html	4	3	function,sheets,timing	
@@ -5142,7 +5319,7 @@ css/cssom/ttwf-cssom-doc-ext-load-tree-order.html	6	6	function,sheets
 css/cssom/ttwf-cssom-document-extension.html	1	1	function,sheets	
 css/cssom/variable-names.html	6	1	function,loop	
 css/cssom/xml-stylesheet-pi-in-doctype.xhtml	1	1	computed,function,timing	
-css/fetching/fetch-resources.sub.html	7	4	fonts,function,media,timing	support/echo-helper.js
+css/fetching/fetch-resources.https.sub.html	7	4	fonts,function,media,timing	support/echo-helper.js
 css/fill-stroke/text-decoration-fill/text-decoration-fill-computed.tentative.svg	1	7	computed	
 css/fill-stroke/text-decoration-stroke/text-decoration-stroke-computed.tentative.svg	1	7	computed	
 css/filter-effects/backdrop-filter-border-radius-change.html	1	1	function,reftest,timing	
@@ -5162,6 +5339,7 @@ css/filter-effects/filter-cb-abspos-inline-002.html	1	1	function,layout-geometry
 css/filter-effects/filter-cb-abspos-inline-003.html	1	1	function,layout-geometry,reftest	
 css/filter-effects/filter-cb-dynamic-1a.html	1	1	layout-geometry,reftest	
 css/filter-effects/filter-cb-dynamic-1b.html	1	1	layout-geometry,reftest	
+css/filter-effects/filter-change-to-reference-filter.html	1	1	function,reftest	/common/reftest-wait.js,/common/rendering-utils.js
 css/filter-effects/filter-effect-remove-unattached.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/filter-effects/invalidation-css-dropshadow-002.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/filter-effects/parsing/backdrop-filter-computed.html	28	28	computed	/css/support/computed-testcommon.js
@@ -5181,6 +5359,7 @@ css/mediaqueries/aspect-ratio-003.html	1	1	reftest
 css/mediaqueries/aspect-ratio-004.html	1	1	reftest	
 css/mediaqueries/aspect-ratio-005.html	1	1	reftest	
 css/mediaqueries/aspect-ratio-006.html	1	1	reftest	
+css/mediaqueries/aspect-ratio-calc-negative.html	18	2	computed,function,loop,media	
 css/mediaqueries/aspect-ratio-serialization.html	1	1	function,media	
 css/mediaqueries/at-custom-media-cssom.html	10	10	function,sheets	
 css/mediaqueries/at-custom-media-parsing.html	14	2	function,sheets	
@@ -5236,12 +5415,15 @@ css/selectors/attribute-selectors/attribute-case/cssom.html	96	4	function,loop,s
 css/selectors/attribute-selectors/attribute-case/semantics.html	4	4	computed,frame-or-popup,function,loop,sheets	
 css/selectors/attribute-selectors/attribute-case/syntax.html	4	4	computed,frame-or-popup,function,loop,sheets	
 css/selectors/attribute-selectors/attribute-case/value-case-sensitivity-svg.html	7	3	computed,function	
+css/selectors/attribute-selectors/attribute-case/xhtml-mixed-case-attribute-ancestor.xhtml	4	4	computed,function	
 css/selectors/attribute-selectors/style-attribute-selector.html	11	11	computed,function,layout-geometry	
 css/selectors/class-prefix-selector-has-invalidation.tentative.html	8	8	computed,function	
 css/selectors/class-prefix-selector-invalidation.tentative.html	3	3	computed,function	
 css/selectors/class-selector-escape-exclamation.html	1	1	computed,function,sheets	
 css/selectors/crashtests/chrome-bug-565742178.html	1	1	computed,crash,function	
 css/selectors/dir-pseudo-on-input-element.html	20	5	computed,function,loop	
+css/selectors/featureless-006.html	46	3	computed,function,layout-geometry,shadow	
+css/selectors/featureless-007.html	24	1	computed,function,loop,shadow	
 css/selectors/focus-display-none-001.html	2	2	function,layout-geometry,timing	
 css/selectors/focus-visible-001.html	1	1	computed,function,input-driver,layout-geometry,timing	/resources/testdriver-actions.js
 css/selectors/focus-visible-002.html	2	1	computed,function,input-driver,layout-geometry,loop,timing	/resources/testdriver-actions.js
@@ -5294,6 +5476,7 @@ css/selectors/focus-visible-script-focus-019.html	1	2	computed,function,input-dr
 css/selectors/focus-visible-script-focus-020.html	1	2	computed,function,input-driver,layout-geometry,timing	/css/support/parsing-testcommon.js
 css/selectors/focus-within-009.html	12	12	computed,function,layout-geometry,loop	
 css/selectors/focus-within-display-none-001.html	2	2	function,layout-geometry,timing	
+css/selectors/forgiving-selector-list-comma-in-block.html	19	4	computed,function,loop,sheets	
 css/selectors/has-specificity.html	8	1	computed,function	
 css/selectors/has-where-computed.html	1	1	computed,function	
 css/selectors/hash-collision-cssom.html	1	1	computed,function,layout-geometry,sheets	
@@ -5311,6 +5494,7 @@ css/selectors/invalidation/empty-pseudo-in-has-display-none.html	17	2	computed,f
 css/selectors/invalidation/empty-pseudo-in-has.html	6	1	computed,function	
 css/selectors/invalidation/enabled-disabled.html	2	2	computed,function	
 css/selectors/invalidation/first-child-last-child.html	2	2	computed,function,loop	
+css/selectors/invalidation/focus-pseudo-classes-when-ancestor-changes.html	5	5	computed,function,layout-geometry	
 css/selectors/invalidation/fullscreen-pseudo-class-in-has.html	3	2	computed,frame-or-popup,function,input-driver,timing	
 css/selectors/invalidation/has-complexity.html	15	1	computed,function,loop	
 css/selectors/invalidation/has-css-nesting-shared.html	6	1	computed,function	
@@ -5322,8 +5506,10 @@ css/selectors/invalidation/has-in-sibling-position.html	43	1	computed,function
 css/selectors/invalidation/has-invalidation-after-removing-non-first-element.html	4	1	computed,function	
 css/selectors/invalidation/has-invalidation-first-in-sibling-chain.html	3	1	computed,function,loop	
 css/selectors/invalidation/has-invalidation-for-wiping-an-element.html	10	1	computed,function	
+css/selectors/invalidation/has-non-identifying-compound-insertion.html	6	2	computed,function	
 css/selectors/invalidation/has-pseudo-element-subject-child-mutation.html	4	4	computed,function	
 css/selectors/invalidation/has-pseudoclass-only.html	36	1	computed,function,loop	
+css/selectors/invalidation/has-shared-argument-multiple-rules.html	2	2	computed,function	
 css/selectors/invalidation/has-sibling-insertion-removal.html	28	1	computed,function	
 css/selectors/invalidation/has-sibling.html	42	1	computed,function	
 css/selectors/invalidation/has-side-effect.html	3	1	computed,function	
@@ -5341,6 +5527,7 @@ css/selectors/invalidation/host-context-pseudo-class-in-has.html	11	1	computed,f
 css/selectors/invalidation/host-has-shadow-tree-element-at-nonsubject-position.html	52	1	computed,function,shadow	
 css/selectors/invalidation/host-has-shadow-tree-element-at-subject-position.html	52	1	computed,function,shadow	
 css/selectors/invalidation/host-pseudo-class-in-has.html	8	1	computed,function,shadow	
+css/selectors/invalidation/hover-active-pseudo-classes-when-ancestor-changes.html	1	1	computed,function,input-driver,layout-geometry,timing	/resources/testdriver-actions.js
 css/selectors/invalidation/input-in-range-in-has-with-readonly.html	4	4	computed,function	
 css/selectors/invalidation/input-pseudo-classes-in-has.html	10	10	computed,function	
 css/selectors/invalidation/insert-sibling-001.html	1	1	computed,function	

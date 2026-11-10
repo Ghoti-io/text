@@ -1,0 +1,3 @@
+# tools/conformance/css_cssom_script_suite.py: the pages of the scoring interpreter's program that a pinned browser cannot finish, so that the page record has no entry for them. Columns (tab separated):
+# page, engine, reason. A page here has no test that the gate scores (a test of it that needs a layout stays in UNSCORED_LAYOUT), and a page that is not a page of the program fails.
+css/css-grid/subgrid/nested-grid-subgrid-resize.html	chromium	Chromium 156.0.8078.47 never finishes the page (the driver's 60 second wait ends with no answer, on every try), whose own help link is a Chromium bug of exactly that; Firefox 158.0.1 passes its one test, which needs a layout

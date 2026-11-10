@@ -421,7 +421,7 @@ rule-inset-written-short	css_shorthand_serialize.c	    if (!texteq(cs, ce) || !t
 rule-shorthand-list-not-split	css_shorthand.c	  if (split_gap_rule(x, sh, root, ids, nl, txt, status)) {	  if (0 && split_gap_rule(x, sh, root, ids, nl, txt, status)) {	shorthand,computed
 placeholder-needs-a-value	css_markup.c	attr(el, "placeholder", &ph)) {	attr(el, "placeholder", &ph) && ph.value_length) {	match
 contrast-resolved-before-it-is-used	css_color_compute.c	st = eval_leaf(&w, kid, true, &v, &ok);	st = eval_leaf(&w, kid, f->c->kind != GTEXT_CSS_COLOR_CONTRAST, &v, &ok);	computed,colorrelative
-env-name-may-be-a-function	css_property.c	if (c->kind != GTEXT_CSS_VALUE_TOKEN) {\n      return false;	if (c->kind != GTEXT_CSS_VALUE_TOKEN) {\n      return c->kind == GTEXT_CSS_VALUE_FUNCTION;	property
+env-argument-block-may-sit-beside-a-name	css_value.c	if (!first || (first_block && (first_count != 1 || first_empty))) {	if (!first) {	property
 registered-url-taint-ignored	css_substitute.c	if (matched && tainted && m.set) {	if (0 && matched && tainted && m.set) {	computed
 moved-style-keeps-its-sheet	cssom_markup.c	->implicit_root != (const void *)gtext_markup_node_parent(e->element)) {	->implicit_root != (const void *)gtext_markup_node_parent(e->element) && 0) {	markup
 contents-chain-forgotten	css_compute_algo.c	parent_makes_items = st->parent->item_container;	parent_makes_items = false;	computed

@@ -20,7 +20,7 @@ style-range-never-evaluated	css_substitute.c	  if (leaf->is_range) {\n    return
 style-range-types-not-compared	css_style_range.c	  return zero_a || zero_b;	  return true;	fail
 var-name-taint-ignored	css_substitute.c	  if (found && f->res[0].rope && css_rope_has_taint(f->res[0].rope)) {	  if (0 && found && f->res[0].rope && css_rope_has_taint(f->res[0].rope)) {	fail
 if-condition-taint-ignored	css_substitute.c	f->res[1].rope && f->cond_tainted ?	f->res[1].rope && 0 && f->cond_tainted ?	fail
-env-index-grammar-not-checked	css_property.c	(name_is(v, "env") && !env_name_syntax(v))	(0 && name_is(v, "env") && !env_name_syntax(v))	fail
+env-argument-block-beside-a-name-accepted	css_value.c	if (!first || (first_block && (first_count != 1 || first_empty))) {	if (!first) {	fail
 attr-unit-not-lowercased	css_substitute.c	text[k] = (char)(text[k] - 'A' + 'a');	text[k] = (char)(text[k] - 'A' + 'A');	fail
 border-width-resolved-ignores-the-style	cssom_resolved.c	  return hidden ? recompute_text(r, info, "0px", 3, out) : GTEXT_CSS_OK;	  return GTEXT_CSS_OK;	fail
 border-width-computed-zero-under-none	css_compute_algo.c	  if (style_hides(st, m) && !is_border_width(m)) {	  if (style_hides(st, m)) {	fail

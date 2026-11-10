@@ -692,3 +692,26 @@ test(() => {
   assert_equals(s.cssRules[0]?.selectorText, undefined);
 }, "optional chain over a rule that may not exist");
 </script>
+=== a-guard-on-a-runtime-value-that-pushes-to-an-array-of-the-page-leaves-the-page-unread
+unread
+---
+<!DOCTYPE html><title>t</title><script>
+// the tests below are made for as many values as the guard lets through, and which it lets through only the browsers know: css/css-ui/appearance-display-001.html
+const values = ["a", "b"];
+if (CSS.supports("display", "grid-lanes")) { values.push("c"); }
+for (const v of values) { test(() => { assert_equals(typeof v, "string"); }, "v" + v); }
+</script>
+=== a-guard-on-a-runtime-value-that-only-pushes_to_its_own_array_is_modeled
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+if (CSS.supports("display", "grid")) { const own = []; own.push(1); }
+test(() => { assert_true(true); }, "t");
+</script>
+=== a-write-of-margin-trim-leaves-the-test-unmodeled
+tests 1
+outcome 0 unmodeled:host-style-margin-trim
+---
+<!DOCTYPE html><title>t</title><div id=c><div id=a></div></div><script>
+test(() => { document.getElementById("c").style.marginTrim = "block"; assert_equals(getComputedStyle(document.getElementById("a")).marginTop, "0px"); }, "t");
+</script>

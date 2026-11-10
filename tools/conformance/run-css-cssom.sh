@@ -82,6 +82,10 @@ replayrecord=$root/tools/conformance/css_cssom_replayrecord.jsonl
 served=$root/tools/conformance/CSS_CSSOM_SCRIPT_SERVED
 script_pages=$root/build/css-cssom-script-pages.txt
 awk -F'\t' '!/^#/ { print $1 }' "$vectors/script-tests.tsv" | sort -u > "$script_pages"
+# the pages no browser finishes have no entry in the record (tools/conformance/UNRECORDED_PAGES, checked by the script gate)
+awk -F'\t' '!/^#/ && NF { print $1 }' "$root/tools/conformance/UNRECORDED_PAGES" | sort -u > "$script_pages.skip" 2>/dev/null || : > "$script_pages.skip"
+grep -v -x -F -f "$script_pages.skip" "$script_pages" > "$script_pages.kept" || true
+mv "$script_pages.kept" "$script_pages"
 if [ "$1" = "--script-pages" ]; then
 	cat "$script_pages"
 	exit 0

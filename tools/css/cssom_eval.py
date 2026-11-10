@@ -468,6 +468,7 @@ MUTATING_OPS = SHEET_OPS | {'setattr', 'rmattr', 'classadd', 'classremove', 'cla
 
 STYLE_METHODS = {'getPropertyValue', 'getPropertyPriority', 'setProperty', 'removeProperty', 'item'}
 STYLE_NON_PROPS = {'length', 'cssText', 'parentRule', 'cssFloat'}
+ARRAY_MUTATORS = ('push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin')
 MUTATORS = re.compile(r'^(setAttribute|removeAttribute|setProperty|removeProperty|append|appendChild|prepend|remove|removeChild|insertBefore|replaceWith|replaceChildren|replaceChild|'
                       r'insertAdjacent\w*|add|toggle|replace|replaceSync|insertRule|deleteRule|attachShadow|adoptedStyleSheets|cloneNode|setAttributeNS|removeAttributeNS|'
                       r'toggleAttribute|setHTMLUnsafe|importNode|adoptNode|createElement\w*|write|open|close|click|focus|blur|showPopover|hidePopover|showModal|requestFullscreen)$')
@@ -1188,6 +1189,10 @@ class Interp:
                     return False
         if k == 'call':
             callee = node[1]
+            # a method that changes a JavaScript array the page made outside the block (`displays.push(display)` under `if (CSS.supports(...))`) leaves behind what the evaluator would have
+            # to know, as an assignment to a variable of the page does: the tests the loops over that array make are as many as the guard lets through, which only the browsers know
+            if isinstance(callee, tuple) and callee[0] == 'mem' and callee[2] in ARRAY_MUTATORS and not (isinstance(callee[1], tuple) and callee[1][0] == 'id' and callee[1][1] in declared):
+                return False
             if isinstance(callee, tuple) and callee[0] == 'id':
                 if callee[1] in ('test', 'setup', 'add_completion_callback', 'done'):
                     return False
@@ -2592,6 +2597,8 @@ def style_get(interp, st, key, for_call):
         def f(i, a):
             if len(a) < 2 or not isinstance(a[0], str):
                 raise Unmodeled('host-setProperty-argument')
+            if to_str(a[0]) == 'margin-trim' and not st.computed:
+                raise Unmodeled('host-style-margin-trim')
             i.emit('sset', st.name, a[0], null_empty(a[1]), null_empty(a[2]) if len(a) > 2 and a[2] is not UNDEF else '')
             return UNDEF
         return BoundMethod(f)
@@ -2642,6 +2649,10 @@ def style_set(interp, st, key, value):
     if key == 'cssText':
         interp.emit('scsstext', st.name, null_empty(value))
         return
+    if key in ('marginTrim', 'margin-trim') and not st.computed:
+        # margin-trim changes the used margins of the children, which a getComputedStyle() of a margin reads back (the resolved value of a margin is its used value) and which no layout here
+        # has: the page and the replay of its program (the same page, with the program in the place of its scripts) answer differently in the browsers
+        raise Unmodeled('host-style-margin-trim')
     interp.emit('sattrset', st.name, key, null_empty(value))
 
 
