@@ -26,7 +26,6 @@
  * rules, feature blocks) are rules of their own, parsed by the same function one level down (their depth is the depth of the grammar, at most two).
  */
 
-#include <stdio.h>
 #include <string.h>
 
 #include <ghoti.io/text/css/css_condition.h>
@@ -2590,12 +2589,18 @@ static void put_feature_values_rule(outp * o, const GTEXT_CSS_Atrule * a) {
       put_ident(o, vals[i].name.data, vals[i].name.length);
       putz(o, ": ");
       for (size_t v = 0; v < vals[last].value_count; v++) {
-        char buf[16];
-        const int len = snprintf(buf, sizeof buf, "%lu", (unsigned long)vals[last].values[v]);
+        /* the digits of an unsigned integer, written by hand: src/css converts and writes numbers through the math library only */
+        char buf[24];
+        size_t len = sizeof buf;
+        unsigned long long n = (unsigned long long)vals[last].values[v];
+        do {
+          buf[--len] = (char)('0' + (int)(n % 10u));
+          n /= 10u;
+        } while (n);
         if (v) {
           putz(o, " ");
         }
-        put(o, buf, (size_t)len);
+        put(o, buf + len, sizeof buf - len);
       }
       putz(o, ";");
     }

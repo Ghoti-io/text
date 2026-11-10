@@ -591,16 +591,7 @@ GTEXT_CSS_Status gtext_css_parse_property(const GTEXT_CSS_Registry * registry, c
     return GTEXT_CSS_OK;
   }
   if (sub) {
-    bool syntax = true;
-    st = css_substitution_syntax(values, count, options->allocator ? options->allocator : css_registry_allocator(registry), &syntax);
-    if (st != GTEXT_CSS_OK) {
-      out->outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
-      return st;
-    }
-    if (!syntax) {
-      out->outcome = GTEXT_CSS_PROP_RESULT_INVALID;
-      return GTEXT_CSS_OK;
-    }
+    /* a function that does not meet its argument grammar makes the value match no grammar: the check is the matcher's (gtext_css_match takes the same value) */
     st = parse_pending(registry, values, count, options, out);
     if (st != GTEXT_CSS_OK) {
       gtext_css_property_value_free(out);

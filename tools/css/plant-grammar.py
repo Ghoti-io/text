@@ -146,9 +146,9 @@ PLANTS = [
     ("url-modifier-arguments-are-not-checked", "css_grammar_match.c", "c->kind == GTEXT_CSS_VALUE_FUNCTION && url_modifier_ok(c)", "c->kind == GTEXT_CSS_VALUE_FUNCTION", ["property"]),
     ("a-mix-that-sums-to-zero-is-valid", "css_property.c", "      if (zero) {\n        gtext_css_value_set_free(out->set);", "      if (0 && zero) {\n        gtext_css_value_set_free(out->set);", ["property"]),
     ("a-sizing-property-takes-anchor", "css_property.c", "      return GTEXT_CSS_MATH_ANCHOR_SIZE;\n    }\n  }\n  return 0;", "      return GTEXT_CSS_MATH_ANCHOR | GTEXT_CSS_MATH_ANCHOR_SIZE;\n    }\n  }\n  return 0;", ["property"]),
-    ("a-dashed-function-refuses-an-empty-argument", "css_property.c", "    if (!c || (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA)) {\n      if (has_content && has_block && (has_other || block_empty)) {", "    if (!c || (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA)) {\n      if (!has_content && c) {\n        return false;\n      }\n      if (has_content && has_block && (has_other || block_empty)) {", ["property"]),
-    ("random-item-needs-no-item", "css_property.c", "  return group >= 2;  /* the key and at least one item (an item may be empty) */", "  return group >= 1;", ["property"]),
-    ("a-brace-may-sit-beside-other-tokens", "css_property.c", "      if (has_block && has_other) {\n        return false;  /* a {} block is the whole argument */", "      if (0 && has_block && has_other) {\n        return false;  /* a {} block is the whole argument */", ["property"]),
+    ("a-dashed-function-refuses-an-empty-argument", "css_value.c", "    if (!c || (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA)) {\n      if (has_content && has_block && (has_other || block_empty)) {", "    if (!c || (c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_COMMA)) {\n      if (!has_content && c) {\n        return false;\n      }\n      if (has_content && has_block && (has_other || block_empty)) {", ["property"]),
+    ("random-item-needs-no-item", "css_value.c", "  return group >= 2;  /* the key and at least one item (an item may be empty) */", "  return group >= 1;", ["property"]),
+    ("a-brace-may-sit-beside-other-tokens", "css_value.c", "      if (has_block && has_other) {\n        return false;  /* a {} block is the whole argument */", "      if (0 && has_block && has_other) {\n        return false;  /* a {} block is the whole argument */", ["property"]),
     ("urange-is-any-range", "css_grammar_match.c", " && v->range_start <= v->range_end && v->range_end <= 0x10FFFFu;", ";", ["property"]),
     ("urange-is-not-a-token", "css_grammar_match.c", "    return tok(v, GTEXT_CSS_TOKEN_UNICODE_RANGE) && v->range_start <= v->range_end && v->range_end <= 0x10FFFFu;", "    return false;", ["corpus", "grammar"]),
     ("anb-is-never-read", "css_grammar_match.c", "if (gtext_css_anb_parse(v, (size_t)(last->orig - it->orig + 1), &a, &b)) {", "if (0) {", ["corpus", "grammar"]),
@@ -160,7 +160,7 @@ PLANTS = [
     ("req-leaks-at-the-work-bound", "css_grammar_match.c", "  const bool added = iset_add(m, &only, f->pos); /* (it may allocate and then fail at the work bound: freed either way) */\n  const bool good = added && iset_subtract(m, &f->r, &only);\n  iset_free(m, &only);\n  OKR(good);",
      "  OKR(iset_add(m, &only, f->pos));\n  const bool good = iset_subtract(m, &f->r, &only);\n  iset_free(m, &only);\n  OKR(good);", ["edges"]),
     ("a-brought-range-meets-the-wrong-name", "css_grammar_link.c", "css_grammar_native_lookup(c->text + g.str_off, g.str_len)", "css_grammar_native_lookup(c->text, g.str_len)", ["edges"]),
-    ("a-comma-keeps-its-space", "css_value_serialize.c", "    if (begins_with_comma(child)) {\n      return;\n    }", "", ["corpus"]),
+    ("a-comma-keeps-its-space", "css_value_serialize.c", "    if (begins_with_comma(child) || begins_with_colon(w, child)) {\n      return;\n    }", "    if (begins_with_colon(w, child)) {\n      return;\n    }", ["corpus"]),
 
     # What a review of the value layer found: each plant restores the defect, and tests/test-css-values-review.cpp must fail.
     ("review-easing-unknown-keyword-is-an-error", "css_easing.c", "    return GTEXT_CSS_OK; /* a keyword that is not an easing function: not valid, not an error */",
@@ -323,7 +323,7 @@ PLANTS += [
      "    if (0) {\n      const GTEXT_CSS_Custom_Value * wv = NULL;", ["custom"]),
     ("custom-attr-may-make-a-url", "css_compute.c", "static GTEXT_CSS_Status tainted_url(css_state * st, const GTEXT_CSS_Value * root, const css_range * taint, size_t ntaint, bool * found) {\n  *found = false;",
      "static GTEXT_CSS_Status tainted_url(css_state * st, const GTEXT_CSS_Value * root, const css_range * taint, size_t ntaint, bool * found) {\n  *found = false;\n  if (1) {\n    return GTEXT_CSS_OK;\n  }", ["custom"]),
-    ("custom-a-bang-in-a-fallback-is-valid", "css_property.c", "            if (c->type == GTEXT_CSS_TOKEN_SEMICOLON || (c->type == GTEXT_CSS_TOKEN_DELIM && c->delim == '!')) {",
+    ("custom-a-bang-in-a-fallback-is-valid", "css_value.c", "            if (c->type == GTEXT_CSS_TOKEN_SEMICOLON || (c->type == GTEXT_CSS_TOKEN_DELIM && c->delim == '!')) {",
      "            if (0) {", ["custom"]),
     ("custom-the-registered-length-stays-as-written", "css_substitute.c", "        status = compute_typed(sub, reg->creg, text, len, tainted, &final, &cycle);",
      "        status = css_rope_from_text(&sub->alloc, text, len, tainted, &final);", ["property-rule"]),
@@ -354,7 +354,7 @@ PLANTS += [
 PLANTS += [
     ("custom-a-brace-fallback-keeps-its-braces", "css_substitute.c", "    n = vals[0].child_count;\n    vals = vals[0].children;\n  }\n  return seq_start(sub, fi, slot, f->csrc, vals, n, false);\n}",
      "  }\n  return seq_start(sub, fi, slot, f->csrc, vals, n, false);\n}", ["custom-review"]),
-    ("custom-a-token-after-a-brace-fallback-is-valid", "css_property.c", "            if (braced) {\n              *valid = false;\n              break;\n            }",
+    ("custom-a-token-after-a-brace-fallback-is-valid", "css_value.c", "            if (braced) {\n              *valid = false;\n              break;\n            }",
      "            if (0) {\n              *valid = false;\n              break;\n            }", ["property"]),
     ("grammar-a-function-that-is-not-valid-matches-as-pending", "css_grammar_match.c", "    if (status == GTEXT_CSS_OK && syntax) {\n      did_match = true;", "    if (status == GTEXT_CSS_OK) {\n      did_match = true;", ["grammar"]),
     ("custom-a-block-beside-a-name-is-valid", "css_value.c", "if (!first || (first_block && (first_count != 1 || first_empty))) {", "if (!first || (first_block && first_empty)) {", ["property"]),
@@ -368,7 +368,7 @@ PLANTS += [
     ("shorthand-min-size-is-formed-from-its-longhands", "css_shorthand_serialize.c", "      if (present && (nm(&c, (GTEXT_CSS_Property_Id)id, \"min-size\") ||", "      if (0 && present && (nm(&c, (GTEXT_CSS_Property_Id)id, \"min-size\") ||", ["shorthand"]),
     ("shorthand-white-space-is-written-without-its-trim", "css_shorthand_serialize.c", "    if (nm(c, sh, \"white-space\") && trim && !texteq(trim, \"none\")) {\n      continue;\n    }",
      "    if (0 && nm(c, sh, \"white-space\") && trim && !texteq(trim, \"none\")) {\n      continue;\n    }", ["shorthand"]),
-    ("custom-a-brace-is-a-fallback-only-at-its-start", "css_property.c", "              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;",
+    ("custom-a-brace-is-a-fallback-only-at-its-start", "css_value.c", "              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;",
      "              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;\n            }\n            else {\n              braced = braced || (c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY);", ["property"]),
 ]
 

@@ -843,7 +843,7 @@ const css_tbl_compute gtext_css_tbl_compute[823] = {
   {3, 20, 0, 1, 0, 0, 0}, /* voice-volume */
   {4, 0, 3, 1, 0, 0, 0}, /* white-space */
   {1, 0, 0, 1, 0, 0, 0}, /* white-space-collapse */
-  {1, 0, 0, 0, 0, 0, 0}, /* white-space-trim */
+  {1, 0, 0, 1, 0, 0, 0}, /* white-space-trim */
   {1, 0, 0, 1, 0, 0, 0}, /* widows */
   {2, 0, 0, 1, 0, 0, 0}, /* width */
   {1, 0, 0, 0, 0, 0, 0}, /* will-change */

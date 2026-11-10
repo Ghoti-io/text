@@ -211,7 +211,7 @@ def main():
         tests[(f[0], int(f[1]))] = (unesc(f[2]), f[3])
     # The pages no browser finishes (UNRECORDED_PAGES, beside the exceptions): they have no entry in the page record, and have to have no test that is scored, so that nothing rests on an answer the
     # record does not have; a line for a page that is not a page of the program, or that has a scored test, fails.
-    unrecorded_path = os.path.join(os.path.dirname(os.path.abspath(exc_path)), 'UNRECORDED_PAGES')
+    unrecorded_path = os.path.join(HERE, 'UNRECORDED_PAGES')   # beside this program, not beside the exceptions: a control gives the gate another exceptions file
     unrecorded = {}
     for n, f in tsv_lines(unrecorded_path):
         if len(f) != 3 or len(f[2].split()) < 5:

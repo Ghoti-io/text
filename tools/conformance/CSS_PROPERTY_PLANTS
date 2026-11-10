@@ -10,7 +10,7 @@ unit-range-is-ignored	css_grammar_match.c	    return c >= g->lo && c <= g->hi;	 
 keywords-are-case-sensitive	css_grammar_match.c	  return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;	  return c;
 alpha-is-dropped	css_color_serialize.c	    const double v = clamp01(a->value);\n    return v == 1.0 || (puts_(b, " / ") && put_num(b, v));	    return true;
 css-wide-keywords-are-not-recognized	css_property.c	  if (wide != GTEXT_CSS_WIDE_NONE) {	  if (0) {
-substitution-syntax-is-not-checked	css_property.c	    if (!syntax) {	    if (0) {
+substitution-syntax-is-not-checked	css_grammar_match.c	    if (status == GTEXT_CSS_OK && syntax) {	    if (status == GTEXT_CSS_OK) {
 calc-size-size-is-not-a-length	css_grammar_match.c	  mctx.keyword_count = allow_size ? 1 : 0;	  mctx.keyword_count = 0;
 calc-size-calculation-may-be-a-number	css_grammar_match.c	  *valid = ok && (mp->category == GTEXT_CSS_MATH_CAT_LENGTH || mp->category == GTEXT_CSS_MATH_CAT_PERCENTAGE);	  *valid = ok;
 calc-size-basis-keyword-is-any-keyword	css_grammar_match.c	  ctx_visit(&w, m->c->root, 0);\n  if (!w.hit) {	  w.hit = true;\n  if (!w.hit) {
