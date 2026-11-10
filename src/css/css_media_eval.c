@@ -710,8 +710,11 @@ static GTEXT_CSS_Tristate eval_feature(const GTEXT_CSS_Media_Environment * e, co
           }
           return GTEXT_CSS_TRI_UNKNOWN;
         }
+        /* Values 4, "Range Checking": "the clamping behavior of numeric functions is, for math functions, only performed on the results of a top-level calculation", and what a <number [0,inf]>
+           takes from one that is below 0 is 0, not an invalid value (css/mediaqueries/aspect-ratio-calc-negative.html: `(min-aspect-ratio: calc(-1)/2)` is true, `(aspect-ratio < calc(-1))` is
+           false). A negative literal is no value at all, and was refused when the query was read. */
         if (*dst[k] < 0) {
-          return GTEXT_CSS_TRI_UNKNOWN;
+          *dst[k] = 0;
         }
       }
     } else if (!value_double(&u, v, fr->unit, &vals[i])) {

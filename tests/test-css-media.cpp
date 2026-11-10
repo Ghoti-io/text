@@ -343,6 +343,18 @@ TEST(CssMedia, RatiosAreComparedExactly) {
   EXPECT_TRUE(matches("(1 / 3 < aspect-ratio < 3 / 1)", e));
 }
 
+TEST(CssMedia, ANegativeCalcAsARatioClampsToZeroAndANegativeLiteralIsUnknown) {
+  /* css/mediaqueries/aspect-ratio-calc-negative.html: "Each number of a <ratio> is a <number [0,inf]>, and a calc() below 0 where such a number is taken is valid and clamps to 0. A <ratio>
+   * written as one number is that number over 1." A negative literal is still invalid, so the query is unknown (false, and false when negated). */
+  for (const char * yes : {"(min-aspect-ratio: calc(1)/2)", "(min-aspect-ratio: 0/2)", "(min-aspect-ratio: calc(-1)/2)", "not (max-aspect-ratio: calc(-1)/2)", "(max-aspect-ratio: 2/calc(-1))",
+                           "(aspect-ratio > 0)", "(aspect-ratio > calc(-1))", "not (aspect-ratio < calc(-1))"}) {
+    EXPECT_TRUE(matches(yes)) << yes;
+  }
+  for (const char * no : {"(aspect-ratio < calc(-1))", "(aspect-ratio > -1)", "not (aspect-ratio > -1)"}) {
+    EXPECT_FALSE(matches(no)) << no;
+  }
+}
+
 TEST(CssMedia, AUnitIsWrittenInLowerCase) {
   /* Values 4, 5.1: "Units are ASCII case-insensitive and serialize as lowercase, for example 1Q serializes as 1q" (both browsers: `matchMedia("(min-width: 256Q)").media` is
    * `(min-width: 256q)`). */
