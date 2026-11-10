@@ -416,6 +416,53 @@ TEST(CssomComputed, TheColorOfARootHighlightIsCurrentColorAndStandsForTheColorOf
   EXPECT_EQ(read("#f", "::selection", "background-color"), "rgb(0, 0, 0)") << "currentcolor is inherited as the keyword, so it is the color of the element that inherits it, not of the one that wrote it";
 }
 
+/* Pseudo-Elements 4, "Highlight Pseudo-elements: Cascading and Per-Element Highlight Styles" (WPT css/css-pseudo/highlight-cascade/highlight-cascade-currentcolor-color-mix.html): a highlight color that
+   references `currentcolor` "is inherited down the highlight chain unresolved, so that each element resolves currentcolor against its own color". The page: `#mix::selection { color: color-mix(in
+   oklab, teal 50%, currentcolor) }`, `#mix { color: red }`, `#mix span { color: blue }`, and the span's `::selection` color is `color-mix(in oklab, teal 50%, blue)`. */
+TEST(CssomComputed, AHighlightColorThatHoldsCurrentColorIsInheritedUnresolvedAndResolvedAgainstEachElementsOwnColor) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "#mix, #ldmix { color: red; } #mix span, #ldmix span { color: blue; } #mix span span, #ldmix span span { color: green; } #mix span b, #ldmix span b { color: black; }"
+       "#mix::selection { color: color-mix(in oklab, teal 50%, currentcolor); }"
+       "#ldmix::selection { color: light-dark(color-mix(in oklab, teal 50%, currentcolor), white); }"
+       "#mix::selection { background-color: color-mix(in oklab, white 25%, currentcolor); text-decoration-color: color-mix(in oklab, white 25%, currentcolor); }"
+       "#refbg { color: color-mix(in oklab, white 25%, color-mix(in oklab, teal 50%, blue)); } #refbgred { color: color-mix(in oklab, white 25%, color-mix(in oklab, teal 50%, red)); }"
+       "#own { color: red; } #own::selection { color: color-mix(in oklab, teal 50%, currentcolor); } #own span { color: blue; } #own span::selection { color: yellow; }"
+       "#plain { color: red; } #plain::selection { color: color-mix(in oklab, teal 50%, white); } #plain span { color: blue; }"
+       "#cur { color: red; } #cur::selection { color: currentcolor; } #cur span { color: blue; }"
+       "#refred { color: color-mix(in oklab, teal 50%, red); } #refblue { color: color-mix(in oklab, teal 50%, blue); } #refgreen { color: color-mix(in oklab, teal 50%, green); }"
+       "#refblack { color: color-mix(in oklab, teal 50%, black); } #refyellow { color: yellow; } #refwhite { color: white; }"
+       "</style></head><body>"
+       "<div id=mix>a<span id=m1>b<span id=m2>c</span><b id=m3>d</b></span></div>"
+       "<div id=ldmix>a<span id=l1>b</span></div>"
+       "<div id=own>a<span id=o1>b</span></div><div id=plain>a<span id=p1>b</span></div><div id=cur>a<span id=c1>b</span></div>"
+       "<p id=refbg></p><p id=refbgred></p><p id=refred></p><p id=refblue></p><p id=refgreen></p><p id=refblack></p><p id=refyellow></p><p id=refwhite></p></body></html>");
+  auto hl = [&](const char * element) {
+    Decl d = m.computed(element, "::selection");
+    return get(d.d, "color");
+  };
+  auto plain = [&](const char * element) {
+    Decl d = m.computed(element);
+    return get(d.d, "color");
+  };
+  ASSERT_NE(plain("#refblue"), plain("#refred")) << "the control: the two mixes are different colors";
+  EXPECT_EQ(hl("#mix"), plain("#refred")) << "the element that wrote it: the mix against its own color";
+  EXPECT_EQ(hl("#m1"), plain("#refblue")) << "the page's assertion: the span's highlight resolves currentcolor against the span's color, and not against the parent's (red)";
+  EXPECT_EQ(hl("#m2"), plain("#refgreen")) << "a chain of two: the grandchild reads its own color";
+  EXPECT_EQ(hl("#m3"), plain("#refblack")) << "a sibling of the grandchild, by the same chain";
+  EXPECT_EQ(hl("#l1"), plain("#refblue")) << "a mix in light-dark() is inherited unresolved too";
+  /* the other colors of a highlight keep `currentcolor` in their computed value, and it is the highlight's own `color` (Pseudo-Elements 4: "currentcolor in another property is the color of the highlight"),
+     which is what the chain made of it */
+  for (const char * property : {"background-color", "text-decoration-color"}) {
+    Decl top = m.computed("#mix", "::selection"), child = m.computed("#m1", "::selection");
+    EXPECT_EQ(get(top.d, property), plain("#refbgred")) << property << " of the element that wrote it";
+    EXPECT_EQ(get(child.d, property), plain("#refbg")) << property << " of the child: against the child's highlight color, the mix against the child's color";
+  }
+  EXPECT_EQ(hl("#ldmix"), plain("#refred"));
+  EXPECT_EQ(hl("#o1"), plain("#refyellow")) << "a highlight that declares its own color does not inherit";
+  EXPECT_EQ(hl("#p1"), hl("#plain")) << "the control: a mix that holds no currentcolor is the same at the child, whatever the child's color";
+  EXPECT_EQ(hl("#c1"), "rgb(0, 0, 255)") << "currentcolor alone: the keyword, read as the element's color";
+}
+
 /* "highlight-cascade-parent-style-change": a highlight inherits from the current style of its parent's highlight, not from one read before */
 TEST(CssomComputed, AHighlightInheritsFromTheCurrentStyleOfTheParentsHighlight) {
   Cs m("<!DOCTYPE html><html><head><style>"

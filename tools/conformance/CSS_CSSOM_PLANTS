@@ -545,3 +545,6 @@ document-ignores-its-mixin-depth	cssom_snapshot.c	  o.max_mixin_depth = core->co
 document-ignores-its-mixin-expansions	cssom_snapshot.c	  o.max_mixin_expansions = core->config.max_mixin_expansions;\n	  o.max_mixin_expansions = 0;\n	mixinscope
 document-default-mixin-depth-drifts	cssom_core.c	#define DEFAULT_MAX_MIXIN_DEPTH ((size_t)16)	#define DEFAULT_MAX_MIXIN_DEPTH ((size_t)17)	mixinscope
 document-default-mixin-expansions-drifts	cssom_core.c	#define DEFAULT_MAX_MIXIN_EXPANSIONS ((size_t)65536)	#define DEFAULT_MAX_MIXIN_EXPANSIONS ((size_t)65537)	mixinscope
+highlight-inherits-the-resolved-color	css_style.c	    if (parent && id == color && parent->hl_color) {	    if (0 && parent && id == color && parent->hl_color) {	computed
+highlight-forgets-the-specified-color-it-passes-on	css_style.c	      style->hl_color = gtext_css_value_set_retain(parent->hl_color);	      style->hl_color = NULL;	computed
+highlight-does-not-keep-a-color-that-holds-currentcolor	css_style.c	color_holds_currentcolor_inside(v->color, 0) ? it.set : NULL;	0 ? it.set : NULL;	computed

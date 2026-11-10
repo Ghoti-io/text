@@ -302,6 +302,68 @@ static bool highlight_given(const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS
   return true;
 }
 
+/// Whether a color holds `currentcolor` somewhere inside a function: a `color-mix()` operand, the origin of a relative color or a branch of `light-dark()`. The bare keyword is not one (it is `inherit`
+/// for `color`, and a highlight that gives no other value inherits it as the keyword). `depth` bounds the walk: a color nested deeper than the reader allows is not here.
+static bool color_holds_currentcolor_inside(const GTEXT_CSS_Color * c, size_t depth) {
+  if (!c || depth > 5000) {
+    return false;
+  }
+  if (c->kind == GTEXT_CSS_COLOR_KEYWORD) {
+    return c->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR && depth > 0;
+  }
+  if (color_holds_currentcolor_inside(c->origin, depth + 1)) {
+    return true;
+  }
+  for (size_t i = 0; i < c->item_count; i++) {
+    if (color_holds_currentcolor_inside(c->items[i], depth + 1)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// The specified `color` of the block when it has a value of its own that holds `currentcolor` inside a function (and is not `inherit` or `unset`): the set, not retained; else NULL.
+static const GTEXT_CSS_Value_Set * highlight_own_color_holding_currentcolor(const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Property_Id color) {
+  GTEXT_CSS_Declaration_Item it;
+  if (!block || !gtext_css_block_find(block, color, NULL, 0, &it) || it.outcome != GTEXT_CSS_PROP_RESULT_VALID || !it.set) {
+    return NULL;
+  }
+  const GTEXT_CSS_Value * v = gtext_css_value_set_root(it.set);
+  return v && v->kind == GTEXT_CSS_VAL_COLOR && color_holds_currentcolor_inside(v->color, 0) ? it.set : NULL;
+}
+
+/// The computed `color` of a highlight whose specified `color` is `spec`, for the element whose style is `origin`: the value is computed as the declaration of the highlight's own, which reads
+/// `currentcolor` as the originating element's color ("is inherited down the highlight chain unresolved, so that each element resolves currentcolor against its own color").
+static GTEXT_CSS_Status highlight_color_for(const GTEXT_CSS_Compute_Context * cc, GTEXT_CSS_Property_Id color, const GTEXT_CSS_Value_Set * spec, const GTEXT_CSS_Computed_Style * origin,
+    GTEXT_CSS_Element_Handle element, GTEXT_CSS_Value_Set ** out) {
+  GTEXT_CSS_Declaration_Options bo = gtext_css_declaration_options_default();
+  bo.allocator = &cc->alloc;
+  GTEXT_CSS_Declaration_Block * tmp = NULL;
+  GTEXT_CSS_Status st = gtext_css_block_new(cc->registry, &bo, &tmp);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  GTEXT_CSS_Property_Value pv;
+  memset(&pv, 0, sizeof pv);
+  pv.outcome = GTEXT_CSS_PROP_RESULT_VALID;
+  pv.named = color;
+  pv.property = color;
+  pv.set = (GTEXT_CSS_Value_Set *)spec;   /* block_add retains it; pv is not freed */
+  st = gtext_css_block_add(tmp, &pv, false, NULL);
+  GTEXT_CSS_Computed_Style * made = NULL;
+  if (st == GTEXT_CSS_OK) {
+    GTEXT_CSS_Compute_Result res;
+    memset(&res, 0, sizeof res);
+    st = css_compute_style_rolling(cc, tmp, origin, element, NULL, true, &made, &res);
+  }
+  gtext_css_block_free(tmp);
+  if (st == GTEXT_CSS_OK) {
+    *out = gtext_css_value_set_retain(made->vals[color - 1]);
+  }
+  gtext_css_computed_free(made);
+  return st;
+}
+
 /// The computed value of `color` that is the keyword `currentcolor`: the inherited value of `color` of a highlight of the root element, which stands for the originating element's color.
 static GTEXT_CSS_Status highlight_current_color(const GTEXT_CSS_Compute_Context * cc, GTEXT_CSS_Property_Id color, GTEXT_CSS_Value_Set ** out) {
   GTEXT_CSS_Property_Options po;
@@ -323,7 +385,7 @@ static GTEXT_CSS_Status highlight_current_color(const GTEXT_CSS_Compute_Context 
 
 /// Highlight inheritance (css_style.h, GTEXT_CSS_Style_Options::highlight): the supported properties the cascade gave no value take the parent highlight's, or at the root the initial value.
 static GTEXT_CSS_Status highlight_inherit(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_Computed_Style * style,
-    const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Computed_Style * origin) {
+    const GTEXT_CSS_Computed_Style * parent, const GTEXT_CSS_Computed_Style * origin, GTEXT_CSS_Element_Handle element) {
   const GTEXT_CSS_Property_Id color = cc->pid[CSS_P_COLOR];
   GTEXT_CSS_Property_Id supported[sizeof HIGHLIGHT_PROPERTIES / sizeof *HIGHLIGHT_PROPERTIES];
   for (size_t k = 0; k < sizeof supported / sizeof *supported; k++) {
@@ -348,11 +410,28 @@ static GTEXT_CSS_Status highlight_inherit(const GTEXT_CSS_Compute_Context * cc, 
   for (size_t k = 0; k < sizeof HIGHLIGHT_PROPERTIES / sizeof *HIGHLIGHT_PROPERTIES; k++) {
     const char * name = HIGHLIGHT_PROPERTIES[k];
     const GTEXT_CSS_Property_Id id = gtext_css_registry_find_property(cc->registry, name, strlen(name));
-    if (!id || id > cc->nprops || highlight_given(block, id, id == color)) {
+    if (!id || id > cc->nprops) {
+      continue;
+    }
+    if (highlight_given(block, id, id == color)) {
+      if (id == color && !style->hl_color) {
+        /* a color of its own that holds currentcolor: the highlights below inherit it as it was specified */
+        const GTEXT_CSS_Value_Set * own = highlight_own_color_holding_currentcolor(block, id);
+        style->hl_color = own ? gtext_css_value_set_retain(own) : NULL;
+      }
       continue;
     }
     GTEXT_CSS_Value_Set * set = NULL;
-    if (parent) {
+    if (parent && id == color && parent->hl_color) {
+      /* "inherited down the highlight chain unresolved": the parent's specified color, resolved against this element's own color */
+      const GTEXT_CSS_Status st = highlight_color_for(cc, id, parent->hl_color, origin, element, &set);
+      if (st != GTEXT_CSS_OK) {
+        return st;
+      }
+      gtext_css_value_set_free(style->hl_color);
+      style->hl_color = gtext_css_value_set_retain(parent->hl_color);
+    }
+    else if (parent) {
       set = gtext_css_value_set_retain(parent->vals[id - 1]);
     }
     else if (id == color) {
@@ -746,7 +825,7 @@ static GTEXT_CSS_Status style_compute_pass(const GTEXT_CSS_Compute_Context * con
     }
   }
   if (st == GTEXT_CSS_OK && !*again && options->highlight) {
-    st = highlight_inherit(context, block, style, options->highlight_parent, parent_style);
+    st = highlight_inherit(context, block, style, options->highlight_parent, parent_style, element);
     if (st != GTEXT_CSS_OK) {
       gtext_css_computed_free(style);
       style = NULL;

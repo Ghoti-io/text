@@ -180,7 +180,9 @@ typedef struct {
   /** `pseudo` is a highlight pseudo-element (`::selection`, `::target-text`, `::search-text`, `::spelling-error`, `::grammar-error`, `::highlight()`) and the style is made by the rules of
    *  CSS Pseudo-Elements 4, "Cascading and Per-Element Highlight Styles": a property the pseudo-element supports that the cascade gives no value, or `inherit` or `unset`, takes the value of the
    *  same pseudo-element of the parent element (`highlight_parent`) whether or not the property is inherited, and where there is no parent element (`highlight_parent` NULL) its initial
-   *  value, `color` the keyword `currentcolor`, which stands for the color of the originating element wherever it is used. `parent_style` stays the style of the originating element: the rest of the style is inherited
+   *  value, `color` the keyword `currentcolor`, which stands for the color of the originating element wherever it is used. A `color` that holds `currentcolor` inside a function (`color-mix(in oklab, teal, currentcolor)`, a
+   *  relative color, `light-dark()`) is inherited as it was specified and computed again for each element that inherits it, so that it reads that element's own color ("inherited down the highlight
+   *  chain unresolved"); the style that has such a color keeps the specified form for the highlights below it. `parent_style` stays the style of the originating element: the rest of the style is inherited
    *  from it and the units that need a font are resolved against it. */
   bool highlight;
   /** With `highlight`: the style of the same highlight pseudo-element of the parent element, or NULL for the root element. It must come from the same context. */

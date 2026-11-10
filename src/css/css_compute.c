@@ -299,6 +299,7 @@ void gtext_css_computed_free(GTEXT_CSS_Computed_Style * style) {
   }
   css_cmap_release(style->custom);
   css_regvals_release(style->regvals);
+  gtext_css_value_set_free(style->hl_color);
   gtext_css_value_set_free(style->root.family);
   gtext_css_value_set_free(style->root.line_height);
   gtext_allocator_free(&a, style->vals);

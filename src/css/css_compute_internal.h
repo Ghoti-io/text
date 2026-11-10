@@ -243,6 +243,7 @@ struct GTEXT_CSS_Computed_Style {
   struct css_cmap * custom;           ///< The unregistered custom properties (css_cmap.h): the parent's map with this element's declarations set, shared with it where nothing is declared.
   struct css_regvals * regvals;       ///< The registered ones (shared with the parent's style, or the context's, until this one declares one): a value for each of the context's `nregs`, NULL for the guaranteed-invalid value. NULL when the context has none.
   css_root_info root;
+  GTEXT_CSS_Value_Set * hl_color;      ///< A highlight's own `color` as it was specified, when that is a color that holds `currentcolor` inside a function (a mix, a relative color, `light-dark()`) and the style has already resolved it against its originating element: the highlights below inherit this one and resolve it against their own (css_style.c, highlight_inherit()). NULL for every other style.
   GTEXT_CSS_Element_Handle element;
   css_anim_untimed anim_untimed;       ///< The properties an animation of the element targets and was not sampled for lack of a time (css_anim_sample.c).
   css_anim_untimed anim_applied;       ///< The properties an animation of the element applied a sampled value to (css_anim_sample.c): a transition does not start on them.
