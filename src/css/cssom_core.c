@@ -55,6 +55,9 @@
 #define DEFAULT_MAX_OBSERVERS ((size_t)1024)
 #define DEFAULT_MAX_QUEUED_EVENTS ((size_t)1 << 20)
 #define DEFAULT_MAX_CACHED_STYLES ((size_t)65536)
+#define DEFAULT_MAX_MIXIN_DEPTH ((size_t)16)
+#define LIMIT_MAX_MIXIN_DEPTH ((size_t)256)
+#define DEFAULT_MAX_MIXIN_EXPANSIONS ((size_t)65536)
 
 struct GTEXT_CSSOM_Document {
   css_core * core;
@@ -83,6 +86,8 @@ GTEXT_CSSOM_Config gtext_cssom_config_default(void) {
   c.max_observers = DEFAULT_MAX_OBSERVERS;
   c.max_queued_events = DEFAULT_MAX_QUEUED_EVENTS;
   c.max_cached_styles = DEFAULT_MAX_CACHED_STYLES;
+  c.max_mixin_depth = DEFAULT_MAX_MIXIN_DEPTH;
+  c.max_mixin_expansions = DEFAULT_MAX_MIXIN_EXPANSIONS;
   return c;
 }
 
@@ -147,6 +152,14 @@ static void config_fill(GTEXT_CSSOM_Config * out, const GTEXT_CSSOM_Config * in)
     out->environment = NULL;
   }
   if (!out->max_cached_styles) out->max_cached_styles = d.max_cached_styles;
+  /* the mixin limits: a caller built against an older header, which ends before these fields, has none of them */
+  if (n < offsetof(GTEXT_CSSOM_Config, max_mixin_expansions) + sizeof in->max_mixin_expansions) {
+    out->max_mixin_depth = 0;
+    out->max_mixin_expansions = 0;
+  }
+  if (!out->max_mixin_depth) out->max_mixin_depth = d.max_mixin_depth;
+  if (out->max_mixin_depth > LIMIT_MAX_MIXIN_DEPTH) out->max_mixin_depth = LIMIT_MAX_MIXIN_DEPTH;
+  if (!out->max_mixin_expansions) out->max_mixin_expansions = d.max_mixin_expansions;
 }
 
 GTEXT_CSS_Status gtext_cssom_document_new(const GTEXT_CSSOM_Config * config, GTEXT_CSSOM_Document ** out) {

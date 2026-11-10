@@ -284,6 +284,9 @@ typedef struct {
    *  which a context the caller makes cannot have, since the rules change with the sheets. Its `condition` callback is the caller's; when it is NULL (and so is `user`) the document answers
    *  `if(media())` and `if(supports())` from the conditions object it evaluates with. NULL: gtext_css_environment_default() with that answer. Ignored when `compute_context` is given. */
   const GTEXT_CSS_Environment * environment;
+  /* mixins (css_sheet.h): the limits of the expansion of `@apply` when a sheet of the document is compiled */
+  size_t max_mixin_depth;               ///< Deepest chain of mixins applied inside one another in one sheet. Default 16, at most 256 (a larger value is 256). One more is GTEXT_CSS_E_LIMIT_RULE_NESTING.
+  size_t max_mixin_expansions;          ///< Most `@apply` rules expanded in one sheet, those inside a mixin's body included. Default 65,536. One more is GTEXT_CSS_E_LIMIT_WORK.
 } GTEXT_CSSOM_Config;
 
 /** @brief The defaults, spelled out: `size` set, the registry and allocator NULL, the counters at 0 and 1, the limits as documented. */

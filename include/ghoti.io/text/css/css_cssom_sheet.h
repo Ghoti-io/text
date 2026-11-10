@@ -218,7 +218,7 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_sheet_owner_rule(const GTEXT_CSSOM_Sheet 
  * @brief The sheet's compiled form: an immutable, atomically counted @ref GTEXT_CSS_Sheet of its current state.
  *
  * The result is compiled by `gtext_css_sheet_compile_rules()` over the sheet's top-level rules (see the file's description) with the document's registry and allocator; the
- * limits are the document's (`max_rule_nesting` is the rule depth, `max_diagnostics` the diagnostics kept) and the sheet's `max_import_depth`. The sheets that the sheet's `@import`
+ * limits are the document's (`max_rule_nesting` is the rule depth, `max_diagnostics` the diagnostics kept, `max_mixin_depth` and `max_mixin_expansions` the bounds of the expansion of `@apply`) and the sheet's `max_import_depth`. The sheets that the sheet's `@import`
  * rules hold (gtext_cssom_import_rule_complete()) are the snapshots of those sheets, one level down, and an import with no sheet contributes nothing (a diagnostic of the compile).
  *
  * **It is cached** on the sheet's composite version, the greatest change stamp among the sheet and the sheets it imports: while nothing in them changes the same pointer is returned,

@@ -442,6 +442,8 @@ written with `@result`). Otherwise the expansion is bounded as the rest of the c
 one another and `max_mixin_expansions` (65,536) the most applications in a sheet (the applications inside a body count, so a mixin that applies two others, each two more, is stopped by the count); both are
 `GTEXT_CSS_E_LIMIT_RULE_NESTING` and `GTEXT_CSS_E_LIMIT_WORK` with the name of the option in the result. What an expansion reads (each item of a body) is charged to `max_compiled_bytes` as the compiled form is, so an
 application of a large body many times cannot run for long either, and `max_rule_depth` bounds the stack of rules the expansion lives on.
+A document (`GTEXT_CSSOM_Config`) has the two limits as `max_mixin_depth` and `max_mixin_expansions`, with the same defaults and the same maximum, and compiles every sheet of it with them; a field left at 0 is its default (it never
+means unlimited), and a `max_mixin_depth` above 256 is 256.
 
 **Where the pinned text is silent, and what was chosen** ("Evaluating Mixins" is still marked "TODO rewrite to use the new `@private` concepts" and is written with the dropped `@result`; twenty-two of the
 twenty-seven pinned web-platform-tests pages are too, and neither Chromium 156 nor Firefox 158 implements `@mixin`; every reading is the conservative one and has one place to change):

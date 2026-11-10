@@ -749,6 +749,8 @@ static GTEXT_CSS_Status snapshot(css_sheet * sheet, size_t levels, GTEXT_CSS_She
   o.mixins = mixin_thunk;
   o.mixins_user = &ms;
   o.max_rule_depth = core->config.max_rule_nesting;
+  o.max_mixin_depth = core->config.max_mixin_depth;
+  o.max_mixin_expansions = core->config.max_mixin_expansions;
   o.max_diagnostics = core->config.max_diagnostics;
   o.max_import_depth = levels ? levels : 1;   /* the compile counts the depth of the sheets below this one against it (0 would be its default; at 0 the callback has refused already) */
   GTEXT_CSS_Sheet * made = NULL;

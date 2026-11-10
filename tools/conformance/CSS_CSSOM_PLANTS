@@ -542,3 +542,7 @@ sheet-with-an-apply-is-not-read-for-registrations	cssom_snapshot.c	    if (r->ki
 mixin-parameters-are-not-private-names	css_private.c	for (size_t i = 0; def && i < def->nparams; i++) {	for (size_t i = 0; def && i < 0; i++) {	mixineval,sheetmixin
 mixin-body-private-names-are-not-read	css_private.c	    const GTEXT_CSS_Rule * r = items[i].kind == GTEXT_CSS_ITEM_RULE ? items[i].rule : NULL;\n    any = r &&	    const GTEXT_CSS_Rule * r = NULL;\n    any = r &&	mixineval
 uses-mixins-is-not-passed-up-from-an-import	css_sheet.c	            s->uses_mixins = s->uses_mixins || got->uses_mixins;	            	mixinscope
+document-ignores-its-mixin-depth	cssom_snapshot.c	  o.max_mixin_depth = core->config.max_mixin_depth;\n	  o.max_mixin_depth = 0;\n	mixinscope
+document-ignores-its-mixin-expansions	cssom_snapshot.c	  o.max_mixin_expansions = core->config.max_mixin_expansions;\n	  o.max_mixin_expansions = 0;\n	mixinscope
+document-default-mixin-depth-drifts	cssom_core.c	#define DEFAULT_MAX_MIXIN_DEPTH ((size_t)16)	#define DEFAULT_MAX_MIXIN_DEPTH ((size_t)17)	mixinscope
+document-default-mixin-expansions-drifts	cssom_core.c	#define DEFAULT_MAX_MIXIN_EXPANSIONS ((size_t)65536)	#define DEFAULT_MAX_MIXIN_EXPANSIONS ((size_t)65537)	mixinscope
