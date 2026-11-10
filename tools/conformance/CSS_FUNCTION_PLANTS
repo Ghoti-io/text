@@ -11,3 +11,4 @@ function-brace-argument-keeps-its-braces	css_substitute.c	        cnt = vals[0].
 function-inherit-reads-its-own-scope	css_substitute.c	    return lookup_in(sub, fi, slot, sc->parent, name, len, false, NULL);	    return lookup_in(sub, fi, slot, sc, name, len, false, NULL);	eval
 function-rules-not-given-to-the-document-context	cssom_computed.c	  co.function_rules = core->fns;	  co.function_rules = NULL;	doc
 function-initial-registration-not-handed-down-a-chain	css_substitute.c	      if (v[i].param != SIZE_MAX) {\n        /* A local variable	      if (v[i].kind == EK_PARAM) {\n        /* A local variable	eval
+function-a-brace-fallback-with-more-after-it-is-used	css_substitute.c	    if (n > 1) {\n      /* something follows the block	    if (0 && n > 1) {\n      /* something follows the block	eval

@@ -419,6 +419,7 @@ static bool env_name_syntax(const GTEXT_CSS_Component_Value * fn) {
  * grammar of the three is `var( <declaration-value> , <declaration-value>? )` (Variables 1, 3; `<env-args>` and `<attr-args>` the
  * same): the first argument, up to the first top-level comma, has to hold something, so `var()` and `var(, x)` are not valid.
  * What the first argument names (a `--` name, an environment variable) is checked when the value is substituted, not now.
+ * The second argument starts with a `{` block or not: when it does, it is that block and nothing else (Values 5, "Commas in Function Arguments"), so `var(--a, {x} y)` is not valid.
  * Walks with its own stack, so nesting costs memory and not stack.
  */
 static GTEXT_CSS_Status substitution_syntax(const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_Allocator * a, bool * valid) {
@@ -454,7 +455,7 @@ static GTEXT_CSS_Status substitution_syntax(const GTEXT_CSS_Component_Value * va
         break;
       }
       if (v->kind == GTEXT_CSS_VALUE_FUNCTION && (name_is(v, "var") || name_is(v, "env") || name_is(v, "attr") || name_is(v, "inherit"))) {
-        bool first = false, comma = false;
+        bool first = false, comma = false, started = false, braced = false;
         for (size_t k = 0; k < v->child_count; k++) {
           const GTEXT_CSS_Component_Value * c = &v->children[k];
           if (c->kind == GTEXT_CSS_VALUE_TOKEN) {
@@ -469,6 +470,18 @@ static GTEXT_CSS_Status substitution_syntax(const GTEXT_CSS_Component_Value * va
           }
           if (!comma && !(c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE)) {
             first = true;
+          }
+          if (comma && !(c->kind == GTEXT_CSS_VALUE_TOKEN && c->type == GTEXT_CSS_TOKEN_WHITESPACE)) {
+            /* Values 5, "Commas in Function Arguments": a free-form production that starts with a "{" token "matches just the {} block that the "{" token opens", so the fallback, which is
+               one, is the block alone: anything after it (`var(--a, {x} y)`, `var(--a, {x}, y)`) is not matched by the function's grammar, and the declaration is invalid at parse time. */
+            if (braced) {
+              *valid = false;
+              break;
+            }
+            if (!started) {
+              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;
+            }
+            started = true;
           }
         }
         if (!first || (name_is(v, "env") && !env_name_syntax(v))) {

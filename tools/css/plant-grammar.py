@@ -350,6 +350,17 @@ PLANTS += [
 ]
 
 
+# The fallback in braces of var(), env(), attr() and inherit() (Values 5, "Commas in Function Arguments"), each seen to fail (tests/test-css-property.cpp, tests/test-css-custom-review.cpp)
+PLANTS += [
+    ("custom-a-brace-fallback-keeps-its-braces", "css_substitute.c", "    n = vals[0].child_count;\n    vals = vals[0].children;\n  }\n  return seq_start(sub, fi, slot, f->csrc, vals, n, false);\n}",
+     "  }\n  return seq_start(sub, fi, slot, f->csrc, vals, n, false);\n}", ["custom-review"]),
+    ("custom-a-token-after-a-brace-fallback-is-valid", "css_property.c", "            if (braced) {\n              *valid = false;\n              break;\n            }",
+     "            if (0) {\n              *valid = false;\n              break;\n            }", ["property"]),
+    ("custom-a-brace-is-a-fallback-only-at-its-start", "css_property.c", "              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;",
+     "              braced = c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY;\n            }\n            else {\n              braced = braced || (c->kind == GTEXT_CSS_VALUE_BLOCK && c->type == GTEXT_CSS_TOKEN_OPEN_CURLY);", ["property"]),
+]
+
+
 def fuzz_plants():
     """The plants of the grammar and values fuzzers, as plants of the seed-replay programs."""
     import importlib.util

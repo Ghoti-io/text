@@ -42,6 +42,11 @@ color-mix(in srgb, peru 40%, palegoldenrod)   ->  color(srgb 0.8816 0.7545 0.498
 color-mix(in lch, peru 40%, palegoldenrod)    ->  lch(79.725496 40.454249 84.763378)
 ```
 
+The declared value is written with the percentages Color 5 ("serialized percentages") gives: none when every one is the same share, otherwise each, an omitted one as `(100% - specified sum) / omitted
+count`. That is written as the section says even when it is negative: `color-mix(red 60%, green, blue 50%)` is `color-mix(red 60%, green -10%, blue 50%)` (Firefox 158.0.1 writes the same; Chromium 156.0.8078.47 does
+not accept the form). Values 5's "normalize mix percentages" clamps the sum of the specified percentages to 100%, which would make it `green 0%`, and the web-platform-tests page for the form expects that; the two
+drafts disagree, and the library follows the serialization section.
+
 ## Relative colors and `alpha()`
 
 The origin is converted to the function's own space and its channels are the keywords (`r g b` from 0 to 255 in `rgb()`, `h s l`, `h w b`, `l a b`, `l c h`, `x y z`,

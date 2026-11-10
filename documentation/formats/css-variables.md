@@ -169,6 +169,13 @@ computed-value time. A function written directly after `...` (`max(var(--list)..
 An argument grammar that is not met is a parse error: `var(--a,!)`, `var(--a,;)` and `var(--a) !important !important` are invalid declarations, and the one
 before them in the cascade stands.
 
+**A fallback in braces.** Values 5 ("Commas in Function Arguments") lets a free-form production start with a `{` block, which "represents the *contents* of that block, ignoring the {} block wrapper
+itself", and the fallback of `var()` is "a non-strict free-form production" that follows it when it starts with one. So `var(--missing, {rgb(1, 2, 3)})` is `rgb(1, 2, 3)` and `var(--missing, {Arial, sans-serif})`
+is `Arial, sans-serif`, for `var()`, `env()`, `attr()` and `inherit()` alike; the block is the whole fallback, so anything after it (`{x} y`, `{x}, y`) is not matched by the function's grammar, which refuses the
+declaration at parse time (in a function's `result`, where nothing is parsed as a property, it makes the function invalid at computed-value time). A fallback that does not start with a block may hold
+commas, braces and anything else, as before. Neither Chromium 156.0.8078.47 nor Firefox 158.0.1 reads the block (both keep the declaration and compute it as if the fallback were not there), so this is the text's
+reading and no browser's.
+
 ## Registered custom properties and `@property`
 
 A **registration** gives a custom property a syntax, whether it inherits, and an initial value. It changes nothing at parse time, and at computed-value time

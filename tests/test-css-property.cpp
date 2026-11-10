@@ -853,6 +853,35 @@ TEST(CssProperty, ASubstitutionFunctionThatIsNotSyntacticallyValidMakesTheValueI
   EXPECT_EQ(parse(r, "--x", "var(--y)"), "pending:var(--y)");
 }
 
+TEST(CssProperty, AFallbackThatStartsWithABraceIsTheBlockAlone) {
+  // Values 5, "Commas in Function Arguments": a free-form production that starts with a "{" token "matches just the {} block that the "{" token opens"; the fallback of var() is a "non-strict
+  // free-form production" and "just the contents of the {} block" when it starts with one. So the fallback of var(), env(), attr() and inherit() is the block with nothing but white space beside it:
+  // a token after it, or a comma and more, is not matched by the function's grammar and the declaration is invalid at parse time.
+// Neither Chromium 156.0.8078.47 nor Firefox 158.0.1 implements it: both keep every one of these declarations (a token after the block included) and compute the property as if the fallback were
+// not there. The text decides (the pages css-variables/var-fallback-braces.html, css-env/env-fallback-braces.html and css-values/attr-fallback-braces.html agree with it).
+  const GTEXT_CSS_Registry * r = R();
+  for (const char * fn : {"var(--a, %s)", "env(a, %s)", "attr(data-a, %s)", "inherit(--a, %s)"}) {
+    char text[96];
+    auto with = [&](const char * fallback) {
+      std::snprintf(text, sizeof text, fn, fallback);
+      return std::string(text);
+    };
+    EXPECT_EQ(parse(r, "color", with("{rgb(1, 2, 3)}").c_str()).substr(0, 8), "pending:") << with("{rgb(1, 2, 3)}");
+    EXPECT_EQ(parse(r, "color", with("{ rgb(1, 2, 3) }").c_str()).substr(0, 8), "pending:") << "white space in and around the block";
+    EXPECT_EQ(parse(r, "color", with("{rgb(1, 2, 3)} ").c_str()).substr(0, 8), "pending:");
+    EXPECT_EQ(parse(r, "color", with("{}").c_str()).substr(0, 8), "pending:") << "an empty block is an empty fallback";
+    EXPECT_EQ(parse(r, "color", with("{rgb(1, 2, 3)} rgb(4, 5, 6)").c_str()), "invalid") << "a token after the block";
+    EXPECT_EQ(parse(r, "color", with("{rgb(1, 2, 3)}, red").c_str()), "invalid") << "another argument after the block";
+    EXPECT_EQ(parse(r, "color", with("{rgb(1, 2, 3)}{}").c_str()), "invalid") << "a second block";
+    EXPECT_EQ(parse(r, "font-family", with("{Arial}, sans-serif").c_str()), "invalid");
+    EXPECT_EQ(parse(r, "color", with("red {rgb(1, 2, 3)}").c_str()).substr(0, 8), "pending:") << "a block that is not the start of the fallback is a token like any other (non-strict)";
+    EXPECT_EQ(parse(r, "color", with("red {rgb(1, 2, 3)} blue").c_str()).substr(0, 8), "pending:") << "and tokens may follow it";
+  }
+  EXPECT_EQ(parse(r, "font-family", "var(--a, Arial, sans-serif)").substr(0, 8), "pending:") << "non-strict: a fallback that does not start with a brace may hold commas";
+  EXPECT_EQ(parse(r, "font-family", "var(--a, {Arial, sans-serif})").substr(0, 8), "pending:");
+  EXPECT_EQ(parse(r, "--x", "var(--a, {x} y)"), "invalid") << "a custom property's value is held to the same rule";
+}
+
 TEST(CssProperty, AUnitlessNumberIsALengthOnlyWhereTheQuirkAppliesAndNotInsideAnotherFunction) {
   // Values 4, Appendix C: "the unitless length quirk ... applies ... only to the value of the properties listed, in the numeric
   // position of the property's own value, and not inside functions": a number inside fit-content() is a number.

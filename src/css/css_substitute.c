@@ -1148,6 +1148,30 @@ static int eval_arg(css_sub * sub, size_t fi, int slot, size_t arg) {
   return seq_start(sub, fi, slot, f->csrc, f->vals ? f->vals + r.from : NULL, r.count, false);
 }
 
+static void slot_gi(frame_t * f, int slot);
+
+/// The fallback of `var()`, `env()`, `attr()` and `inherit()`: the argument after the first comma. Values 5, "Commas in Function Arguments": a free-form production "can either (after optional
+/// whitespace) start with a <{-token>, or not"; if it does, "the production matches just the {} block that the "{" token opens. It represents the contents of that block, ignoring the {} block
+/// wrapper itself", and for the fallback of var() ("a non-strict free-form production") "the fallback is just the contents of the {} block, and doesn't include the {} wrapper itself". The
+/// parse-time check (css_property.c, substitution_syntax) refused any other token after the block, so what is here is the block alone, with white space beside it.
+static int eval_fallback(css_sub * sub, size_t fi, int slot) {
+  frame_t * f = &sub->frames[fi];
+  const range_t r = f->args[1];
+  const GTEXT_CSS_Component_Value * vals = f->vals ? f->vals + r.from : NULL;
+  size_t n = r.count;
+  if (n > 0 && vals[0].kind == GTEXT_CSS_VALUE_BLOCK && vals[0].type == GTEXT_CSS_TOKEN_OPEN_CURLY) {
+    if (n > 1) {
+      /* something follows the block (what a value whose text is not parsed again can hold: a custom property's): the fallback does not match the grammar, which is what the function being invalid
+         at computed-value time means */
+      slot_gi(f, slot);
+      return 0;
+    }
+    n = vals[0].child_count;
+    vals = vals[0].children;
+  }
+  return seq_start(sub, fi, slot, f->csrc, vals, n, false);
+}
+
 /// The result of a function is checked against the budget, and left in the frame.
 static void fn_finish(css_sub * sub, size_t fi, css_rope * r /* taken */, bool gi) {
   frame_t * f = &sub->frames[fi];
@@ -1536,7 +1560,7 @@ static int step_var(css_sub * sub, size_t fi) {
     if (f->res[1].gi && f->has_comma) {
       /* "If result contains the guaranteed-invalid value, and second arg was provided, set result to the result of substituting second arg." */
       f->phase = 13;
-      const int r = eval_arg(sub, fi, 2, 1);
+      const int r = eval_fallback(sub, fi, 2);
       if (r < 0) {
         return STEP_ERROR;
       }
@@ -1656,7 +1680,7 @@ static int step_env(css_sub * sub, size_t fi) {
   case 12:
     if (f->res[1].gi && f->has_comma) {
       f->phase = 13;
-      const int r = eval_arg(sub, fi, 2, 1);
+      const int r = eval_fallback(sub, fi, 2);
       if (r < 0) {
         return STEP_ERROR;
       }
@@ -2431,7 +2455,7 @@ static int attr_failure(css_sub * sub, size_t fi) {
   if (f->has_comma) {
     /* "Substitute arbitrary substitution functions in second arg, and return the result." */
     f->phase = 15;
-    const int r = eval_arg(sub, fi, 2, 1);
+    const int r = eval_fallback(sub, fi, 2);
     if (r < 0) {
       return STEP_ERROR;
     }

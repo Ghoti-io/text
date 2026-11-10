@@ -339,6 +339,46 @@ TEST(CssCustomReview, AllTakesAFunctionThatYieldsACssWideKeyword) {
 }
 
 
+/* ---- the fallback in braces ---------------------------------------------------------------------------------------------------------- */
+
+// Values 5, "Commas in Function Arguments": "the fallback is just the contents of the {} block, and doesn't include the {} wrapper itself". The pages css-variables/var-fallback-braces.html,
+// css-env/env-fallback-braces.html and css-values/attr-fallback-braces.html of web-platform-tests hold the library to it for var(), env() and attr().
+TEST(CssCustomReview, AFallbackInBracesIsItsContents) {
+  Scene s;
+  for (const char * fn : {"var(--missing, %s)", "env(missing-name, %s)", "attr(data-missing type(<color>), %s)", "inherit(--missing, %s)"}) {
+    for (const char * wrapped : {"{rgb(1, 2, 3)}", "{ rgb(1, 2, 3) }", "{rgb(1, 2, 3)} "}) {
+      char text[96];
+      std::snprintf(text, sizeof text, fn, wrapped);
+      Computed c;
+      compute_pairs(s.w, c, {{"color", text}}, nullptr, &s.node);
+      ASSERT_EQ(c.status, GTEXT_CSS_OK) << text;
+      EXPECT_EQ(c.value(s.w.registry.r, "color"), "rgb(1, 2, 3)") << text;
+    }
+  }
+  Computed list;
+  compute_pairs(s.w, list, {{"font-family", "var(--missing, {Arial, sans-serif})"}}, nullptr, &s.node);
+  EXPECT_EQ(list.value(s.w.registry.r, "font-family"), "Arial, sans-serif") << "the commas inside the braces are the fallback's";
+  Computed attr;
+  compute_pairs(s.w, attr, {{"font-family", "attr(data-missing, {Arial, sans-serif})"}}, nullptr, &s.node);
+  EXPECT_EQ(attr.value(s.w.registry.r, "font-family"), "Arial, sans-serif");
+  // the control: the brace is only taken off a fallback that starts with it
+  Computed bare;
+  compute_pairs(s.w, bare, {{"color", "var(--missing, rgb(4, 5, 6))"}}, nullptr, &s.node);
+  EXPECT_EQ(bare.value(s.w.registry.r, "color"), "rgb(4, 5, 6)");
+}
+
+// What a custom property holds is not read again when it is substituted, so a fallback that starts with a brace and has more after it (which the parse of a property refuses) reaches the
+// substitution: it does not match the grammar, which makes the function invalid at computed-value time, not a fallback with a brace in it.
+TEST(CssCustomReview, ABraceFallbackWithSomethingAfterItInACustomPropertyIsInvalidAtComputedValueTime) {
+  Scene s;
+  Computed c;
+  compute_pairs(s.w, c, {{"--x", "var(--missing, {a} b)"}, {"color", "var(--x, green)"}}, nullptr, &s.node);
+  ASSERT_EQ(c.status, GTEXT_CSS_OK);
+  EXPECT_NE(c.value(s.w.registry.r, "--x"), "{a} b") << "the brace is not kept as a token of the fallback";
+  EXPECT_EQ(c.value(s.w.registry.r, "color"), "green") << "--x is the guaranteed-invalid value, so the fallback of the reference to it is taken";
+}
+
+
 /* ---- where two tokens would glue ----------------------------------------------------------------------------------------------- */
 
 TEST(CssCustomReview, TwoTokensThatWouldGlueAreSeparatedByAComment) {

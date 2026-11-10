@@ -67,6 +67,24 @@ TEST(CssFunctionEval, APlainCallIsReplacedByTheResult) {
   EXPECT_EQ(width_of(w, "width: --double(3px)"), "6px");
 }
 
+TEST(CssFunctionEval, AFallbackInBracesInAResultIsItsContentsAndOneWithMoreAfterItIsInvalidAtComputedValueTime) {
+  // Values 5, "Commas in Function Arguments": the fallback of var() that starts with a "{" "is just the contents of the {} block". The body of a function is not parsed as a property is (nothing
+  // refuses a declaration at parse time), so a block with something after it reaches the substitution, where it is a function that does not match its grammar: invalid at computed-value time.
+  FnWorld w(
+      "@function --braced() { result: var(--missing, {a, b}); }\n"
+      "@function --after() { result: var(--missing, {a} b); }\n"
+      "@function --comma() { result: var(--missing, {a}, b); }");
+  EXPECT_EQ(custom_of(w, "--r: --braced()", "--r"), "a, b");
+  Computed c;
+  compute(w, c, "--r: --after(); --q: var(--r, fallback)");
+  ASSERT_EQ(c.status, GTEXT_CSS_OK);
+  EXPECT_EQ(c.custom("--q"), "fallback") << "the call is the guaranteed-invalid value, so the fallback of the reference to it is taken";
+  Computed d;
+  compute(w, d, "--r: --comma(); --q: var(--r, fallback)");
+  ASSERT_EQ(d.status, GTEXT_CSS_OK);
+  EXPECT_EQ(d.custom("--q"), "fallback");
+}
+
 TEST(CssFunctionEval, TheNegativeExampleOfTheDraft) {
   // The first example of "Defining Custom Functions": `padding: --negative(var(--gap))` and `padding: --negative(1em)`.
   FnWorld w("@function --negative(--value) { result: calc(-1 * var(--value)); }");

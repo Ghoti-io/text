@@ -336,6 +336,16 @@ TEST(CssColorMix, TheDraftsExamplesOfTheSerializationOfTheDeclaredValue) {
       {"color-mix(in lch, peru 40%, palegoldenrod)", "color-mix(in lch, peru 40%, palegoldenrod 60%)"}});
 }
 
+// Color 5, "serialized percentages": an omitted percentage is "(100% - specified sum) / omitted count", with no clamp, so specified percentages that add up to more than 100% leave a negative one:
+// `color-mix(red 60%, green, blue 50%)` is `color-mix(red 60%, green -10%, blue 50%)`. Values 5, "normalize mix percentages", of which this is a case, says "Let specified sum be the sum of the
+// percentages specified in items (clamped to 100%)", which would make it 0%, and the web-platform-tests of css-color (color-valid-color-mix-function.html) expect `green 0%`; the two drafts disagree and the page follows the clamp. The decision rule takes the text of the serialization section, and Firefox 158.0.1 answers it (it
+// serializes `green -10%`; Chromium 156.0.8078.47 does not accept a color-mix() with no color space or with three colors, and drops the declaration). So the library writes what the section
+// says, and the page's expectation is a listed exception. The reading that clamps is one line (ser_mix, css_color_serialize.c).
+TEST(CssColorMix, AnOmittedPercentageIsWrittenAsTheSectionSaysEvenWhenItIsNegative) {
+  check({{"color-mix(red 60%, green, blue 50%)", "color-mix(red 60%, green -10%, blue 50%)"}, {"color-mix(red 60%, green, white, blue 50%)", "color-mix(red 60%, green -5%, white -5%, blue 50%)"},
+      {"color-mix(red 50%, green, blue 50%)", "color-mix(red 50%, green 0%, blue 50%)"}, {"color-mix(red 40%, green, blue 50%)", "color-mix(red 40%, green 10%, blue 50%)"}});
+}
+
 TEST(CssColorMix, SpacesHueMethodsAndCalcPercentages) {
   check({{"color-mix(in srgb, red, blue)", "color-mix(in srgb, red, blue)"}, {"color-mix(red, blue)", "color-mix(red, blue)"},
       {"color-mix(in srgb, 70% red, 50% blue)", "color-mix(in srgb, red 70%, blue 50%)"}, {"color-mix(in hsl, red 50%, blue)", "color-mix(in hsl, red, blue)"},
