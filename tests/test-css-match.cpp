@@ -242,6 +242,19 @@ TEST_F(CssMatch, ClosestIsInclusiveOfTheElementAndMatchesAndNoMatchAreAnswers) {
   EXPECT_FALSE(matches(l3, "li:visited"));
 }
 
+// Selectors 4, "forgiving selector list": an invalid entry is kept and never matches, and a comma inside the arguments of an unknown pseudo-class or inside an attribute selector's brackets is not the list's:
+// css/selectors/forgiving-selector-list-comma-in-block.html asks `:is(:unknown-pseudo(1, .b, .c))` and `:is(.x[a, .b, .c])` to match nothing, and `:is(:unknown-pseudo(1, .x), .b)` to match `.b`.
+TEST_F(CssMatch, AForgivingListSplitsAtTopLevelCommasOnly) {
+  for (const char * pseudo : {"is", "where"}) {
+    for (const char * invalid : {":unknown-pseudo(1, p, li)", ":unknown-pseudo(p, li, p)", ":unknown-pseudo(p, li) p", ".x[a, p, li]"}) {
+      const std::string selector = std::string(":") + pseudo + "(" + invalid + ")";
+      EXPECT_EQ(all(d, selector.c_str()), "") << selector;
+    }
+    const std::string rescued = std::string(":") + pseudo + "(:unknown-pseudo(1, x), li)";
+    EXPECT_EQ(all(d, rescued.c_str()), all(d, "li")) << rescued << ": a valid entry after an invalid one that holds a comma still matches";
+  }
+}
+
 TEST_F(CssMatch, SyntaxErrorsAreReportedAsAnErrorWithTheDiagnosticAndNothingElse) {
   GTEXT_Markup_Node * out = nullptr;
   GTEXT_Markup_Query_Result r;

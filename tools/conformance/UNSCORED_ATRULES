@@ -42,6 +42,7 @@ css-anchor-position/position-try-fallbacks-limit.html	2	unmodeled:script-test
 css-anchor-position/position-try-fallbacks-multicol-001.html	1	reftest
 css-anchor-position/position-try-fallbacks-multicol-002.html	1	reftest
 css-anchor-position/position-try-fallbacks-no-fit-after-fit.html	1	unmodeled:script-test
+css-anchor-position/position-try-fallbacks-scrollbar.html	1	unmodeled:script-test
 css-anchor-position/position-try-grid-001.html	1	no-assertion
 css-anchor-position/position-try-ident-function.html	1	no-assertion
 css-anchor-position/position-try-initial-transition.html	1	unmodeled:script-test
@@ -110,10 +111,12 @@ css-counter-styles/cjk-earthly-branch/css3-counter-styles-203.html	1	reftest
 css-counter-styles/cjk-heavenly-stem/css3-counter-styles-204.html	1	reftest
 css-counter-styles/cjk-heavenly-stem/css3-counter-styles-205.html	1	reftest
 css-counter-styles/cjk-heavenly-stem/css3-counter-styles-206.html	1	reftest
+css-counter-styles/cjk-ideographic/counter-cjk-ideographic-extended-range.optional.html	1	reftest
 css-counter-styles/cssom/cssom-additive-symbols-setter-invalid.html	1	reftest
 css-counter-styles/cssom/cssom-additive-symbols-setter.html	1	reftest
 css-counter-styles/cssom/cssom-fallback-setter-invalid.html	1	reftest
 css-counter-styles/cssom/cssom-fallback-setter.html	1	reftest
+css-counter-styles/cssom/cssom-name-setter-getter.html	4	unmodeled:script-test
 css-counter-styles/cssom/cssom-name-setter-invalid.html	1	reftest
 css-counter-styles/cssom/cssom-name-setter.html	1	reftest
 css-counter-styles/cssom/cssom-negative-setter-invalid.html	1	reftest
@@ -157,6 +160,7 @@ css-counter-styles/hiragana/css3-counter-styles-032.html	1	reftest
 css-counter-styles/hiragana-iroha/css3-counter-styles-033.html	1	reftest
 css-counter-styles/hiragana-iroha/css3-counter-styles-034.html	1	reftest
 css-counter-styles/hiragana-iroha/css3-counter-styles-035.html	1	reftest
+css-counter-styles/japanese-formal/counter-japanese-formal-extended-range.optional.html	1	reftest
 css-counter-styles/japanese-formal/counter-japanese-formal-extended.html	1	reftest
 css-counter-styles/japanese-formal/counter-japanese-formal.html	1	reftest
 css-counter-styles/japanese-formal/css3-counter-styles-047.html	1	reftest
@@ -164,6 +168,7 @@ css-counter-styles/japanese-formal/css3-counter-styles-048.html	1	reftest
 css-counter-styles/japanese-formal/css3-counter-styles-049.html	1	reftest
 css-counter-styles/japanese-formal/css3-counter-styles-050.html	1	reftest
 css-counter-styles/japanese-formal/css3-counter-styles-051.html	1	reftest
+css-counter-styles/japanese-informal/counter-japanese-informal-extended-range.optional.html	1	reftest
 css-counter-styles/japanese-informal/counter-japanese-informal-extended.html	1	reftest
 css-counter-styles/japanese-informal/counter-japanese-informal.html	1	reftest
 css-counter-styles/japanese-informal/css3-counter-styles-042.html	1	reftest
@@ -183,6 +188,7 @@ css-counter-styles/katakana-iroha/css3-counter-styles-041.html	1	reftest
 css-counter-styles/khmer/css3-counter-styles-161.html	1	reftest
 css-counter-styles/khmer/css3-counter-styles-162.html	1	reftest
 css-counter-styles/khmer/css3-counter-styles-163.html	1	reftest
+css-counter-styles/korean-hangul-formal/counter-korean-hangul-formal-extended-range.optional.html	1	reftest
 css-counter-styles/korean-hangul-formal/counter-korean-hangul-formal-extended.html	1	reftest
 css-counter-styles/korean-hangul-formal/counter-korean-hangul-formal.html	1	reftest
 css-counter-styles/korean-hangul-formal/css3-counter-styles-052.html	1	reftest
@@ -190,6 +196,7 @@ css-counter-styles/korean-hangul-formal/css3-counter-styles-053.html	1	reftest
 css-counter-styles/korean-hangul-formal/css3-counter-styles-054.html	1	reftest
 css-counter-styles/korean-hangul-formal/css3-counter-styles-055.html	1	reftest
 css-counter-styles/korean-hangul-formal/css3-counter-styles-056.html	1	reftest
+css-counter-styles/korean-hanja-formal/counter-korean-hanja-formal-extended-range.optional.html	1	reftest
 css-counter-styles/korean-hanja-formal/counter-korean-hanja-formal-extended.html	1	reftest
 css-counter-styles/korean-hanja-formal/counter-korean-hanja-formal.html	1	reftest
 css-counter-styles/korean-hanja-formal/css3-counter-styles-062.html	1	reftest
@@ -197,6 +204,7 @@ css-counter-styles/korean-hanja-formal/css3-counter-styles-063.html	1	reftest
 css-counter-styles/korean-hanja-formal/css3-counter-styles-064.html	1	reftest
 css-counter-styles/korean-hanja-formal/css3-counter-styles-065.html	1	reftest
 css-counter-styles/korean-hanja-formal/css3-counter-styles-066.html	1	reftest
+css-counter-styles/korean-hanja-informal/counter-korean-hanja-informal-extended-range.optional.html	1	reftest
 css-counter-styles/korean-hanja-informal/counter-korean-hanja-informal-extended.html	1	reftest
 css-counter-styles/korean-hanja-informal/counter-korean-hanja-informal.html	1	reftest
 css-counter-styles/korean-hanja-informal/css3-counter-styles-057.html	1	reftest
@@ -235,12 +243,14 @@ css-counter-styles/oriya/css3-counter-styles-145.html	1	reftest
 css-counter-styles/persian/css3-counter-styles-104.html	1	reftest
 css-counter-styles/persian/css3-counter-styles-105.html	1	reftest
 css-counter-styles/persian/css3-counter-styles-106.html	1	reftest
+css-counter-styles/simp-chinese-formal/counter-simp-chinese-formal-extended-range.optional.html	1	reftest
 css-counter-styles/simp-chinese-formal/counter-simp-chinese-formal.html	1	reftest
 css-counter-styles/simp-chinese-formal/css3-counter-styles-076.html	1	reftest
 css-counter-styles/simp-chinese-formal/css3-counter-styles-077.html	1	reftest
 css-counter-styles/simp-chinese-formal/css3-counter-styles-078.html	1	reftest
 css-counter-styles/simp-chinese-formal/css3-counter-styles-079.html	1	reftest
 css-counter-styles/simp-chinese-formal/css3-counter-styles-080.html	1	reftest
+css-counter-styles/simp-chinese-informal/counter-simp-chinese-informal-extended-range.optional.html	1	reftest
 css-counter-styles/simp-chinese-informal/counter-simp-chinese-informal.html	1	reftest
 css-counter-styles/simp-chinese-informal/css3-counter-styles-071.html	1	reftest
 css-counter-styles/simp-chinese-informal/css3-counter-styles-072.html	1	reftest
@@ -269,12 +279,14 @@ css-counter-styles/thai/css3-counter-styles-154.html	1	reftest
 css-counter-styles/tibetan/css3-counter-styles-155.html	1	reftest
 css-counter-styles/tibetan/css3-counter-styles-156.html	1	reftest
 css-counter-styles/tibetan/css3-counter-styles-157.html	1	reftest
+css-counter-styles/trad-chinese-formal/counter-trad-chinese-formal-extended-range.optional.html	1	reftest
 css-counter-styles/trad-chinese-formal/counter-trad-chinese-formal.html	1	reftest
 css-counter-styles/trad-chinese-formal/css3-counter-styles-086.html	1	reftest
 css-counter-styles/trad-chinese-formal/css3-counter-styles-087.html	1	reftest
 css-counter-styles/trad-chinese-formal/css3-counter-styles-088.html	1	reftest
 css-counter-styles/trad-chinese-formal/css3-counter-styles-089.html	1	reftest
 css-counter-styles/trad-chinese-formal/css3-counter-styles-090.html	1	reftest
+css-counter-styles/trad-chinese-informal/counter-trad-chinese-informal-extended-range.optional.html	1	reftest
 css-counter-styles/trad-chinese-informal/counter-trad-chinese-informal.html	1	reftest
 css-counter-styles/trad-chinese-informal/css3-counter-styles-081.html	1	reftest
 css-counter-styles/trad-chinese-informal/css3-counter-styles-082.html	1	reftest
@@ -305,12 +317,16 @@ css-fonts/font-face-style-default-variable.html	1	reftest
 css-fonts/font-face-style-normal.html	4	unmodeled:script-test
 css-fonts/font-face-unicode-range-2.html	1	reftest
 css-fonts/font-face-unicode-range-nbsp.html	1	reftest
+css-fonts/font-face-unicode-range-no-match-no-download.html	1	unmodeled:script-test
+css-fonts/font-face-unicode-range-stretch-isolation.html	1	reftest
 css-fonts/font-face-unicode-range.html	1	no-assertion
 css-fonts/font-face-weight-auto-static.html	1	reftest
 css-fonts/font-face-weight-auto-variable.html	1	reftest
 css-fonts/font-face-weight-default-variable.html	1	reftest
 css-fonts/font-feature-values-map-live.html	2	unmodeled:script-test
+css-fonts/font-feature-values-map-order.html	6	unmodeled:script-test
 css-fonts/font-feature-values-sameobject.tentative.html	1	unmodeled:script-test
+css-fonts/font-feature-values-serialization-order.html	10	unmodeled:script-test
 css-fonts/font-palette-10.html	1	reftest
 css-fonts/font-palette-11.html	1	reftest
 css-fonts/font-palette-12.html	1	reftest
@@ -350,6 +366,7 @@ css-fonts/font-palette-9.html	1	reftest
 css-fonts/font-palette-add-2.html	1	reftest
 css-fonts/font-palette-add.html	1	reftest
 css-fonts/font-palette-empty-font-family.html	1	reftest
+css-fonts/font-palette-mix.html	1	reftest
 css-fonts/font-palette-modify-2.html	1	reftest
 css-fonts/font-palette-modify.html	1	reftest
 css-fonts/font-palette-non-ident-font-family.html	1	reftest
@@ -487,6 +504,11 @@ css-page/page-box-008-print.html	1	reftest
 css-page/page-box-009-print.html	1	reftest
 css-page/page-box-010-print.html	1	reftest
 css-page/page-box-011-print.html	1	reftest
+css-page/page-context-inherits-from-root-custom-property-print.html	1	reftest
+css-page/page-context-inherits-from-root-em-rem-print.html	1	reftest
+css-page/page-context-inherits-from-root-font-size-001-print.html	1	reftest
+css-page/page-context-inherits-from-root-font-size-002-print.html	1	reftest
+css-page/page-context-inherits-from-root-rem-print.html	1	reftest
 css-page/page-counters-000.xht	1	no-assertion
 css-page/page-left-right-001-print.html	1	reftest
 css-page/page-left-right-002-print.html	1	reftest
@@ -678,6 +700,7 @@ css-page/tentative/safe-printable-inset-003-print.html	1	reftest
 css-page/tentative/safe-printable-inset-large-crash-print.html	1	reftest
 css-properties-values-api/at-property-animation.html	2	unmodeled:script-test
 css-properties-values-api/at-property-cssom.html	7	unmodeled:script-test
+css-properties-values-api/at-property-media-query.html	1	unmodeled:script-test
 css-properties-values-api/at-property-non-matching-media-crash.html	1	no-assertion
 css-properties-values-api/at-property-optional-initial-value.html	1	unmodeled:script-test
 css-properties-values-api/at-property-shadow.html	1	unmodeled:script-test
@@ -700,6 +723,7 @@ css-view-transitions/auto-name-get-animations.html	1	unmodeled:script-test
 css-view-transitions/auto-name.html	1	reftest
 css-view-transitions/backdrop-filter-animated.html	1	reftest
 css-view-transitions/backdrop-filter-captured.html	1	reftest
+css-view-transitions/backdrop-filter-in-root-old-snapshot.html	1	reftest
 css-view-transitions/backdrop-filter-while-promise-pending.html	1	reftest
 css-view-transitions/block-with-overflowing-text.html	1	reftest
 css-view-transitions/break-inside-avoid-child.html	1	reftest
@@ -710,6 +734,7 @@ css-view-transitions/capture-with-opacity-zero-child.html	1	reftest
 css-view-transitions/capture-with-visibility-hidden-child.html	1	reftest
 css-view-transitions/capture-with-visibility-mixed-descendants.html	1	reftest
 css-view-transitions/class-specificity.html	1	reftest
+css-view-transitions/clear-pseudo-elements-nested-style-update.html	1	unmodeled:script-test
 css-view-transitions/clip-path-larger-than-border-box-on-child-of-named-element.html	1	reftest
 css-view-transitions/column-span-during-transition-doesnt-skip.html	1	reftest
 css-view-transitions/composite-accumulate.html	1	unmodeled:script-test
@@ -725,6 +750,7 @@ css-view-transitions/content-with-clip.html	1	reftest
 css-view-transitions/content-with-inline-child.html	1	reftest
 css-view-transitions/content-with-transform-new-image.html	1	reftest
 css-view-transitions/content-with-transform-old-image.html	1	reftest
+css-view-transitions/content-with-transformed-child-old-image.html	1	reftest
 css-view-transitions/content-with-transparent-background.html	1	reftest
 css-view-transitions/css-tags-paint-order-with-entry.html	1	reftest
 css-view-transitions/css-tags-paint-order.html	1	reftest
@@ -776,6 +802,8 @@ css-view-transitions/iframe-and-main-frame-transition-old-main-new-iframe.html	1
 css-view-transitions/iframe-and-main-frame-transition-old-main-old-iframe.html	1	reftest
 css-view-transitions/iframe-and-main-frame-transition-old-main.html	1	reftest
 css-view-transitions/iframe-and-main-frame-transition-with-name-on-iframe.html	1	reftest
+css-view-transitions/iframe-cross-origin-svg-filter-dynamic.tentative.sub.https.html	1	reftest
+css-view-transitions/iframe-cross-origin-svg-filter.tentative.sub.https.html	1	reftest
 css-view-transitions/iframe-new-has-scrollbar.html	1	reftest
 css-view-transitions/iframe-old-has-scrollbar.html	1	reftest
 css-view-transitions/iframe-transition-destroyed-document-crash.html	1	no-assertion
@@ -784,6 +812,8 @@ css-view-transitions/inline-child-with-composited-filter.html	1	reftest
 css-view-transitions/inline-child-with-filter.html	1	reftest
 css-view-transitions/inline-child-with-overflow-shadow.html	1	reftest
 css-view-transitions/inline-element-size.html	1	reftest
+css-view-transitions/inline-with-block-child-new.html	1	reftest
+css-view-transitions/inline-with-block-child-old.html	1	reftest
 css-view-transitions/inline-with-offset-from-containing-block.html	1	reftest
 css-view-transitions/input-pointer-capture-while-render-blocked.html	1	unmodeled:script-test
 css-view-transitions/input-targets-root-while-render-blocked.html	2	unmodeled:script-test
@@ -854,6 +884,7 @@ css-view-transitions/new-content-transform-position-fixed.html	1	reftest
 css-view-transitions/new-content-with-object-view-box.html	1	reftest
 css-view-transitions/new-content-with-overflow-zoomed.html	1	reftest
 css-view-transitions/new-content-with-overflow.html	1	reftest
+css-view-transitions/new-element-hidden-during-animation-skips-transition.html	1	unmodeled:script-test
 css-view-transitions/new-element-on-start.html	1	reftest
 css-view-transitions/new-root-vertical-writing-mode.html	1	reftest
 css-view-transitions/no-crash-set-exception.html	1	unmodeled:script-test
@@ -898,6 +929,14 @@ css-view-transitions/only-child-old.html	6	unmodeled:script-test
 css-view-transitions/only-child-on-root-element-with-view-transition.html	1	unmodeled:script-test
 css-view-transitions/only-child-view-transition.html	1	unmodeled:script-test
 css-view-transitions/outer-padding-inner-background.html	1	reftest
+css-view-transitions/paint-holding-in-iframe-ancestor-opacity.html	1	reftest
+css-view-transitions/paint-holding-in-iframe-named-element.html	1	reftest
+css-view-transitions/paint-holding-in-iframe-no-captured-elements.html	1	reftest
+css-view-transitions/paint-holding-in-iframe-overlap.html	1	reftest
+css-view-transitions/paint-holding-in-iframe-scrolled-into-view.html	1	reftest
+css-view-transitions/paint-holding-in-iframe-skipped.html	1	reftest
+css-view-transitions/paint-holding-in-iframe-transformed.html	1	reftest
+css-view-transitions/paint-holding-in-iframe-transparent.html	1	reftest
 css-view-transitions/paint-holding-in-iframe.html	1	reftest
 css-view-transitions/paused-animation-at-end.html	1	unmodeled:script-test
 css-view-transitions/pseudo-computed-style-stays-in-sync-with-new-element.html	1	unmodeled:script-test
@@ -932,6 +971,7 @@ css-view-transitions/pseudo-with-classes-view-transition-image-pair.html	1	refte
 css-view-transitions/ready_resolves_after_dom_before_raf.html	1	unmodeled:script-test
 css-view-transitions/remove-document-element-crash.html	1	no-assertion
 css-view-transitions/remove-root-element-firefox-bug-1982469-crash.html	1	no-assertion
+css-view-transitions/render-pass-backing-logical-bounds.html	1	reftest
 css-view-transitions/reset-state-after-scrolled-view-transition.html	1	reftest
 css-view-transitions/root-captured-as-different-tag.html	1	reftest
 css-view-transitions/root-element-cv-hidden-crash.html	1	no-assertion
@@ -1015,6 +1055,8 @@ css-view-transitions/web-animations-api.html	1	reftest
 css-view-transitions/window-resize-aborts-transition-before-ready.html	1	unmodeled:script-test
 css-view-transitions/window-resize-aborts-transition.html	1	unmodeled:script-test
 css-view-transitions/writing-mode-container-resize.html	1	reftest
+css-view-transitions/navigation/aborted-navigation-no-stale-state-cross-origin.html	1	unmodeled:script-test
+css-view-transitions/navigation/aborted-navigation-no-stale-state.html	1	unmodeled:script-test
 css-view-transitions/navigation/at-rule-cssom.html	6	unmodeled:script-test
 css-view-transitions/navigation/at-rule-in-layer-cascade-external-stylesheet.html	1	unmodeled:script-test
 css-view-transitions/navigation/at-rule-in-layer-cascade.html	1	unmodeled:script-test
@@ -1032,9 +1074,11 @@ css-view-transitions/navigation/hide-before-reveal.html	1	unmodeled:script-test
 css-view-transitions/navigation/mismatched-snapshot-containing-block-size-skips.html	1	unmodeled:script-test
 css-view-transitions/navigation/navigation-auto-excludes-reload.html	1	unmodeled:script-test
 css-view-transitions/navigation/no-view-transition-with-cross-origin-redirect.sub.html	1	unmodeled:script-test
+css-view-transitions/navigation/no-view-transition-with-csp-sandbox.html	1	unmodeled:script-test
 css-view-transitions/navigation/old_vt_promises_bfcache.html	1	no-assertion
 css-view-transitions/navigation/opt-in-removed-during-transition.html	1	unmodeled:script-test
 css-view-transitions/navigation/opt-in-without-frame-crash.html	1	no-assertion
+css-view-transitions/navigation/outbound-transition-ready-after-pagehide.html	1	unmodeled:script-test
 css-view-transitions/navigation/pagereveal-ctor.html	5	unmodeled:script-test
 css-view-transitions/navigation/pagereveal-finished-promise.html	1	unmodeled:script-test
 css-view-transitions/navigation/pagereveal-microtask-sequence.html	1	unmodeled:script-test
@@ -1044,9 +1088,12 @@ css-view-transitions/navigation/pagereveal-ready-promise.html	1	unmodeled:script
 css-view-transitions/navigation/pagereveal-setup-transition.html	1	unmodeled:script-test
 css-view-transitions/navigation/pagereveal-updatecallbackdone-promise.html	1	unmodeled:script-test
 css-view-transitions/navigation/pagereveal-with-view-transition.html	1	unmodeled:script-test
+css-view-transitions/navigation/pageswap-after-media-change.html	1	unmodeled:script-test
 css-view-transitions/navigation/pageswap-ctor.html	6	unmodeled:script-test
 css-view-transitions/navigation/pageswap-fired-before-old-state-capture.html	1	unmodeled:script-test
+css-view-transitions/navigation/pageswap-history-change-during-traverse.html	1	unmodeled:script-test
 css-view-transitions/navigation/pageswap-long-delay.html	1	unmodeled:script-test
+css-view-transitions/navigation/pageswap-opt-in-added-before-navigation.html	1	unmodeled:script-test
 css-view-transitions/navigation/pageswap-push-from-click.html	1	unmodeled:script-test
 css-view-transitions/navigation/pageswap-push-navigation.html	1	unmodeled:script-test
 css-view-transitions/navigation/pageswap-push-with-redirect.html	1	unmodeled:script-test
@@ -1055,6 +1102,8 @@ css-view-transitions/navigation/pageswap-skip-transition.html	1	unmodeled:script
 css-view-transitions/navigation/pageswap-traverse-navigation-no-bfcache.https.html	1	unmodeled:script-test
 css-view-transitions/navigation/prerender-coop.https.html	1	unmodeled:script-test
 css-view-transitions/navigation/prerender-removed-during-navigation.html	1	unmodeled:script-test
+css-view-transitions/navigation/raf-before-outbound-capture-subframe.html	1	unmodeled:script-test
+css-view-transitions/navigation/raf-before-outbound-capture.html	1	unmodeled:script-test
 css-view-transitions/navigation/reveal-after-aborted-navigation.html	1	unmodeled:script-test
 css-view-transitions/navigation/root-element-transition-iframe-cross-origin.sub.html	1	reftest
 css-view-transitions/navigation/root-element-transition-iframe-with-startVT-on-main.html	1	reftest
@@ -1144,10 +1193,14 @@ css-view-transitions/scoped/element-scoped-containment-invalid-state.html	5	unmo
 css-view-transitions/scoped/fill-forwards.html	1	unmodeled:script-test
 css-view-transitions/scoped/fractional-border-shift.html	1	reftest
 css-view-transitions/scoped/from-scale-zero.html	1	reftest
+css-view-transitions/scoped/hit-test-captured-scope.html	1	unmodeled:script-test
+css-view-transitions/scoped/hit-test-overflow-clipped-scope.html	1	unmodeled:script-test
 css-view-transitions/scoped/hit-test-vt-overlay.html	1	unmodeled:script-test
 css-view-transitions/scoped/hit-testing.html	1	unmodeled:script-test
 css-view-transitions/scoped/implicit-contain.html	1	reftest
 css-view-transitions/scoped/ink-overflow-on-target.html	1	reftest
+css-view-transitions/scoped/mask-image-capture.html	1	reftest
+css-view-transitions/scoped/mask-image-overlay.html	1	reftest
 css-view-transitions/scoped/missing-view-transition-name.html	1	unmodeled:script-test
 css-view-transitions/scoped/negative-playback-rate.html	1	unmodeled:script-test
 css-view-transitions/scoped/nested-scope.html	1	reftest
@@ -1157,8 +1210,10 @@ css-view-transitions/scoped/overflow-excludes-pseudo.html	1	reftest
 css-view-transitions/scoped/paint-order.html	1	reftest
 css-view-transitions/scoped/pause-rendering-resize.html	1	reftest
 css-view-transitions/scoped/pause-rendering.html	1	reftest
+css-view-transitions/scoped/remove-child-in-callback.html	2	unmodeled:script-test
 css-view-transitions/scoped/rotation-on-scoped-element.html	1	reftest
 css-view-transitions/scoped/run_in_parallel.html	1	unmodeled:script-test
+css-view-transitions/scoped/scope-becomes-document-element.html	1	unmodeled:script-test
 css-view-transitions/scoped/scope-containment-during-capture.html	1	unmodeled:script-test
 css-view-transitions/scoped/scope-containment-keeps-author-remembered-size.html	1	unmodeled:script-test
 css-view-transitions/scoped/scope-containment-pseudo-border.html	1	reftest
@@ -1167,6 +1222,9 @@ css-view-transitions/scoped/scope-containment-sibling-offset.html	1	unmodeled:sc
 css-view-transitions/scoped/scope-display-none.html	4	unmodeled:script-test
 css-view-transitions/scoped/scope-during-transition-1.html	3	unmodeled:script-test
 css-view-transitions/scoped/scope-during-transition-2.html	1	reftest
+css-view-transitions/scoped/scope-mathml-root.html	1	reftest
+css-view-transitions/scoped/scope-replaced-elements.html	1	reftest
+css-view-transitions/scoped/scope-svg-root.html	1	reftest
 css-view-transitions/scoped/scrolled-target-position-rtl.html	1	reftest
 css-view-transitions/scoped/scrolled-target-position.html	1	reftest
 css-view-transitions/scoped/scroller-with-child.html	1	reftest

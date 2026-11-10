@@ -2,7 +2,7 @@
 # The counts are pins: the pages and tests the gate finds in each class. A class that grows or shrinks fails until the pin is changed, in the commit that moves it. `unmodeled:` is the only kind that is a list of what to build next.
 scored	scored	95	403	0	0	the gate runs the test (css_cssom_suite.c) and every failure is a line of CSS_CSSOM_EXCEPTIONS
 scored-script	scored	590	4929	0	0	the scoring interpreter (tools/css/cssom_eval.py, css_cssom_script_suite.c) runs the test on a Markup document; every failure is a line of CSS_CSSOM_SCRIPT_EXCEPTIONS
-reftest	residue	1846	1846	847	847	a reference test: the assertion is that two renderings are equal, and the library produces no rendering
+reftest	residue	1846	1846	884	884	a reference test: the assertion is that two renderings are equal, and the library produces no rendering
 crash-or-visual	residue	0	0	27	27	a crash or rendering test of the at-rule directories
 no-assertion	residue	362	362	102	102	no testharness assertion: a crash test, or a manual or visual page
 survival	residue	0	0	0	0	reserved: a crash test replayed for survival only (never added to a conformance figure)
@@ -26,7 +26,7 @@ unmodeled:sheet-script	todo	84	190	0	0	uses style sheets, rules or media from sc
 unmodeled:css-namespace	todo	31	69	0	0	uses CSS.supports or matchMedia (the document layer)
 unmodeled:no-test-call	todo	87	87	0	0	no test() call the reader can see (the script is a helper, a setup or a sheet)
 unmodeled:shared-state	todo	30	447	0	0	shared state after a construct the reader did not recognize
-unmodeled:script-test	todo	0	0	220	412	at-rule directories: a script test that reads a style sheet, an animation or a layout, not a table of calls
+unmodeled:script-test	todo	0	0	241	451	at-rule directories: a script test that reads a style sheet, an animation or a layout, not a table of calls
 helper:accesskey+parsing-testcommon+testdriver-actions	helper	0	0	0	0	the tests are made by the helper script(s) named, which are not modeled here and are not scored by another gate
 helper:color-testcommon+computed-testcommon	helper	3	8	0	0	the tests are made by the helper script(s) named, which are not modeled here and are not scored by another gate
 helper:color-testcommon+testcommon	helper	5	5	0	0	the tests are made by the helper script(s) named, which are not modeled here and are not scored by another gate

@@ -75,6 +75,7 @@ css/css-properties-values-api/animation/registered-neutral-keyframe.html	1	anima
 css/css-properties-values-api/animation/registered-var-to-registered-animating.html	1	animation or transition: needs the animation model
 css/css-properties-values-api/at-property-animation.html	1	animation or transition: needs the animation model
 css/css-properties-values-api/at-property-cssom.html	1	scripted: asks a live document through the CSSOM
+css/css-properties-values-api/at-property-media-query.html	1	scripted: asks a live document through the CSSOM
 css/css-properties-values-api/at-property-non-matching-media-crash.html	1	a page that must not crash, with no data to read
 css/css-properties-values-api/at-property-optional-initial-value.html	1	scripted: asks a live document through the CSSOM
 css/css-properties-values-api/at-property-shadow.html	1	scripted: asks a live document through the CSSOM
@@ -89,6 +90,7 @@ css/css-properties-values-api/crashtests/consume-color-contrast-crash.html	1	scr
 css/css-properties-values-api/crashtests/initial-in-audio-crash.html	1	scripted: asks a live document through the CSSOM
 css/css-properties-values-api/crashtests/transition-to-none-crash-001.html	1	animation or transition: needs the animation model
 css/css-properties-values-api/crashtests/transition-to-none-crash-002.html	1	animation or transition: needs the animation model
+css/css-properties-values-api/custom-property-explicit-inherit-invalidation.html	1	scripted: asks a live document through the CSSOM
 css/css-properties-values-api/determine-registration.html	1	scripted: asks a live document through the CSSOM
 css/css-properties-values-api/font-property-unit-cycles.tentative.html	1	scripted: asks a live document through the CSSOM
 css/css-properties-values-api/font-size-animation.html	1	animation or transition: needs the animation model
@@ -138,6 +140,7 @@ css/css-variables/test_variable_legal_values.html	1	scripted: asks a live docume
 css/css-variables/transition-with-attribute-taint.html	1	animation or transition: needs the animation model
 css/css-variables/url-syntax-crash.html	1	scripted: asks a live document through the CSSOM
 css/css-variables/url-token-serialization.html	1	scripted: asks a live document through the CSSOM
+css/css-variables/var-fallback-braces.html	1	not data: no call of a known shape
 css/css-variables/var-ident-function.html	1	scripted: asks a live document through the CSSOM
 css/css-variables/var-parsing.html	1	not data: no call of a known shape
 css/css-variables/variable-animation-from-to.html	1	animation or transition: needs the animation model
@@ -150,6 +153,7 @@ css/css-variables/variable-animation-substitute-within-keyframe-fallback.html	1	
 css/css-variables/variable-animation-substitute-within-keyframe-multiple.html	1	animation or transition: needs the animation model
 css/css-variables/variable-animation-substitute-within-keyframe.html	1	animation or transition: needs the animation model
 css/css-variables/variable-animation-to-only.html	1	animation or transition: needs the animation model
+css/css-variables/variable-animation-visited-link.html	1	reftest not read: the page has a script
 css/css-variables/variable-created-document.html	1	scripted: asks a live document through the CSSOM
 css/css-variables/variable-created-element.html	1	scripted: asks a live document through the CSSOM
 css/css-variables/variable-css-wide-keywords-after-substitution.html	1	scripted: asks a live document through the CSSOM

@@ -1,4 +1,5 @@
 # tools/conformance/css_conditions_suite.py: the pages of css/mediaqueries and css/css-conditional that are not read as data: page, number of calls, reason.
+css/mediaqueries/aspect-ratio-calc-negative.html	1	no statically readable assertion (the queries are in script tables that the page loops over and checks by matchMedia() and by @container); the media cases are asked of the library by tests/test-css-media.cpp (a negative calc() in a ratio clamps to 0, a negative literal is unknown)
 css/mediaqueries/at-custom-media-basic.html	1	the page defines @custom-media rules in its style sheet (scored with the sheet: the definitions are collected from rules)
 css/mediaqueries/at-custom-media-basic.html	1	no statically readable assertion (a script that computes its queries, a stylesheet or a visual state of the page)
 css/mediaqueries/at-custom-media-cssom.html	1	no statically readable assertion (a script that computes its queries, a stylesheet or a visual state of the page)
