@@ -399,6 +399,7 @@ TEST(CssomPrivate, AStyleRuleThatWasChangedKeepsItsPrivateProperties) {
   GTEXT_CSSOM_Rule * r = gtext_cssom_rule_list_at(rules, 0);
   ASSERT_NE(r, nullptr);
   ASSERT_EQ(gtext_cssom_rule_set_selector_text(r, "p", 1, nullptr), GTEXT_CSS_OK);
+  gtext_cssom_rule_release(r);   /* a rule a list gives is a reference of the caller's */
   EXPECT_EQ(out(m, "#a", "--out2"), "") << "section is not matched by the rule any more";
   EXPECT_EQ(out(m, "#d", "--out2"), "5 2px") << "p is, with the rule's private properties, which are the rule's and not the other rule's";
   EXPECT_EQ(out(m, "#d"), "other");
