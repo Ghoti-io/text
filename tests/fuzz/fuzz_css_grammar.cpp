@@ -319,8 +319,22 @@ int entry(const uint8_t * data, size_t size) {
     if (gtext_css_has_arbitrary_substitution(tree->values, tree->value_count, nullptr, &found) != GTEXT_CSS_OK) {
       fail("the substitution scan failed", "", input);
     }
-    if (found && !first.matched) {
-      fail("a value with a substitution function did not match", "", input);
+    if (found) {
+      /* "all of those functions are themselves syntactically valid according to their argument grammars": a value whose function is not (an unclosed var(), a fallback with a token after its
+         braces) matches no grammar, and one whose functions are matches every grammar, so the answer must be the same for a grammar of another shape */
+      GTEXT_CSS_Definition * od = nullptr;
+      GTEXT_CSS_Compiled * oc = nullptr;
+      if (gtext_css_definition_parse("none", 4, &go, &od, nullptr) == GTEXT_CSS_OK) {
+        const GTEXT_CSS_Status os = gtext_css_definition_link(od, Resolver::resolve, &res, &go, &oc, &r);
+        if (os == GTEXT_CSS_OK) {
+          const Outcome other = match_once(oc, tree->values, tree->value_count, mo, gtext_css_compiled_node_count(oc), input);
+          if (other.status == GTEXT_CSS_OK && first.status == GTEXT_CSS_OK && other.matched != first.matched) {
+            fail("the answer for a value with a substitution function depends on the grammar", "", input);
+          }
+        }
+        gtext_css_compiled_free(oc);
+      }
+      gtext_css_definition_free(od);
     }
     // the fixed point
     if (first.matched && !found && first.text.find("#urange") == std::string::npos && first.text != "<none>") {

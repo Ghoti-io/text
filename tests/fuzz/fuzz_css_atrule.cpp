@@ -155,10 +155,12 @@ bool same_feature_values(const GTEXT_CSS_Atrule * a, const GTEXT_CSS_Atrule * b)
     return false;
   }
   GTEXT_CSS_Feature_Values *ma = nullptr, *mb = nullptr;
-  if (gtext_css_feature_values_from_atrule(a, &ma) != GTEXT_CSS_OK || gtext_css_feature_values_from_atrule(b, &mb) != GTEXT_CSS_OK) {
+  const GTEXT_CSS_Status sa = gtext_css_feature_values_from_atrule(a, &ma), sb = sa == GTEXT_CSS_OK ? gtext_css_feature_values_from_atrule(b, &mb) : GTEXT_CSS_OK;
+  if (sa != GTEXT_CSS_OK || sb != GTEXT_CSS_OK) {
     gtext_css_feature_values_free(ma);
     gtext_css_feature_values_free(mb);
-    return false;
+    // the rules allocate with the harness's allocator, which fails on purpose: a map that could not be made says nothing about the rules
+    return sa == GTEXT_CSS_E_OOM || sb == GTEXT_CSS_E_OOM;
   }
   bool same = true;
   for (size_t t = 0; same && t < GTEXT_CSS_FEATURE_TYPE_COUNT; t++) {
