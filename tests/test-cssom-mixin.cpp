@@ -301,6 +301,33 @@ TEST(CssomMixin, APrivateRuleIsValidOnlyInAStyleRuleOrANestedGroupRule) {
   EXPECT_EQ(shape_of("@mixin --m() { @private { --x: 1 } }"), "mixin[preserved]");
 }
 
+// "A @private rule can only contain custom properties, nested group rules [...] and @property rules": the contents are what makes the rule one, so its text keeps them (a style rule that was
+// changed is read again from its text), as the syntax serializes them; the rule has no interface and no `cssRules`, so none of it is a rule of the sheet.
+TEST(CssomMixin, ThePrivateRuleKeepsItsContentsInItsText) {
+  Doc doc;
+  Sheet s(doc, "div { @private { --x: 1; @property --a <length>: 2px; @media print { --y: 3 } @property --b { syntax: '*' } } color: red }");
+  ASSERT_EQ(s.status, GTEXT_CSS_OK);
+  Rule priv = path(s, {0, 0});
+  ASSERT_TRUE(priv);
+  EXPECT_EQ(iface(priv), "CSSRule") << "no interface of its own";
+  EXPECT_EQ(css(priv.r), "@private { --x:1; @property --a <length>: 2px; @media print {--y:3;} @property --b {syntax:\"*\";} }");
+  EXPECT_EQ(shape_of("div { @private { --x: 1; @property --a <length>: 2px; @media print { --y: 3 } } }"), "style[preserved]") << "what is inside is not a rule of the sheet";
+  EXPECT_EQ(first("div { @private { } }"), "div {\n  @private { }\n}");
+  // read again from its own text, the rule is the same rule
+  Doc d2;
+  const std::string text = css(priv.r);
+  Sheet t(d2, "div { " + text + " }");
+  EXPECT_EQ(css(path(t, {0, 0}).r), text);
+}
+
+// An `@property` rule is valid directly inside `@private` and nowhere else in a style rule ("A @property rule can also be used directly inside of a @private rule").
+TEST(CssomMixin, APropertyRuleIsValidInAPrivateRuleAndNotInTheStyleRuleAroundIt) {
+  EXPECT_EQ(first("div { @private { @property --a { syntax: '<length>' } } }").find("@property --a"), std::string("div {\n  @private { ").size());
+  EXPECT_EQ(first("div { @property --a { syntax: '<length>' } }"), "div { }") << "inside a style rule it is invalid and dropped";
+  EXPECT_EQ(first("div { @private { @media print { @property --a { syntax: '<length>' } --x: 1 } } }"), "div {\n  @private { @media print {--x:1;} }\n}") << "directly inside the @private rule and nowhere else in it";
+  EXPECT_EQ(first("div { @private { color: red; @layer l { --x: 1 } } }"), "div {\n  @private { color:red; @layer l {--x:1;} }\n}") << "what @private does not take is read and kept as it is written; the cascade ignores it";
+}
+
 /* ---- the text of a rule ---------------------------------------------------------------------------------------------------------------------------- */
 
 // CSSOM, "serialize a CSSMixinRule": "@mixin" and a SPACE, the name serialized as an identifier, "If the mixin has at least one parameter: a LEFT PARENTHESIS, serialize a function parameter on

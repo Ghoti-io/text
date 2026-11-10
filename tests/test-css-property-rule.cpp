@@ -688,9 +688,9 @@ TEST(CssPropertyRule, ARegisteredStatementComputesLikeTheRuleForm) {
 }
 
 TEST(CssPropertyRule, NothingIsRegisteredByPropertyRulesTheDraftDoesNotPlaceThere) {
-  // The pinned draft places an `@property` at the top of a style sheet (and inside the group rules the cascade enters) and "directly inside of a @private rule" (private properties,
-  // which this library does not have). It says nothing of the body of an `@function` ("accepts conditional group rules ... the result descriptor ... custom properties") or of a
-  // `@mixin`: nothing registers there.
+  // The pinned draft places an `@property` at the top of a style sheet (and inside the group rules the cascade enters) and "directly inside of a @private rule" (a private property's
+  // registration, which a compiled sheet holds: test-cssom-private.cpp; an `@private` at the top of a sheet is not valid, so it registers nothing). It says nothing of the body of an
+  // `@function` ("accepts conditional group rules ... the result descriptor ... custom properties") or of a `@mixin`: nothing registers there.
   Sheets s({"@private { @property --a <length>: 1px; } @function --f() { @property --b <length>: 1px; result: 1; } @mixin --m() { @property --c <length>: 1px; } "
             "@function --g() { @media all { @property --d <length>: 1px; } result: 1; }"});
   EXPECT_EQ(gtext_css_at_property_count(s.set()), 0u);

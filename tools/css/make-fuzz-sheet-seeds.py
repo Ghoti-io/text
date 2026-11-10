@@ -70,6 +70,17 @@ SHEETS = [
     "a { color: red } \x01 :is(:host) { color: blue } :where(:host) > a { margin-top: 1px } :host { & p { color: green } } :host::part(a) { margin-left: 1px } :is(:host, .x) { margin-top: 2px }",
     "@scope (.x) to (a) { & { color: red } :scope > b { color: blue } :is(:scope) > * { margin-top: 1px } @scope (b) to (c) { * { color: green } } } @scope (.y) to (:scope) { a { color: orange } }",
     "li:nth-child(2n+1/**/of .x) { color: red } [data-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa] { color: blue } :dir(foo) { color: green } :dir(rtl) { margin-top: 1px }",
+    # CSS Functions and Mixins 1, `@private`: private names, nesting, references, registrations, and the places and contents that are not valid
+    "a { @private { --x: 1px; } color: red; margin-top: var(--x) }",
+    "a { @private { --x: 1; @property --y <length>: 2px; @media print { --z: 3 } } b { --x: var(--y) } --w: var(--z, var(--x)) }",
+    "a { @media print { @private { --p: 1 } } --q: var(--p) } a { @private { @media (min-width: 1px) { --p: 2; --r: var(--p) } } }",
+    "a { @private { color: red; b { --x: 1 } @layer l { --y: 1 } @scope (.x) { --z: 1 } @private { --w: 1 } @property --k; } }",
+    "@private { --x: 1 } @media print { @private { --y: 2 } } @mixin --m { @private { --x: 1 } }",
+    "a { @private { --x: if(style(--x: 1): a; else: b); --y: 1 } --z: inherit(--x) var(--x) var( --y , var(--x)) style(--x) }",
+    "a { @private { --x: 1 } b { @private { --x: 2 } c { --x: var(--x) } } d { --x: var(--x) } }",
+    "a { @private { @property --k { syntax: '<length>'; inherits: false; initial-value: 3px; } @property --k <number>: 4; @property --j, --l { initial-value: 1 } } }",
+    "a { @private { --\\2e a: 1; --b\\ c: 2 } --d: var(--\\2e a) var(--b\\ c) var(--\\10FFFD a) }",
+    "a { @private { --x: 1 } } \x01 a { @private { --x: 2 } --y: var(--x) }",
 ]
 
 

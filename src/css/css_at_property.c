@@ -37,6 +37,7 @@
 #include "css_fndef.h"
 #include "css_internal.h"
 #include "css_registry_internal.h"
+#include "css_sheet_internal.h"
 #include "css_syntax_string.h"
 
 #define DEFAULT_MAX_PROPERTIES ((size_t)4096)
@@ -61,6 +62,7 @@ struct GTEXT_CSS_At_Property_Set {
   const GTEXT_CSS_Registry * registry;
   GTEXT_CSS_At_Property_Options opt;
   css_creg_store store;
+  css_creg_store pstore;               ///< The registrations of private properties (hidden names), which the public view of the set does not show.
   diag_rec * diags;
   size_t ndiags, diagcap;
   size_t total;
@@ -104,6 +106,7 @@ GTEXT_CSS_Status gtext_css_at_property_set_new(const GTEXT_CSS_Registry * regist
   s->opt.max_diagnostics = clamp(s->opt.max_diagnostics, DEFAULT_MAX_DIAGNOSTICS, LIMIT_MAX_DIAGNOSTICS);
   s->opt.max_rule_depth = clamp(s->opt.max_rule_depth, DEFAULT_RULE_DEPTH, LIMIT_RULE_DEPTH);
   css_creg_store_init(&s->store, &a);
+  css_creg_store_init(&s->pstore, &a);
   *out = s;
   return GTEXT_CSS_OK;
 }
@@ -118,6 +121,7 @@ void gtext_css_at_property_set_free(GTEXT_CSS_At_Property_Set * s) {
   }
   gtext_allocator_free(&a, s->diags);
   css_creg_store_free(&s->store);
+  css_creg_store_free(&s->pstore);
   gtext_css_layer_registry_free(s->layers);
   gtext_allocator_free(&a, s);
 }
@@ -226,6 +230,99 @@ bool gtext_css_at_property_find(const GTEXT_CSS_At_Property_Set * s, const char 
 /// The registrations as the compute context reads them.
 const css_creg_store * css_at_property_store(const GTEXT_CSS_At_Property_Set * s) {
   return s ? &s->store : NULL;
+}
+
+const css_creg_store * css_at_property_private_store(const GTEXT_CSS_At_Property_Set * s) {
+  return s ? &s->pstore : NULL;
+}
+
+bool css_at_property_private_same(const GTEXT_CSS_At_Property_Set * x, const GTEXT_CSS_At_Property_Set * y) {
+  const size_t nx = x ? x->pstore.count : 0;
+  const size_t ny = y ? y->pstore.count : 0;
+  if (nx != ny) {
+    return false;
+  }
+  for (size_t i = 0; i < nx; i++) {
+    const css_creg * a = x->pstore.items[i];
+    const css_creg * b = css_creg_store_find(&y->pstore, a->name, a->name_len, NULL);
+    if (!b || a->inherits != b->inherits || a->has_initial != b->has_initial || a->syntax_len != b->syntax_len || memcmp(a->syntax_text, b->syntax_text, a->syntax_len) != 0 ||
+        a->initial_len != b->initial_len || (a->initial_len && memcmp(a->initial, b->initial, a->initial_len) != 0)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+GTEXT_CSS_Status gtext_css_at_property_collect_private(GTEXT_CSS_At_Property_Set * s, const GTEXT_CSS_Sheet * sheet, GTEXT_CSS_At_Property_Result * result) {
+  if (result) {
+    memset(result, 0, sizeof *result);
+    result->message = gtext_css_status_string(GTEXT_CSS_OK);
+  }
+  if (!s || !sheet) {
+    if (result) {
+      result->status = GTEXT_CSS_E_INVALID;
+      result->message = gtext_css_status_string(GTEXT_CSS_E_INVALID);
+    }
+    return GTEXT_CSS_E_INVALID;
+  }
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  /* the sheet and the sheets it imports, in order: an iterative walk, the imports are bounded by the compile */
+  const GTEXT_CSS_Sheet ** stack = NULL;
+  size_t sp = 0, cap = 0;
+  stack = gtext_allocator_realloc(&s->alloc, NULL, 8 * sizeof *stack);
+  if (!stack) {
+    return GTEXT_CSS_E_OOM;
+  }
+  cap = 8;
+  stack[sp++] = sheet;
+  while (sp && st == GTEXT_CSS_OK) {
+    const GTEXT_CSS_Sheet * cur = stack[--sp];
+    for (size_t i = cur->nimports; i-- > 0 && st == GTEXT_CSS_OK;) {
+      if (sp == cap) {
+        const GTEXT_CSS_Sheet ** bigger = gtext_allocator_realloc(&s->alloc, (void *)stack, cap * 2 * sizeof *stack);
+        if (!bigger) {
+          st = GTEXT_CSS_E_OOM;
+          break;
+        }
+        stack = bigger;
+        cap *= 2;
+      }
+      stack[sp++] = cur->imports[i];
+    }
+    for (size_t i = 0; i < cur->npregs && st == GTEXT_CSS_OK; i++) {
+      const css_priv_reg * r = &cur->pregs[i];
+      s->work++;
+      css_creg * c = NULL;
+      GTEXT_CSS_Registry_Result rr;
+      css_creg_why why = CSS_CREG_OK;
+      /* the rule was read by the reader of `@property` when the sheet was compiled: its syntax and its initial value were judged then */
+      st = css_registry_make_creg(s->registry, r->name, r->name_len, r->has_syntax ? r->syntax : NULL, r->has_syntax ? r->syntax_len : 0, r->inherits, r->has_initial ? r->initial : NULL,
+          r->initial_len, &c, &rr, &why);
+      if (st == GTEXT_CSS_E_INVALID) {
+        st = GTEXT_CSS_OK;   /* a registry that is not the one the sheet was compiled with does not accept it: it registers nothing */
+        continue;
+      }
+      if (st != GTEXT_CSS_OK) {
+        break;
+      }
+      if (s->pstore.count >= s->opt.max_properties && !css_creg_store_find(&s->pstore, r->name, r->name_len, NULL)) {
+        css_creg_free(c);
+        st = GTEXT_CSS_E_LIMIT_REGISTRY;
+        break;
+      }
+      bool replaced = false;
+      st = css_creg_store_put(&s->pstore, c, &replaced);
+      if (st != GTEXT_CSS_OK) {
+        css_creg_free(c);
+      }
+    }
+  }
+  gtext_allocator_free(&s->alloc, (void *)stack);
+  if (result) {
+    result->status = st;
+    result->message = gtext_css_status_string(st);
+  }
+  return st;
 }
 
 /* ---- one rule ----------------------------------------------------------------------------------------- */

@@ -152,7 +152,10 @@ const char * const kRules[] = {"a{color:red}", "b > c{margin:1px 2px}", "@media 
     "@media{", "bogus rule", "@import url(a.css);", "g{margin:1px;margin-top:2px}", "h:is(a,b){}", "@media screen{}",
     // CSS Functions and Mixins 1: a mixin with parameters and contents, one with a nested rule that applies another, and the three that are not rules of a sheet
     "@mixin --m(--a <length>: 1px, --b){color:var(--a);@media print{@contents{color:red}}}", "@mixin --n{& b{@apply --m(1px, {a, b}){color:blue}}}", "@mixin --x{@layer l{} @contents;}",
-    "@apply --m;", "@contents;", "@mixin m(){}"};
+    "@apply --m;", "@contents;", "@mixin m(){}",
+    // CSS Functions and Mixins 1, `@private`: a style rule with private properties (one registered), a nested rule that has its own, an @private in a group rule, and one that is not valid
+    "a{@private{--x:1px;@property --y <length>:2px}b{--x:var(--y)}margin-top:var(--x)}", "a{@private{--x:1}b{@private{--x:2}c{--x:var(--x)}}}", "a{@media print{@private{--p:1}}--q:var(--p)}",
+    "@private{--x:1}"};
 const char * const kSheets[] = {"a{} b{c{}}", "@import 'x.css'; d{}", "", "@media print{e{}} @keyframes k{50%{opacity:1}}", "@counter-style c{symbols:a b} @page{size:a3}", "p{q{r{}}}", "@mixin --m(--a){@contents; color:var(--a)} p{@apply --m(1px){color:red} q{@apply --m;}}"};
 const char * const kSelectors[] = {"d > e", "a, b", "", "a >", "1a", ":bogus", "x y z", ".k:not(.l)", "a{}b", "&", "> c", "*", "h1,h2,h3"};
 const char * const kNames[] = {"color", "margin", "margin-top", "width", "bogus", "--v", "background"};

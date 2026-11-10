@@ -489,3 +489,28 @@ property-rule-without-syntax-has-the-wrong-one	css_atrule.c	def->has_syntax ? de
 property-rule-without-inherits-does-not-inherit	css_atrule.c	const bool inherits = def->has_inherits ? def->inherits : true;	const bool inherits = def->has_inherits ? def->inherits : false;	serialize,setters,insert
 property-name-of-several-names-is-the-first	cssom_setters.c	rule->kind == GTEXT_CSSOM_RULE_PROPERTY && gtext_css_atrule_name_count(a) > 1	0 && gtext_css_atrule_name_count(a) > 1	setters
 property-names-lists-only-the-first	cssom_setters.c	const size_t n = gtext_css_atrule_name_count(a);\n  size_t total = 0;	const size_t n = gtext_css_atrule_name_count(a) > 1 ? 1 : gtext_css_atrule_name_count(a);\n  size_t total = 0;	setters,insert
+private-names-not-read-from-the-private-rule	css_private.c	next = mode == M_BODY ? M_PRIVATE : M_PRIV_GROUP;	next = -1;	private
+private-names-of-a-group-rule-of-the-style-rule-not-read	css_private.c	next = mode == M_BODY || mode == M_GROUP ? M_GROUP : M_PRIV_GROUP;	next = mode == M_BODY || mode == M_GROUP ? -1 : M_PRIV_GROUP;	private
+private-names-of-a-group-rule-in-the-private-rule-not-read	css_private.c	next = mode == M_BODY || mode == M_GROUP ? M_GROUP : M_PRIV_GROUP;	next = mode == M_BODY || mode == M_GROUP ? M_GROUP : -1;	private
+private-name-is-the-nearest-rules-only	css_private.c	for (const css_priv_scope * s = chain; s; s = s->parent) {	for (const css_priv_scope * s = chain; s; s = NULL) {	private
+private-nested-rule-has-the-names-of-its-parent-only	css_sheet.c	      b->priv_serial++;\n      priv = own;	      b->priv_serial++;	private
+private-two-rules-share-the-hidden-names	css_sheet.c	      b->priv_serial++;\n      priv = own;	      priv = own;	private
+private-two-sheets-share-the-hidden-names	css_private.c	*epoch = css_priv_next_epoch();	*epoch = 1;	private
+private-declaration-keeps-its-custom-property-name	css_sheet.c	const css_priv_scope * owner = is_custom && priv ? css_priv_find(priv, d[i].name.data, d[i].name.length) : NULL;	const css_priv_scope * owner = NULL;	private
+private-reference-in-a-value-not-written-with-the-hidden-name	css_sheet.c	if (priv && css_property_value_text(&pv, &vt, &vl)) {	if (0 && priv && css_property_value_text(&pv, &vt, &vl)) {	private
+private-reference-inside-a-function-not-found	css_private.c	    if (!grow(alloc, (void **)&stack, &scap, sp + 1, sizeof *stack)) {\n      st = GTEXT_CSS_E_OOM;\n      break;\n    }\n    f = &stack[sp - 1];	    continue;\n    if (!grow(alloc, (void **)&stack, &scap, sp + 1, sizeof *stack)) {\n      st = GTEXT_CSS_E_OOM;\n      break;\n    }\n    f = &stack[sp - 1];	private
+private-name-in-a-style-query-not-written-with-the-hidden-name	css_private.c	if (before && after) {	if (0 && before && after) {	private
+private-name-of-inherit-not-written-with-the-hidden-name	css_private.c	if (css_ascii_ieq(&v->value, "var") || css_ascii_ieq(&v->value, "inherit")) {	if (css_ascii_ieq(&v->value, "var")) {	private
+private-rule-takes-a-property-that-is-not-custom	css_sheet.c	if (custom_only && !is_custom) {	if (0 && custom_only && !is_custom) {	private
+private-rule-takes-the-rules-inside-it	css_sheet.c	if (cur->in_private && !(rule->kind == GTEXT_CSS_RULE_AT && conditional_name(&rule->name))) {	if (0 && cur->in_private && !(rule->kind == GTEXT_CSS_RULE_AT && conditional_name(&rule->name))) {	private
+private-rule-in-a-group-rule-of-a-style-rule-is-nothing	css_sheet.c	      found = true;\n    }\n    else if (conditional_name(&r->name) && r->content_count) {	      found = false;\n    }\n    else if (conditional_name(&r->name) && r->content_count) {	private
+private-property-is-listed	css_custom.c	return raw_count(style) - hidden;	return raw_count(style);	private
+private-property-moves-the-index-of-the-others	css_custom.c	return raw_at(style, index < first ? index : index + hidden, name, value);	return raw_at(style, index, name, value);	private
+private-registration-not-collected	css_at_property.c	for (size_t i = 0; i < cur->npregs && st == GTEXT_CSS_OK; i++) {	for (size_t i = 0; i < 0 && st == GTEXT_CSS_OK; i++) {	private
+private-registration-not-read-by-the-context	css_custom.c	const size_t from_private = priv ? priv->count : 0;	const size_t from_private = 0;	private
+private-registration-of-the-earlier-rule-wins	css_private.c	    regs->v[at] = r;	    if (at == regs->n - 1) {\n      regs->v[at] = r;\n    }	private
+private-registrations-not-compared-when-the-set-is-rebuilt	css_at_property.c	  const size_t nx = x ? x->pstore.count : 0;\n  const size_t ny = y ? y->pstore.count : 0;\n  if (nx != ny) {\n    return false;\n  }	  return true;\n  const size_t nx = x ? x->pstore.count : 0;\n  const size_t ny = y ? y->pstore.count : 0;\n  if (nx != ny) {\n    return false;\n  }	private
+private-rule-text-has-no-contents	cssom_rule_serialize.c	for (size_t i = 0; i < node->content_count && w->st == GTEXT_CSS_OK; i++) {	for (size_t i = 0; i < 0 && w->st == GTEXT_CSS_OK; i++) {	private,mixin
+property-rule-in-a-private-rule-is-invalid	css_atrule.c	      where = GTEXT_CSS_ATRULE_PARENT_PRIVATE;	      where = GTEXT_CSS_ATRULE_PARENT_STYLE;	private,mixin
+group-rule-in-a-private-rule-is-invalid	css_atrule.c	if (parent->kind == GTEXT_CSS_RULE_AT && css_ascii_ieq(&parent->name, "private") && css_ascii_ieq(&rule->name, "property")) {	if (parent->kind == GTEXT_CSS_RULE_AT && css_ascii_ieq(&parent->name, "private")) {	private
+private-dump-keeps-the-sheets-number	css_private.c	if (d > k && d < length && text[d] == '_') {	if (0 && d > k && d < length && text[d] == '_') {	private

@@ -41,7 +41,7 @@ HEADER_DEFAULT = os.path.join(ROOT, "src", "css", "css_atrule_tables.h")
 LEDGER_DEFAULT = os.path.join(HERE, "atrule_depth.tsv")
 PUBLIC_DEFAULT = os.path.join(ROOT, "include", "ghoti.io", "text", "css", "css_atrule.h")
 
-PARENTS = {"top": 1, "group": 2, "style": 4, "page": 8, "feature_values": 16, "mixin": 32}
+PARENTS = {"top": 1, "group": 2, "style": 4, "page": 8, "feature_values": 16, "mixin": 32, "private": 64}
 
 LICENSE = """/*
  * SPDX-License-Identifier: LGPL-3.0-only

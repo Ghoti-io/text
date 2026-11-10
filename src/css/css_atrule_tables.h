@@ -35,6 +35,7 @@
 #define CSS_AR_P_PAGE 8u
 #define CSS_AR_P_FEATURE_VALUES 16u
 #define CSS_AR_P_MIXIN 32u
+#define CSS_AR_P_PRIVATE 64u
 /* what the library does with it (the bits of css_atrule_row::flags) */
 #define CSS_AR_F_PARSES 1u
 #define CSS_AR_F_VALIDATES 2u
@@ -87,7 +88,7 @@ static const css_atrule_row css_atrule_rows[CSS_ATRULE_ROW_COUNT] = {
   {"page", GTEXT_CSS_ATRULE_PAGE, 3, 31},
   {"position-try", GTEXT_CSS_ATRULE_POSITION_TRY, 3, 31},
   {"private", GTEXT_CSS_ATRULE_PRESERVED, 4, 37},
-  {"property", GTEXT_CSS_ATRULE_PROPERTY, 3, 31},
+  {"property", GTEXT_CSS_ATRULE_PROPERTY, 67, 31},
   {"right-bottom", GTEXT_CSS_ATRULE_PAGE_MARGIN, 8, 31},
   {"right-middle", GTEXT_CSS_ATRULE_PAGE_MARGIN, 8, 31},
   {"right-top", GTEXT_CSS_ATRULE_PAGE_MARGIN, 8, 31},

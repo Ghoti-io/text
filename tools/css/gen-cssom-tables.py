@@ -152,7 +152,7 @@ EXTRA_KINDS = ["style", "nested-declarations"]
 NOT_IN_LEDGER = {"unknown", "keyframe", "feature-block"}   # kinds of the enumeration that are no row of the ledger of at-rules: the parse makes them
 LIST_DOMAIN = ("none", "rules", "keyframes", "margins")
 STYLE_DOMAIN = ("none", "properties", "descriptors")
-PARENT_BITS = {"top": 1, "group": 2, "style": 4, "page": 8, "mixin": 16}
+PARENT_BITS = {"top": 1, "group": 2, "style": 4, "page": 8, "mixin": 16, "private": 32}
 FLAG_RULE, FLAG_LIST_RULES, FLAG_LIST_KEYFRAMES, FLAG_LIST_MARGINS, FLAG_STYLE_PROPERTIES, FLAG_STYLE_DESCRIPTORS, FLAG_INSERTABLE = 1, 2, 4, 8, 16, 32, 64
 
 
@@ -281,6 +281,7 @@ def kinds_header_text(rows):
 #define CSSOM_PARENT_STYLE 4u
 #define CSSOM_PARENT_PAGE 8u
 #define CSSOM_PARENT_MIXIN 16u
+#define CSSOM_PARENT_PRIVATE 32u
 
 typedef struct {
   const char * name;

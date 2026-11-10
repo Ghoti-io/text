@@ -31,6 +31,7 @@
 
 #include <string.h>
 
+#include "css_private_internal.h"
 #include "css_registry_internal.h"
 #include "css_sheet_internal.h"
 
@@ -89,6 +90,7 @@ static void sheet_destroy(GTEXT_CSS_Sheet * s) {
   gtext_allocator_free(&a, s->conds);
   gtext_allocator_free(&a, s->diags);
   gtext_allocator_free(&a, s->ns);
+  gtext_allocator_free(&a, s->pregs);
   css_arena_free(&s->arena);
   gtext_allocator_free(&a, s);
 }
@@ -148,6 +150,8 @@ typedef struct {
   GTEXT_CSS_Specificity pspec;
   uint32_t cond;                  ///< The condition node the rules read here are under.
   uint32_t chain;                 ///< The condition node of the `@when` or `@else` rule just before, if the last thing read here was one (the chain an `@else` joins).
+  const css_priv_scope * priv;    ///< The private property names of the style rule being read and of those it is nested in (css_private_internal.h); NULL: none.
+  bool in_private;                ///< Inside an `@private` rule: only custom properties and conditional group rules are read.
 } frame;
 
 typedef struct {
@@ -172,6 +176,9 @@ typedef struct {
   size_t layer_count;
   GTEXT_CSS_Status status;
   size_t max_diag;
+  uint64_t priv_epoch;       ///< This sheet's number for the hidden names of its private properties, taken the first time it has one.
+  uint64_t priv_serial;      ///< The number of style rules that had private names so far.
+  css_priv_regvec priv_regs; ///< The registrations of the private properties.
 } build;
 
 static GTEXT_CSS_Status bfail(build * b, GTEXT_CSS_Status st, const GTEXT_CSS_Span * span, const char * name, const char * detail) {
@@ -445,7 +452,8 @@ static GTEXT_CSS_Status keep_list(build * b, const GTEXT_CSS_Selector_List * lis
 /* ---- declarations -------------------------------------------------------------------------------------------- */
 
 /// Parse the declarations of one rule into a new run; the run is dropped (and `*made` false) when none is valid.
-static GTEXT_CSS_Status make_run(build * b, const GTEXT_CSS_Declaration * d, size_t n, GTEXT_CSS_Id rule_id, GTEXT_CSS_Span span, bool * made, uint32_t * run_index) {
+static GTEXT_CSS_Status make_run(build * b, const GTEXT_CSS_Declaration * d, size_t n, GTEXT_CSS_Id rule_id, GTEXT_CSS_Span span, const css_priv_scope * priv, bool custom_only, bool * made,
+    uint32_t * run_index) {
   GTEXT_CSS_Sheet * s = b->sheet;
   *made = false;
   if (n == 0) {
@@ -465,6 +473,10 @@ static GTEXT_CSS_Status make_run(build * b, const GTEXT_CSS_Declaration * d, siz
   po.allocator = &s->alloc;
   po.quirks = b->opt->quirks;
   for (size_t i = 0; i < n; i++) {
+    const bool is_custom = d[i].name.length >= 2 && d[i].name.data[0] == '-' && d[i].name.data[1] == '-';
+    if (custom_only && !is_custom) {
+      continue;   /* "A @private rule can only contain custom properties [...] Any other contents are invalid and will be ignored" */
+    }
     GTEXT_CSS_Property_Value pv;
     memset(&pv, 0, sizeof pv);
     const GTEXT_CSS_Status st = gtext_css_parse_property_declaration(s->registry, &d[i], &po, &pv);
@@ -489,20 +501,45 @@ static GTEXT_CSS_Status make_run(build * b, const GTEXT_CSS_Declaration * d, siz
       }
       continue;
     }
-    char * nm = css_arena_strdup(&s->arena, d[i].name.data, d[i].name.length);
+    /* "any custom property with that name is actually a private property, and any reference to a custom property of that name (for example, with a var()) is a reference to the private
+       property": the property the rule declares and what it refers to are written with the hidden name of the style rule that has the name */
+    const css_priv_scope * owner = is_custom && priv ? css_priv_find(priv, d[i].name.data, d[i].name.length) : NULL;
+    size_t nm_len = d[i].name.length;
+    char * nm = owner ? css_priv_name(&s->arena, owner, d[i].name.data, d[i].name.length, &nm_len) : css_arena_strdup(&s->arena, d[i].name.data, d[i].name.length);
     if (!nm) {
       gtext_css_property_value_free(&pv);
       bfail(b, GTEXT_CSS_E_OOM, NULL, NULL, NULL);
       goto fail;
     }
+    const char * vt = NULL;
+    size_t vl = 0;
+    if (priv && css_property_value_text(&pv, &vt, &vl)) {
+      char * re = NULL;
+      size_t rl = 0;
+      const GTEXT_CSS_Status rs = css_priv_rewrite_text(&s->alloc, priv, vt, vl, &re, &rl);
+      if (rs == GTEXT_CSS_OK && re) {
+        const GTEXT_CSS_Status ks = css_property_value_keep_text(&pv, re, rl);
+        gtext_allocator_free(&s->alloc, re);
+        if (ks != GTEXT_CSS_OK) {
+          gtext_css_property_value_free(&pv);
+          bfail(b, ks, &d[i].span, NULL, NULL);
+          goto fail;
+        }
+      }
+      else if (rs != GTEXT_CSS_OK) {
+        gtext_css_property_value_free(&pv);
+        bfail(b, rs, &d[i].span, NULL, NULL);
+        goto fail;
+      }
+    }
     sheet_decl * o = &out[m++];
     o->pv = pv;
     o->name = nm;
-    o->name_len = d[i].name.length;
+    o->name_len = nm_len;
     o->id = d[i].id;
     o->span = d[i].span;
     o->important = d[i].important;
-    o->custom = d[i].name.length >= 2 && d[i].name.data[0] == '-' && d[i].name.data[1] == '-';
+    o->custom = is_custom;
   }
   if (m == 0) {
     return GTEXT_CSS_OK;
@@ -595,7 +632,7 @@ static GTEXT_CSS_Status declarations_of_parent(build * b, const frame * cur, con
   }
   bool made = false;
   uint32_t run = 0;
-  GTEXT_CSS_Status st = make_run(b, d, n, id, span, &made, &run);
+  GTEXT_CSS_Status st = make_run(b, d, n, id, span, cur->priv, cur->in_private, &made, &run);
   if (st != GTEXT_CSS_OK || !made) {
     return st;
   }
@@ -648,9 +685,22 @@ static GTEXT_CSS_Status style_rule(build * b, const GTEXT_CSS_Rule * rule, const
   if (st != GTEXT_CSS_OK) {
     return st;
   }
+  /* the style rule's own private property names (Functions and Mixins 1, "@private"): the declarations of the rule and of everything nested in it are read with them */
+  const css_priv_scope * priv = cur->priv;
+  {
+    const css_priv_scope * own = NULL;
+    st = css_priv_scope_make(&b->sheet->arena, &b->sheet->alloc, b->sheet->registry, rule, cur->priv, &b->priv_epoch, b->priv_serial, &b->priv_regs, &own);
+    if (st != GTEXT_CSS_OK) {
+      return bfail(b, st, &rule->span, NULL, NULL);
+    }
+    if (own) {
+      b->priv_serial++;
+      priv = own;
+    }
+  }
   bool made = false;
   uint32_t run = 0;
-  st = make_run(b, rule->declarations, rule->declaration_count, rule->id, rule->span, &made, &run);
+  st = make_run(b, rule->declarations, rule->declaration_count, rule->id, rule->span, priv, false, &made, &run);
   if (st != GTEXT_CSS_OK) {
     return st;
   }
@@ -682,6 +732,8 @@ static GTEXT_CSS_Status style_rule(build * b, const GTEXT_CSS_Rule * rule, const
   f.plist = list;
   f.pnest = cur->nest;
   f.pspec = cur->nspec;
+  f.priv = priv;
+  f.in_private = false;
   return push(b, &f, &rule->span);
 }
 
@@ -719,7 +771,7 @@ static bool holds_styles(build * b, const GTEXT_CSS_Rule * rule, bool * oom) {
       found = true;
       continue;
     }
-    if (css_ascii_ieq(&r->name, "layer") || css_ascii_ieq(&r->name, "scope")) {
+    if (css_ascii_ieq(&r->name, "layer") || css_ascii_ieq(&r->name, "scope") || css_ascii_ieq(&r->name, "private")) {
       found = true;
     }
     else if (conditional_name(&r->name) && r->content_count) {
@@ -1061,6 +1113,11 @@ static GTEXT_CSS_Status emit_declarations(build * b, const GTEXT_CSS_Rule * rule
 /// One rule that is not an import, a namespace or a charset.
 static GTEXT_CSS_Status visit(build * b, const GTEXT_CSS_Rule * rule, const frame * cur) {
   b->chain_out = 0;
+  if (cur->in_private && !(rule->kind == GTEXT_CSS_RULE_AT && conditional_name(&rule->name))) {
+    /* "A @private rule can only contain custom properties, nested group rules [...] and @property rules": the properties are the declarations of the runs (and the `@property` rules were read
+       with the style rule's names); a rule of any other kind is invalid and ignored, and does not make the @private rule invalid */
+    return GTEXT_CSS_OK;
+  }
   if (rule->kind == GTEXT_CSS_RULE_QUALIFIED) {
     return style_rule(b, rule, cur);
   }
@@ -1093,6 +1150,21 @@ static GTEXT_CSS_Status visit(build * b, const GTEXT_CSS_Rule * rule, const fram
       return GTEXT_CSS_OK;
     }
     return scope_rule(b, rule, cur);
+  }
+  if (css_ascii_ieq(&rule->name, "private")) {
+    /* "The @private rule is only valid nested as a child of a style rule or a nested group rule": its custom properties are declarations of the style rule, in their place among its others */
+    if (!rule->has_block || rule->content_count == 0 || cur->decl_ctx != 1) {
+      return GTEXT_CSS_OK;
+    }
+    frame f = *cur;
+    f.rules = NULL;
+    f.nrules = 0;
+    f.items = rule->contents;
+    f.nitems = rule->content_count;
+    f.pos = 0;
+    f.chain = 0;
+    f.in_private = true;
+    return push(b, &f, &rule->span);
   }
   if (conditional_name(&rule->name)) {
     const bool chained = css_ascii_ieq(&rule->name, "when") || css_ascii_ieq(&rule->name, "else");
@@ -1659,6 +1731,13 @@ static GTEXT_CSS_Status compile_impl(const GTEXT_CSS_Tree * tree, const GTEXT_CS
     }
   }
 done:
+  if (b.status == GTEXT_CSS_OK) {
+    s->pregs = b.priv_regs.v;   /* the sheet's from here */
+    s->npregs = b.priv_regs.n;
+  }
+  else {
+    css_priv_regvec_free(&s->alloc, &b.priv_regs);
+  }
   gtext_allocator_free(&s->alloc, b.stack);
   gtext_allocator_free(&s->alloc, b.layer_of);
   gtext_allocator_free(&s->alloc, b.decl_first);
@@ -1826,6 +1905,50 @@ static GTEXT_CSS_Status putu(const GTEXT_Markup_Sink * sink, uint64_t v) {
   return put(sink, buf + i, sizeof buf - i);
 }
 
+/// Text for the dump, with the sheet's number taken out of the hidden names of private properties (css_priv_canonical()): two compiles of one text dump alike.
+static GTEXT_CSS_Status put_canonical(const GTEXT_CSS_Sheet * sheet, const GTEXT_Markup_Sink * sink, const char * s, size_t n) {
+  char * c = NULL;
+  size_t cn = 0;
+  GTEXT_CSS_Status st = css_priv_canonical(&sheet->alloc, s, n, &c, &cn);
+  if (st == GTEXT_CSS_OK) {
+    st = put(sink, c, cn);
+    gtext_allocator_free(&sheet->alloc, c);
+  }
+  return st;
+}
+
+typedef struct {
+  const GTEXT_Allocator * alloc;
+  char * data;
+  size_t len, cap;
+  bool failed;
+} dump_buf;
+
+static GTEXT_Markup_Status dump_buf_write(void * user, const char * bytes, size_t n) {
+  dump_buf * b = user;
+  if (b->failed || !grow(b->alloc, (void **)&b->data, &b->cap, b->len + n + 1, 1)) {
+    b->failed = true;
+    return GTEXT_MARKUP_E_OOM;
+  }
+  memcpy(b->data + b->len, bytes, n);
+  b->len += n;
+  return GTEXT_MARKUP_OK;
+}
+
+static GTEXT_CSS_Status put_value(const GTEXT_CSS_Sheet * sheet, const GTEXT_Markup_Sink * sink, const GTEXT_CSS_Property_Value * pv) {
+  dump_buf b = {&sheet->alloc, NULL, 0, 0, false};
+  GTEXT_Markup_Sink bs = {dump_buf_write, &b};
+  GTEXT_CSS_Status st = gtext_css_property_value_serialize(pv, NULL, &bs);
+  if (st == GTEXT_CSS_OK && b.failed) {
+    st = GTEXT_CSS_E_OOM;
+  }
+  if (st == GTEXT_CSS_OK && b.len) {
+    st = put_canonical(sheet, sink, b.data, b.len);
+  }
+  gtext_allocator_free(&sheet->alloc, b.data);
+  return st;
+}
+
 GTEXT_CSS_Status gtext_css_sheet_dump(const GTEXT_CSS_Sheet * sheet, const GTEXT_Markup_Sink * sink) {
   if (!sheet || !sink || !sink->write) {
     return GTEXT_CSS_E_INVALID;
@@ -1946,9 +2069,9 @@ GTEXT_CSS_Status gtext_css_sheet_dump(const GTEXT_CSS_Sheet * sheet, const GTEXT
       st = putz(sink, "rule ");
       st = st ? st : putu(sink, i);
       st = st ? st : putz(sink, " ");
-      st = st ? st : put(sink, d->name, d->name_len);
+      st = st ? st : put_canonical(sheet, sink, d->name, d->name_len);
       st = st ? st : putz(sink, ": ");
-      st = st ? st : gtext_css_property_value_serialize(&d->pv, NULL, sink);
+      st = st ? st : put_value(sheet, sink, &d->pv);
       st = st ? st : putz(sink, d->important ? " !important\n" : "\n");
     }
   }

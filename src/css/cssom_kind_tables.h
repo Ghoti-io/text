@@ -46,6 +46,7 @@
 #define CSSOM_PARENT_STYLE 4u
 #define CSSOM_PARENT_PAGE 8u
 #define CSSOM_PARENT_MIXIN 16u
+#define CSSOM_PARENT_PRIVATE 32u
 
 typedef struct {
   const char * name;
@@ -63,7 +64,7 @@ static const cssom_kind_row cssom_kind_rows[CSSOM_KIND_ROW_COUNT] = {
   {"namespace", "CSSNamespaceRule", 10, 65u, 1u},
   {"layer", "CSSLayerBlockRule,CSSLayerStatementRule", 0, 67u, 7u},
   {"scope", "CSSScopeRule", 0, 67u, 7u},
-  {"property", "CSSPropertyRule", 0, 97u, 3u},
+  {"property", "CSSPropertyRule", 0, 97u, 35u},
   {"media", "CSSMediaRule", 4, 67u, 7u},
   {"supports", "CSSSupportsRule", 12, 67u, 7u},
   {"container", "CSSContainerRule", 0, 67u, 7u},

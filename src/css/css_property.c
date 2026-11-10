@@ -988,6 +988,15 @@ GTEXT_CSS_Status css_property_value_keep_text(GTEXT_CSS_Property_Value * out, co
   return use_custom_text(out, text, length);
 }
 
+bool css_property_value_text(const GTEXT_CSS_Property_Value * value, const char ** text, size_t * length) {
+  if (!value->set || (value->outcome != GTEXT_CSS_PROP_RESULT_VALID && value->outcome != GTEXT_CSS_PROP_RESULT_PENDING) || !value->set->root || !value->set->root->text.data) {
+    return false;
+  }
+  *text = value->set->root->text.data;
+  *length = value->set->root->text.length;
+  return true;
+}
+
 GTEXT_CSS_Status gtext_css_parse_property_text(const GTEXT_CSS_Registry * registry, const char * name, size_t name_length,
     const char * text, size_t text_length, const GTEXT_CSS_Property_Options * options, GTEXT_CSS_Property_Value * out) {
   if (!out) {

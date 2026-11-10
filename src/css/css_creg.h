@@ -117,6 +117,10 @@ bool css_creg_name_ok(const char * name, size_t length);
 
 /// The registrations of the rules of a set (NULL for NULL), for the compute context.
 const css_creg_store * css_at_property_store(const GTEXT_CSS_At_Property_Set * set);
+/// The registrations of the private properties of the sheets given to gtext_css_at_property_collect_private(), under their hidden names (not part of the set a caller counts and lists).
+const css_creg_store * css_at_property_private_store(const GTEXT_CSS_At_Property_Set * set);
+/// Whether two sets hold the same private registrations (a NULL set holds none).
+bool css_at_property_private_same(const GTEXT_CSS_At_Property_Set * x, const GTEXT_CSS_At_Property_Set * y);
 
 #ifdef __cplusplus
 }

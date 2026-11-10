@@ -1963,7 +1963,7 @@ static GTEXT_CSS_Status parse_into(const GTEXT_CSS_Registry * registry, const GT
   a->max_descriptors = o.max_descriptors;
   /* the place */
   if (row) {
-    static const uint8_t bit[] = {CSS_AR_P_TOP, CSS_AR_P_GROUP, CSS_AR_P_STYLE, CSS_AR_P_PAGE, CSS_AR_P_FEATURE_VALUES, CSS_AR_P_MIXIN};
+    static const uint8_t bit[] = {CSS_AR_P_TOP, CSS_AR_P_GROUP, CSS_AR_P_STYLE, CSS_AR_P_PAGE, CSS_AR_P_FEATURE_VALUES, CSS_AR_P_MIXIN, CSS_AR_P_PRIVATE};
     /* "Outside of a mixin body, the @contents rule is invalid and ignored": the rows that list the mixin place are valid anywhere inside one, at any depth */
     if (!((row->parents & bit[(int)parent]) || (o.in_mixin && (row->parents & CSS_AR_P_MIXIN)))) {
       cx.valid = false;
@@ -2789,7 +2789,10 @@ static bool atrule_validity_rule(void * user, const GTEXT_CSS_Parent * parent, c
   const void * row = css_atrule_row_find(nm, rule->name.length);
   GTEXT_CSS_Atrule_Parent where = GTEXT_CSS_ATRULE_PARENT_TOP;
   if (!parent->top_level) {
-    if (parent->kind == GTEXT_CSS_RULE_QUALIFIED || parent->in_style_rule) {
+    if (parent->kind == GTEXT_CSS_RULE_AT && css_ascii_ieq(&parent->name, "private") && css_ascii_ieq(&rule->name, "property")) {
+      where = GTEXT_CSS_ATRULE_PARENT_PRIVATE;   /* an `@property` rule is valid directly inside an @private rule; the group rules in it are valid as in a style rule */
+    }
+    else if (parent->kind == GTEXT_CSS_RULE_QUALIFIED || parent->in_style_rule) {
       where = GTEXT_CSS_ATRULE_PARENT_STYLE;
     }
     else if (css_ascii_ieq(&parent->name, "page")) {

@@ -17,3 +17,4 @@ markup	test-cssom-markup.cpp
 shapecompute	test-css-shape-compute.cpp
 mixin	test-cssom-mixin.cpp
 transition	test-cssom-transition.cpp
+private	test-cssom-private.cpp

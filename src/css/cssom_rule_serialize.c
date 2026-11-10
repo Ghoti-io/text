@@ -621,6 +621,37 @@ static GTEXT_CSS_Status write_group_header(sw * w, css_rule * rule) {
   return w->st;
 }
 
+/// An `@private` rule (Functions and Mixins 1) has no interface in the CSSOM, and its contents are what makes it a rule: its custom properties, the group rules and the `@property` rules in it.
+/// They are written as the syntax serializes them, each declaration and rule after a space, so that the text reads back as the rule it is (the rule of a style rule that was changed is read again
+/// from its text).
+static GTEXT_CSS_Status write_private(sw * w, const GTEXT_CSS_Rule * node) {
+  const GTEXT_Markup_Sink sink = sw_sink(w);
+  GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+  emitz(w, "@private {");
+  for (size_t i = 0; i < node->content_count && w->st == GTEXT_CSS_OK; i++) {
+    const GTEXT_CSS_Block_Item * it = &node->contents[i];
+    if (it->kind == GTEXT_CSS_ITEM_DECLARATIONS) {
+      for (size_t k = 0; k < it->declaration_count && w->st == GTEXT_CSS_OK; k++) {
+        emitz(w, " ");
+        const GTEXT_CSS_Status st = gtext_css_serialize_declaration(&it->declarations[k], &so, &sink);
+        if (st != GTEXT_CSS_OK) {
+          return w->st != GTEXT_CSS_OK ? w->st : st;
+        }
+        emitz(w, ";");
+      }
+    }
+    else {
+      emitz(w, " ");
+      const GTEXT_CSS_Status st = gtext_css_serialize_rule(it->rule, true, &so, &sink);
+      if (st != GTEXT_CSS_OK) {
+        return w->st != GTEXT_CSS_OK ? w->st : st;
+      }
+    }
+  }
+  emitz(w, " }");
+  return w->st;
+}
+
 /// Write the opening of a rule, and all of it when it holds no rules.
 static GTEXT_CSS_Status open_rule(sw * w, css_rule * rule, form * out) {
   css_core * core = w->core;
@@ -809,6 +840,11 @@ static GTEXT_CSS_Status open_rule(sw * w, css_rule * rule, form * out) {
     gtext_css_atrule_free(a);
     return st != GTEXT_CSS_OK ? st : w->st;
   }
+  case GTEXT_CSSOM_RULE_PRESERVED:
+    if (rule->node && rule->node->kind == GTEXT_CSS_RULE_AT && css_ascii_ieq(&rule->node->name, "private")) {
+      return write_private(w, rule->node);
+    }
+    break;
   default:
     break;
   }

@@ -80,6 +80,9 @@
 extern "C" {
 #endif
 
+/** @brief A compiled style sheet (css_sheet.h). */
+typedef struct GTEXT_CSS_Sheet GTEXT_CSS_Sheet;
+
 /** @brief Why a rule or a descriptor was not used. */
 typedef enum {
   GTEXT_CSS_AT_PROP_BAD_PRELUDE = 0,   ///< The prelude is not `<custom-property-name>#` (a rule) or `<custom-property-name> <css-type>? [: <declaration-value>? ]?` (a statement): the rule is ignored.
@@ -170,6 +173,21 @@ GTEXT_API GTEXT_CSS_Status gtext_css_at_property_collect(GTEXT_CSS_At_Property_S
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_at_property_collect_rules(GTEXT_CSS_At_Property_Set * set, const GTEXT_CSS_Rule * const * rules, size_t count,
     GTEXT_CSS_At_Property_Result * result);
+
+/**
+ * @brief Read the registrations of the private properties of a compiled sheet (and of the sheets it imports): the `@property` rules directly inside the `@private` rules of its style rules.
+ *
+ * "A @property rule inside of a @private rule defines a private property name for the parent style rule [...] Its custom property registration only applies to that private property, not any
+ * other of the same name." The sheet compiler gave each private property of a style rule its own name; the registration is under that name, so it applies to that property and to no other,
+ * and the registrations of a set (gtext_css_at_property_count() and the rest) are not changed: the compute context reads them as well. Give each sheet of the document that takes part, as
+ * well as gtext_css_at_property_collect() its tree. A `@property` rule inside a conditional group rule inside `@private`, or inside a group rule of the style rule, is not read.
+ *
+ * @param set The set. Not NULL.
+ * @param sheet The compiled sheet (css_sheet.h), compiled with the registry of the set. Not NULL.
+ * @param result NULL, or filled.
+ * @return GTEXT_CSS_OK, GTEXT_CSS_E_INVALID, GTEXT_CSS_E_OOM or GTEXT_CSS_E_LIMIT_REGISTRY.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_at_property_collect_private(GTEXT_CSS_At_Property_Set * set, const GTEXT_CSS_Sheet * sheet, GTEXT_CSS_At_Property_Result * result);
 
 /** @brief How many custom properties the rules registered. NULL is 0. */
 GTEXT_API size_t gtext_css_at_property_count(const GTEXT_CSS_At_Property_Set * set);

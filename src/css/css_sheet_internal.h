@@ -34,6 +34,7 @@
 
 #include "css_internal.h"
 #include "css_match_internal.h"
+#include "css_private_internal.h"
 #include "css_selector_internal.h"
 
 #ifdef __cplusplus
@@ -162,6 +163,8 @@ struct GTEXT_CSS_Sheet {
   GTEXT_CSS_Namespace * ns;
   size_t nns;
   const char * default_ns;
+  css_priv_reg * pregs;                 ///< The registrations of the private properties of its style rules (the strings are in `arena`).
+  size_t npregs;
   GTEXT_CSS_Sheet_Diagnostic * diags;
   size_t ndiags, capdiags, diag_total;
   size_t bytes;

@@ -159,10 +159,12 @@ const char kHtml[] =
     "<body><div id=d><p id=p1 class=a>x</p><p id=p2>y</p></div><style id=s2>#p2{color:blue}</style></body></html>";
 
 const char * const kTexts[] = {"p{color:red}", ".a{margin-top:2px}", "#p2{color:green} p{margin-top:3px}", "", "@media print{p{color:red}} div p{color:blue}", "x{", "@import url(a.css); p{width:1px}", ".a, #p1{color:orange}",
-    "@keyframes k{from{width:0px;color:red;--v:1px} to{width:50px;color:blue;--v:3px}} p{animation:k 2s linear -1s paused}", "p{color:red} p{color:blue !important}"};
+    "@keyframes k{from{width:0px;color:red;--v:1px} to{width:50px;color:blue;--v:3px}} p{animation:k 2s linear -1s paused}", "p{color:red} p{color:blue !important}",
+    "p{@private{--x:1px;@property --y <length>:2px}--v:var(--x) var(--y)} div{@private{--x:3px}p{--v:var(--x)}}"};
 const char * const kMedia[] = {"screen", "print", "", "(min-width: 1px)", "not all", "(bogus:"};
 const char * const kTypes[] = {"text/css", "TEXT/CSS", "", "text/plain", "text/css; x", " text/css"};
-const char * const kRules[] = {"p{color:red}", ".a{margin-top:9px}", "@media screen{p{color:pink}}", "div p{width:2px}", "}", "@import url(b.css);", "#p2{color:gold}"};
+const char * const kRules[] = {"p{color:red}", ".a{margin-top:9px}", "@media screen{p{color:pink}}", "div p{width:2px}", "}", "@import url(b.css);", "#p2{color:gold}",
+    "p{@private{--x:1px;@property --y <length>:2px}--v:var(--x) var(--y)}", "div{@private{--x:3px}p{--v:var(--x)}}"};
 const char * const kProps[] = {"color", "margin-top", "width", "bogus", "--v"};
 const char * const kValues[] = {"red", "1px", "", "nonsense", "blue !important", "var(--x)"};
 const char * const kInline[] = {"color: red", "margin-top: 1px; color: blue", "", "bogus: 1", "width: 3px !important"};

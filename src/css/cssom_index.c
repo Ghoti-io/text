@@ -33,6 +33,7 @@
 
 #include <string.h>
 
+#include "css_creg.h"
 #include "css_fndef.h"
 #include "css_internal.h"
 #include "cssom_computed_internal.h"
@@ -367,7 +368,8 @@ static bool same_properties(const GTEXT_CSS_At_Property_Set * x, const GTEXT_CSS
   if (x == y) {
     return true;
   }
-  if (gtext_css_at_property_count(x) != gtext_css_at_property_count(y) || gtext_css_at_property_diagnostic_total(x) != gtext_css_at_property_diagnostic_total(y)) {
+  if (gtext_css_at_property_count(x) != gtext_css_at_property_count(y) || gtext_css_at_property_diagnostic_total(x) != gtext_css_at_property_diagnostic_total(y) ||
+      !css_at_property_private_same(x, y)) {
     return false;
   }
   for (size_t i = 0; i < gtext_css_at_property_count(x); i++) {

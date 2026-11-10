@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "css_private_internal.h"
 #include "css_substitute_internal.h"
 
 /* ---- a value ----------------------------------------------------------------------------------------- */
@@ -335,8 +336,10 @@ static css_regvals * regvals_new(const GTEXT_Allocator * alloc, size_t n);
 GTEXT_CSS_Status css_ctx_make_regs(GTEXT_CSS_Compute_Context * cc, css_state * st) {
   const size_t from_registry = gtext_css_registry_custom_count(cc->registry);
   const css_creg_store * rules = css_at_property_store(cc->rules);
+  const css_creg_store * priv = css_at_property_private_store(cc->rules);
   const size_t from_rules = rules ? rules->count : 0;
-  const size_t total = from_registry + from_rules;
+  const size_t from_private = priv ? priv->count : 0;
+  const size_t total = from_registry + from_rules + from_private;
   if (total == 0) {
     return GTEXT_CSS_OK;
   }
@@ -354,6 +357,9 @@ GTEXT_CSS_Status css_ctx_make_regs(GTEXT_CSS_Compute_Context * cc, css_state * s
     if (!css_registry_find_creg(cc->registry, c->name, c->name_len, NULL)) { /* the caller's registration wins */
       regs[n++].creg = c;
     }
+  }
+  for (size_t i = 0; i < from_private; i++) {
+    regs[n++].creg = priv->items[i];   /* the names are hidden ones: no caller's registration has one */
   }
   qsort(regs, n, sizeof *regs, ereg_cmp);
   cc->regs = regs;
@@ -482,14 +488,38 @@ static size_t present_regs(const GTEXT_CSS_Computed_Style * style) {
   return n;
 }
 
-size_t gtext_css_computed_custom_count(const GTEXT_CSS_Computed_Style * style) {
-  return style ? css_cmap_count(style->custom) + present_regs(style) : 0;
+/// The private properties of a style (css_private_internal.h) are custom properties with names that begin `--` and a code point no author's name has, so they are one run of the names' order. Where
+/// that run begins in the order of every name a style has (`*first`) and how many names it holds (`*count`), registered values and the others together: the properties a caller sees are the
+/// others, and an index it gives is moved past the run.
+static void private_run(const GTEXT_CSS_Computed_Style * style, size_t * first, size_t * count) {
+  static const char lo[] = "--" CSS_PRIV_MARK;
+  static const char hi[] = "--\xF4\x8F\xBF\xBE";
+  const size_t lo_len = sizeof lo - 1;
+  size_t before = css_cmap_rank(style->custom, lo, lo_len);
+  size_t inside = css_cmap_rank(style->custom, hi, lo_len) - before;
+  if (style->regvals) {
+    for (size_t i = 0; i < style->cc->nregs; i++) {
+      if (!style->regvals->v[i]) {
+        continue;
+      }
+      const css_creg * c = style->cc->regs[i].creg;
+      if (css_priv_hidden(c->name, c->name_len)) {
+        inside++;
+      }
+      else if (c->name_len < lo_len ? memcmp(c->name, lo, c->name_len) <= 0 : memcmp(c->name, lo, lo_len) < 0) {
+        before++;
+      }
+    }
+  }
+  *first = before;
+  *count = inside;
 }
 
-bool gtext_css_computed_custom_at(const GTEXT_CSS_Computed_Style * style, size_t index, GTEXT_CSS_String * name, const GTEXT_CSS_Custom_Value ** value) {
-  if (!style) {
-    return false;
-  }
+static size_t raw_count(const GTEXT_CSS_Computed_Style * style) {
+  return css_cmap_count(style->custom) + present_regs(style);
+}
+
+static bool raw_at(const GTEXT_CSS_Computed_Style * style, size_t index, GTEXT_CSS_String * name, const GTEXT_CSS_Custom_Value ** value) {
   size_t before = 0; /* the registered values that come before the place `index` asks for */
   size_t k = 0;      /* the registered value being looked at, among those that are present */
   if (style->regvals) {
@@ -528,8 +558,26 @@ bool gtext_css_computed_custom_at(const GTEXT_CSS_Computed_Style * style, size_t
   return true;
 }
 
+size_t gtext_css_computed_custom_count(const GTEXT_CSS_Computed_Style * style) {
+  if (!style) {
+    return 0;
+  }
+  size_t first = 0, hidden = 0;
+  private_run(style, &first, &hidden);
+  return raw_count(style) - hidden;
+}
+
+bool gtext_css_computed_custom_at(const GTEXT_CSS_Computed_Style * style, size_t index, GTEXT_CSS_String * name, const GTEXT_CSS_Custom_Value ** value) {
+  if (!style) {
+    return false;
+  }
+  size_t first = 0, hidden = 0;
+  private_run(style, &first, &hidden);
+  return raw_at(style, index < first ? index : index + hidden, name, value);
+}
+
 bool gtext_css_computed_custom_find(const GTEXT_CSS_Computed_Style * style, const char * name, size_t length, const GTEXT_CSS_Custom_Value ** value) {
-  if (!style || !name) {
+  if (!style || !name || css_priv_hidden(name, length)) {
     return false;
   }
   size_t index = 0;

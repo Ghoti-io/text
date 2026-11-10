@@ -427,6 +427,32 @@ static GTEXT_CSS_Status gather_nodes(css_core * core, css_sheet * sheet, holds_f
   return GTEXT_CSS_OK;
 }
 
+/// Whether a sheet has an `@private` rule anywhere: the style rules of a sheet that has none have no private property, and the sheet is not compiled for it.
+static bool sheet_has_private(const css_sheet * sheet) {
+  css_rule * r = css_rule_list_first(&sheet->rules);
+  while (r) {
+    if (r->kind == GTEXT_CSSOM_RULE_PRESERVED && r->node && r->node->kind == GTEXT_CSS_RULE_AT && css_ascii_ieq(&r->node->name, "private")) {
+      return true;
+    }
+    if (r->rules.count) {
+      r = css_rule_list_first(&r->rules);
+      continue;
+    }
+    while (r) {
+      css_rule * next = css_rule_list_next(r);
+      if (next) {
+        r = next;
+        break;
+      }
+      css_obj * owner = r->list ? r->list->owner : NULL;
+      r = owner && owner != &sheet->obj ? css_rule_from_obj(owner) : NULL;
+    }
+  }
+  return false;
+}
+
+static GTEXT_CSS_Status snapshot(css_sheet * sheet, size_t levels, GTEXT_CSS_Sheet ** out);
+
 GTEXT_CSS_Status css_sheet_collect_properties(css_core * core, css_sheet * sheet, GTEXT_CSS_At_Property_Set ** set) {
   GTEXT_Allocator a = core->alloc;
   snap_ctx c;
@@ -450,6 +476,23 @@ GTEXT_CSS_Status css_sheet_collect_properties(css_core * core, css_sheet * sheet
   }
   gtext_allocator_free(&a, (void *)nodes);
   ctx_free(&c);
+  if (st == GTEXT_CSS_OK && sheet_has_private(sheet)) {
+    /* the registrations of the private properties (`@property` inside `@private`) are the compiled sheet's: the names it gave them are its own */
+    GTEXT_CSS_Sheet * snap = NULL;
+    st = snapshot(sheet, depth_of(sheet), &snap);
+    if (st == GTEXT_CSS_OK && !*set) {
+      GTEXT_CSS_At_Property_Options o = gtext_css_at_property_options_default();
+      o.allocator = &a;
+      o.user = core->conditions;
+      o.active_status = gtext_css_conditions_active_rule_status;
+      st = gtext_css_at_property_set_new(core->registry, &o, set);
+    }
+    if (st == GTEXT_CSS_OK) {
+      GTEXT_CSS_At_Property_Result res;
+      st = gtext_css_at_property_collect_private(*set, snap, &res);
+    }
+    gtext_css_sheet_free(snap);
+  }
   return st;
 }
 

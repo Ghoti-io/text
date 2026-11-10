@@ -338,6 +338,60 @@ ignored --broken: not-computationally-independent
 width: 16px
 ```
 
+## Private custom properties: `@private`
+
+CSS Functions and Mixins 1 gives a style rule temporary variables that no other rule, no descendant's rule and no script can name by accident: an `@private` rule nested in a style rule (or in a
+nested group rule of one) holds custom properties and `@property` rules, and the names of its custom properties are the style rule's **private property names**. Within the style rule and
+every rule nested in it, a custom property of such a name "is actually a private property, and any reference to a custom property of that name (for example, with a `var()`) is a reference to the
+private property". It is a different property from the custom property of the same name, and "Two private properties with the same name are considered the same property if and only if they have
+the same nearest style rule ancestor that has their name in its private property names".
+
+```css
+section {
+  @private { --size: 2px; }
+  &, & > *, & > * > * { border-width: var(--size); }   /* the private --size: 2px on every one of them */
+}
+section > h1 { --size: 4px; }                            /* the custom property --size: another property */
+```
+
+How it is built: the draft's own account is "roughly equivalent to" the rule written with a unique name for the property, and that is the whole mechanism. The sheet compiler (`gtext_css_sheet_compile()`
+and the CSSOM document's snapshot) gives each property of a style rule that has the name a hidden custom property name (`--`, U+10FFFD, a code point of private use, the sheet's number, the rule's number and the name, so two rules
+and two sheets never share one), writes it where the rule and the rules nested in it declare the property, and writes it in the references of their values: the first argument of `var()` and of
+`inherit()` (wherever the function is, in a fallback or in the argument of another function), and the name in a `style()` query of an `if()`. Everything after the compiler handles a custom
+property: the cascade orders the declarations by the specificity and place of the rule, an unregistered private property inherits as the tokens, `initial`, `inherit` and the rest of the CSS-wide
+keywords apply, and a custom function that is called with `var(--size)` as an argument gets the private property's value. The declarations of an `@private` rule are the style rule's, at their
+place among its others.
+
+What is read of an `@private` rule: its custom properties; its conditional group rules (`@media`, `@supports`, `@container`, `@when`, `@else`, `@starting-style`), whose custom properties apply where
+the condition holds and have their names whether it does or not; and the `@property` rules directly inside it. Anything else (a property that is not a custom property, a style rule, an `@layer`, an
+`@scope`, a second `@private`) is invalid and ignored, and the rule stands. An `@private` rule anywhere else (the top of a sheet, a group rule that is not in a style rule, a `@mixin` body) is
+invalid and ignored.
+
+**The private properties are not exposed.** `getComputedStyle(element).getPropertyValue("--size")` is the custom property's value, not the private one's, and the enumeration, the length and
+`gtext_css_computed_custom_count()`, `_at()` and `_find()` list and find no private property (the names are a run in the order of the names, so the count and the index are those of the others and
+cost no more than a map's rank). The rules' own text is unchanged: `cssRules` shows the `@private` rule as a rule that has no interface (a preserved rule), as before.
+
+**Registering a private property.** "A @property rule inside of a @private rule defines a private property name for the parent style rule, just like using the private property normally does. Its
+custom property registration only applies to that private property, not any other of the same name", and "global property registrations do not apply to private properties". The compiled sheet
+keeps the registrations of the `@property` rules directly inside its `@private` rules, under the hidden names, and the document's set of `@property` registrations reads them
+(`gtext_css_at_property_collect_private()` for a caller that compiles sheets itself); the public view of the set (`gtext_css_at_property_count()` and the rest) is the rules at the top of a sheet,
+as before. The statement form (`@property --two <color>: blue;`) is read as it is at the top of a sheet. Of two rules for one name in one `@private` rule the later wins.
+
+**Where the pinned text is silent, and what was chosen** (each is the conservative reading; the sentences are the draft's):
+
+- *Custom functions.* "Issue: What about custom functions? If they refer to a custom property not defined in the function, should they see an outer private property? I'm inclined to say yes". The
+  issue is open in the pinned text, so a function body's `var(--x)` is the custom property of the element, never a private one; an argument that names the private property at the call
+  (`--f(var(--x))`) passes its value, because the call is in the style rule.
+- *`@container` style queries and the `@property` rules in conditional group rules.* The names of an `@private` rule in a group rule count ("including those nested in nested group rules") and its
+  custom properties apply where the group's condition holds; a `style()` query of a container query (`@container style(--x: 1)`) asks about the custom property, never a private one; and a
+  `@property` rule inside a conditional group rule that is inside `@private` (or inside a group rule of the style rule) is not valid there (the places of `@property` are the top of a sheet, a group rule at the top and directly an `@private` rule) and is dropped when the sheet is read, because a registration is not conditional here.
+- *`!important` in an `@private` rule.* A resolution of the CSS Working Group (2026-08-04, w3c/csswg-drafts#14212) makes it invalid; the pinned text does not carry it, and the declaration is read as it is anywhere else.
+- *`@layer` and `@scope` inside `@private`.* The draft lists "nested group rules"; the layers and scopes of a sheet are placed by the layer walker, which does not enter `@private`, so they are ignored.
+- *The rule's own text.* "It is not exposed to the page via any CSSOM APIs" is read of the computed style (the one place a private property has a value). The declarations the author wrote in a style rule,
+  those of the rule itself included (`--size: 4px` where `--size` is private), are the rule's text: its `style` and `cssText` keep them as written, so that a rule reads back as it was.
+- *Mixin parameters.* "A mixin's parameters define private properties in the mixin body" is the evaluation of `@apply`, which is not built; the rule is read, and a mixin body's `@private` rule is
+  the mixin's own, not any style rule's.
+
 ## The budget
 
 "UAs must impose a UA-defined limit on the allowed length of the token stream that an arbitrary substitution function expands into." Without one, thirty
@@ -434,8 +488,7 @@ are listed with the reason in `tools/css/UNEXTRACTED_VARIABLES`; the cases it fa
 
 The evaluation of a custom function (`--name()`: the definitions are read, see above); `first-valid()`; the animation and transition of custom properties; the used
 value of anything; `revert` resolved after a substitution; the `CSS` object of a browser (the registry builder and the `@property` set are what it
-would call). Of `@property`: an `@property` inside `@private` (the draft places one there, "directly inside of a @private rule"; private properties are not built), and
-inside the body of an `@function` or a `@mixin` (the draft does not place one there: a function body "accepts conditional group rules ... the result descriptor ... custom
+would call). Of `@property`: an `@property` inside the body of an `@function` or a `@mixin` (the draft does not place one there: a function body "accepts conditional group rules ... the result descriptor ... custom
 properties"). The CSSOM of a prelude that lists names follows the CSSWG's resolution of 2026-08-06 (w3c/csswg-drafts#14227): "if single @property has multiple names, it will be represented in CSSOM as a single
 object with a `names` array and not expand into multiple objects and return empty string for the `name` in that case". So `@property --a, --b { ... }` is one rule (`cssRules.length` counts it once, `deleteRule()`
 removes it whole), its `name` is the empty string, `gtext_cssom_property_get_names()` answers `--a` and `--b` (a rule of one name has an array of one), and its text lists every name, so a round trip keeps them. The

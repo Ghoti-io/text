@@ -111,7 +111,8 @@ typedef enum {
   GTEXT_CSS_ATRULE_PARENT_STYLE,          ///< Inside a style rule.
   GTEXT_CSS_ATRULE_PARENT_PAGE,           ///< Inside `@page` (the margin rules).
   GTEXT_CSS_ATRULE_PARENT_FEATURE_VALUES, ///< Inside `@font-feature-values` (the feature blocks).
-  GTEXT_CSS_ATRULE_PARENT_MIXIN           ///< Inside a mixin.
+  GTEXT_CSS_ATRULE_PARENT_MIXIN,          ///< Inside a mixin.
+  GTEXT_CSS_ATRULE_PARENT_PRIVATE         ///< Directly inside an `@private` rule (a `@property` rule there registers a private property).
 } GTEXT_CSS_Atrule_Parent;
 
 /** @brief What parsing an at-rule may be told. A zeroed struct is the default. */
