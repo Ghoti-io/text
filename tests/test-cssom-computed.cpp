@@ -398,6 +398,38 @@ TEST(CssomComputed, AnAnchorFunctionOfABoxThatCannotHaveAnAnchorComputesToItsFal
   EXPECT_EQ(read("#calcs", "top"), "calc(2px + anchor(--a top, 4px))");
 }
 
+/* Anchor Positioning 1: "anchor() ... resolves to a <length>", so the fallback of an anchor function may be one: `anchor(top, anchor(--unknown top))`. The page css-anchor-position/anchor-invalid-fallback.html
+   asks "Invalid anchor*() within fallback" of `top:anchor(top, anchor(--unknown top))` and `width:anchor-size(width, anchor-size(--unknown width))`, and both browsers keep the declaration (it is
+   valid when it is read) and compute `auto` for it when no layout can resolve the name. Here, where whether `--unknown` names an anchor is a fact of the boxes, the declaration is valid and takes the
+   place of the outer function (a box with no default anchor), kept as written for the layout, as `anchor(--a right, 3px)` is: it used to be refused when it was read, so a declaration below it,
+   `top: 5px; top: anchor(top, anchor(--unknown top))`, was the one that applied. */
+TEST(CssomComputed, AnAnchorFunctionMayBeTheFallbackOfAnotherAndIsKeptForTheLayoutWhenItCannotBeResolvedHere) {
+  Cs m("<!DOCTYPE html><html><head><style>"
+       "div { position: absolute; font-size: 10px; }"
+       "#unknown { top: anchor(top, anchor(--unknown top)); width: anchor-size(width, anchor-size(--unknown width)); }"
+       "#below { top: 5px; top: anchor(top, anchor(--unknown top)); }"
+       "#resolved { top: anchor(top, anchor(top, 5px)); left: calc(1px + anchor(left, anchor(left, 2px))); max-width: anchor-size(width, anchor-size(height, 6em)); }"
+       "#deep { top: anchor(top, anchor(top, anchor(top, anchor(top, 9px)))); }"
+       "#cross { left: anchor(left, anchor-size(--a width)); }"
+       "#static { position: static; top: anchor(top, anchor(--a top, 3px)); }"
+       "#wrong { width: anchor-size(width, anchor(top, 5px)); }"
+       "</style></head><body><div id=unknown></div><div id=below></div><div id=resolved></div><div id=deep></div><div id=cross></div><div id=static></div><div id=wrong></div></body></html>");
+  auto read = [&](const char * element, const char * property) {
+    Decl d = m.computed(element, nullptr);
+    return get(d.d, property);
+  };
+  EXPECT_EQ(read("#unknown", "top"), "anchor(--unknown top)");
+  EXPECT_EQ(read("#unknown", "width"), "anchor-size(--unknown width)");
+  EXPECT_EQ(read("#below", "top"), "anchor(--unknown top)") << "the declaration is valid, so it is the one that applies and not the 5px below it";
+  EXPECT_EQ(read("#resolved", "top"), "5px") << "the inner function has a fallback and no anchor to resolve against";
+  EXPECT_EQ(read("#resolved", "left"), "3px");
+  EXPECT_EQ(read("#resolved", "max-width"), "60px") << "the fallback of the inner function is a computed value: 6em of a font of 10px";
+  EXPECT_EQ(read("#deep", "top"), "9px");
+  EXPECT_EQ(read("#cross", "left"), "anchor-size(--a width)") << "an anchor-size() is a length wherever an anchor() is, in an inset property";
+  EXPECT_EQ(read("#static", "top"), "3px") << "a box that is not absolutely positioned has no anchor: the outer function is its fallback, and so is the inner one";
+  EXPECT_EQ(read("#wrong", "width"), "auto") << "anchor() is for the inset properties: the declaration is invalid";
+}
+
 /* "for highlight pseudo-elements originating from the root element the inherited value of 'color' is currentColor": the keyword, which each element that inherits it reads as its own color */
 TEST(CssomComputed, TheColorOfARootHighlightIsCurrentColorAndStandsForTheColorOfTheElementThatInheritsIt) {
   Cs m("<!DOCTYPE html><html><head><style>"

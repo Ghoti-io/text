@@ -1135,7 +1135,10 @@ static bool math_item(M * m, uint32_t pos, const xinfo ** out) {
   xinfo * xi = &m->x[pos];
   if (xi->state == X_NONE) {
     const GTEXT_CSS_Component_Value * v = m->items[pos].cv;
-    if (!v || v->kind != GTEXT_CSS_VALUE_FUNCTION || !css_math_accepts_function(v->value.data, v->value.length)) {
+    /* (an anchor function is a math function where the property allows it: it "resolves to a <length>", and stands alone as the fallback of another) */
+    const bool anchor = v && v->kind == GTEXT_CSS_VALUE_FUNCTION &&
+        (((m->anchor_functions & GTEXT_CSS_MATH_ANCHOR) && css_ascii_ieq(&v->value, "anchor")) || ((m->anchor_functions & GTEXT_CSS_MATH_ANCHOR_SIZE) && css_ascii_ieq(&v->value, "anchor-size")));
+    if (!v || v->kind != GTEXT_CSS_VALUE_FUNCTION || !(anchor || css_math_accepts_function(v->value.data, v->value.length))) {
       xi->state = X_NOT_MATH;
     }
     else {

@@ -54,6 +54,7 @@ typedef struct {
   css_arena * arena;
   GTEXT_Allocator alloc;       ///< Scratch (the stack of operands).
   size_t max_depth, max_nodes;
+  size_t anchor_depth;   ///< Anchor functions being read inside the fallback of another (css_math.c: ANCHOR_NEST_BUDGET).
   size_t nodes, work;
   GTEXT_CSS_Status status;     ///< OK, or OOM / a limit.
   bool invalid;                ///< The function is not a valid math function.

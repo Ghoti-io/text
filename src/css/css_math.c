@@ -760,7 +760,28 @@ static bool atext_put(mbuilder * mb, atext * t, const char * s, size_t n) {
 /// A value of the position slot of an anchor function (a <percentage>, or a <length-percentage> for the fallback) written as the specified value is: the token
 /// as it serializes, `0` as `0px`, a calculation (whose nesting is bounded) as the math layer serializes it. Returns whether it was a value of the kind. `node`, when not NULL, receives the
 /// value as a node of the builder's tree (the fallback, which the function stands for when it cannot be resolved); a percentage written in it is a percentage written in the calculation.
+static const mnode * anchor_leaf(mbuilder * mb, const GTEXT_CSS_Math_Context * ctx, const GTEXT_CSS_Component_Value * fn);
+
 static bool anchor_operand(mbuilder * mb, const GTEXT_CSS_Math_Context * ctx, const GTEXT_CSS_Component_Value * v, bool percentage_only, atext * out, const mnode ** node) {
+  if (node && !percentage_only && v->kind == GTEXT_CSS_VALUE_FUNCTION && ctx &&
+      ((name_is(&v->value, "anchor") && (ctx->anchor_functions & GTEXT_CSS_MATH_ANCHOR)) || (name_is(&v->value, "anchor-size") && (ctx->anchor_functions & GTEXT_CSS_MATH_ANCHOR_SIZE)))) {
+    /* The fallback is an anchor function itself: "anchor() ... resolves to a <length>", so it is a leaf of the type length as any anchor function is, and the function stands for it when it cannot be
+       resolved; if the fallback cannot be either, the outer function is invalid at computed-value time with it (the page `anchor-invalid-fallback`: "Invalid anchor*() within fallback"). The C recursion
+       is bounded by the budget every level of nesting takes one from. */
+    if (mb->anchor_depth + 1 >= ANCHOR_NEST_BUDGET || mb->anchor_depth + 1 >= mb->max_depth) {
+      mb->status = GTEXT_CSS_E_LIMIT_DEPTH;
+      mb->where = v->span;
+      return false;
+    }
+    mb->anchor_depth++;
+    const mnode * leaf = anchor_leaf(mb, ctx, v);
+    mb->anchor_depth--;
+    if (!leaf) {
+      return false;
+    }
+    *node = leaf;
+    return atext_put(mb, out, leaf->text.data, leaf->text.length);
+  }
   if (v->kind == GTEXT_CSS_VALUE_TOKEN) {
     if (v->type == GTEXT_CSS_TOKEN_PERCENTAGE || (!percentage_only && v->type == GTEXT_CSS_TOKEN_DIMENSION) ||
         (!percentage_only && v->type == GTEXT_CSS_TOKEN_NUMBER && v->number == 0)) {
@@ -1139,8 +1160,18 @@ static const mnode * close_frame(mbuilder * mb, pframe * F) {
 }
 
 /// Read the function `fn`. On OK, `*root` is the tree or NULL with mb->invalid set.
+static bool is_anchor_function(const GTEXT_CSS_Component_Value * v, unsigned allowed) {
+  return v->kind == GTEXT_CSS_VALUE_FUNCTION && ((name_is(&v->value, "anchor") && (allowed & GTEXT_CSS_MATH_ANCHOR)) ||
+                                                   (name_is(&v->value, "anchor-size") && (allowed & GTEXT_CSS_MATH_ANCHOR_SIZE)));
+}
+
 static const mnode * read_calculation(mbuilder * mb, const GTEXT_CSS_Component_Value * fn, const GTEXT_CSS_Math_Context * ctx,
     bool * has_symbols) {
+  if (ctx && is_anchor_function(fn, ctx->anchor_functions)) {
+    /* an anchor function that stands alone, as the fallback of another does: "anchor() ... resolves to a <length>", a length that is not known until the anchor is */
+    *has_symbols = true;
+    return anchor_leaf(mb, ctx, fn);
+  }
   const fn_name * top = find_function(&fn->value);
   if (fn->kind == GTEXT_CSS_VALUE_FUNCTION && !top && is_unresolved_number_function(&fn->value)) {
     if (!no_arguments(fn)) {

@@ -1116,6 +1116,25 @@ TEST(CssProperty, AnchorFunctionsAreLengthsInACalculationOfThePropertiesThatTake
   EXPECT_EQ(parse(r, "top", "calc(anchor(--foo bogus))"), "invalid");
   EXPECT_EQ(parse(r, "top", "calc(anchor(top, 1s))"), "invalid") << "the fallback is a <length-percentage>";
   EXPECT_EQ(parse(r, "top", "calc(anchor(top,))"), "invalid");
+  // Anchor Positioning 1: "anchor() ... resolves to a <length>": a <length-percentage> fallback may be an anchor function (the page anchor-invalid-fallback: "Invalid anchor*() within fallback")
+  EXPECT_EQ(parse(r, "top", "anchor(top, anchor(--unknown top))"), "valid:anchor(top, anchor(--unknown top))");
+  EXPECT_EQ(parse(r, "width", "anchor-size(width, anchor-size(--unknown width))"), "valid:anchor-size(width, anchor-size(--unknown width))");
+  EXPECT_EQ(parse(r, "top", "calc(1px + anchor(top, anchor(--a left, 5%)))"), "valid:calc(1px + anchor(top, anchor(--a left, 5%)))");
+  EXPECT_EQ(parse(r, "left", "anchor(left, anchor-size(--a width, 3px))"), "valid:anchor(left, anchor-size(--a width, 3px))") << "anchor-size() is for the inset properties as well";
+  EXPECT_EQ(parse(r, "width", "anchor-size(width, anchor(top))"), "invalid") << "anchor() is not for the sizing properties, in a fallback either";
+  EXPECT_EQ(parse(r, "top", "anchor(top, anchor(bogus))"), "invalid") << "the nested function is read as any other";
+  EXPECT_EQ(parse(r, "top", "anchor(top, anchor(--a top, 1s))"), "invalid") << "and has a <length-percentage> fallback of its own";
+  EXPECT_EQ(parse(r, "color", "rgb(anchor(top, anchor(--a top)), 0, 0)"), "invalid");
+  /* the nesting of anchor functions is bounded (a budget each level takes one from): a hundred levels are a limit and not a stack of a hundred C calls, and sixty are not */
+  std::string shallow = "5px", deep = "5px";
+  for (int i = 0; i < 40; i++) {
+    shallow = "anchor(top, " + shallow + ")";
+  }
+  for (int i = 0; i < 100; i++) {
+    deep = "anchor(top, " + deep + ")";
+  }
+  EXPECT_EQ(parse(r, "top", shallow), "valid:" + shallow);
+  EXPECT_EQ(parse(r, "top", deep), "blocks and functions nested deeper than max_depth") << "a limit, as every nesting is";
   EXPECT_EQ(parse(r, "width", "calc(anchor-size(--a bogus))"), "invalid");
 }
 
