@@ -32,6 +32,8 @@
 #ifndef GHOTI_TEXT_CSS_READINGS_H
 #define GHOTI_TEXT_CSS_READINGS_H
 
+#include <ghoti.io/text/macros.h>
+
 /**
  * `color-mix()` whose omitted percentages make the sum of the specified ones fall short of 100%, as in `color-mix(in srgb, red 60%, green, blue 50%)`.
  *

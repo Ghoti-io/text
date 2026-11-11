@@ -540,6 +540,34 @@ void check_compute(const std::vector<Decl> & parent_decls, const std::vector<Dec
       gtext_css_computed_free(second);
     }
     gtext_css_block_free(rb);
+    if (rules) {
+      // the decision the fixed point rests on, asked of every registration with the universal syntax and an initial value, whatever the style holds: a declaration that is invalid at
+      // computed-value time computes to the guaranteed-invalid value (Values 5), not to the initial value
+      std::string probe;
+      std::vector<std::string> names;
+      for (size_t i = 0; i < gtext_css_at_property_count(rules); i++) {
+        GTEXT_CSS_Custom_Info at;
+        if (gtext_css_at_property_at(rules, i, &at) && at.universal && at.has_initial) {
+          probe += std::string(at.name, at.name_length) + ": var(--no-such-property-anywhere);\n";
+          names.push_back(std::string(at.name, at.name_length));
+        }
+      }
+      GTEXT_CSS_Declaration_Block * pb2 = nullptr;
+      if (!names.empty() && build(declarations(probe), nullptr, &pb2, input) == GTEXT_CSS_OK) {
+        GTEXT_CSS_Computed_Style * made = nullptr;
+        GTEXT_CSS_Compute_Result r4{};
+        if (gtext_css_compute_style(ctx, pb2, nullptr, element_of(o0), &made, &r4) == GTEXT_CSS_OK) {
+          for (const std::string & name : names) {
+            const GTEXT_CSS_Custom_Value * held = nullptr;
+            if (gtext_css_computed_custom_find(made, name.data(), name.size(), &held)) {
+              fail("a declaration that is invalid at computed-value time did not make a universal registration the guaranteed-invalid value", name, input);
+            }
+          }
+        }
+        gtext_css_computed_free(made);
+      }
+      gtext_css_block_free(pb2);
+    }
     GTEXT_CSS_Computed_Style *p2 = nullptr, *c2 = nullptr;
     GTEXT_CSS_Compute_Result r3{};
     if (compute(ctx, pb, cb, &p2, &c2, &r3, element_of(o0)) == GTEXT_CSS_OK) {
