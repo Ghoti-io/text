@@ -79,8 +79,21 @@ fi
 
 diff_py="python3 $root/tools/oracle/css_style_diff.py --ours $ours --wpt $vectors"
 
+functions_list=$root/tools/oracle/css_style_divergences_functions.txt
+functions_witnesses=$root/tools/oracle/css_style_witnesses_functions.txt
 if [ $controls = 0 ]; then
-	exec $diff_py --work "$work" --stage "$stage"
+	status=0
+	extra=""
+	[ "$CSS_STYLE_ORACLE_SCOPE" != functions ] || extra="--list $functions_list --witnesses $functions_witnesses"
+	$diff_py --work "$work" --stage "$stage" $extra || status=$?
+	# the `functions` scope (css_style_gen.py: the templates of the css-mixins pages, `--actual` and `--expected` of each) is a population and a list of its own, asked after the default one when
+	# every stage runs, or by itself with CSS_STYLE_ORACLE_SCOPE=functions
+	if [ "$stage" = all ] && [ -z "$CSS_STYLE_ORACLE_SCOPE" ]; then
+		fstatus=0
+		CSS_STYLE_ORACLE_SCOPE=functions CSS_STYLE_ORACLE_SCHEMES=light $diff_py --work "$work-functions" --stage all --list "$functions_list" --witnesses "$functions_witnesses" || fstatus=$?
+		[ $status != 0 ] || status=$fstatus
+	fi
+	exit $status
 fi
 
 # ---- the controls ------------------------------------------------------------------------------------------------------
@@ -196,5 +209,53 @@ PY
 	[ $status = 0 ] || { echo "control $name: the planted library could not answer the population" >&2; exit 1; }
 	expect "plant-library-$name" "UNLISTED\|COUNT\|GONE\|CONTROL\|WITNESS\|DIGEST" python3 "$root/tools/oracle/css_style_diff.py" --ours "$scratch/p-$name/ours" --wpt "$vectors" \
 		--work "$scratch/plant-$name" --stage classify --replay "$replay"
+done
+# the `functions` scope: a population and a list of its own (css_style_divergences_functions.txt), whose key is a page of the css-mixins pins. It is run unedited, with the list tampered with
+# in each way, and with this library's evaluation of custom functions undone in the ways of tools/conformance/CSS_FUNCTION_PLANTS.
+fbase=$scratch/functions-base
+CSS_STYLE_ORACLE_SCOPE=functions CSS_STYLE_ORACLE_SCHEMES=light $diff_py --work "$fbase" --stage all --list "$functions_list" --witnesses "$functions_witnesses" >"$log" 2>&1 || { echo "the functions scope does not pass unedited" >&2; cat "$log" >&2; exit 1; }
+tail -2 "$log"
+fclassify() {
+	CSS_STYLE_ORACLE_SCOPE=functions CSS_STYLE_ORACLE_SCHEMES=light $diff_py --work "$fbase" --stage classify --replay "$fbase" --list "$functions_list" --witnesses "$functions_witnesses" "$@"
+}
+ffirst=$(awk -F'\t' '!/^#/ && NF == 5 { print $1; exit }' "$functions_list")
+[ -n "$ffirst" ] || { echo "control functions: the list is empty, so nothing about it can be shown" >&2; exit 1; }
+awk -F'\t' -v k="$ffirst" '/^#/ || NF != 5 || $1 != k { print }' "$functions_list" > "$scratch/f-no-key"
+expect functions-list-key-missing "UNLISTED" fclassify --list "$scratch/f-no-key"
+awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 5 { print; next } !d { $2 = $2 + 1; d = 1 } { print }' "$functions_list" > "$scratch/f-count"
+expect functions-list-count-changed "COUNT" fclassify --list "$scratch/f-count"
+awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 5 { print; next } !d { $4 = "0000000000000000"; d = 1 } { print }' "$functions_list" > "$scratch/f-digest"
+expect functions-list-digest-changed "DIGEST" fclassify --list "$scratch/f-digest"
+awk -F'\t' 'BEGIN { OFS = "\t" } /^#/ || NF != 5 { print; next } !d { $5 = "browser behavior"; d = 1 } { print }' "$functions_list" > "$scratch/f-blanket"
+expect functions-list-blanket-reason "LIST" fclassify --list "$scratch/f-blanket"
+: > "$scratch/f-empty"
+expect functions-list-empty "UNLISTED" fclassify --list "$scratch/f-empty"
+grep -v "^$ffirst	" "$functions_witnesses" > "$scratch/f-no-witness" || true
+expect functions-witness-missing "WITNESS" fclassify --witnesses "$scratch/f-no-witness"
+fplants=$(awk -F'\t' '!/^#/ && NF >= 5 && $2 == "css_substitute.c" { print $1 }' "$root/tools/conformance/CSS_FUNCTION_PLANTS")
+for name in $fplants; do
+	rm -rf "$scratch/fp-$name"
+	mkdir -p "$scratch/fp-$name"
+	python3 - "$root" "$scratch/fp-$name" "$name" <<'PY'
+import os, sys
+root, work, name = sys.argv[1:4]
+for line in open(os.path.join(root, "tools/conformance/CSS_FUNCTION_PLANTS"), encoding="utf-8"):
+    if line.startswith("#") or not line.strip():
+        continue
+    f = line.rstrip("\n").split("\t")
+    if f[0] == name and f[1] == "css_substitute.c":
+        text = open(os.path.join(root, "src/css", f[1]), encoding="utf-8").read()
+        old, new = f[2].replace("\\n", "\n"), f[3].replace("\\n", "\n")
+        if text.count(old) != 1:
+            raise SystemExit("the plant %s: its text is in %s %d times, not once" % (name, f[1], text.count(old)))
+        open(os.path.join(work, f[1]), "w", encoding="utf-8").write(text.replace(old, new))
+PY
+	cc -std=c17 -O1 -fPIC -DGTEXT_BUILD -I"$root/src/css" -I"$root/src" -I"$root/include" -I"$generated" $cflags -c "$scratch/fp-$name/css_substitute.c" -o "$scratch/fp-$name/css_substitute.o"
+	build_ours "$scratch/fp-$name/ours" "$scratch/fp-$name/css_substitute.o"
+	mkdir -p "$scratch/fp-$name/work"
+	cp "$fbase/population.jsonl" "$scratch/fp-$name/work/"
+	CSS_STYLE_ORACLE_SCOPE=functions CSS_STYLE_ORACLE_SCHEMES=light python3 "$root/tools/oracle/css_style_diff.py" --ours "$scratch/fp-$name/ours" --wpt "$vectors" --work "$scratch/fp-$name/work" --stage ours --replay "$fbase" >/dev/null 2>&1 || { echo "control $name: the planted library could not answer the functions population" >&2; exit 1; }
+	expect "functions-plant-library-$name" "UNLISTED\|COUNT\|GONE\|CONTROL\|DIGEST" env CSS_STYLE_ORACLE_SCOPE=functions CSS_STYLE_ORACLE_SCHEMES=light python3 "$root/tools/oracle/css_style_diff.py" --ours "$scratch/fp-$name/ours" --wpt "$vectors" \
+		--work "$scratch/fp-$name/work" --stage classify --replay "$fbase" --list "$functions_list" --witnesses "$functions_witnesses"
 done
 echo "css style oracle: controls done"

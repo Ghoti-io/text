@@ -255,6 +255,29 @@ struct SheetRule {
   std::string declarations;
 };
 
+/// The end of the block that opens at `open` (the index of its `{`): the matching `}`, counting nested braces and skipping the strings, so that a declaration that holds a block (`--a: --f({1px,2px})`) or an
+/// at-rule with a body (`@function ... { }`) is not cut at the first `}`. `limit` when it does not close.
+static size_t block_end(const std::string & text, size_t open, size_t limit) {
+  size_t depth = 0;
+  for (size_t i = open; i < limit; i++) {
+    const char c = text[i];
+    if (c == '"' || c == '\'') {
+      for (i++; i < limit && text[i] != c; i++) {
+        if (text[i] == '\\') {
+          i++;
+        }
+      }
+    }
+    else if (c == '{') {
+      depth++;
+    }
+    else if (c == '}' && --depth == 0) {
+      return i;
+    }
+  }
+  return limit;
+}
+
 static std::vector<SheetRule> sheet_rules_of(const std::string & document) {
   std::vector<SheetRule> rules;
   size_t at = 0;
@@ -267,12 +290,23 @@ static std::vector<SheetRule> sheet_rules_of(const std::string & document) {
     size_t i = open + 1;
     while (i < close) {
       const size_t brace = document.find('{', i);
-      const size_t end = document.find('}', i);
-      if (brace == std::string::npos || end == std::string::npos || brace > close || end > close) {
+      if (brace == std::string::npos || brace > close) {
         break;
       }
-      SheetRule r;
+      const size_t end = block_end(document, brace, close);
+      if (end >= close) {
+        break;
+      }
       std::string list = document.substr(i, brace - i);
+      size_t first = 0;
+      while (first < list.size() && std::isspace((unsigned char)list[first])) {
+        first++;
+      }
+      i = end + 1;
+      if (first < list.size() && list[first] == '@') {
+        continue;   /* an at-rule (`@function`, `@property`, `@media`): none of its contents are rules of this reader */
+      }
+      SheetRule r;
       size_t k = 0;
       while (k <= list.size()) {
         size_t comma = list.find(',', k);
@@ -293,7 +327,6 @@ static std::vector<SheetRule> sheet_rules_of(const std::string & document) {
       }
       r.declarations = document.substr(brace + 1, end - brace - 1);
       rules.push_back(r);
-      i = end + 1;
     }
     at = close + 8;
   }
@@ -327,6 +360,101 @@ static bool rule_matches(const SheetRule & r, const std::string & id, const char
   return any;
 }
 
+/// The `@function` and `@property` rules of the `<style>` elements of an HTML document, which a consumer hands its compute context (css_custom_function.h, css_at_property.h): the
+/// text of each `<style>` is parsed as a style sheet, in the order of the document, and the rules of `@media`, `@supports` and `@layer` blocks that hold either are entered when the
+/// conditions of a 1280 by 800 viewport say they apply. The style rules of the sheets are read by sheet_rules_of() above, not here.
+struct SheetRules {
+  std::vector<GTEXT_CSS_Tree *> trees;
+  GTEXT_CSS_Function_Set * functions = nullptr;
+  GTEXT_CSS_At_Property_Set * properties = nullptr;
+  GTEXT_CSS_Conditions * conditions = nullptr;
+  GTEXT_CSS_Media_Environment media;
+  SheetRules() = default;
+  SheetRules(const SheetRules &) = delete;
+  SheetRules & operator=(const SheetRules &) = delete;
+  ~SheetRules() {
+    gtext_css_function_set_free(functions);
+    gtext_css_at_property_set_free(properties);
+    gtext_css_conditions_free(conditions);
+    for (GTEXT_CSS_Tree * t : trees) {
+      gtext_css_tree_free(t);
+    }
+  }
+};
+
+static std::vector<std::string> style_texts(const std::string & document) {
+  std::vector<std::string> out;
+  size_t at = 0;
+  while ((at = document.find("<style", at)) != std::string::npos) {
+    const size_t open = document.find('>', at);
+    const size_t close = document.find("</style>", at);
+    if (open == std::string::npos || close == std::string::npos || open > close) {
+      break;
+    }
+    out.push_back(document.substr(open + 1, close - open - 1));
+    at = close + 8;
+  }
+  return out;
+}
+
+/// Fill `r` from the document's style elements. Returns false, with `what` set, when a rule could not be read at all (a status that is not a verdict about one rule).
+static bool collect_rules(SheetRules & r, const std::string & text, std::string * what) {
+  const std::vector<std::string> sheets = style_texts(text);
+  bool any = false;
+  for (const std::string & css : sheets) {
+    if (css.find("@function") != std::string::npos || css.find("@property") != std::string::npos) {
+      any = true;
+    }
+  }
+  if (!any) {
+    return true;
+  }
+  r.media = gtext_css_media_environment_default(nullptr);
+  r.media.viewport.width = 1280;
+  r.media.viewport.height = 800;
+  r.media.device.width = 1280;
+  r.media.device.height = 800;
+  GTEXT_CSS_Conditions_Options co = gtext_css_conditions_options_default();
+  co.media = &r.media;
+  if (gtext_css_conditions_new(svgreg::shared(), &co, &r.conditions) != GTEXT_CSS_OK) {
+    *what = "conditions";
+    return false;
+  }
+  GTEXT_CSS_Function_Options fo = gtext_css_function_options_default();
+  fo.own_rules = true;
+  fo.user = r.conditions;
+  fo.active_status = [](void * user, const GTEXT_CSS_Rule * rule, bool * applies) { return gtext_css_conditions_active_rule_status(user, rule, applies); };
+  GTEXT_CSS_At_Property_Options ao = gtext_css_at_property_options_default();
+  ao.user = r.conditions;
+  ao.active = [](void * user, const GTEXT_CSS_Rule * rule) { return gtext_css_conditions_active_rule(user, rule); };
+  if (gtext_css_function_set_new(svgreg::shared(), &fo, &r.functions) != GTEXT_CSS_OK || gtext_css_at_property_set_new(svgreg::shared(), &ao, &r.properties) != GTEXT_CSS_OK) {
+    *what = "the sets";
+    return false;
+  }
+  for (const std::string & css : sheets) {
+    GTEXT_CSS_Tree * tree = nullptr;
+    GTEXT_CSS_Result res;
+    std::memset(&res, 0, sizeof res);
+    if (gtext_css_parse_stylesheet(css.data(), css.size(), nullptr, &tree, &res) != GTEXT_CSS_OK) {
+      gtext_css_result_free(&res);
+      *what = "parsing a style sheet";
+      return false;
+    }
+    gtext_css_result_free(&res);
+    r.trees.push_back(tree);
+    GTEXT_CSS_Function_Result fr;
+    const GTEXT_CSS_Status fs = gtext_css_function_collect(r.functions, tree, &fr);
+    GTEXT_CSS_At_Property_Result pr;
+    std::memset(&pr, 0, sizeof pr);
+    const GTEXT_CSS_Status ps = gtext_css_at_property_collect(r.properties, tree, &pr);
+    if (fs != GTEXT_CSS_OK || ps != GTEXT_CSS_OK) {
+      *what = std::string("collecting rules: ") + gtext_css_status_string(fs != GTEXT_CSS_OK ? fs : ps);
+      return false;
+    }
+  }
+  return true;
+}
+
 void answer(const std::string & mode, const std::string & text, const std::vector<Question> & questions, bool dark, const std::string & only_dump) {
   cmt::Tree tree;
   if (!tree.parse(text, mode == "h")) {
@@ -347,6 +475,27 @@ void answer(const std::string & mode, const std::string & text, const std::vecto
   GTEXT_CSS_Compute_Options co = gtext_css_compute_options_default();
   co.elements = &tree.table;
   co.max_element_depth = 100000;
+  SheetRules rules;
+  if (mode == "h") {
+    std::string what;
+    if (!collect_rules(rules, text, &what)) {
+      for (const Question & q : questions) {
+        for (const std::string & p : q.properties) {
+          std::printf("%s\t%s\tERR\t%s\n", esc(q.id).c_str(), esc(p).c_str(), esc(what).c_str());
+        }
+      }
+      return;
+    }
+    co.function_rules = rules.functions;
+    co.property_rules = rules.properties;
+    if (rules.conditions) {
+      /* a conditional rule of a function body is asked of the environment: the same viewport the rules were read with */
+      env.user = rules.conditions;
+      env.condition = [](void * user, GTEXT_CSS_Condition_Kind kind, const GTEXT_CSS_String * t, GTEXT_CSS_Element_Handle) {
+        return gtext_css_conditions_condition(static_cast<const GTEXT_CSS_Conditions *>(user), kind, t);
+      };
+    }
+  }
   GTEXT_CSS_Compute_Context * ctx = nullptr;
   GTEXT_CSS_Compute_Result cr;
   if (gtext_css_compute_context_new(svgreg::shared(), &env, &co, &ctx, &cr) != GTEXT_CSS_OK) {
@@ -437,7 +586,13 @@ void answer(const std::string & mode, const std::string & text, const std::vecto
         char * t = nullptr;
         size_t n = 0;
         gtext_css_custom_value_text(cv, nullptr, &t, &n);
-        std::printf("%s\t%s\tOK\t%s\n", esc(q.id).c_str(), esc(p).c_str(), esc(std::string(t, n)).c_str());
+        /* `getPropertyValue()` gives the empty text for a custom property that has no value and for one whose value is empty (`--x:;`): the readers cannot tell them apart, so neither can this one */
+        if (n == 0) {
+          std::printf("%s\t%s\tNOVALUE\n", esc(q.id).c_str(), esc(p).c_str());
+        }
+        else {
+          std::printf("%s\t%s\tOK\t%s\n", esc(q.id).c_str(), esc(p).c_str(), esc(std::string(t, n)).c_str());
+        }
         gtext_css_serialize_buffer_free(nullptr, t);
         continue;
       }

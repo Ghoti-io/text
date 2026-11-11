@@ -432,6 +432,59 @@ def tree_doc(rng, n):
     return doc("tree-%d" % n, "h", wrap_html(body), queries, items)
 
 
+# ---- custom functions ------------------------------------------------------------------------------------------------------
+
+def function_docs(wpt_root=None):
+    """The documents of the `functions` scope: the `<template>` tests of the pinned css-mixins pages (tools/css/extract-wpt-mixins.py), each the document its page builds,
+    with `--actual` and `--expected` of `#target` asked of the three readers. A page says the two must be equal; here each reader says what it computes for each, and the
+    differential reports where the readers differ. The `function` item's description is the page (a feature of a key is a page), not the test: the tests of a page are
+    one population. A page whose elements are `#actual` and `#expected` (function-attr.html) asks `list-style-image` of each instead (its `width` is a used value of a box, which a document
+    with no layout does not have). A template that asks a size container query is not in the population (the differential has no layout), and neither is one with a selector that is not `#id`, `*` or a type name, or with a style rule inside an at-rule other than `@function` and `@property` (css-style-ours reads no more)."""
+    import importlib.util
+    root = wpt_root or os.environ.get("CSS_MIXINS_WPT") or os.path.join(ROOT, "third_party", "css", "wpt")
+    spec = importlib.util.spec_from_file_location("extract_wpt_mixins", os.path.join(ROOT, "tools", "css", "extract-wpt-mixins.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    vectors, _ = mod.extract(root)
+    out = []
+    simple = re.compile(r"^(?:\*|#[\w-]+|[A-Za-z][\w-]*)$")
+
+    def readable(html_text):
+        """Whether every style rule of the document's `<style>` elements is one the harness's sheet reader applies: selectors of `#id`, `*` or a type name, which is all css-style-ours reads (the
+        complex selectors of a page, `#parent > #target`, are the sheet differential's; the same templates are scored with the real cascade by conformance-css-mixins). An at-rule whose body holds style rules is not read either."""
+        for css in re.findall(r"<style[^>]*>(.*?)</style>", html_text, re.S):
+            depth, start = 0, 0
+            for i, c in enumerate(css):
+                if c == "{":
+                    if depth == 0:
+                        head = css[start:i].strip()
+                        if head.startswith("@"):
+                            if not head.startswith(("@function", "@property")):
+                                return False   # @layer, @media, @supports ...: their rules are not read
+                        elif head and not all(simple.match(x.strip()) for x in head.split(",")):
+                            return False
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        start = i + 1
+        return True
+
+    for n, v in enumerate(vectors):
+        if "@container" in v["html"] or not readable(v["html"]):
+            continue
+        page = os.path.basename(v["file"])
+        if v["kind"] == "custom":
+            queries = [["target", ["--actual", "--expected"]]]
+            items = [["target", "--actual", "page: " + page, "function"], ["target", "--expected", "page: " + page, "function"]]
+        else:
+            props = [p for p in v["props"] if p != "width"]
+            queries = [["actual", props], ["expected", props]]
+            items = [[i, p, "page: " + page, "function"] for i in ("actual", "expected") for p in props]
+        out.append(doc("function-%d %s #%d" % (n, v["file"], v["n"]), "h", v["html"], queries, items))
+    return out
+
+
 # ---- the population -------------------------------------------------------------------------------------------------------
 
 def probes(props):
@@ -471,6 +524,10 @@ def cascade_docs():
 
 
 def population(seed, count, ours, wpt_dir, scope="core"):
+    if scope == "functions":
+        # a population of its own (and a list of its own: tools/oracle/css_style_divergences_functions.txt): the plain controls, which every reader answers alike, and the
+        # templates of the css-mixins pages
+        return controls()[:1] + function_docs()
     rng = random.Random(seed)
     props = ours_properties(ours)
     table = read_table()
@@ -492,7 +549,7 @@ def main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--count", type=int, default=200)
-    ap.add_argument("--scope", default="core", choices=("core", "full", "color"))  # "color" is the core population, kept as a name
+    ap.add_argument("--scope", default="core", choices=("core", "full", "color", "functions"))  # "color" is the core population, kept as a name
     ap.add_argument("--ours", default=os.path.join(ROOT, "build", "css-style-ours"))
     ap.add_argument("--wpt", default=os.path.join(ROOT, "build", "css-property-vectors"))
     ap.add_argument("--out", default="-")

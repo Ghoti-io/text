@@ -1,0 +1,20 @@
+# tools/oracle/css_style_diff.py: one witness for every key of css_style_divergences.txt: the smallest item of the key, what this library says of it
+# (OK=<value>, NO) and what an engine says that differs from that. Columns: key, document, element, property, scheme, ours, reference.
+# The run asks every witness again and fails when either answer is not the one written here.
+acc:001:--actual:page : dashed-function-cycles . html	function-16 css/css-mixins/functions/dashed-function-cycles.html #1	target	--actual	light	NO	OK=--f()
+acc:001:--actual:page : dashed-function-eval . html	function-48 css/css-mixins/functions/dashed-function-eval.html #3	target	--actual	light	NO	OK=--f()
+acc:101:--actual:page : dashed-function-cycles . html	function-40 css/css-mixins/functions/dashed-function-cycles.html #25	target	--actual	light	OK=3	NO
+acc:101:--actual:page : dashed-function-eval . html	function-104 css/css-mixins/functions/dashed-function-eval.html #59	target	--actual	light	OK=10px	NO
+acc:110:--actual:page : dashed-function-eval . html	function-65 css/css-mixins/functions/dashed-function-eval.html #20	target	--actual	light	OK=PASS	NO
+ser:A=B|C:--actual:page : dashed-function-cycles . html	function-15 css/css-mixins/functions/dashed-function-cycles.html #0	target	--actual	light	OK=PASS	OK=--f()
+ser:A=B|C:--actual:page : dashed-function-eval . html	function-45 css/css-mixins/functions/dashed-function-eval.html #0	target	--actual	light	OK=12px	OK=--f()
+ser:A=B|C:--actual:page : function-parameter-scoping . html	function-0 css/css-mixins/function-parameter-scoping.html #0	target	--actual	light	OK=6px	OK=-1px
+ser:A=B|C:--actual:page : function-parameter-types . tentative . html	function-187 css/css-mixins/functions/function-parameter-types.tentative.html #0	target	--actual	light	OK=PASS	OK=--f(#f00)
+ser:A=B|C:--actual:page : local-attr-substitution . html	function-195 css/css-mixins/functions/local-attr-substitution.html #0	target	--actual	light	OK=PASS	OK=--f()
+ser:A=B|C:--actual:page : local-if-substitution . html	function-202 css/css-mixins/functions/local-if-substitution.html #0	target	--actual	light	OK=PASS	OK=--f()
+ser:A=B|C:--actual:page : local-var-substitution . html	function-231 css/css-mixins/functions/local-var-substitution.html #0	target	--actual	light	OK=PASS	OK=--f()
+ser:A=B|C:list-style-image:page : function-attr . html	function-139 css/css-mixins/functions/function-attr.html #0	actual	list-style-image	light	OK=url("parent")	OK=url("about:invalid")
+ser:A|B|C:--actual:page : function-parameter-types . tentative . html	function-192 css/css-mixins/functions/function-parameter-types.tentative.html #5	target	--actual	light	OK=rgb(255, 0, 0)	OK=PASS
+ser:A|B|C:--actual:page : local-if-substitution . html	function-211 css/css-mixins/functions/local-if-substitution.html #9	target	--actual	light	OK=FAIL2	OK=PASS
+ser:A|C:--actual:page : dashed-function-cycles . html	function-40 css/css-mixins/functions/dashed-function-cycles.html #25	target	--actual	light	OK=3	NO
+ser:A|C:--actual:page : dashed-function-eval . html	function-104 css/css-mixins/functions/dashed-function-eval.html #59	target	--actual	light	OK=10px	NO
