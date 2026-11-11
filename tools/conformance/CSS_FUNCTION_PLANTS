@@ -12,3 +12,6 @@ function-inherit-reads-its-own-scope	css_substitute.c	    return lookup_in(sub, 
 function-rules-not-given-to-the-document-context	cssom_computed.c	  co.function_rules = core->fns;	  co.function_rules = NULL;	doc
 function-initial-registration-not-handed-down-a-chain	css_substitute.c	      if (v[i].param != SIZE_MAX) {\n        /* A local variable	      if (v[i].kind == EK_PARAM) {\n        /* A local variable	eval
 function-a-brace-fallback-with-more-after-it-is-used	css_substitute.c	    if (n > 1) {\n      /* something follows the block	    if (0 && n > 1) {\n      /* something follows the block	eval
+style-query-ignores-the-registration-of-a-parameter	css_substitute.c	  if (in_fn) {\n    er = dent->ereg;\n  }	  if (in_fn) {\n    er = NULL;\n  }	eval
+style-query-initial-keyword-is-the-registrations-initial-value	css_substitute.c	    keyword_initial = (dent->kind == EK_PARAM || dent->kind == EK_LOCAL) && dent->param != SIZE_MAX && dent->param < dsc->fn->nparams && dsc->pvals ? dsc->pvals[dent->param] : NULL;	    keyword_initial = NULL;	eval
+style-query-inherit-reads-the-element-and-not-the-calling-context	css_substitute.c	        else if (in_fn) {\n          other = f->res[1].gi ? NULL : f->res[1].rope;   /* the calling context's value, asked above */\n        }	        else if (0) {\n          other = NULL;\n        }	eval

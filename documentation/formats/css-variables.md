@@ -599,7 +599,9 @@ the arguments are replaced in the calling context (a `{ ... }` argument is one a
 parameter's default; a value that is not of the parameter's type is not valid and the default is tried), more arguments than parameters is the guaranteed-invalid value, and then the body
 is resolved as a second scope that is a child of the calling context's: `var()` finds a local variable, then a parameter, then a custom property at the call site (and, in a function
 called from a function, the callers' locals and parameters). `initial` on a local variable is the parameter's value, `inherit` is `inherit()` of the name, and any other CSS-wide keyword is
-the guaranteed-invalid value; on `result` they are left alone. A function that is already being evaluated, however far up, is a cycle: every call in it is the guaranteed-invalid value.
+the guaranteed-invalid value; on `result` they are left alone. A `style()` query in a body that names a parameter (or a local variable that hides one) compares computed values of the parameter's type ("create a custom property registration with the
+parameter's name, a syntax of the parameter type, an inherit flag of "true", and no initial value"), reads `initial` as the value the parameter has in the argument styles and `inherit`
+(and `unset`, for the parameter inherits) as the value of the name in the calling context; a name that is neither is unregistered there, whatever the element's context registers. A function that is already being evaluated, however far up, is a cycle: every call in it is the guaranteed-invalid value.
 A name no rule defines is the guaranteed-invalid value. A conditional group rule in a body (`@media`, `@supports`, `@container`) applies when the environment says so
 (`GTEXT_CSS_Environment::condition_status`, else `condition`; `@container` is asked of the element the function is called on, as if its ancestors were the hypothetical element's). A
 body is read when it is called, so the declarations of a body are bounded per call (`max_function_declarations`), as is the depth of calls inside calls (`max_call_depth`, a status

@@ -3902,11 +3902,61 @@ static int style_leaf(css_sub * sub, size_t fi, cleaf * leaf) {
     leaf->result = T_FALSE; /* "that query evaluates to false" */
     return STEP_DONE;
   }
+  /* What the name is where the query is made. In a function's scope a parameter is registered with its type ("a parameter type acts as a local registration": the registration of the parameter,
+     "an inherit flag of true", whose initial value is "the corresponding value in argument styles"), and a local variable that hides one has the registration too; a name that is neither is
+     unregistered there, whatever the element's context registers. In the element's scope the name is the context's. */
+  scope_t * dsc = NULL;
+  const entry_t * dent = NULL;
+  for (scope_t * sc = f->scope; sc; sc = sc->parent) {
+    dent = find_entry(sub, sc, nm->data, nm->length);
+    if (dent) {
+      dsc = sc;
+      break;
+    }
+  }
+  const bool in_fn = dsc && dsc->fn;
   size_t ri = 0;
-  const bool reged = sub->cc->nregs && css_ctx_find_reg(sub->cc, nm->data, nm->length, &ri);
+  const css_ereg * er = NULL;
+  if (in_fn) {
+    er = dent->ereg;
+  }
+  else if (sub->cc->nregs && css_ctx_find_reg(sub->cc, nm->data, nm->length, &ri)) {
+    er = &sub->cc->regs[ri];
+  }
+  /* `style(--x)` is true when the value differs from the initial value of the registration (a parameter's has none: Mixins 1, "no initial value"), but the keyword `initial` is, in a function,
+     "that resolved value": the value the parameter has in the argument styles ("In this phase, the initial keyword resolves to that resolved value") */
+  const GTEXT_CSS_Custom_Value * initial_cv = er && !in_fn ? er->initial : NULL;
+  const GTEXT_CSS_Custom_Value * keyword_initial = initial_cv;
+  if (in_fn) {
+    keyword_initial = (dent->kind == EK_PARAM || dent->kind == EK_LOCAL) && dent->param != SIZE_MAX && dent->param < dsc->fn->nparams && dsc->pvals ? dsc->pvals[dent->param] : NULL;
+  }
+  /* `inherit` (and `unset` for a name that inherits) in a function is "the inherited value of the same-named custom property in the calling context": the scope of the call, asked here so that the
+     value is there when the query is read */
+  if (in_fn && leaf->has_value) {
+    const GTEXT_CSS_Component_Value * only = NULL;
+    size_t words = 0;
+    for (size_t k = 0; k < leaf->count; k++) {
+      if (!is_ws(&leaf->vals[k])) {
+        only = &leaf->vals[k];
+        words++;
+      }
+    }
+    if (words == 1 && is_tok(only, GTEXT_CSS_TOKEN_IDENT)) {
+      const GTEXT_CSS_Wide_Keyword w = gtext_css_wide_keyword_lookup(only->value.data, only->value.length);
+      if (w == GTEXT_CSS_WIDE_INHERIT || (w == GTEXT_CSS_WIDE_UNSET && (!er || er->creg->inherits))) {
+        const int r2 = lookup_in(sub, fi, 1, dsc->parent, nm->data, nm->length, false, NULL);
+        if (r2 < 0) {
+          return STEP_ERROR;
+        }
+        if (r2 == 1) {
+          return STEP_PUSHED;
+        }
+        f = &sub->frames[fi];
+      }
+    }
+  }
   const css_rope * value = f->res[2].gi ? NULL : f->res[2].rope;
   leaf->tainted = value && css_rope_has_taint(value);
-  const GTEXT_CSS_Custom_Value * initial_cv = reged ? sub->cc->regs[ri].initial : NULL;
   const css_rope * initial = initial_cv ? css_cval_rope(initial_cv) : NULL;
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
   char *vt = NULL, *it = NULL;
@@ -3963,13 +4013,17 @@ static int style_leaf(css_sub * sub, size_t fi, cleaf * leaf) {
         result = false; /* "Cascade-dependent keywords, such as revert and revert-layer, are invalid as values in a style feature" */
       }
       else if (wide != GTEXT_CSS_WIDE_NONE) {
-        const GTEXT_CSS_Custom_Value * other = NULL;
-        bool inherits = !reged || sub->cc->regs[ri].creg->inherits;
+        const css_rope * other = NULL;
+        const bool inherits = !er || er->creg->inherits;
         if (wide == GTEXT_CSS_WIDE_INITIAL || (wide == GTEXT_CSS_WIDE_UNSET && !inherits)) {
-          other = initial_cv;
+          other = keyword_initial ? css_cval_rope(keyword_initial) : NULL;
+        }
+        else if (in_fn) {
+          other = f->res[1].gi ? NULL : f->res[1].rope;   /* the calling context's value, asked above */
         }
         else {
-          other = parent_value(sub, nm->data, nm->length, reged ? (long)ri : -1);
+          const GTEXT_CSS_Custom_Value * pv = parent_value(sub, nm->data, nm->length, er ? (long)ri : -1);
+          other = pv ? css_cval_rope(pv) : NULL;
         }
         if (!other) {
           /* the other value is the guaranteed-invalid value: the query is true exactly when the property's computed value is too */
@@ -3981,7 +4035,7 @@ static int style_leaf(css_sub * sub, size_t fi, cleaf * leaf) {
         else {
           char * ot = NULL;
           size_t ol = 0;
-          st = css_rope_flatten(&sub->alloc, css_cval_rope(other), sub->max_bytes, &ot, &ol, NULL, NULL, &sub->work);
+          st = css_rope_flatten(&sub->alloc, other, sub->max_bytes, &ot, &ol, NULL, NULL, &sub->work);
           if (st == GTEXT_CSS_OK) {
             bool same = false;
             st = same_tokens(sub, vt, vl, ot, ol, &same);
@@ -3993,11 +4047,11 @@ static int style_leaf(css_sub * sub, size_t fi, cleaf * leaf) {
       else if (!value) {
         result = false;   /* the guaranteed-invalid value is no value a query can name */
       }
-      else if (reged && !sub->cc->regs[ri].creg->syntax->universal) {
+      else if (er && !er->creg->syntax->universal) {
         /* the value is read against the syntax and computed as the property's own values are */
         css_rope * cr = NULL;
         bool cycle = false;
-        st = compute_typed(sub, sub->cc->regs[ri].creg, wt, wl, false, &cr, &cycle);
+        st = compute_typed(sub, er->creg, wt, wl, false, &cr, &cycle);
         if (st == GTEXT_CSS_OK && cr && !cycle) {
           char * ct = NULL;
           size_t cl = 0;

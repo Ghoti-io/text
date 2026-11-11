@@ -718,4 +718,42 @@ TEST(CssFunctionEvalOom, EveryAllocationOfACallFailsCleanly) {
   EXPECT_EQ(fa.bad_frees, 0u);
 }
 
+// ---- style() in a function body ---------------------------------------------------------------------------------------------------------------------------------------------------
+
+// Mixins 1, "evaluate a custom function": "For each function parameter of custom function, create a custom property registration with the parameter's name, a syntax of the parameter type, an inherit flag of
+// "true", and no initial value", and "For each custom property registration of registrations except the registration with the name "result", set its initial value to the corresponding value in argument styles".
+// So a style() query in the body that names a parameter compares computed values of that syntax (Conditional 5: the value is "computed with respect to the query container", here the call's element), and
+// `initial` is the value the parameter has in the argument styles, `inherit` the value of the name in the calling context. The page css-mixins/functions/function-parameter-types.tentative.html (the first
+// four tests) and local-if-substitution.html ("CSS-wide keywords are interpreted locally").
+TEST(CssFunctionEval, AStyleQueryOfATypedParameterComparesComputedValuesOfItsType) {
+  FnWorld w("@function --f(--c <color>) { result: if(style(--c: red): PASS; else: FAIL); }\n"
+            "@function --g(--c <color>) { --c: #00f; result: if(style(--c: blue): PASS; else: FAIL); }\n"
+            "@function --h(--c <color>) { result: if(style(--c: blue): PASS; else: FAIL); }\n"
+            "@function --k(--n <number>) { result: if(style(--n: 1): PASS; else: FAIL); }");
+  EXPECT_EQ(custom_of(w, "--r: --f(#f00)", "--r"), "PASS") << "#f00 and red are one computed color";
+  EXPECT_EQ(custom_of(w, "--r: --g(#000)", "--r"), "PASS") << "a local variable that hides the parameter has its registration";
+  EXPECT_EQ(custom_of(w, "--r: --h(#f00)", "--r"), "FAIL");
+  EXPECT_EQ(custom_of(w, "--r: --k(1.0)", "--r"), "PASS");
+}
+
+TEST(CssFunctionEval, AStyleQueryNamingAnUnregisteredNameOfABodyComparesTokensWhateverTheContextRegisters) {
+  // `--x` is registered by the context as a <length>, and a function's local variable of the name is not registered there
+  FnWorld w("@function --f() { --x: 1PX; result: if(style(--x: 1px): SAME; else: DIFFERENT); }", {{"--x", "<length>", "0px"}});
+  EXPECT_EQ(custom_of(w, "--r: --f()", "--r"), "DIFFERENT") << "tokens, as for an unregistered property";
+}
+
+TEST(CssFunctionEval, TheCssWideKeywordsOfAStyleQueryAreReadInTheScopeOfTheFunction) {
+  // "CSS-wide keywords are interpreted locally": `initial` is the parameter's value in the argument styles (the default here), and `inherit` is the value of the name in the calling context
+  FnWorld w("@function --f(--c: green) { result: if(style(--c: initial): PASS; else: FAIL); }\n"
+            "@function --g() { --c: red; result: --f(); }\n"
+            "@function --h(--c: red) { --c: green; result: if(style(--c: inherit): PASS; else: FAIL); }\n"
+            "@function --i() { --c: green; result: --h(); }\n"
+            "@function --j(--c: red) { --c: green; result: if(style(--c: unset): PASS; else: FAIL); }\n"
+            "@function --k() { --c: green; result: --j(); }");
+  EXPECT_EQ(custom_of(w, "--r: --g()", "--r"), "PASS");
+  EXPECT_EQ(custom_of(w, "--r: --i()", "--r"), "PASS") << "the calling context's --c is green, as the local is";
+  EXPECT_EQ(custom_of(w, "--r: --k()", "--r"), "PASS") << "unset is inherit for a parameter, which inherits";
+  EXPECT_EQ(custom_of(w, "--c: blue; --r: --h()", "--r"), "FAIL") << "no --c in the caller: the element's is blue, which is not the local's green";
+}
+
 }  // namespace
