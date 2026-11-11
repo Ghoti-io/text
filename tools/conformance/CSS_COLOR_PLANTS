@@ -16,3 +16,4 @@ space-matrix-row-swapped	css_color_tables.c	  {0x1.9ed81a61e643ap+1, -0x1.8991f1
 tree-count-not-wired-into-the-color	css_compute_value.c	    cx.tree_count = color_tree_cb;	    cx.tree_count = NULL;	style,fixes
 tree-count-index-and-count-swapped	css_math.c	env->tree_count(env->user, index, &v)	env->tree_count(env->user, !index, &v)	math,style
 tree-count-always-answers-index	css_compute_value.c	  return css_st_sibling(user, index, value) == GTEXT_CSS_OK;	  return css_st_sibling(user, true, value) == GTEXT_CSS_OK;	style
+reading-mix-omitted-percent-is-clamped	css_color_serialize.c	#include "css_readings.h"	#include "css_readings.h"\n#undef GTEXT_CSS_READING_MIX_OMITTED_PERCENT_CLAMPED\n#define GTEXT_CSS_READING_MIX_OMITTED_PERCENT_CLAMPED 1	color

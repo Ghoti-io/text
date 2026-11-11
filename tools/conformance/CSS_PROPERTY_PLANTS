@@ -22,3 +22,5 @@ nan-steps-count-is-a-count	css_property.c	 || steps_count_is_nan(values, count) 
 
 the-prefixed-perspective-takes-no-number	css_property.c	        compat_mode = 1;	        compat_mode = 0;
 the-prefixed-transform-takes-no-number	css_property.c	        compat_mode = 2;	        compat_mode = 0;
+reading-param-needs-its-colon	css_grammar_match.c	#include "css_readings.h"	#include "css_readings.h"\n#undef GTEXT_CSS_READING_PARAM_COLON_OPTIONAL\n#define GTEXT_CSS_READING_PARAM_COLON_OPTIONAL 0
+reading-env-name-is-checked-when-read	css_value.c	#include "css_readings.h"	#include "css_readings.h"\n#undef GTEXT_CSS_READING_ENV_UNKNOWN_NAME_VALID\n#define GTEXT_CSS_READING_ENV_UNKNOWN_NAME_VALID 0
