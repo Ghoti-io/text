@@ -292,6 +292,9 @@ struct GTEXT_Decoder {
   size_t hist_off[GTEXT_ENCODING_RESTORE_MAX]; ///< Source map: offsets of the last items read, newest last ...
   uint8_t hist_val[GTEXT_ENCODING_RESTORE_MAX]; ///< ... and their values (a handler restores the last few).
   uint8_t hist_n;             ///< How many of the two are filled.
+  uint8_t restored[GTEXT_ENCODING_PUSHBACK]; ///< The standard's I/O queue after a fatal error in a call that did not flush: the bytes a handler put back (and any
+                              ///< the call had not yet read of its own held input), the top, which is read first, last.
+  uint8_t restored_n;         ///< How many of them; the next call reads them before its input, and clears them.
   void * map_block;           ///< The arrays `out.off` and `out.rep` point into, or NULL (track_offsets).
   GTEXT_Out out;              ///< The chunk buffer, the limit and the count of the stream.
 };
@@ -304,6 +307,7 @@ typedef struct {
   bool bom_found;               ///< A byte order mark was taken.
   size_t taken;                 ///< Bytes of the call's input taken, set when the call fails.
   size_t steps;                 ///< Handler steps taken.
+  size_t held;                  ///< Bytes kept for the next call after a fatal error (the restored bytes).
 } Call;
 
 static bool unicode_bom_encoding(GTEXT_Encoding e) {
@@ -311,8 +315,10 @@ static bool unicode_bom_encoding(GTEXT_Encoding e) {
 }
 
 /// Begin a stream: the state the decoder has when made, after a flush and after a failure. `keep_handler`: keep ISO-2022-JP's mode and nothing else of the
-/// handler (see gtext_decoder_decode() and gtext_encoding_iso_2022_jp_dec_resume()).
-static void stream_start(GTEXT_Decoder * dec, bool keep_handler) {
+/// handler (see gtext_decoder_decode() and gtext_encoding_iso_2022_jp_dec_resume()). `keep_restored`: keep the bytes a handler put back before a fatal error
+/// (`restored`), which the next call reads first; they are the first bytes of the new stream, so its positions count them, and nothing of it can begin with a
+/// byte order mark any more.
+static void stream_start(GTEXT_Decoder * dec, bool keep_handler, bool keep_restored) {
   dec->active = dec->requested;
   dec->codec = gtext_encoding_dec_codec(dec->active);
   if (!keep_handler) {
@@ -320,9 +326,12 @@ static void stream_start(GTEXT_Decoder * dec, bool keep_handler) {
   } else {
     gtext_encoding_iso_2022_jp_dec_resume(&dec->state);
   }
-  dec->pos = 0;
+  if (!keep_restored) {
+    dec->restored_n = 0;
+  }
+  dec->pos = dec->restored_n;
   dec->held_n = 0;
-  dec->sniff_pending = dec->opts.bom_sniffing;
+  dec->sniff_pending = dec->opts.bom_sniffing && dec->restored_n == 0;
   dec->strip_pending = !dec->opts.bom_sniffing && dec->opts.bom_removal && unicode_bom_encoding(dec->active);
   dec->finished = false;
   dec->seq_start = 0;
@@ -375,6 +384,14 @@ static void run_items(GTEXT_Decoder * dec, const unsigned char * in, size_t len,
      870,838 times in testEncodingCjk (found by the Phase 3k run of the Valgrind gate, which no sanitizer of this build sees). */
   size_t pb_off[GTEXT_ENCODING_PUSHBACK] = {0};
   size_t pb_n = 0;
+  /* The bytes a fatal error of the last call put back are the first items of this one (the standard's I/O queue outlives the error): the stack takes them,
+     the top first, at the offsets 0, 1, ... that the new stream gives them. */
+  for (size_t k = 0; k < dec->restored_n; k++) { /* (`restored` is a stack as well: its last entry is the first byte of the stream) */
+    pb[pb_n] = dec->restored[k];
+    pb_off[pb_n] = (size_t)(dec->restored_n - 1 - k);
+    pb_n++;
+  }
+  dec->restored_n = 0;
   size_t i = 0;
   size_t offset = dec->pos;
   const bool track = dec->out.off != NULL; /* a source map was asked for */
@@ -384,6 +401,7 @@ static void run_items(GTEXT_Decoder * dec, const unsigned char * in, size_t len,
     if (pb_n > 0) {
       byte = pb[--pb_n];
       item_off = pb_off[pb_n];
+      offset = item_off;
     } else if (i < len) {
       if (codec->idle && codec->idle(&dec->state)) {
         size_t j = i;
@@ -479,6 +497,25 @@ static void run_items(GTEXT_Decoder * dec, const unsigned char * in, size_t len,
       call->status = GTEXT_ENCODING_E_MALFORMED;
       call->error_offset = offset;
       call->taken = taken_base + (count_in ? i : 0);
+      /* What the standard keeps in its I/O queue when the error is thrown: the items not yet read (a stack of what earlier steps restored, and this
+         step's own restore on top of it) and, when `in` is the decoder's own copy of held bytes and not the caller's input, the rest of it, below.
+         A caller keeps the rest of its own input, which `taken` says where it begins. */
+      const size_t tail = count_in ? 0 : len - i;
+      if (tail + pb_n + step.restore_n > sizeof dec->restored) {
+        call->status = GTEXT_ENCODING_E_INTERNAL; /* a defect of a handler (see GTEXT_ENCODING_PUSHBACK), not a shorter queue */
+        return;
+      }
+      size_t n = 0;
+      for (size_t k = len; k > len - tail; k--) {
+        dec->restored[n++] = in[k - 1];
+      }
+      for (size_t k = 0; k < pb_n; k++) { /* (none of the standard's handlers errors on a byte it restored, so this is empty for them: the queue is kept whole for one that does) */
+        dec->restored[n++] = pb[k];
+      }
+      for (size_t k = step.restore_n; k > 0; k--) {
+        dec->restored[n++] = step.restore[k - 1];
+      }
+      dec->restored_n = (uint8_t)n;
       return;
     }
     /* A handler that restores more than it read is a defect: reported before the replacement is delivered, not after. */
@@ -650,6 +687,7 @@ static void fill_result(GTEXT_Decoder_Result * result, GTEXT_Encoding_Status sta
     result->error_offset = call->error_offset;
     result->bom_found = call->bom_found;
     result->steps = call->steps;
+    result->held_bytes = call->held;
   }
   result->output_bytes = output_bytes;
 }
@@ -696,7 +734,7 @@ GTEXT_Encoding_Status gtext_decoder_new(GTEXT_Encoding encoding, const GTEXT_Dec
     dec->out.rep = (unsigned char *)dec->map_block + GTEXT_ENCODING_CHUNK * sizeof(size_t);
     dec->out.wid = dec->out.rep + GTEXT_ENCODING_CHUNK;
   }
-  stream_start(dec, false);
+  stream_start(dec, false, false);
   *out = dec;
   return GTEXT_ENCODING_OK;
 }
@@ -712,7 +750,7 @@ void gtext_decoder_free(GTEXT_Decoder * decoder) {
 
 void gtext_decoder_reset(GTEXT_Decoder * decoder) {
   if (decoder) {
-    stream_start(decoder, false);
+    stream_start(decoder, false, false);
   }
 }
 
@@ -746,13 +784,15 @@ static GTEXT_Encoding_Status decode_call(GTEXT_Decoder * dec, const void * in, s
     fill_result(result, status, used, &call, delivered);
     return status;
   }
+  call.held = status == GTEXT_ENCODING_E_MALFORMED && !flush ? dec->restored_n : 0;
   fill_result(result, status, used, &call, delivered);
   /* The stream is over (a flush or a failure) and the next call begins a new one - with one exception the standard's own tests insist on: "ISO-2022-JP ... is
      the only decoder which does not clear internal state before throwing in stream mode", so after a fatal error in a call that did not flush, its handler
      goes on in the mode it was in (the Roman or katakana state an escape sequence selected). The other encodings start over, as before: their handlers clear their
      own state when they return an error (all but `replacement`'s, whose first error would then be the last); the driver's own state (positions, byte order mark
      handling, the count of output) always starts over. */
-  stream_start(dec, status == GTEXT_ENCODING_E_MALFORMED && !flush && dec->active == GTEXT_ENCODING_ISO_2022_JP);
+  const bool fatal_in_stream = status == GTEXT_ENCODING_E_MALFORMED && !flush;
+  stream_start(dec, fatal_in_stream && dec->active == GTEXT_ENCODING_ISO_2022_JP, fatal_in_stream);
   return status;
 }
 

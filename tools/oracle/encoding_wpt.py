@@ -116,19 +116,11 @@ NOT_RUN_DIRECTORIES = OrderedDict([
     ("streams", "TextDecoderStream and TextEncoderStream: the Streams API"),
     ("resources", "helpers of the tests, not tests"),
 ])
-# Tests of the suite that this library fails and is known to fail, by file and test name, with the reason. The run requires each of them to fail (a listed test that passes is
+# Tests of the suite that this library fails and is known to fail, by file and test name, with the reason (none now: the one that was listed, the bytes a fatal error in stream mode
+# puts back, passes since the decoder keeps them). The run requires each of them to fail (a listed test that passes is
 # a stale line and fails the run: the plant `stale-known-failure` shows it), and counts it as failed in tools/oracle/encoding_wpt_expected.txt, so a second failure in the
 # file, or this one passing, changes a number that is read. Nothing else is excused.
-KNOWN_FAILURES = {
-    "textdecoder-mistakes.any.js": OrderedDict([
-        ("EUC-JP JIS0212 state after a fatal streaming error",
-         "the page puts `8F A2 20` through a fatal TextDecoder in stream mode, which throws, and reads `A1 A1` next, expecting ' \\u3000': the byte the EUC-JP handler put back "
-         "(the standard's `restore byte to ioQueue`, which is the 0x20) is still in the decoder's I/O queue, because decode() does not clear it before it throws. This library's "
-         "decoder starts a new stream after a fatal error (its documented behavior, which the page's other cases of a thrown error agree with) and counts the restored byte as "
-         "taken (`input_bytes` is up to and including the byte at which the failure was found), so the byte is gone and the next call gives U+3000 alone. What the standard keeps "
-         "(the restored bytes, and whatever follows in the input) is not something the decoder can hand back; the fix is a change of the decoder's contract, specified as G8"),
-    ]),
-}
+KNOWN_FAILURES = {}
 # The HTML pages that are tests and are not run, with the reason (a page that includes testharness.js and is neither emulated by wpt.mjs nor here fails the run).
 NOT_RUN_PAGES = OrderedDict([
     ("bom-handling.html", "the browser's loader: `document.characterSet` of a page that starts with a byte order mark"),

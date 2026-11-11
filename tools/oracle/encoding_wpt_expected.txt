@@ -25,7 +25,7 @@ textdecoder-fatal-streaming.any.js	2	0
 textdecoder-fatal.any.js	36	0
 textdecoder-ignorebom.any.js	4	0
 textdecoder-labels.any.js	222	0
-textdecoder-mistakes.any.js	107	1
+textdecoder-mistakes.any.js	108	0
 textdecoder-streaming.any.js	32	0
 textdecoder-utf16-surrogates.any.js	10	0
 textencoder-constructor-non-utf.any.js	79	0

@@ -619,7 +619,8 @@ TEST(EncodingDecodeFatal, TheOffsetOfTheByteAtWhichTheErrorWasFound) {
     EXPECT_EQ(c.bytes, heart + heart);
     gtext_decoder_free(d);
   }
-  // A failure part-way through a stream starts the next stream afresh, whatever was held.
+  // A failure part-way through a stream starts the next stream afresh, whatever the decoder held of a sequence in progress (the byte it put back is another matter:
+  // the next test). Here the byte put back is the 0xFF itself, which is no lead byte either, so the second call fails on it and not on 0xAC.
   {
     GTEXT_Decoder * d = nullptr;
     ASSERT_EQ(gtext_decoder_new(GTEXT_ENCODING_UTF_8, &fatal, &d), GTEXT_ENCODING_OK);
@@ -630,6 +631,112 @@ TEST(EncodingDecodeFatal, TheOffsetOfTheByteAtWhichTheErrorWasFound) {
     EXPECT_EQ(gtext_decoder_decode(d, "\xAC", 1, true, &sink, nullptr), GTEXT_ENCODING_E_MALFORMED); // not the rest of the old one
     gtext_decoder_free(d);
   }
+}
+
+// The Encoding Standard's TextDecoder throws a fatal error without clearing its I/O queue, so what a handler put back ("restore byte to ioQueue") is read by the
+// next decode() call. Hand-checked cases for the encodings that are not multi-byte legacy ones (those are in test-encoding-cjk.cpp, against the model).
+TEST(EncodingDecodeFatal, TheByteAHandlerPutBackIsReadByTheNextCallAndCountedInItsOffsets) {
+  GTEXT_Decoder_Options fatal = decoder_options(GTEXT_DECODER_FATAL);
+  auto call = [](GTEXT_Decoder * d, const std::string & in, bool flush, std::string * out, GTEXT_Decoder_Result * r) {
+    Collect c;
+    GTEXT_Encoding_Sink sink = sink_of(c);
+    const GTEXT_Encoding_Status st = gtext_decoder_decode(d, in.data(), in.size(), flush, &sink, r);
+    *out = c.bytes;
+    return st;
+  };
+  GTEXT_Decoder * d = nullptr;
+  std::string out;
+  GTEXT_Decoder_Result r;
+  // UTF-8: E2 is a lead byte that needs two more, 41 is not one: the error is found at 41, which is put back. The next call reads it first.
+  ASSERT_EQ(gtext_decoder_new(GTEXT_ENCODING_UTF_8, &fatal, &d), GTEXT_ENCODING_OK);
+  EXPECT_EQ(call(d, bytes_of({0xE2, 0x41, 0x42}), false, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(r.error_offset, 1u);
+  EXPECT_EQ(r.input_bytes, 2u);  // the byte at which it was found is taken, the 0x42 after it is the caller's
+  EXPECT_EQ(r.held_bytes, 1u);   // the 0x41, which is the first byte of the next call's stream
+  EXPECT_EQ(call(d, "B", true, &out, &r), GTEXT_ENCODING_OK);
+  EXPECT_EQ(out, "AB");
+  EXPECT_EQ(r.held_bytes, 0u);
+  EXPECT_EQ(r.input_bytes, 1u);  // the bytes of the call's own input only
+  // The offsets count the held byte first: it is offset 0, the input's first byte is offset 1.
+  EXPECT_EQ(call(d, bytes_of({0xE2, 0x41}), false, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(call(d, bytes_of({0xFF}), true, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(out, "A");
+  EXPECT_EQ(r.error_offset, 1u);
+  EXPECT_EQ(r.input_bytes, 1u);
+  // An error found in the held bytes themselves is counted at their own offset, and its own restore is kept in turn.
+  EXPECT_EQ(call(d, bytes_of({0xE2, 0xE2}), false, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(r.held_bytes, 1u);
+  EXPECT_EQ(call(d, bytes_of({0x82, 0xAC, 0x41}), false, &out, &r), GTEXT_ENCODING_OK); // E2 82 AC: the euro sign, and A
+  EXPECT_EQ(out, bytes_of({0xE2, 0x82, 0xAC, 'A'}));
+  // A flush ends the stream and nothing is kept: the call that flushes reports no held bytes, and the next is a stream of its own.
+  EXPECT_EQ(call(d, bytes_of({0xE2, 0x41}), true, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(r.held_bytes, 0u);
+  EXPECT_EQ(call(d, "B", true, &out, &r), GTEXT_ENCODING_OK);
+  EXPECT_EQ(out, "B");
+  // gtext_decoder_reset() abandons them.
+  EXPECT_EQ(call(d, bytes_of({0xE2, 0x41}), false, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  gtext_decoder_reset(d);
+  EXPECT_EQ(call(d, "B", true, &out, &r), GTEXT_ENCODING_OK);
+  EXPECT_EQ(out, "B");
+  // A call that is refused for its arguments does not touch the stream: the held byte is still there.
+  EXPECT_EQ(call(d, bytes_of({0xE2, 0x41}), false, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(gtext_decoder_decode(d, nullptr, 1, false, nullptr, &r), GTEXT_ENCODING_E_INVALID);
+  EXPECT_EQ(call(d, "B", true, &out, &r), GTEXT_ENCODING_OK);
+  EXPECT_EQ(out, "AB");
+  // A failure that is not an error of the data (an output limit) abandons the stream, held bytes with it.
+  gtext_decoder_free(d);
+  GTEXT_Decoder_Options limited = fatal;
+  limited.max_output_bytes = 2;
+  ASSERT_EQ(gtext_decoder_new(GTEXT_ENCODING_UTF_8, &limited, &d), GTEXT_ENCODING_OK);
+  EXPECT_EQ(call(d, bytes_of({0xE2, 0x41}), false, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(call(d, "abc", false, &out, &r), GTEXT_ENCODING_E_LIMIT_OUTPUT);
+  EXPECT_EQ(out, "Aa");
+  EXPECT_EQ(call(d, "x", true, &out, &r), GTEXT_ENCODING_OK);
+  EXPECT_EQ(out, "x");
+  gtext_decoder_free(d);
+  // UTF-16LE: a lead surrogate followed by a unit that is not a trail one puts the two bytes of that unit back (in the order the next call reads them).
+  ASSERT_EQ(gtext_decoder_new(GTEXT_ENCODING_UTF_16LE, &fatal, &d), GTEXT_ENCODING_OK);
+  EXPECT_EQ(call(d, bytes_of({0x00, 0xD8, 0x41, 0x00}), false, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(r.error_offset, 3u);
+  EXPECT_EQ(r.held_bytes, 2u);
+  EXPECT_EQ(call(d, "", true, &out, &r), GTEXT_ENCODING_OK);
+  EXPECT_EQ(out, "A");
+  gtext_decoder_free(d);
+  // UTF-16BE likewise.
+  ASSERT_EQ(gtext_decoder_new(GTEXT_ENCODING_UTF_16BE, &fatal, &d), GTEXT_ENCODING_OK);
+  EXPECT_EQ(call(d, bytes_of({0xD8, 0x00, 0x00, 0x41}), false, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(r.held_bytes, 2u);
+  EXPECT_EQ(call(d, "", true, &out, &r), GTEXT_ENCODING_OK);
+  EXPECT_EQ(out, "A");
+  gtext_decoder_free(d);
+  // A single-byte decoder restores nothing, so nothing is held; a replacement-mode decoder never fails on the data.
+  ASSERT_EQ(gtext_decoder_new(GTEXT_ENCODING_ISO_8859_3, &fatal, &d), GTEXT_ENCODING_OK);
+  EXPECT_EQ(call(d, bytes_of({0xA5}), false, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(r.held_bytes, 0u);
+  gtext_decoder_free(d);
+  ASSERT_EQ(gtext_decoder_new(GTEXT_ENCODING_UTF_8, nullptr, &d), GTEXT_ENCODING_OK);
+  EXPECT_EQ(call(d, bytes_of({0xE2, 0x41}), false, &out, &r), GTEXT_ENCODING_OK);
+  EXPECT_EQ(r.held_bytes, 0u);
+  gtext_decoder_free(d);
+  // With byte order mark sniffing: bytes held after an error are in the middle of a stream, and a mark can only begin one, so what follows is not sniffed
+  // (U+FEFF is an ordinary character there).
+  GTEXT_Decoder_Options sniff = fatal;
+  sniff.bom_sniffing = true;
+  ASSERT_EQ(gtext_decoder_new(GTEXT_ENCODING_UTF_8, &sniff, &d), GTEXT_ENCODING_OK);
+  EXPECT_EQ(call(d, bytes_of({'a', 0xE2, 0x41}), false, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(call(d, bytes_of({0xEF, 0xBB, 0xBF, 'b'}), true, &out, &r), GTEXT_ENCODING_OK);
+  EXPECT_EQ(out, "A" + bytes_of({0xEF, 0xBB, 0xBF}) + "b");
+  gtext_decoder_free(d);
+  // The bytes held for a possible mark belong to the decoder, not to the caller, who handed them over: a fatal error among them keeps the ones it had not read.
+  // (0xFE is no Shift_JIS byte, so the error is at the first of the two held bytes, and the 0x41 after it is still to be read.)
+  ASSERT_EQ(gtext_decoder_new(GTEXT_ENCODING_SHIFT_JIS, &sniff, &d), GTEXT_ENCODING_OK);
+  EXPECT_EQ(call(d, bytes_of({0xFE, 0x41}), false, &out, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(r.error_offset, 0u);
+  EXPECT_EQ(r.input_bytes, 2u);
+  EXPECT_EQ(r.held_bytes, 1u);
+  EXPECT_EQ(call(d, "B", true, &out, &r), GTEXT_ENCODING_OK);
+  EXPECT_EQ(out, "AB");
+  gtext_decoder_free(d);
 }
 
 TEST(EncodingDecodeFatal, ReplacementsAreCountedAndFlushStartsOver) {

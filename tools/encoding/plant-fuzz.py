@@ -25,7 +25,7 @@ this repository in a scratch directory (the working tree is never touched), and 
 (60 seconds by default, the same `FUZZ_TIME` the Makefile's fuzz-run-* targets use), or, if the defect has a recorded reproducer (REPRODUCERS), over that
 file with -runs=0, which is the same every time. It must stop with a report. The **control** is the same run with no edit, and it must not.
 
-Twenty-two plants are replayed from a recorded input (the files `reproducer-*.seed` of tests/fuzz/corpus/encoding, which `make test` replays as well), so the
+Thirty-one plants are replayed from a recorded input (the files `reproducer-*.seed` of tests/fuzz/corpus/encoding, which `make test` replays as well), so the
 check is the same every time: that shows the harness *can* see the defect, not that the search reaches it. Nine are deliberately **searched for** from the
 seeds, the way a real find would be: if the search stops finding them quickly the check fails.
 
@@ -53,6 +53,11 @@ replayed:
   cjk-eucjp-0212-flag-kept   EUC-JP's "jis0212" survives a character (the model).
   cjk-iso-flush-escape       the escape written when ISO-2022-JP's input ends in the jis0208 or Roman state is the Roman one (the model).
   cjk-iso-reference-escape   a reference is written in the jis0208 state without the escape back to ASCII before it (the model).
+  cjk-fatal-drops-restored-bytes   the bytes a handler put back before a fatal error are not kept for the next call (the model's queue).
+  cjk-fatal-restored-bytes-reversed   they are read in the wrong order (gb18030's three).
+  cjk-fatal-restored-bytes-not-counted   the next call's offsets do not count them.
+  cjk-fatal-forgets-own-restore   the failing step's own restore is not kept.
+  cjk-fatal-held-not-reported   the result's `held_bytes` is not set.
 
 searched (from the seeds: the corpus is replayed first, and the seeds of the multi-byte encodings reach these):
 
@@ -107,7 +112,7 @@ PLANTS = {
     "utf16-trail-range": ("src/encoding/encoding_decode.c", "    if (code_unit >= 0xDC00 && code_unit <= 0xDFFF) {\n      out->cp[0] = 0x10000", "    if (code_unit >= 0xDC00 && code_unit <= 0xDFFE) {\n      out->cp[0] = 0x10000"),
     "x-user-defined-offset": ("src/encoding/encoding_decode.c", "0xF780u + (uint32_t)byte - 0x80u", "0xF781u + (uint32_t)byte - 0x80u"),
     "decoder-not-reset-after-flush": ("src/encoding/encoding_decode.c",
-                                      "  stream_start(dec, status == GTEXT_ENCODING_E_MALFORMED && !flush && dec->active == GTEXT_ENCODING_ISO_2022_JP);\n  return status;",
+                                      "  const bool fatal_in_stream = status == GTEXT_ENCODING_E_MALFORMED && !flush;\n  stream_start(dec, fatal_in_stream && dec->active == GTEXT_ENCODING_ISO_2022_JP, fatal_in_stream);\n  return status;",
                                       "  return status;"),
     "bom-removal-strips-every-mark": ("src/encoding/encoding_decode.c", "    dec->strip_pending = false;\n    if (cp == 0xFEFF) {", "    if (cp == 0xFEFF) {"),
     "encoder-malformed-not-counted": ("src/encoding/encoding_encode.c", "    call->replacements++;\n    if (!encode_cp(enc, 0xFFFD, true, call)) {", "    if (!encode_cp(enc, 0xFFFD, true, call)) {"),
@@ -132,7 +137,10 @@ for _name, _oracle in (("cjk-gb18030-restore-two", "gb18030-restore-two"), ("cjk
                        ("cjk-iso-reference-escape", "iso-enc-no-escape-before-reference"), ("cjk-euc-kr-trail-lower", "euc-kr-trail-lower"),
                        ("cjk-big5-trail-offset", "big5-trail-offset"), ("cjk-gb18030-ranges-gap", "gb18030-ranges-gap"),
                        ("cjk-iso-resume-keeps-all", "iso-resume-keeps-the-whole-handler"), ("cjk-iso-resume-keeps-escape", "iso-resume-keeps-a-half-read-escape"),
-                       ("cjk-iso-resume-keeps-output-flag", "iso-resume-keeps-the-output-flag"), ("cjk-iso-fatal-names-fffd", "iso-fatal-status-names-u-fffd")):
+                       ("cjk-iso-resume-keeps-output-flag", "iso-resume-keeps-the-output-flag"), ("cjk-iso-fatal-names-fffd", "iso-fatal-status-names-u-fffd"),
+                       ("cjk-fatal-drops-restored-bytes", "restored-bytes-dropped-after-a-fatal-error"), ("cjk-fatal-restored-bytes-reversed", "restored-bytes-read-in-reverse"),
+                       ("cjk-fatal-restored-bytes-not-counted", "restored-bytes-not-counted-in-offsets"),
+                       ("cjk-fatal-forgets-own-restore", "fatal-error-forgets-the-restore-of-its-own-step"), ("cjk-fatal-held-not-reported", "held-bytes-not-reported")):
     PLANTS[_name] = _oracle_plant(_oracle)
 for _name, (_f, _old, _new) in list(PLANTS.items()):
     PLANTS[_name] = (_f, _old.replace("\\n", "\n"), _new.replace("\\n", "\n"))
@@ -187,6 +195,11 @@ REPRODUCERS = {
     "cjk-iso-resume-keeps-all": "tests/fuzz/corpus/encoding/reproducer-cjk-iso-resume-after-fatal.seed",
     "cjk-iso-resume-keeps-escape": "tests/fuzz/corpus/encoding/reproducer-cjk-iso-resume-after-fatal.seed",
     "cjk-iso-resume-keeps-output-flag": "tests/fuzz/corpus/encoding/reproducer-cjk-iso-resume-output-flag.seed",
+    "cjk-fatal-drops-restored-bytes": "tests/fuzz/corpus/encoding/reproducer-cjk-fatal-restored-byte.seed",
+    "cjk-fatal-restored-bytes-reversed": "tests/fuzz/corpus/encoding/reproducer-cjk-fatal-restored-three-bytes.seed",
+    "cjk-fatal-restored-bytes-not-counted": "tests/fuzz/corpus/encoding/reproducer-cjk-fatal-restored-byte.seed",
+    "cjk-fatal-forgets-own-restore": "tests/fuzz/corpus/encoding/reproducer-cjk-fatal-restored-byte.seed",
+    "cjk-fatal-held-not-reported": "tests/fuzz/corpus/encoding/reproducer-cjk-fatal-restored-byte.seed",
 }
 
 

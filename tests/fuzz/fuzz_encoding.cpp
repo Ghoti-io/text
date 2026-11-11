@@ -36,10 +36,11 @@
  * and the offset of the error, the points at which an output limit may cut (a Big5 pair of code points is not cut), and the encoder's output in all three modes,
  * with the code point and the offset of a failure and the places a limit may cut (the escape sequences of ISO-2022-JP are not cut).
  * That includes `bom_sniffing`: a mark makes the decoder the UTF one it names and the UTF reference decodes what follows it; no mark leaves the model of the
- * encoding asked for, over the whole input. And, for ISO-2022-JP in fatal mode, the state across a failure: the input is cut (at every place of a short one, at
+ * encoding asked for, over the whole input. And, for the multi-byte encodings in fatal mode, the state across a failure: the input is cut (at every place of a short one, at
  * eight of a long one), and when the first piece fails with a fatal error in a call that does not flush the second, decoded by the same decoder, must equal the
- * model begun in the mode the failure left (tests/encoding_cjk_model.h, ModelDecoded::iso_mode) - a half-read escape, a leading byte or the output flag that
- * survived would show. The fatal status of the encoder names the code point that was handled (for ISO-2022-JP the control, not U+FFFD), and the HTML mode's
+ * model begun in the mode the failure left (tests/encoding_cjk_model.h, ModelDecoded::iso_mode) and with the queue it left (ModelDecoded::held: the bytes the
+ * handler put back, which the standard's decode() does not clear) - a half-read escape, a leading byte or the output flag that survived would show, and so
+ * would a restored byte that was dropped. The fatal status of the encoder names the code point that was handled (for ISO-2022-JP the control, not U+FFFD), and the HTML mode's
  * reference is the one the standard returns.
  *
  * The properties, for the decoder:
@@ -252,10 +253,11 @@ Out decode_with(GTEXT_Encoding e, const GTEXT_Decoder_Options & o, const std::st
   return out;
 }
 
-// ISO-2022-JP's decoder after a fatal error in a call that did not flush: the next call decodes as the model does from the mode the failure left, with
-// nothing else of the old state (tests/encoding_cjk_model.h: ModelDecoded::iso_mode). The input is cut at a random place; when the first piece fails, the
-// second is decoded by the same decoder, and it must equal the model begun in that mode (a stale escape, leading byte or output flag shows).
-void check_iso_resume_at(const Ctx & ctx, const GTEXT_Decoder_Options & o, const std::string & in, size_t cut) {
+// A multi-byte decoder after a fatal error in a call that did not flush: the next call decodes as the model does from the mode the failure left (ISO-2022-JP's;
+// tests/encoding_cjk_model.h: ModelDecoded::iso_mode) with the queue the failure left (the bytes the handler put back, ModelDecoded::held, which the next call
+// reads first and counts in its offsets) and nothing else of the old state. The input is cut at a random place; when the first piece fails, the second is decoded
+// by the same decoder, and it must equal the model begun so (a stale escape, leading byte or output flag shows; so does a restored byte that was dropped).
+void check_iso_resume_at(const Ctx & ctx, GTEXT_Encoding enc, const GTEXT_Decoder_Options & o, const std::string & in, size_t cut) {
   const std::string a = in.substr(0, cut), b = in.substr(cut);
   if (o.bom_sniffing) {
     // A first byte that could begin a mark is held until the sniff decides, so the first call may not fail yet; and a second stream that begins with a mark
@@ -265,14 +267,14 @@ void check_iso_resume_at(const Ctx & ctx, const GTEXT_Decoder_Options & o, const
       return;
     }
   }
-  const ModelDecoded fa = model_decode(GTEXT_ENCODING_ISO_2022_JP, reinterpret_cast<const unsigned char *>(a.data()), a.size(), true);
+  const ModelDecoded fa = model_decode(enc, reinterpret_cast<const unsigned char *>(a.data()), a.size(), true);
   // (a failure of the first piece, as it would be without the end of the queue: the model is run over the piece alone, with the end of the queue, so only
   // a piece whose failure is before its last byte is certain to be a failure of the unfinished call)
   if (!fa.failed || fa.error_offset >= a.size()) {
     return;
   }
   GTEXT_Decoder * d = nullptr;
-  ctx.check(gtext_decoder_new(GTEXT_ENCODING_ISO_2022_JP, &o, &d) == GTEXT_ENCODING_OK, "decoder: new failed");
+  ctx.check(gtext_decoder_new(enc, &o, &d) == GTEXT_ENCODING_OK, "decoder: new failed");
   Collect c1;
   GTEXT_Encoding_Sink s1 = sink_of(c1);
   GTEXT_Decoder_Result r1;
@@ -282,7 +284,8 @@ void check_iso_resume_at(const Ctx & ctx, const GTEXT_Decoder_Options & o, const
   GTEXT_Decoder_Result r2;
   const GTEXT_Encoding_Status st = gtext_decoder_decode(d, b.data(), b.size(), true, &s2, &r2);
   gtext_decoder_free(d);
-  const ModelDecoded fb = model_decode(GTEXT_ENCODING_ISO_2022_JP, reinterpret_cast<const unsigned char *>(b.data()), b.size(), true, fa.iso_mode);
+  ctx.check(r1.held_bytes == fa.held.size(), "decoder: the bytes kept after a failure are not the model's queue", std::to_string(r1.held_bytes) + " vs " + std::to_string(fa.held.size()));
+  const ModelDecoded fb = model_decode(enc, reinterpret_cast<const unsigned char *>(b.data()), b.size(), true, fa.iso_mode, fa.held);
   ctx.check((st == GTEXT_ENCODING_E_MALFORMED) == fb.failed, "decoder: after a failure, the next call's verdict is not the model's from the mode it left");
   ctx.check(c2.bytes == utf8_of_cps(fb.cps), "decoder: after a failure, the next call's output is not the model's from the mode it left", show(c2.bytes) + " vs " + show(utf8_of_cps(fb.cps)));
   if (fb.failed) {
@@ -291,14 +294,14 @@ void check_iso_resume_at(const Ctx & ctx, const GTEXT_Decoder_Options & o, const
 }
 
 // ... at every cut of a short input, and at a few random ones of a long one.
-void check_iso_resume(const Ctx & ctx, const GTEXT_Decoder_Options & o, const std::string & in, Rng & rng) {
+void check_iso_resume(const Ctx & ctx, GTEXT_Encoding enc, const GTEXT_Decoder_Options & o, const std::string & in, Rng & rng) {
   if (in.size() <= 48) {
     for (size_t cut = 0; cut <= in.size(); cut++) {
-      check_iso_resume_at(ctx, o, in, cut);
+      check_iso_resume_at(ctx, enc, o, in, cut);
     }
   } else {
     for (int k = 0; k < 8; k++) {
-      check_iso_resume_at(ctx, o, in, rng.next() % (in.size() + 1));
+      check_iso_resume_at(ctx, enc, o, in, rng.next() % (in.size() + 1));
     }
   }
 }
@@ -400,8 +403,8 @@ void check_decoder(const Ctx & ctx, GTEXT_Encoding e, unsigned o1, unsigned o3, 
         }
       }
     }
-    if (e == GTEXT_ENCODING_ISO_2022_JP && (o1 & 1)) {
-      check_iso_resume(ctx, o, in, rng);
+    if (o1 & 1) {
+      check_iso_resume(ctx, e, o, in, rng);
     }
   } else if (gtext_encoding_is_supported(e) && !o.bom_sniffing) {
     // One byte at a time as separate streams is the model of the encodings without state.

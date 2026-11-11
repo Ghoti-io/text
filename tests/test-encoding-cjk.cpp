@@ -1100,42 +1100,49 @@ TEST(EncodingCjkDecode, Iso2022JpGoesOnInItsModeAfterAFatalErrorInACallThatDidNo
   gtext_decoder_free(d);
 }
 
-// What of ISO-2022-JP's decoder survives a fatal error in a call that did not flush: the mode (the decoder output state) and nothing else. The served handler
-// (12.2.1) is switched on the decoder state and carries three more variables: the leading byte, the output flag and the output state itself. Each case runs a
-// first call that fails with a given state and a second call (a flush) that tells which state the decoder is in.
+// What of ISO-2022-JP's decoder survives a fatal error in a call that did not flush: the mode (the decoder output state), and the I/O queue: the bytes the
+// handler put back ("restore byte to ioQueue"), which the next call reads before its input. The served handler (12.2.1) is switched on the decoder state and
+// carries three more variables: the leading byte, the output flag and the output state itself; only the last is kept. Each case runs a first call that fails
+// with a given state and a second call (a flush) that tells which state the decoder is in and which bytes it holds.
 TEST(EncodingCjkDecode, Iso2022JpWhichStateSurvivesAFatalErrorInACallThatDidNotFlush) {
   struct Case {
     const char * name;
     std::vector<int> first;     // the bytes of the call that fails (fatal mode, no flush) ...
     size_t error_offset;        // ... at this offset ...
+    std::vector<int> held;      // ... leaving these bytes in the I/O queue (the handler's restore) ...
     std::vector<int> second;    // ... and the bytes of the call after it (a flush) ...
-    std::vector<uint32_t> want; // ... which decode to these code points, the decoder having begun in the mode the failure left, with nothing else of the old state.
+    std::vector<uint32_t> want; // ... which decode to these code points, the decoder having begun in the mode the failure left, with nothing else of the old state ...
+    int second_error;           // ... or, when it is not -1, fail at this offset (the held bytes count first) with nothing written.
     int mode;                   // the model's name for the mode the failure left (0 ASCII, 1 Roman, 2 katakana, 3 JIS X 0208)
   };
   const std::vector<Case> cases = {
     // The mode states: the error is in the state, and the state is the mode.
-    {"ASCII: a byte above 0x7F", {0x41, 0xFF}, 1, {0x7E, 0x5C}, {0x7E, 0x5C}, 0},
-    {"ASCII: 0x0E", {0x0E}, 0, {0x7E}, {0x7E}, 0},
-    {"Roman: a byte above 0x7F", {0x1B, 0x28, 0x4A, 0xFF}, 3, {0x7E, 0x5C}, {0x203E, 0xA5}, 1},
-    {"Roman: 0x0F", {0x1B, 0x28, 0x4A, 0x0F}, 3, {0x5C}, {0xA5}, 1},
-    {"katakana: a byte outside 0x21 to 0x5F", {0x1B, 0x28, 0x49, 0x20}, 3, {0x42}, {0xFF82}, 2},
-    {"jis0208, between characters: a byte above 0x7F", {0x1B, 0x24, 0x42, 0x21, 0x21, 0xFF}, 5, {0x21, 0x21, 0x21, 0x21}, {0x3000, 0x3000}, 3},
-    {"jis0208, between characters: the other escape for it (ESC $ @)", {0x1B, 0x24, 0x40, 0x80}, 3, {0x21, 0x21}, {0x3000}, 3},
+    {"ASCII: a byte above 0x7F", {0x41, 0xFF}, 1, {}, {0x7E, 0x5C}, {0x7E, 0x5C}, -1, 0},
+    {"ASCII: 0x0E", {0x0E}, 0, {}, {0x7E}, {0x7E}, -1, 0},
+    {"Roman: a byte above 0x7F", {0x1B, 0x28, 0x4A, 0xFF}, 3, {}, {0x7E, 0x5C}, {0x203E, 0xA5}, -1, 1},
+    {"Roman: 0x0F", {0x1B, 0x28, 0x4A, 0x0F}, 3, {}, {0x5C}, {0xA5}, -1, 1},
+    {"katakana: a byte outside 0x21 to 0x5F", {0x1B, 0x28, 0x49, 0x20}, 3, {}, {0x42}, {0xFF82}, -1, 2},
+    {"jis0208, between characters: a byte above 0x7F", {0x1B, 0x24, 0x42, 0x21, 0x21, 0xFF}, 5, {}, {0x21, 0x21, 0x21, 0x21}, {0x3000, 0x3000}, -1, 3},
+    {"jis0208, between characters: the other escape for it (ESC $ @)", {0x1B, 0x24, 0x40, 0x80}, 3, {}, {0x21, 0x21}, {0x3000}, -1, 3},
     // The trailing byte state: every error from it returns to the leading byte state (the mode) before it returns, whatever the byte.
-    {"jis0208, after a leading byte: a trailing byte above 0x7E", {0x1B, 0x24, 0x42, 0x21, 0xFF}, 4, {0x21, 0x21, 0x21, 0x21}, {0x3000, 0x3000}, 3},
-    {"jis0208, after a leading byte: a trailing byte with no code point", {0x1B, 0x24, 0x42, 0x7E, 0x7E}, 4, {0x21, 0x21, 0x21, 0x21}, {0x3000, 0x3000}, 3},
+    {"jis0208, after a leading byte: a trailing byte above 0x7E", {0x1B, 0x24, 0x42, 0x21, 0xFF}, 4, {}, {0x21, 0x21, 0x21, 0x21}, {0x3000, 0x3000}, -1, 3},
+    {"jis0208, after a leading byte: a trailing byte with no code point", {0x1B, 0x24, 0x42, 0x7E, 0x7E}, 4, {}, {0x21, 0x21, 0x21, 0x21}, {0x3000, 0x3000}, -1, 3},
     // ... except ESC, which the standard answers with "set the decoder state to escape start and return error": a half-read escape sequence. It must not be
-    // finished by the next stream.
-    {"jis0208, after a leading byte: ESC (the state left is escape start)", {0x1B, 0x24, 0x42, 0x21, 0x1B}, 4, {0x21, 0x21}, {0x3000}, 3},
-    {"Roman, an escape start followed by ESC", {0x1B, 0x28, 0x4A, 0x1B, 0x1B}, 4, {0x7E}, {0x203E}, 1},
-    // The escape states: an escape sequence that is not one is an error with the state returned to the output state, and the leading byte cleared.
-    {"an escape start with a byte that begins no sequence", {0x1B, 0x28, 0x4A, 0x1B, 0x41}, 4, {0x7E}, {0x203E}, 1},
-    {"an escape that selects nothing (ESC ( A)", {0x1B, 0x24, 0x42, 0x1B, 0x28, 0x41}, 5, {0x21, 0x21}, {0x3000}, 3},
-    {"an escape that selects nothing (ESC $ A)", {0x1B, 0x28, 0x49, 0x1B, 0x24, 0x41}, 5, {0x42}, {0xFF82}, 2},
+    // finished by the next stream (and the ESC is not put back: the handler does not restore it there).
+    {"jis0208, after a leading byte: ESC (the state left is escape start)", {0x1B, 0x24, 0x42, 0x21, 0x1B}, 4, {}, {0x21, 0x21}, {0x3000}, -1, 3},
+    // The escape states: an escape sequence that is not one is an error with the state returned to the output state and the leading byte cleared, and the
+    // bytes of it that are not part of an escape go back to the I/O queue ("restore byte to ioQueue", "restore << leading, byte >> to ioQueue"): the next call
+    // reads them first.
+    {"Roman, an escape start followed by ESC: the second ESC is put back and begins the next call's escape", {0x1B, 0x28, 0x4A, 0x1B, 0x1B}, 4, {0x1B}, {0x28, 0x42, 0x7E}, {0x7E}, -1, 1},
+    {"an escape start with a byte that begins no sequence: the byte is put back", {0x1B, 0x28, 0x4A, 0x1B, 0x41}, 4, {0x41}, {0x7E}, {0x41, 0x203E}, -1, 1},
+    {"ASCII, an escape start with a byte that begins no sequence", {0x1B, 0x41}, 1, {0x41}, {0x7E}, {0x41, 0x7E}, -1, 0},
+    {"an escape that selects nothing (ESC ( A, in jis0208): the leading byte and the byte are put back, and read as a pair that is no code point", {0x1B, 0x24, 0x42, 0x1B, 0x28, 0x41}, 5, {0x28, 0x41}, {0x21, 0x21}, {}, 1, 3},
+    {"an escape that selects nothing (ESC $ A, in katakana): the two are put back and read as katakana", {0x1B, 0x28, 0x49, 0x1B, 0x24, 0x41}, 5, {0x24, 0x41}, {0x42}, {0xFF64, 0xFF81, 0xFF82}, -1, 2},
+    {"an escape that selects nothing (ESC $ A, in ASCII)", {0x1B, 0x24, 0x41}, 2, {0x24, 0x41}, {0x7E}, {0x24, 0x41, 0x7E}, -1, 0},
     // The output flag: two escape sequences with nothing between are an error ("Return continue, if output is false, and error otherwise"); the flag the second
     // leaves set is not the next stream's, whose first escape is not "following" anything.
-    {"two escape sequences with nothing between", {0x1B, 0x28, 0x4A, 0x1B, 0x28, 0x4A}, 5, {0x1B, 0x28, 0x42, 0x41}, {0x41}, 1},
-    {"two escape sequences, the second selecting jis0208", {0x1B, 0x28, 0x42, 0x1B, 0x24, 0x42}, 5, {0x1B, 0x28, 0x42, 0x41}, {0x41}, 3},
+    {"two escape sequences with nothing between", {0x1B, 0x28, 0x4A, 0x1B, 0x28, 0x4A}, 5, {}, {0x1B, 0x28, 0x42, 0x41}, {0x41}, -1, 1},
+    {"two escape sequences, the second selecting jis0208", {0x1B, 0x28, 0x42, 0x1B, 0x24, 0x42}, 5, {}, {0x1B, 0x28, 0x42, 0x41}, {0x41}, -1, 3},
   };
   for (const Case & c : cases) {
     GTEXT_Decoder * d = nullptr;
@@ -1156,8 +1163,9 @@ TEST(EncodingCjkDecode, Iso2022JpWhichStateSurvivesAFatalErrorInACallThatDidNotF
     GTEXT_Decoder_Result r;
     ASSERT_EQ(run(c.first, false, &out, &r), GTEXT_ENCODING_E_MALFORMED) << c.name;
     EXPECT_EQ(r.error_offset, c.error_offset) << c.name;
-    // The model (the standard's handler, with its state kept by the caller) says which mode the failure left; the library must continue in that mode and in
-    // no other state.
+    EXPECT_EQ(r.held_bytes, c.held.size()) << c.name;
+    // The model (the standard's handler, with its state kept by the caller) says which mode the failure left and what is in the queue; the library must
+    // continue in that mode, with that queue and in no other state.
     std::string first;
     for (int b : c.first) {
       first += char(b);
@@ -1165,18 +1173,152 @@ TEST(EncodingCjkDecode, Iso2022JpWhichStateSurvivesAFatalErrorInACallThatDidNotF
     const ModelDecoded mf = model_decode(GTEXT_ENCODING_ISO_2022_JP, reinterpret_cast<const unsigned char *>(first.data()), first.size(), true);
     ASSERT_TRUE(mf.failed) << c.name;
     EXPECT_EQ(mf.iso_mode, c.mode) << c.name;
-    ASSERT_EQ(run(c.second, true, &out, &r), GTEXT_ENCODING_OK) << c.name;
-    EXPECT_EQ(out, utf8_of_cps(c.want)) << c.name;
-    // (the model begun in that mode says the same)
+    EXPECT_EQ(mf.held, c.held) << c.name;
+    const GTEXT_Encoding_Status st = run(c.second, true, &out, &r);
     std::string second;
     for (int b : c.second) {
       second += char(b);
     }
-    const ModelDecoded ms = model_decode(GTEXT_ENCODING_ISO_2022_JP, reinterpret_cast<const unsigned char *>(second.data()), second.size(), true, c.mode);
-    EXPECT_FALSE(ms.failed) << c.name;
-    EXPECT_EQ(utf8_of_cps(ms.cps), utf8_of_cps(c.want)) << c.name;
-    // The offsets and the position start over: the next failure is counted from its own call's first byte.
+    const ModelDecoded ms = model_decode(GTEXT_ENCODING_ISO_2022_JP, reinterpret_cast<const unsigned char *>(second.data()), second.size(), true, c.mode, mf.held);
+    if (c.second_error >= 0) {
+      EXPECT_EQ(st, GTEXT_ENCODING_E_MALFORMED) << c.name;
+      EXPECT_EQ(r.error_offset, size_t(c.second_error)) << c.name;
+      EXPECT_TRUE(ms.failed) << c.name;
+      EXPECT_EQ(ms.error_offset, size_t(c.second_error)) << c.name;
+      EXPECT_EQ(out, "") << c.name;
+    } else {
+      ASSERT_EQ(st, GTEXT_ENCODING_OK) << c.name;
+      EXPECT_EQ(out, utf8_of_cps(c.want)) << c.name;
+      // (the model begun in that mode and with that queue says the same)
+      EXPECT_FALSE(ms.failed) << c.name;
+      EXPECT_EQ(utf8_of_cps(ms.cps), utf8_of_cps(c.want)) << c.name;
+    }
+    // The offsets and the position start over: the next failure is counted from its own call's first byte, and what was held is gone.
     ASSERT_EQ(run(c.first, false, &out, &r), GTEXT_ENCODING_E_MALFORMED) << c.name << " (again)";
+    EXPECT_EQ(r.error_offset, c.error_offset) << c.name << " (again)";
+    gtext_decoder_free(d);
+  }
+}
+
+// The standard's I/O queue outlives a fatal error in a call that did not flush ("restore byte to ioQueue" puts a byte back, and decode() does not clear the queue
+// before it throws), for every encoding that restores: the next call reads those bytes first, and its offsets count them. Swept over every first piece of one to
+// three bytes of the bytes that decide anything, and a few second pieces, against the model (the handlers written again, given the queue the failure left).
+TEST(EncodingCjkDecode, TheBytesAHandlerPutBackSurviveAFatalErrorInACallThatDidNotFlush) {
+  const std::vector<std::string> seconds = {"", "A", " ", "AB", bytes_of({0x81, 0x40}), bytes_of({0xA1, 0xA1}), bytes_of({0x30, 0x81, 0x30}), bytes_of({0x1B, 0x28, 0x42, 0x7E}),
+      bytes_of({0x8F, 0xA2, 0xAF}), bytes_of({0xFF})};
+  const GTEXT_Encoding encodings[] = {GTEXT_ENCODING_SHIFT_JIS, GTEXT_ENCODING_EUC_JP, GTEXT_ENCODING_EUC_KR, GTEXT_ENCODING_GBK, GTEXT_ENCODING_GB18030,
+      GTEXT_ENCODING_BIG5, GTEXT_ENCODING_ISO_2022_JP};
+  for (GTEXT_Encoding enc : encodings) {
+    GTEXT_Decoder * d = nullptr;
+    GTEXT_Decoder_Options o = decoder_options(GTEXT_DECODER_FATAL);
+    ASSERT_EQ(gtext_decoder_new(enc, &o, &d), GTEXT_ENCODING_OK);
+    size_t held_cases = 0;
+    size_t checked = 0;
+    unsigned char buf[3];
+    for (int n = 1; n <= 3; n++) {
+      const size_t base = sizeof kInteresting;
+      size_t total = 1;
+      for (int k = 0; k < n; k++) {
+        total *= base;
+      }
+      for (size_t v = 0; v < total; v++) {
+        size_t w = v;
+        for (int k = 0; k < n; k++) {
+          buf[k] = kInteresting[w % base];
+          w /= base;
+        }
+        const ModelDecoded fa = model_decode(enc, buf, size_t(n), true);
+        const bool fails_early = fa.failed && fa.error_offset < size_t(n);
+        Collect c1;
+        GTEXT_Encoding_Sink s1 = sink_of(c1);
+        GTEXT_Decoder_Result r1;
+        const GTEXT_Encoding_Status st1 = gtext_decoder_decode(d, buf, size_t(n), false, &s1, &r1);
+        ASSERT_EQ(st1 == GTEXT_ENCODING_E_MALFORMED, fails_early) << name_of(enc) << " " << hex(std::string((const char *)buf, size_t(n)));
+        if (!fails_early) {
+          gtext_decoder_reset(d);
+          continue;
+        }
+        ASSERT_EQ(r1.held_bytes, fa.held.size()) << name_of(enc) << " " << hex(std::string((const char *)buf, size_t(n)));
+        held_cases += !fa.held.empty();
+        const std::string & second = seconds[(v * 7 + size_t(n)) % seconds.size()];
+        const ModelDecoded fb = model_decode(enc, reinterpret_cast<const unsigned char *>(second.data()), second.size(), true, fa.iso_mode, fa.held);
+        Collect c2;
+        GTEXT_Encoding_Sink s2 = sink_of(c2);
+        GTEXT_Decoder_Result r2;
+        const GTEXT_Encoding_Status st2 = gtext_decoder_decode(d, second.data(), second.size(), true, &s2, &r2);
+        ASSERT_EQ(st2 == GTEXT_ENCODING_E_MALFORMED, fb.failed) << name_of(enc) << " " << hex(std::string((const char *)buf, size_t(n))) << " then " << hex(second);
+        ASSERT_EQ(c2.bytes, utf8_of_cps(fb.cps)) << name_of(enc) << " " << hex(std::string((const char *)buf, size_t(n))) << " then " << hex(second);
+        if (fb.failed) {
+          ASSERT_EQ(r2.error_offset, fb.error_offset) << name_of(enc) << " " << hex(std::string((const char *)buf, size_t(n))) << " then " << hex(second);
+        }
+        // Whatever the second call was, a flush ended the stream: nothing is held any more.
+        ASSERT_EQ(r2.held_bytes, 0u);
+        Collect c3;
+        GTEXT_Encoding_Sink s3 = sink_of(c3);
+        ASSERT_EQ(gtext_decoder_decode(d, "A", 1, true, &s3, nullptr), GTEXT_ENCODING_OK) << name_of(enc);
+        ASSERT_EQ(c3.bytes, "A");
+        checked++;
+      }
+    }
+    EXPECT_GT(held_cases, 50u) << name_of(enc) << " (a sweep that never holds a byte shows nothing)";
+    EXPECT_GT(checked, 1000u) << name_of(enc);
+    gtext_decoder_free(d);
+  }
+}
+
+// The vectors of the standard's own tests (web-platform-tests, textdecoder-mistakes.any.js, "EUC-JP JIS0212 state after a fatal streaming error"), through
+// gtext_decoder_decode(), and the other handlers that restore, each with the bytes of the input that follow the error handed back by the caller.
+TEST(EncodingCjkDecode, AFatalErrorInStreamModeKeepsTheRestoredByteAndTheCallersRemainderIsTheCallers) {
+  GTEXT_Decoder_Options o = decoder_options(GTEXT_DECODER_FATAL);
+  struct Case {
+    const char * name;
+    GTEXT_Encoding enc;
+    std::vector<int> first;   // fails
+    size_t taken;             // `input_bytes` of that call: up to and including the byte at which the error was found, which is not the end of the input
+    size_t held;              // `held_bytes`
+    std::vector<int> second;  // the next call, a flush
+    std::vector<uint32_t> want;
+  };
+  const std::vector<Case> cases = {
+    {"EUC-JP: 8F A2 20 (the page)", GTEXT_ENCODING_EUC_JP, {0x8F, 0xA2, 0x20}, 3, 1, {0xA1, 0xA1}, {0x20, 0x3000}},
+    {"EUC-JP: with the rest of the input handed back", GTEXT_ENCODING_EUC_JP, {0x8F, 0xA2, 0x20, 0x41, 0x42}, 3, 1, {0x41, 0x42}, {0x20, 0x41, 0x42}},
+    {"EUC-JP: the byte is a lead byte of the next pair", GTEXT_ENCODING_EUC_JP, {0x8F, 0xA2, 0xAF}, 3, 0, {0xA1, 0xA1}, {0x3000}},
+    {"Shift_JIS: 81 20", GTEXT_ENCODING_SHIFT_JIS, {0x81, 0x20}, 2, 1, {0x41}, {0x20, 0x41}},
+    {"EUC-KR: A1 20", GTEXT_ENCODING_EUC_KR, {0xA1, 0x20}, 2, 1, {0x41}, {0x20, 0x41}},
+    {"GBK: 81 20", GTEXT_ENCODING_GBK, {0x81, 0x20}, 2, 1, {0x41}, {0x20, 0x41}},
+    {"Big5: 81 20", GTEXT_ENCODING_BIG5, {0x81, 0x20}, 2, 1, {0x41}, {0x20, 0x41}},
+    {"gb18030: 81 30 81 41 (three bytes go back: 30 81 41)", GTEXT_ENCODING_GB18030, {0x81, 0x30, 0x81, 0x41}, 4, 3, {0x42}, {0x30, 0x4E04, 0x42}},
+    {"ISO-2022-JP: ESC A", GTEXT_ENCODING_ISO_2022_JP, {0x1B, 0x41}, 2, 1, {0x42}, {0x41, 0x42}},
+  };
+  for (const Case & c : cases) {
+    GTEXT_Decoder * d = nullptr;
+    ASSERT_EQ(gtext_decoder_new(c.enc, &o, &d), GTEXT_ENCODING_OK) << c.name;
+    auto run = [&](const std::vector<int> & in, bool flush, std::string * out, GTEXT_Decoder_Result * r) {
+      std::string bytes;
+      for (int b : in) {
+        bytes += char(b);
+      }
+      Collect col;
+      GTEXT_Encoding_Sink sink = sink_of(col);
+      const GTEXT_Encoding_Status st = gtext_decoder_decode(d, bytes.data(), bytes.size(), flush, &sink, r);
+      *out = col.bytes;
+      return st;
+    };
+    std::string out;
+    GTEXT_Decoder_Result r;
+    const GTEXT_Encoding_Status st = run(c.first, false, &out, &r);
+    if (c.held == 0) {
+      // (the error is not a restoring one: nothing is kept, and the pair that follows is read as a new stream)
+      EXPECT_EQ(st, GTEXT_ENCODING_OK) << c.name;
+      gtext_decoder_reset(d);
+    } else {
+      ASSERT_EQ(st, GTEXT_ENCODING_E_MALFORMED) << c.name;
+      EXPECT_EQ(r.input_bytes, c.taken) << c.name;
+      EXPECT_EQ(r.held_bytes, c.held) << c.name;
+    }
+    ASSERT_EQ(run(c.second, true, &out, &r), GTEXT_ENCODING_OK) << c.name;
+    EXPECT_EQ(out, utf8_of_cps(c.want)) << c.name;
+    EXPECT_EQ(r.held_bytes, 0u) << c.name;
     gtext_decoder_free(d);
   }
 }

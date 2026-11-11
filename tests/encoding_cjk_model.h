@@ -504,13 +504,18 @@ struct ModelDecoded {
   size_t error_offset = 0;   // ... at this byte of the input (the length for end-of-queue)
   size_t replacements = 0;
   std::vector<uint32_t> steps; // after each step that wrote, how many code points were written so far: the boundaries of what is written together
+  std::vector<int> held;     // fatal mode: the bytes the standard's I/O queue still holds when the error is thrown (the handler's restore, and earlier restores not yet read; the next to read first)
   int iso_mode = 0;          // ISO-2022-JP, at the end (after a fatal error: the mode the next stream begins in): the decoder output state, 0 ASCII, 1 Roman, 2 katakana, 3 JIS X 0208
 };
 
 // "Process a queue" with the handler, the input and the end-of-queue, in "replacement" or "fatal" mode.
 // `iso_start`: ISO-2022-JP's mode at the start (the decoder state and the decoder output state; the rest of its state is initial).
-inline void model_decode_into(ModelDecoded & r, GTEXT_Encoding enc, const unsigned char * in, size_t len, bool fatal, int iso_start = 0) {
+// `held_in`: the I/O queue the stream begins with after a fatal error of the last call (ModelDecoded::held of it), read before `in`: they are the first
+// bytes of the stream, so every offset counts them.
+inline void model_decode_into(ModelDecoded & r, GTEXT_Encoding enc, const unsigned char * in, size_t len, bool fatal, int iso_start = 0,
+    const std::vector<int> & held_in = std::vector<int>()) {
   r.cps.clear();
+  r.held.clear();
   r.steps.clear();
   r.failed = false;
   r.error_offset = 0;
@@ -524,7 +529,11 @@ inline void model_decode_into(ModelDecoded & r, GTEXT_Encoding enc, const unsign
   } mode{r, d};
   thread_local std::vector<std::pair<int, size_t>> pending; // restored bytes, the next to read last
   pending.clear();
+  for (size_t k = held_in.size(); k > 0; k--) {
+    pending.emplace_back(held_in[k - 1], k - 1);
+  }
   size_t pos = 0;
+  const size_t base = held_in.size();
   for (;;) {
     int byte;
     size_t where;
@@ -534,10 +543,10 @@ inline void model_decode_into(ModelDecoded & r, GTEXT_Encoding enc, const unsign
       pending.pop_back();
     } else if (pos < len) {
       byte = in[pos];
-      where = pos++;
+      where = base + pos++;
     } else {
       byte = -1;
-      where = pos;
+      where = base + pos;
     }
     const Step s = d.handle(byte);
     if (s == Step::Finished) {
@@ -556,6 +565,12 @@ inline void model_decode_into(ModelDecoded & r, GTEXT_Encoding enc, const unsign
     if (fatal) {
       r.failed = true;
       r.error_offset = where;
+      for (int k = 0; k < d.restore_n; k++) {
+        r.held.push_back(d.restore[k]);
+      }
+      for (size_t k = pending.size(); k > 0; k--) {
+        r.held.push_back(pending[k - 1].first);
+      }
       return;
     }
     r.cps.push_back(0xFFFD);
@@ -567,9 +582,10 @@ inline void model_decode_into(ModelDecoded & r, GTEXT_Encoding enc, const unsign
   }
 }
 
-inline ModelDecoded model_decode(GTEXT_Encoding enc, const unsigned char * in, size_t len, bool fatal, int iso_start = 0) {
+inline ModelDecoded model_decode(GTEXT_Encoding enc, const unsigned char * in, size_t len, bool fatal, int iso_start = 0,
+    const std::vector<int> & held_in = std::vector<int>()) {
   ModelDecoded r;
-  model_decode_into(r, enc, in, len, fatal, iso_start);
+  model_decode_into(r, enc, in, len, fatal, iso_start, held_in);
   return r;
 }
 

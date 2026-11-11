@@ -81,6 +81,8 @@ class TextDecoder {
   #name;
   #fatal;
   #ignoreBOM;
+  #doNotFlush = false;
+  #rest = new Uint8Array(0); // the standard's I/O queue after a call that threw: what the failing call had not read, which a call after a streaming one reads first
   constructor(label = "utf-8", options = {}) {
     const l = call("L " + hexOfString(String(label)));
     const name = l.split(" ")[1];
@@ -107,11 +109,24 @@ class TextDecoder {
     if (generation[this.#id] !== this.#gen) throw new Error("decoder slot reused");
     let bytes = bytesOf(input);
     const stream = !!(options && options.stream);
+    // decode() steps 1 to 3: a call after one that did not stream starts a new decoder and an empty queue; otherwise the queue (the rest of a call that threw) goes first.
+    if (this.#doNotFlush && this.#rest.length > 0) {
+      const joined = new Uint8Array(this.#rest.length + bytes.length);
+      joined.set(this.#rest, 0);
+      joined.set(bytes, this.#rest.length);
+      bytes = joined;
+    }
+    this.#rest = new Uint8Array(0);
+    this.#doNotFlush = stream;
     if (plant === "bridge-drops-a-byte" && bytes.length > 3) bytes = bytes.subarray(0, bytes.length - 1);
     const a = call("D " + this.#id + " " + (stream ? 0 : 1) + " " + hex(bytes));
     const t = a.split(" ");
     if (t[0] === "OUT") return Buffer.from(unhex(t[1])).toString("utf8");
-    if (t[1] === "E_MALFORMED") throw new TypeError("the data is not valid " + this.#name);
+    if (t[1] === "E_MALFORMED") {
+      // The library keeps the bytes a handler put back; what the call was given after the byte at which it failed is the caller's, which is the queue's rest here.
+      this.#rest = bytes.subarray(Number(t[4]));
+      throw new TypeError("the data is not valid " + this.#name);
+    }
     throw new Error("D: " + a);
   }
 }

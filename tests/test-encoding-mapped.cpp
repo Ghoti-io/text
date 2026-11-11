@@ -633,3 +633,28 @@ TEST(EncoderErrorMode, ChangingItInTheMiddleOfAnIso2022JpStreamKeepsTheMode) {
   EXPECT_EQ(out.s, "\x1B$BF|\x1B(B&#8364;\x1B$BF|\x1B(B");
   gtext_encoder_free(e);
 }
+
+// The bytes a handler put back before a fatal error (the standard's I/O queue) are the first bytes of the next call's stream, and the source map says so: their
+// code points are at the offsets 0, 1, ... and the call's own input follows them.
+TEST(DecoderMapped, TheBytesKeptAfterAFatalErrorAreTheFirstOffsetsOfTheNextCall) {
+  GTEXT_Decoder_Options o = gtext_decoder_options_default();
+  o.track_offsets = true;
+  o.error_mode = GTEXT_DECODER_FATAL;
+  GTEXT_Decoder * d = nullptr;
+  ASSERT_EQ(gtext_decoder_new(GTEXT_ENCODING_EUC_JP, &o, &d), GTEXT_ENCODING_OK);
+  Mapped m;
+  GTEXT_Encoding_Mapped_Sink sink = {mapped_write, &m};
+  GTEXT_Decoder_Result r;
+  // 8F A2 20: the page of the standard's tests; the 0x20 is put back.
+  EXPECT_EQ(gtext_decoder_decode_mapped(d, "\x8F\xA2\x20", 3, false, &sink, &r), GTEXT_ENCODING_E_MALFORMED);
+  EXPECT_EQ(r.held_bytes, 1u);
+  EXPECT_EQ(gtext_decoder_decode_mapped(d, "\xA1\xA1", 2, true, &sink, &r), GTEXT_ENCODING_OK);
+  EXPECT_EQ(m.bytes, " \xE3\x80\x80");
+  ASSERT_EQ(m.offsets.size(), 4u);
+  EXPECT_EQ(m.offsets[0], 0u);      // the held byte
+  EXPECT_EQ(m.offsets[1], 1u);      // the pair that came with the call, after it
+  EXPECT_EQ(m.offsets[3], 1u);
+  EXPECT_EQ(m.widths[1], 2u);
+  EXPECT_EQ(r.held_bytes, 0u);
+  gtext_decoder_free(d);
+}

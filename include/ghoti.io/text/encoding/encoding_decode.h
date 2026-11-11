@@ -41,16 +41,23 @@
  * can read any number of streams. After any non-OK status **but E_INVALID** the decoder is in
  * its starting state as well, and the next call begins a new stream (a failed
  * decode does not poison it: the Encoding API's `TextDecoder` is specified the
- * same way, and the standard's web-platform-tests check it). **One exception, the standard's own:**
- * after a fatal error (E_MALFORMED) in a call that did not flush, an ISO-2022-JP decoder goes on in the
- * **mode** it was in (ASCII, Roman, katakana or JIS X 0208, as the last escape sequence selected: the standard's
- * "decoder output state"), because "this is the only decoder which does not clear internal state before throwing
- * in stream mode" (the web-platform-tests' own words; their cases are a mode of Roman and of katakana). Nothing
- * else of it survives: not a half-read escape sequence or a leading byte (the next stream does not begin by finishing
- * them), not the "output" flag that makes two escape sequences with nothing between an error; and its position, the
- * offsets it reports and everything else start over. A flush, gtext_decoder_reset(), a failure that is not an error in
- * the data (a limit, a refusing sink) and an error in a call that did flush abandon the stream like any other,
- * mode included.
+ * same way, and the standard's web-platform-tests check it). **Two exceptions, the standard's own,
+ * both after a fatal error (E_MALFORMED) in a call that did not flush:**
+ *
+ * - **The bytes a handler put back are kept.** The standard's `TextDecoder.decode()` throws on a fatal error without clearing its I/O queue, so what the
+ *   handler put back ("restore byte to ioQueue": the space of EUC-JP's `8F A2 20`, the three bytes after the first of gb18030's broken four-byte form,
+ *   the unit that did not complete a UTF-16 surrogate pair, a byte of an ISO-2022-JP escape sequence that was not one) is the first thing the next call
+ *   reads, ahead of its own input. `GTEXT_Decoder_Result::held_bytes` says how many. They are bytes the decoder took from an earlier call, so they are not
+ *   in the next call's `input_bytes`, and **the caller's own input after the byte at which the error was found** (`input_bytes` of the failing call
+ *   says where) is still the caller's, to hand over again as the standard's queue would hold it. The held bytes are the first bytes of the new stream:
+ *   `error_offset` and the offsets of a source map count them first (offset 0 is the first held byte, and the call's input begins after them), and a
+ *   byte order mark cannot begin it (with `bom_sniffing` a mark in the next call is not looked for). A flush, gtext_decoder_reset(), a failure that is
+ *   not an error in the data (a limit, a refusing sink) and an error in a call that did flush abandon them with the rest of the stream.
+ * - **An ISO-2022-JP decoder goes on in its mode**, as the last escape sequence selected it (ASCII, Roman, katakana or JIS X 0208: the standard's
+ *   "decoder output state"), because "this is the only decoder which does not clear internal state before throwing in stream mode" (the
+ *   web-platform-tests' own words; their cases are a mode of Roman and of katakana). Nothing else of its state survives: not a half-read escape
+ *   sequence or a leading byte (the next stream does not begin by finishing them), not the "output" flag that makes two escape sequences with
+ *   nothing between an error; and its position and everything else start over. The other decoders' handlers clear their own state when they return an error.
  *
  * **The multi-byte encodings** (GBK, gb18030, Big5, EUC-JP, ISO-2022-JP, Shift_JIS, EUC-KR) are the
  * standard's decoders, whose error handling puts a byte back where the standard says "restore byte to
@@ -156,6 +163,9 @@ typedef struct {
   size_t error_offset;          ///< On GTEXT_ENCODING_E_MALFORMED: the offset, from the start of the stream (the first byte after the last
                                 ///< flush or failure), of the byte at which the error was found, or the length of the stream if the
                                 ///< input ended in the middle of a sequence. 0 otherwise.
+  size_t held_bytes;            ///< On GTEXT_ENCODING_E_MALFORMED in a call that did not flush: the bytes the decoder kept for the next call, which reads them before
+                                ///< its input (the standard's "restore byte to ioQueue": the I/O queue outlives the error). They are not counted in `input_bytes`, and the
+                                ///< caller's own input from `input_bytes` on is still its own to hand back. 0 otherwise.
   bool bom_found;               ///< `bom_sniffing` took a byte order mark during this call.
   size_t steps;                 ///< Handler steps taken during this call, restored bytes read again included: the work, which is at most
                                 ///< four per byte of input (and none for the runs of ASCII that are copied whole).

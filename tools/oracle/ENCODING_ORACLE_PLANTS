@@ -21,9 +21,9 @@ ascii-fast-path-too-wide	encoding_decode.c	        while (j < len && in[j] < 0x8
 fatal-mode-ignored	encoding_decode.c	    if (dec->opts.error_mode == GTEXT_DECODER_FATAL) {\n      call->status = GTEXT_ENCODING_E_MALFORMED;	    if (0) {\n      call->status = GTEXT_ENCODING_E_MALFORMED;
 bom-removal-strips-every-mark	encoding_decode.c	    dec->strip_pending = false;\n    if (cp == 0xFEFF) {	    if (cp == 0xFEFF) {
 bom-sniff-be-wrong	encoding_decode.c	    if (h[1] == 0xFF) {\n      *enc = GTEXT_ENCODING_UTF_16BE;	    if (h[1] == 0xFE) {\n      *enc = GTEXT_ENCODING_UTF_16BE;
-bom-sniffing-never-starts	encoding_decode.c	  dec->sniff_pending = dec->opts.bom_sniffing;	  dec->sniff_pending = false;
+bom-sniffing-never-starts	encoding_decode.c	  dec->sniff_pending = dec->opts.bom_sniffing && dec->restored_n == 0;	  dec->sniff_pending = false;
 bom-held-bytes-dropped	encoding_decode.c	  run_items(dec, copy, n, false, taken, false, call);\n	
-decoder-not-reset-after-flush	encoding_decode.c	  stream_start(dec, status == GTEXT_ENCODING_E_MALFORMED && !flush && dec->active == GTEXT_ENCODING_ISO_2022_JP);\n  return status;	  return status;
+decoder-not-reset-after-flush	encoding_decode.c	  const bool fatal_in_stream = status == GTEXT_ENCODING_E_MALFORMED && !flush;\n  stream_start(dec, fatal_in_stream && dec->active == GTEXT_ENCODING_ISO_2022_JP, fatal_in_stream);\n  return status;	  return status;
 label-vt-is-white-space	encoding_core.c	c == 0x09 || c == 0x0A	c == 0x09 || c == 0x0B || c == 0x0A
 label-z-not-lowered	encoding_core.c	c >= 'A' && c <= 'Z'	c >= 'A' && c < 'Z'
 label-longest-refused	encoding_core.c	len > gtext_encoding_label_longest	len >= gtext_encoding_label_longest
@@ -89,7 +89,7 @@ euc-kr-ascii-trail-swallowed	encoding_cjk.c	    /* If byte is an ASCII byte, the
 euc-kr-enc-trailing	encoding_cjk.c	out->bytes[1] = (uint8_t)(pointer % 190 + 0x41);	out->bytes[1] = (uint8_t)(pointer % 190 + 0x42);
 cjk-lead-idle-always	encoding_cjk.c	return state->lead.leading == 0;	return true;
 cjk-pair-second-lost	encoding_decode.c	: step.n == 2 ? dec_put_cp2(dec, step.cp[0], step.cp[1]) : dec_put_cp(dec, step.cp[0]);	: dec_put_cp(dec, step.cp[0]);
-iso-state-reset-after-fatal	encoding_decode.c	status == GTEXT_ENCODING_E_MALFORMED && !flush && dec->active == GTEXT_ENCODING_ISO_2022_JP	false
+iso-state-reset-after-fatal	encoding_decode.c	fatal_in_stream && dec->active == GTEXT_ENCODING_ISO_2022_JP	false
 cjk-error-code-point-ignored	encoding_encode.c	put_reference(&enc->out, step.error_cp)	put_reference(&enc->out, cp)
 table-jis0208-first-entry	tables/encoding_tables_cjk.c	12288,12289,12290,65292,65294,12539	12288,12289,12291,65292,65294,12539
 table-big5-reverse-plane-2	tables/encoding_tables_cjk.c	static const uint16_t big5_sup_ptr[291] = {\n  11207,11205,19386	static const uint16_t big5_sup_ptr[291] = {\n  11207,11206,19386
