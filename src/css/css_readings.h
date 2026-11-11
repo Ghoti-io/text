@@ -29,8 +29,8 @@
  * reason, and a gate fails on an exception that no longer holds, which is how a forgotten one is found).
  */
 
-#ifndef GHOTI_TEXT_CSS_READINGS_H
-#define GHOTI_TEXT_CSS_READINGS_H
+#ifndef GHOTI_IO_GTEXT_SRC_CSS_CSS_READINGS_H
+#define GHOTI_IO_GTEXT_SRC_CSS_CSS_READINGS_H
 
 #include <ghoti.io/text/macros.h>
 
