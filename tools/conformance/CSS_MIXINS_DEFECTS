@@ -1,0 +1,3 @@
+# tools/conformance/css_mixins_suite.py: the templates of web-platform-tests' css-mixins pages that fail because this library is wrong, one line a case. Columns (tab separated): vector (file#n),
+# what it asks, stage (value, run), the answer the library gives, the owner (the part of the library that is to change) and what the library lacks (twenty characters at least). The number of
+# lines has a ceiling that only goes down (CSS_MIXINS_MAX_DEFECTS in the Makefile, 0 now: the cases the first run listed here, six of them about `style()` in a function body, were fixed).

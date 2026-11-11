@@ -1,0 +1,51 @@
+# tools/css/extract-wpt-mixins.py: the test pages of css/css-mixins of the pinned web-platform-tests that it does not read as data, and why. Columns: file, number of
+# tests the page holds, the extractor's own wording. make conformance-css-mixins fails on a page that is not here, on a count that differs and on a line for a page that is
+# read in full now; the first two columns are compared.
+# Rewrite it with: tools/css/extract-wpt-mixins.py third_party/css/wpt build/css-mixins-vectors --unextracted tools/css/UNEXTRACTED_MIXINS
+css/css-mixins/function-definition-scope.html	3	declarative shadow trees: the tests run inside shadow roots (test_all_shadows), which the library's HTML parser does not build
+css/css-mixins/function-property-context.html	1	script tests (CSSOM objects, dynamic changes, containers, media queries): the CSSOM script gate reads the ones it models
+css/css-mixins/functions/at-function-cssom.html	20	script tests (CSSOM objects, dynamic changes, containers, media queries): the CSSOM script gate reads the ones it models
+css/css-mixins/functions/at-function-parsing.html	2	script tests (CSSOM objects, dynamic changes, containers, media queries): the CSSOM script gate reads the ones it models
+css/css-mixins/functions/dashed-function-named-arg.tentative.html	1	script tests (CSSOM objects, dynamic changes, containers, media queries): the CSSOM script gate reads the ones it models
+css/css-mixins/functions/dashed-function-parsing.html	1	script tests (CSSOM objects, dynamic changes, containers, media queries): the CSSOM script gate reads the ones it models
+css/css-mixins/functions/dashed-function-standard-property.html	4	script tests (CSSOM objects, dynamic changes, containers, media queries): the CSSOM script gate reads the ones it models
+css/css-mixins/functions/function-container-dynamic.html	1	script tests (CSSOM objects, dynamic changes, containers, media queries): the CSSOM script gate reads the ones it models
+css/css-mixins/functions/function-container-self.html	1	script tests (CSSOM objects, dynamic changes, containers, media queries): the CSSOM script gate reads the ones it models
+css/css-mixins/functions/function-container-style.html	2	script tests (CSSOM objects, dynamic changes, containers, media queries): the CSSOM script gate reads the ones it models
+css/css-mixins/functions/function-in-media.html	1	script tests (CSSOM objects, dynamic changes, containers, media queries): the CSSOM script gate reads the ones it models
+css/css-mixins/functions/function-invalidation.html	4	script tests (CSSOM objects, dynamic changes, containers, media queries): the CSSOM script gate reads the ones it models
+css/css-mixins/functions/function-media-dynamic.html	1	script tests (CSSOM objects, dynamic changes, containers, media queries): the CSSOM script gate reads the ones it models
+css/css-mixins/functions/function-shadow-animations.html	3	shadow trees: the tests build or read shadow roots
+css/css-mixins/functions/function-shadow-cache.html	1	shadow trees: the tests build or read shadow roots
+css/css-mixins/functions/function-shadow-container.html	3	declarative shadow trees: the tests run inside shadow roots (test_all_shadows), which the library's HTML parser does not build
+css/css-mixins/functions/function-shadow.html	14	declarative shadow trees: the tests run inside shadow roots (test_all_shadows), which the library's HTML parser does not build
+css/css-mixins/mixins/apply-nested-declarations.html	2	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/apply-top-level.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/apply-within-mixin.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/contents-nested-declarations-fallback.html	2	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/contents-nested-declarations.html	2	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/contents-rule.html	8	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/important.html	3	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-basic.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-conditionals.html	7	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-cross-stylesheet.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-cssom.tentative.html	8	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-cycle.tentative.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-declarations.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-from-import-with-media-queries.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-from-import.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-invalidation.tentative.html	3	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-layers.html	4	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-locals.html	8	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-media-query-invalidation-2.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-media-query-invalidation.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-parameters.html	24	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-parsing.html	3	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-shadow-dom.html	15	shadow trees: the tests build or read shadow roots
+css/css-mixins/mixins/mixin-shared-across-documents.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/mixins/mixin-shared-sheet-no-mixins-in-scope.html	2	shadow trees: the tests build or read shadow roots
+css/css-mixins/mixins/support/mixin-shared-across-documents-frame.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/private/private-cssom-insert-rule.tentative.html	3	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/private/private-cssom-serialization.tentative.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/private/private-cssom-style-api.tentative.html	10	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models
+css/css-mixins/private/private-shared-stylesheet.tentative.html	1	script tests of mixins and private properties (CSSOM and `@apply`): the CSSOM script gate reads the ones it models

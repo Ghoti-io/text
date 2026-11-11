@@ -1,0 +1,20 @@
+# Defects planted in a copy of one source of src/css by tools/conformance/run-css-mixins.sh --controls, one per line:
+#
+#   <name> TAB <file in src/css> TAB <old text> TAB <new text> TAB <text the gate has to say>
+#
+# The old text is literal (a `\n` in it is a line feed; `\x1f` separates several edits of one file) and must be in the file exactly once. The scorer is run with the library built
+# with the edit and must fail, naming a case the rule decides (the fifth column is in its output): each is a rule of the evaluation of custom functions, undone, that the templates hold.
+# (The same rules are planted for the unit tests by tools/css/plant-function.py, which also holds three that these templates do not see: extra arguments accepted, a local that does not shadow a
+# parameter, a brace fallback with more after it.)
+function-cycle-not-guarded	css_substitute.c	    if (g != SIZE_MAX) {\n      mark_cyclic(sub, g);	    if (0 && g != SIZE_MAX) {\n      mark_cyclic(sub, g);	dashed-function-cycles.html
+function-default-ignored	css_substitute.c	      if (!pm->has_default) {\n        prop_settle(sub, fi, NULL);	      if (1 || !pm->has_default) {\n        prop_settle(sub, fi, NULL);	dashed-function-eval.html
+function-body-cannot-see-the-call-site	css_substitute.c	  const css_fn_def * fn = f->def;\n  GTEXT_Allocator a = sub->alloc;\n  scope_t * sc = scope_new(sub, f->scope, fn);	  const css_fn_def * fn = f->def;\n  GTEXT_Allocator a = sub->alloc;\n  scope_t * sc = scope_new(sub, NULL, fn);	dashed-function-eval.html
+function-conditional-rule-always-applies	css_substitute.c	  *applies = st == GTEXT_CSS_OK && answer == GTEXT_CSS_TRI_TRUE;	  *applies = st == GTEXT_CSS_OK;	function-conditionals.html
+function-return-type-ignored	css_substitute.c	          e.ereg = &sc->eregs[fn->nparams];	          e.ereg = NULL;	dashed-function-eval.html
+function-guard-not-released	css_substitute.c	    if (f->fguard) {\n      guard_pop(sub, f->def);\n    }	    if (0 && f->fguard) {\n      guard_pop(sub, f->def);\n    }	dashed-function-cycles.html
+function-brace-argument-keeps-its-braces	css_substitute.c	        cnt = vals[0].child_count;\n        vals = vals[0].children;	        cnt = cnt + 0;	dashed-function-eval.html
+function-inherit-reads-its-own-scope	css_substitute.c	    return lookup_in(sub, fi, slot, sc->parent, name, len, false, NULL);	    return lookup_in(sub, fi, slot, sc, name, len, false, NULL);	local-inherit-substitution.html
+function-rules-not-given-to-the-document-context	cssom_computed.c	  co.function_rules = core->fns;	  co.function_rules = NULL;	dashed-function-eval.html
+function-initial-registration-not-handed-down-a-chain	css_substitute.c	      if (v[i].param != SIZE_MAX) {\n        /* A local variable	      if (v[i].kind == EK_PARAM) {\n        /* A local variable	dashed-function-eval.html
+style-query-ignores-the-registration-of-a-parameter	css_substitute.c	  if (in_fn) {\n    er = dent->ereg;\n  }	  if (in_fn) {\n    er = NULL;\n  }	function-parameter-types.tentative.html
+style-query-initial-keyword-is-the-registrations-initial-value	css_substitute.c	    keyword_initial = (dent->kind == EK_PARAM || dent->kind == EK_LOCAL) && dent->param != SIZE_MAX && dent->param < dsc->fn->nparams && dsc->pvals ? dsc->pvals[dent->param] : NULL;	    keyword_initial = NULL;	local-if-substitution.html
