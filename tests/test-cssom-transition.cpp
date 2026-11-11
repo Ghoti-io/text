@@ -328,4 +328,41 @@ TEST(CssomTransitionOom, EveryAllocationOfAnEventAndAReadFailsCleanly) {
   EXPECT_GT(failures, 30u);
 }
 
+/* "Four distinct ::scroll-button() pseudo-elements can exist on a scroll container, each associated with a flow-relative direction, based on their originating element's writing mode" (CSS
+   Overflow 5): `::scroll-button(up)` and `::scroll-button(block-start)` are one pseudo-element in a horizontal writing mode, so a transition started through either is the one transition, and
+   `down` is another. The key of the tracker's set is the button, in the flow of the originating element. */
+TEST(CssomTransition, TheButtonsOfAScrollContainerAreKeyedByTheButtonAndNotByTheSpellingOfTheArgument) {
+  Tr t(page("#t { overflow: auto; height: 50px } #t::scroll-button(*) { opacity: 0; transition: opacity 1s linear } #t.on::scroll-button(*) { opacity: 1 }"));
+  t.at(0);
+  t.flush("#t");
+  t.flush("#t", "::scroll-button(block-start)");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  t.flush("#t", "::scroll-button(block-start)");
+  t.at(500);
+  EXPECT_EQ(t.width("#t", "::scroll-button(block-start)", "opacity"), "0.5");
+  EXPECT_EQ(t.width("#t", "::scroll-button(up)", "opacity"), "0.5") << "up is the block-start button of a horizontal-tb scroll container: the same pseudo-element";
+  EXPECT_EQ(t.width("#t", "::scroll-button(UP)", "opacity"), "0.5") << "the argument is not case-sensitive";
+  EXPECT_EQ(t.width("#t", "::scroll-button(down)", "opacity"), "1") << "down is the block-end button: another one, which nothing transitioned";
+  EXPECT_EQ(t.width("#t", "::scroll-button(inline-start)", "opacity"), "1");
+  t.at(1000);
+  EXPECT_EQ(t.width("#t", "::scroll-button(up)", "opacity"), "1");
+}
+
+/* ... and the button an argument names is the flow of the originating element's: in a vertical writing mode `up` is the inline-start button, and the block-start one is `right` or `left`. */
+TEST(CssomTransition, WhichButtonUpIsFollowsTheWritingModeOfTheContainer) {
+  Tr t(page("#t { overflow: auto; height: 50px; writing-mode: vertical-rl } #t::scroll-button(*) { opacity: 0; transition: opacity 1s linear } #t.on::scroll-button(*) { opacity: 1 }"));
+  t.at(0);
+  t.flush("#t");
+  t.flush("#t", "::scroll-button(inline-start)");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  t.flush("#t", "::scroll-button(inline-start)");
+  t.at(500);
+  EXPECT_EQ(t.width("#t", "::scroll-button(inline-start)", "opacity"), "0.5");
+  EXPECT_EQ(t.width("#t", "::scroll-button(up)", "opacity"), "0.5") << "up is the inline-start button of a vertical-rl container";
+  EXPECT_EQ(t.width("#t", "::scroll-button(block-start)", "opacity"), "1") << "block-start is right here: another button";
+  EXPECT_EQ(t.width("#t", "::scroll-button(right)", "opacity"), "1");
+}
+
 } // namespace

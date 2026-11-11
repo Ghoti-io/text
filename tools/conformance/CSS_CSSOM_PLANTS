@@ -548,3 +548,5 @@ document-default-mixin-expansions-drifts	cssom_core.c	#define DEFAULT_MAX_MIXIN_
 highlight-inherits-the-resolved-color	css_style.c	    if (parent && id == color && parent->hl_color) {	    if (0 && parent && id == color && parent->hl_color) {	computed
 highlight-forgets-the-specified-color-it-passes-on	css_style.c	      style->hl_color = gtext_css_value_set_retain(parent->hl_color);	      style->hl_color = NULL;	computed
 highlight-does-not-keep-a-color-that-holds-currentcolor	css_style.c	color_holds_currentcolor_inside(v->color, 0) ? it.set : NULL;	0 ? it.set : NULL;	computed
+scroll-button-keyed-by-the-spelling-of-its-argument	cssom_computed.c	    if (s->pseudo == GTEXT_CSS_SEL_PE_SCROLL_BUTTON_FN && flow) {	    if (0) {	transition
+scroll-button-keyed-in-the-initial-flow	cssom_computed.c	  if (e && e->before) {\n    return gtext_css_computed_flow(e->before);	  if (0) {\n    return gtext_css_computed_flow(e->before);	transition

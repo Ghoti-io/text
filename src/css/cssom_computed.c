@@ -33,10 +33,12 @@
  * a function of the sequence of reads and never of a clock, and the answer never depends on it.
  */
 
+#include <stdio.h>
 #include <string.h>
 
 #include <ghoti.io/text/css/css_container.h>
 #include "css_compute_internal.h"
+#include "css_match_internal.h"
 #include "css_internal.h"
 #include "cssom_computed_internal.h"
 #include "cssom_doc_internal.h"
@@ -1411,14 +1413,37 @@ size_t gtext_cssom_transition_tracker_forget(GTEXT_CSSOM_Transition_Tracker * tr
   return gone;
 }
 
-/// The name that keys a pseudo-element: the canonical name of its one pseudo-element selector.
-static void pseudo_key(const GTEXT_CSS_Selector_List * pseudo, const char ** key, size_t * length) {
+/// The flow that says which button of a scroll container `::scroll-button(up)` is: the one of the originating element as of the last style change event the tracker saw for it (the initial flow
+/// before there was one, and no pseudo-element has a set before there is one).
+static GTEXT_CSS_Flow origin_flow(GTEXT_CSSOM_Transition_Tracker * t, const void * element) {
+  const tracker_entry * e = entry_find(t, element, "", 0);
+  if (e && e->before) {
+    return gtext_css_computed_flow(e->before);
+  }
+  const GTEXT_CSS_Flow initial = {GTEXT_CSS_WRITING_MODE_HORIZONTAL_TB, GTEXT_CSS_DIRECTION_LTR, GTEXT_CSS_TEXT_ORIENTATION_MIXED};
+  return initial;
+}
+
+/// The name that keys a pseudo-element: the canonical name of its one pseudo-element selector, and for `::scroll-button()` the button, so that `(up)` and `(block-start)` of one scroll container
+/// are the one pseudo-element they are: "Four distinct ::scroll-button() pseudo-elements can exist on a scroll container, each associated with a flow-relative direction" (CSS Overflow 5).
+/// `buf` holds the key of a button.
+static void pseudo_key(const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Flow * flow, char * buf, size_t cap, const char ** key, size_t * length) {
   *key = "";
   *length = 0;
   if (pseudo && pseudo->count == 1 && pseudo->complex[0].compound_count == 1 && pseudo->complex[0].compounds[0].simple_count == 1) {
     const GTEXT_CSS_Simple * s = &pseudo->complex[0].compounds[0].simples[0];
     *key = s->name.data ? s->name.data : "";
     *length = s->name.data ? s->name.length : 0;
+    if (s->pseudo == GTEXT_CSS_SEL_PE_SCROLL_BUTTON_FN && flow) {
+      const int slot = css_scroll_button_slot(s, flow);
+      if (slot >= 0) {
+        const int n = snprintf(buf, cap, "scroll-button(%d)", slot);
+        if (n > 0 && (size_t)n < cap) {
+          *key = buf;
+          *length = (size_t)n;
+        }
+      }
+    }
   }
 }
 
@@ -1429,7 +1454,9 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_lookup(GTEXT_CSSOM_Transition_Tr
   }
   const char * key;
   size_t kl;
-  pseudo_key(pseudo, &key, &kl);
+  char buf[32];
+  const GTEXT_CSS_Flow flow = pseudo ? origin_flow(tracker, element) : (GTEXT_CSS_Flow){GTEXT_CSS_WRITING_MODE_HORIZONTAL_TB, GTEXT_CSS_DIRECTION_LTR, GTEXT_CSS_TEXT_ORIENTATION_MIXED};
+  pseudo_key(pseudo, &flow, buf, sizeof buf, &key, &kl);
   tracker_entry * e = entry_find(tracker, element, key, kl);
   *set = e && gtext_css_transition_set_running_count(e->set) ? e->set : NULL;
   *time_ms = tracker->time_ms;
@@ -1491,11 +1518,15 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_flush(GTEXT_CSSOM_Transition_Tra
     e = up;
   }
   core->in_callback--;
+  GTEXT_CSS_Flow element_flow = {GTEXT_CSS_WRITING_MODE_HORIZONTAL_TB, GTEXT_CSS_DIRECTION_LTR, GTEXT_CSS_TEXT_ORIENTATION_MIXED};   /* the originating element's, for a pseudo-element's key */
   for (size_t i = n; st == GTEXT_CSS_OK && i-- > 0;) {
     /* each element's own after-change style: the chain above it is computed again, which keeps this call free of any cache the shown styles use */
     GTEXT_CSS_Computed_Style * after = NULL;
     st = gtext_cssom_document_after_change_style(tracker->document, chain[i], NULL, 0, &after);
     if (st == GTEXT_CSS_OK && after) {
+      if (i == 0) {
+        element_flow = gtext_css_computed_flow(after);
+      }
       st = tracker_step(tracker, chain[i], "", 0, after);
     }
     gtext_css_computed_free(after);
@@ -1511,7 +1542,8 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_flush(GTEXT_CSSOM_Transition_Tra
       if (st == GTEXT_CSS_OK && list) {
         const char * key;
         size_t kl;
-        pseudo_key(list, &key, &kl);
+        char buf[32];
+        pseudo_key(list, &element_flow, buf, sizeof buf, &key, &kl);
         st = tracker_step(tracker, element, key, kl, after);
       }
       gtext_css_selector_list_free(list);

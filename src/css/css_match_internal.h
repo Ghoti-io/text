@@ -174,8 +174,13 @@ El css_flat_parent(struct GTEXT_CSS_Selector_Match_Context * ctx, El element);
 bool css_match_complex_full(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CSS_Selector_List * list, const GTEXT_CSS_Complex * cx, El element,
     const GTEXT_CSS_Complex * request, El slot, El host);
 
+/// `::scroll-button()`: the slot (0 to 3: block-start, inline-start, inline-end, block-end) of the button the argument of a pseudo-element selector names in `flow`, or -1 for `*` and for a
+/// selector that is not one. Two requests for the same button in one flow have the same slot, whatever physical or flow-relative direction each spelled (css_match.c).
+int css_scroll_button_slot(const GTEXT_CSS_Simple * s, const GTEXT_CSS_Flow * flow);
+
 #ifdef __cplusplus
 }
 #endif
+
 
 #endif // GHOTI_IO_GTEXT_SRC_CSS_CSS_MATCH_INTERNAL_H

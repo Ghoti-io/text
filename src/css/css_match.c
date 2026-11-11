@@ -791,7 +791,7 @@ static bool exists_above(struct GTEXT_CSS_Selector_Match_Context * ctx, const GT
 /// element's writing mode: in order, block-start, inline-start, inline-end, and block-end", and the argument "selects the ::scroll-button() corresponding to the given physical direction"
 /// (`up`, `down`, `left`, `right`) or "the indicated" flow-relative one; `*` "selects all four". The slot (0 to 3, in that order) of the button an argument names in `flow`, or -1 for `*`.
 /// The argument is as the parser keeps it: the row's own spelling, in lower case.
-static int scroll_button_slot(const GTEXT_CSS_Simple * s, const GTEXT_CSS_Flow * flow) {
+int css_scroll_button_slot(const GTEXT_CSS_Simple * s, const GTEXT_CSS_Flow * flow) {
   if (s->anb_a == 1 || s->string_count != 1) {
     return -1;
   }
@@ -826,7 +826,7 @@ static bool same_pe(const struct GTEXT_CSS_Selector_Match_Context * ctx, const G
   if (a->pseudo == GTEXT_CSS_SEL_PE_SCROLL_BUTTON_FN && b->pseudo == a->pseudo) {
     static const GTEXT_CSS_Flow initial = {GTEXT_CSS_WRITING_MODE_HORIZONTAL_TB, GTEXT_CSS_DIRECTION_LTR, GTEXT_CSS_TEXT_ORIENTATION_MIXED};
     const GTEXT_CSS_Flow * flow = ctx->request_flow ? ctx->request_flow : &initial;
-    const int sa = scroll_button_slot(a, flow), sb = scroll_button_slot(b, flow);
+    const int sa = css_scroll_button_slot(a, flow), sb = css_scroll_button_slot(b, flow);
     if (a->anb_a == 1) {
       return true;   /* `*`: all four buttons (and the request that says `*`) */
     }
