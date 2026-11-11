@@ -1058,6 +1058,11 @@ bool css_property_is_discrete(const GTEXT_CSS_Registry * registry, GTEXT_CSS_Pro
 
 GTEXT_CSS_Status css_blend_values_text(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Computed_Style * color_style, GTEXT_CSS_Property_Id id, const char * a, size_t an, const char * b,
     size_t bn, double p, const GTEXT_Allocator * alloc, char ** text, size_t * length, bool * discrete) {
+  return css_blend_key_text(cc, color_style, id, NULL, 0, a, an, b, bn, p, alloc, text, length, discrete);
+}
+
+GTEXT_CSS_Status css_blend_key_text(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Computed_Style * color_style, GTEXT_CSS_Property_Id id, const char * name, size_t name_length,
+    const char * a, size_t an, const char * b, size_t bn, double p, const GTEXT_Allocator * alloc, char ** text, size_t * length, bool * discrete) {
   sampler s;
   memset(&s, 0, sizeof s);
   s.cc = cc;
@@ -1067,6 +1072,8 @@ GTEXT_CSS_Status css_blend_values_text(const GTEXT_CSS_Compute_Context * cc, con
   key k;
   memset(&k, 0, sizeof k);
   k.id = id;
+  k.name = (char *)(uintptr_t)name;   /* (read, never written or freed: the key of a blend is not the sampler's) */
+  k.name_length = name_length;
   val va, vb;
   GTEXT_CSS_Status st = val_of_text(&s, &k, a, an, &va);
   if (st != GTEXT_CSS_OK) {
@@ -1166,12 +1173,16 @@ GTEXT_CSS_Status css_transition_sample(const GTEXT_CSS_Compute_Context * cc, con
     }
     /* "When a property on an element is undergoing a transition (that is, when or after the transition has started and before the end time of the transition) the transition adds a style
        called the current value to the cascade", and "if and only if that property is not currently undergoing a CSS Animation on the same element" */
-    if (tr->time_ms >= t.end_time_ms || !animatable(&s, t.property)) {
+    const bool custom = t.property == 0;
+    if (tr->time_ms >= t.end_time_ms || (!custom && !animatable(&s, t.property))) {
       continue;
     }
     bool animated_here = false;
-    for (size_t k = 0; applied && k < applied->nids; k++) {
+    for (size_t k = 0; applied && !custom && k < applied->nids; k++) {
       animated_here = animated_here || applied->ids[k] == t.property;
+    }
+    for (size_t k = 0; applied && custom && k < applied->nnames; k++) {
+      animated_here = animated_here || (applied->name_lengths[k] == t.custom_name.length && memcmp(applied->names[k], t.custom_name.data, t.custom_name.length) == 0);
     }
     if (animated_here) {
       continue;
@@ -1192,17 +1203,22 @@ GTEXT_CSS_Status css_transition_sample(const GTEXT_CSS_Compute_Context * cc, con
       st = gtext_css_block_clone(base, &out_block);
     }
     GTEXT_CSS_Property_Info pi;
-    if (st == GTEXT_CSS_OK && !gtext_css_registry_property_info(s.reg, t.property, &pi)) {
+    memset(&pi, 0, sizeof pi);
+    if (custom) {
+      pi.name = t.custom_name.data;
+      pi.name_length = t.custom_name.length;
+    }
+    else if (st == GTEXT_CSS_OK && !gtext_css_registry_property_info(s.reg, t.property, &pi)) {
       st = GTEXT_CSS_E_INVALID;
     }
     if (st == GTEXT_CSS_OK) {
-      st = gtext_css_block_remove(out_block, t.property, NULL, 0, NULL);
+      st = gtext_css_block_remove(out_block, t.property, custom ? pi.name : NULL, custom ? pi.name_length : 0, NULL);
     }
     GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
     if (st == GTEXT_CSS_OK) {
       st = add_declaration(&s, out_block, pi.name, pi.name_length, text, len, &outcome);
     }
-    if (st == GTEXT_CSS_OK && outcome != GTEXT_CSS_PROP_RESULT_VALID && outcome != GTEXT_CSS_PROP_RESULT_WIDE) {
+    if (st == GTEXT_CSS_OK && !custom && outcome != GTEXT_CSS_PROP_RESULT_VALID && outcome != GTEXT_CSS_PROP_RESULT_WIDE) {
       /* the number is outside the range of its property (an easing that overshoots): a calculation clamps it as the property says */
       char * wrapped = gtext_allocator_malloc(&s.al, len + 8);
       if (!wrapped) {

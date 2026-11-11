@@ -43,9 +43,22 @@ A property that a CSS Animation of the element is applying (`gtext_css_computed_
 while an animation applies its property. The current value is declared at the transition origin: it beats every other declaration, important ones included, and it is the value the descendants
 inherit.
 
+# Custom properties
+
+"When referenced by animations and transitions, custom property values interpolate by computed value, in accordance with the type that they parsed as" (CSS Properties and Values API 1, "Animation
+Behavior"), and a custom property that is registered with a syntax that has a computed value type has that as its animation type, where "the animation type is discrete" for one with no such type (the
+universal syntax) or no registration (Web Animations 1, "Custom Properties"). So a `transition-property` item that names a custom property (`--w`: names are case-sensitive) starts a transition when the
+property's computed value changes, which interpolates by the registered syntax: `<length>`, `<number>`, `<color>`, `<transform-function>` and the lists of them as the animation of the typed value says.
+`transition-property: all` names the registered properties that have a type, and not the unregistered or universal ones. A pair of values that is discrete (an unregistered property, a universal one, a
+`<custom-ident>`, a list of another length) transitions only with `transition-behavior: allow-discrete`, and then holds the start value until the middle of the transition and shows the end value from it.
+A custom property nothing sets has the guaranteed-invalid value, which has no text (an empty one is `--x:;`): a transition from it or to it is discrete too, and its value is reported as `initial`, the declaration that gives it. A running transition of a custom property is in
+`GTEXT_CSS_Transition_Info` with `property` 0 and the name in `custom_name`, and a completed one in `gtext_css_transition_set_completed_at()` the same way. The current value is declared at the transition
+origin as a custom property declaration, so a `var()` that reads it, and every property that depends on it, sees the interpolated value; registering a property again between two style change events makes the
+two styles not comparable, so no transition starts for that event (the tracker already treated a change of context so: "Registering (or changing the registration) of a custom property can change its computed
+value, which can start or interrupt a CSS transition").
+
 # What is not here
 
-The events (transitionrun, transitionstart, transitionend, transitioncancel) and the `CSSTransition` object: the update returns counts and the caller can read the set before and after. Registered
-custom properties do not transition. `@starting-style` is the style options' `starting_style` flag (compute the starting style, then the style, and give the first as the before-change style).
+The events (transitionrun, transitionstart, transitionend, transitioncancel) and the `CSSTransition` object: the update returns counts and the caller can read the set before and after. `@starting-style` is the style options' `starting_style` flag (compute the starting style, then the style, and give the first as the before-change style).
 The specification builds the after-change style from the *before-change* `animation-*` values; this library asks the two styles which properties an animation applies, which agrees for every
 property an animation applies in both and differs when an animation starts or ends in the same event as a change of the property it did not apply before.

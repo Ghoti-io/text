@@ -365,4 +365,90 @@ TEST(CssomTransition, WhichButtonUpIsFollowsTheWritingModeOfTheContainer) {
   EXPECT_EQ(t.width("#t", "::scroll-button(right)", "opacity"), "1");
 }
 
+/* "When referenced by animations and transitions, custom property values interpolate by computed value, in accordance with the type that they parsed as" (CSS Properties and Values API 1, "Animation
+   Behavior"): a registered `<length>` custom property transitions like a length, and what reads it (`width: var(--w)`) follows. */
+TEST(CssomTransition, ARegisteredCustomPropertyTransitionsByItsSyntaxAndWhatReadsItFollows) {
+  Tr t(page("@property --w { syntax: '<length>'; inherits: false; initial-value: 0px } #t { --w: 100px; width: var(--w); transition: --w 1s linear } #t.on { --w: 200px }"));
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  EXPECT_EQ(t.width("#t", nullptr, "--w"), "100px");
+  t.at(250);
+  EXPECT_EQ(t.width("#t", nullptr, "--w"), "125px");
+  EXPECT_EQ(t.width("#t"), "125px") << "width: var(--w) reads the interpolated value";
+  t.at(1000);
+  EXPECT_EQ(t.width("#t", nullptr, "--w"), "200px");
+  EXPECT_EQ(t.width("#t"), "200px");
+}
+
+TEST(CssomTransition, ARegisteredColorAndNumberAndListInterpolateByTheirSyntax) {
+  Tr t(page("@property --c { syntax: '<color>'; inherits: false; initial-value: black } @property --n { syntax: '<number>'; inherits: false; initial-value: 0 } "
+            "@property --l { syntax: '<length>+'; inherits: false; initial-value: 0px } @property --m { syntax: '<length>+'; inherits: false; initial-value: 0px } "
+            "#t { --c: rgb(0 0 0); --n: 10; --l: 10px 20px; --m: 10px 20px; transition: --c 1s linear, --n 1s linear, --l 1s linear, --m 1s linear } "
+            "#t.on { --c: rgb(100 200 100); --n: 20; --l: 20px 40px; --m: 20px }"));
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  t.at(500);
+  EXPECT_EQ(t.width("#t", nullptr, "--c"), "rgb(50, 100, 50)");
+  EXPECT_EQ(t.width("#t", nullptr, "--n"), "15");
+  EXPECT_EQ(t.width("#t", nullptr, "--l"), "15px 30px") << "a list matches up its components one by one";
+  EXPECT_EQ(t.width("#t", nullptr, "--m"), "20px") << "lists of another length are a discrete pair: with the normal behavior no transition starts";
+}
+
+/* "transition-property: all" names every property that can be animated: the longhands and the registered custom properties that have a type; one registered with the universal syntax is discrete, and
+   an unregistered one is named by its own name only. */
+TEST(CssomTransition, AllNamesTheRegisteredTypedCustomPropertiesAndNotTheOthers) {
+  Tr t(page("@property --w { syntax: '<length>'; inherits: false; initial-value: 0px } @property --u { syntax: '*'; inherits: false } "
+            "#t { --w: 100px; --u: a; --x: a; transition: all 1s linear; transition-behavior: allow-discrete } #t.on { --w: 200px; --u: b; --x: b }"));
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  t.at(250);
+  EXPECT_EQ(t.width("#t", nullptr, "--w"), "125px");
+  EXPECT_EQ(t.width("#t", nullptr, "--u"), "b") << "a universal registration is discrete, and `all` does not name it";
+  EXPECT_EQ(t.width("#t", nullptr, "--x"), "b");
+}
+
+/* ... and a discrete custom property that is named transitions with allow-discrete, holding the start value until the middle. */
+TEST(CssomTransition, ANamedUniversalAndAnUnregisteredCustomPropertyTransitionDiscretelyWithAllowDiscrete) {
+  Tr t(page("@property --u { syntax: '*'; inherits: false } #t { --u: a; --x: a; transition: --u 1s linear, --x 1s linear; transition-behavior: allow-discrete } #t.on { --u: b; --x: b }"));
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  t.at(250);
+  EXPECT_EQ(t.width("#t", nullptr, "--u"), "a");
+  EXPECT_EQ(t.width("#t", nullptr, "--x"), "a");
+  t.at(500);
+  EXPECT_EQ(t.width("#t", nullptr, "--u"), "b");
+  EXPECT_EQ(t.width("#t", nullptr, "--x"), "b");
+}
+
+/* the matching item is the last one that names the property: `all` names a typed one and not a universal one, so for the universal one the earlier item that names it is the one. */
+TEST(CssomTransition, AllIsNotTheItemOfAUniversalCustomPropertyThatAnEarlierItemNames) {
+  Tr t(page("@property --u { syntax: '*'; inherits: false } #t { --u: a; transition: --u 2s linear, all 1s linear; transition-behavior: allow-discrete } #t.on { --u: b }"));
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  t.at(750);
+  EXPECT_EQ(t.width("#t", nullptr, "--u"), "a") << "the two-second item holds the start value until its middle";
+  t.at(1250);
+  EXPECT_EQ(t.width("#t", nullptr, "--u"), "b");
+}
+
+TEST(CssomTransition, ARegisteredCustomIdentIsADiscretePairAndWithoutAllowDiscreteStartsNothing) {
+  Tr t(page("@property --k { syntax: 'a | b'; inherits: false; initial-value: a } #t { --k: a; transition: --k 1s linear } #t.on { --k: b }"));
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  t.at(250);
+  EXPECT_EQ(t.width("#t", nullptr, "--k"), "b");
+}
+
 } // namespace

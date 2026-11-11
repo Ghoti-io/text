@@ -19,7 +19,7 @@
 """Write the seed corpus of tests/fuzz/fuzz_css_transition.cpp into tests/fuzz/corpus/css-transition.
 
 Byte 0 selects the out-of-memory mode (low two bits 0), byte 1 the first base list of transition declarations, then triples of (value, value, time) per style change event.
-Twelve base lists times two scripts (a hover that reverses, and a script that sweeps the pool), forty random scripts and one that moves time backwards.
+Fourteen base lists times two scripts (a hover that reverses, and a script that sweeps the pool), forty random scripts and one that moves time backwards.
 """
 import os
 import random
@@ -30,7 +30,7 @@ out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "tests", "fuzz", 
 os.makedirs(out, exist_ok=True)
 rnd = random.Random(20261107)
 seeds = []
-for base in range(12):
+for base in range(14):
     seeds.append(bytes([1, base, 0, 1, 4, 1, 0, 4, 0, 1, 4, 2, 2, 15, 3, 4, 8]))
     seeds.append(bytes([0, base, 3, 4, 2, 4, 3, 4, 3, 4, 1, 5, 5, 0, 6, 7, 7]))
 for _ in range(40):

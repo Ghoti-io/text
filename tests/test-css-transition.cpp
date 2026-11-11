@@ -308,7 +308,7 @@ TEST(CssTransition, ACompletedTransitionIsKeptSoThatTheSameValueDoesNotRestartIt
   ASSERT_EQ(gtext_css_transition_set_completed_count(t.set), 1u);
   GTEXT_CSS_Property_Id p = 0;
   GTEXT_CSS_String end{};
-  ASSERT_TRUE(gtext_css_transition_set_completed_at(t.set, 0, &p, &end));
+  ASSERT_TRUE(gtext_css_transition_set_completed_at(t.set, 0, &p, nullptr, &end));
   EXPECT_EQ(p, find(R(), "opacity"));
   EXPECT_EQ(std::string(end.data, end.length), "1");
   /* a before-change style that differs from the after-change one and a completed transition with the same end value: no new transition */
@@ -667,6 +667,99 @@ TEST(CssTransitionOom, TheStyleOfATransitioningElementSweptOverEveryAllocation) 
   }
   EXPECT_GT(failures, 20u);
   gtext_css_transition_set_free(set);
+}
+
+// ---- custom properties ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+/// The computed value text of a custom property of a style ("<none>" for the guaranteed-invalid value).
+std::string custom_val(const GTEXT_CSS_Computed_Style * style, const std::string & name) {
+  const GTEXT_CSS_Custom_Value * cv = nullptr;
+  if (!gtext_css_computed_custom_find(style, name.data(), name.size(), &cv) || !cv) {
+    return "<none>";
+  }
+  char * out = nullptr;
+  size_t n = 0;
+  if (gtext_css_custom_value_text(cv, nullptr, &out, &n) != GTEXT_CSS_OK) {
+    return "<error>";
+  }
+  std::string text(out, n);
+  gtext_css_serialize_buffer_free(nullptr, out);
+  return text;
+}
+
+std::string shown_custom(Tx & t, const std::string & decls, const std::string & name, double ms) {
+  GTEXT_CSS_Status status = GTEXT_CSS_OK;
+  GTEXT_CSS_Computed_Style * s = make_style(t.ctx, decls, t.set, ms, nullptr, &status);
+  const std::string v = s ? custom_val(s, name) : "<no style>";
+  gtext_css_computed_free(s);
+  return v;
+}
+
+/* "the animation type is discrete" for "a custom property [that] is not registered" (Web Animations 1, "Custom Properties"), and "the property values are transitionable if they have an animation
+   type that is neither not animatable nor discrete": an unregistered custom property transitions only with `transition-behavior: allow-discrete` (Transitions 2), when its value is the start value
+   until the middle of the transition and the end value from it, as every discrete animation type does. */
+TEST(CssTransition, AnUnregisteredCustomPropertyTransitionsOnlyWhenTheBehaviorAllowsDiscreteValues) {
+  Tx plain;
+  ASSERT_EQ(plain.event("--x: a", "transition: --x 1s linear; --x: b", 0), GTEXT_CSS_OK);
+  EXPECT_EQ(plain.up.started, 0u) << "a discrete pair, and the behavior is normal";
+  Tx t;
+  const std::string decls = "transition: --x 1s linear; transition-behavior: allow-discrete; --x: b";
+  ASSERT_EQ(t.event("--x: a", decls, 100), GTEXT_CSS_OK);
+  EXPECT_EQ(t.up.started, 1u);
+  ASSERT_EQ(t.running(), 1u);
+  const GTEXT_CSS_Transition_Info i = t.info();
+  EXPECT_EQ(i.property, 0u);
+  EXPECT_EQ(std::string(i.custom_name.data, i.custom_name.length), "--x");
+  EXPECT_EQ(std::string(i.start_value.data, i.start_value.length), "a");
+  EXPECT_EQ(std::string(i.end_value.data, i.end_value.length), "b");
+  EXPECT_EQ(shown_custom(t, decls, "--x", 100), "a");
+  EXPECT_EQ(shown_custom(t, decls, "--x", 599), "a") << "below the middle of the transition";
+  EXPECT_EQ(shown_custom(t, decls, "--x", 600), "b") << "from it";
+  EXPECT_EQ(shown_custom(t, decls, "--x", 1100), "b");
+  ASSERT_EQ(t.event(decls, decls, 1100), GTEXT_CSS_OK);
+  EXPECT_EQ(t.up.completed, 1u);
+  GTEXT_CSS_Property_Id p = 1;
+  GTEXT_CSS_String name{}, end{};
+  ASSERT_TRUE(gtext_css_transition_set_completed_at(t.set, 0, &p, &name, &end));
+  EXPECT_EQ(p, 0u);
+  EXPECT_EQ(std::string(name.data, name.length), "--x");
+  EXPECT_EQ(std::string(end.data, end.length), "b");
+}
+
+/* A custom property nothing sets has the guaranteed-invalid value, which has no text (the empty one is `--x:;`): a transition from it is discrete as well, and to it ("the value of the property in
+   the after-change style" is that value), and the current value of one that is still the guaranteed-invalid value is that value again and not an empty one. */
+TEST(CssTransition, TheGuaranteedInvalidValueIsAValueOfADiscreteTransition) {
+  Tx t;
+  const std::string with = "transition: --x 1s step-end; transition-behavior: allow-discrete; --x: a";
+  const std::string without = "transition: --x 1s step-end; transition-behavior: allow-discrete";
+  ASSERT_EQ(t.event(without, with, 0), GTEXT_CSS_OK);
+  ASSERT_EQ(t.up.started, 1u);
+  EXPECT_EQ(std::string(t.info().start_value.data, t.info().start_value.length), "initial") << "the guaranteed-invalid value is written as the declaration that gives it";
+  EXPECT_EQ(shown_custom(t, with, "--x", 500), "<none>");
+  ASSERT_EQ(t.event(with, without, 2000), GTEXT_CSS_OK);
+  EXPECT_EQ(t.up.started, 1u) << "back to no value: a transition to the guaranteed-invalid value";
+}
+
+/* `all` names the properties that can be animated, which are the longhands and the registered custom properties that have a type; an unregistered one is named by its own name only. */
+TEST(CssTransition, AllDoesNotNameAnUnregisteredCustomProperty) {
+  Tx t;
+  ASSERT_EQ(t.event("--x: a", "transition: all 1s linear; transition-behavior: allow-discrete; --x: b", 0), GTEXT_CSS_OK);
+  EXPECT_EQ(t.up.started, 0u);
+}
+
+/* The custom properties of a transition are told apart by name (names are case-sensitive), and a running transition of a custom property that no `transition-property` item names any more is
+   cancelled like any other. */
+TEST(CssTransition, CustomPropertiesAreKeyedByTheirCaseSensitiveNameAndAreCancelledWhenNoLongerNamed) {
+  Tx t;
+  const std::string both = "transition: --a 1s linear, --A 1s linear; transition-behavior: allow-discrete; ";
+  ASSERT_EQ(t.event("--a: 1; --A: 1", both + "--a: 2; --A: 3", 0), GTEXT_CSS_OK);
+  EXPECT_EQ(t.up.started, 2u);
+  ASSERT_EQ(t.running(), 2u);
+  EXPECT_NE(std::string(t.info(0).custom_name.data, t.info(0).custom_name.length), std::string(t.info(1).custom_name.data, t.info(1).custom_name.length));
+  ASSERT_EQ(t.event(both + "--a: 2; --A: 3", "transition: --a 1s linear; transition-behavior: allow-discrete; --a: 2; --A: 3", 100), GTEXT_CSS_OK);
+  EXPECT_EQ(t.up.cancelled, 1u) << "--A is not named any more";
+  ASSERT_EQ(t.running(), 1u);
+  EXPECT_EQ(std::string(t.info(0).custom_name.data, t.info(0).custom_name.length), "--a");
 }
 
 } // namespace

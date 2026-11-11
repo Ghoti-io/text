@@ -41,8 +41,17 @@
  * property changes as a result of declarative animation". (The specification gets this by building the after-change style from the *before-change* `animation-*` values; the result is the
  * same for the properties an animation applies in both styles, and this API asks the styles which those are.)
  *
+ * **Custom properties.** "When referenced by animations and transitions, custom property values interpolate by computed value, in accordance with the type that they parsed as" (CSS Properties and
+ * Values API 1, "Animation Behavior"), and "For custom properties registered ... the animation type is by computed value, derived from the type used in the property's syntax definition. Where there is
+ * no computed value type that corresponds to the property's specified syntax (e.g. when the syntax is the universal syntax definition) or when the custom property is not registered, the animation type
+ * is discrete" (Web Animations 1, "Custom Properties"). So a custom property transitions when a `transition-property` item names it (`all` names the registered ones with a syntax other than the universal
+ * one), by its registered syntax, and a pair of values that has no computed value type to interpolate (an unregistered property, a universal one, a `<custom-ident>`, lists of different lengths) transitions
+ * only with `transition-behavior: allow-discrete` ("the property values are transitionable if they have an animation type that is neither not animatable nor discrete", Transitions 1 and 2). The
+ * guaranteed-invalid value (the value of an unregistered custom property nothing sets) has no text of its own: a transition from or to it is discrete, and the value is written `initial`, the declaration that gives it. A transition of a custom property has `property`
+ * 0 and its name in `custom_name`.
+ *
  * **Not here:** the events (transitionrun, transitionstart, transitionend, transitioncancel) and `CSSTransition`; the update reports counts, and the caller that dispatches events can read the
- * set before and after. Registered custom properties do not transition; shorthands are not transitioned (their longhands are, one transition each).
+ * set before and after. Shorthands are not transitioned (their longhands are, one transition each).
  */
 
 #ifndef GHOTI_IO_GTEXT_CSS_CSS_TRANSITION_H
@@ -66,7 +75,8 @@ typedef struct GTEXT_CSS_Transition_Set GTEXT_CSS_Transition_Set;
 
 /** @struct GTEXT_CSS_Transition_Info @brief A running transition, valid until the set is updated or freed. */
 typedef struct {
-  GTEXT_CSS_Property_Id property;           ///< The (non-shorthand) property.
+  GTEXT_CSS_Property_Id property;           ///< The (non-shorthand) property, or 0 for a custom property.
+  GTEXT_CSS_String custom_name;             ///< The custom property's name (`--name`, as written), or empty for a longhand.
   GTEXT_CSS_String start_value;             ///< The "start value": the computed value, serialized.
   GTEXT_CSS_String end_value;               ///< The "end value".
   GTEXT_CSS_String reversing_adjusted_start_value;
@@ -106,8 +116,8 @@ GTEXT_API bool gtext_css_transition_set_running_at(const GTEXT_CSS_Transition_Se
 /** @brief How many transitions are completed. NULL is 0. */
 GTEXT_API size_t gtext_css_transition_set_completed_count(const GTEXT_CSS_Transition_Set * set);
 
-/** @brief Completed transition `index`: its property and its end value (what a later change is compared with). @return false past the end. */
-GTEXT_API bool gtext_css_transition_set_completed_at(const GTEXT_CSS_Transition_Set * set, size_t index, GTEXT_CSS_Property_Id * property, GTEXT_CSS_String * end_value);
+/** @brief Completed transition `index`: its property (0 for a custom property, whose name is `custom_name`) and its end value (what a later change is compared with). Either out parameter may be NULL. @return false past the end. */
+GTEXT_API bool gtext_css_transition_set_completed_at(const GTEXT_CSS_Transition_Set * set, size_t index, GTEXT_CSS_Property_Id * property, GTEXT_CSS_String * custom_name, GTEXT_CSS_String * end_value);
 
 /**
  * @brief The current value of a running transition at a time, serialized as the declaration `property: <text>` would say it.

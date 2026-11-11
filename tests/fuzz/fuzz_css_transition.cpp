@@ -68,11 +68,14 @@ const char * const kBase[] = {
   "transition: margin-inline-start 1s linear; ",
   "transition: font-size 1s linear; ",
   "",
+  "transition: --x 1s linear, --y 2s steps(2); transition-behavior: allow-discrete; ",
+  "transition: all 1s linear; transition-behavior: allow-discrete; ",
 };
 const char * const kValues[] = {
   "opacity: 0",       "opacity: 1",         "opacity: 0.5",       "width: 0px",         "width: 100px",       "width: 50%",
   "color: red",       "color: rgb(0, 0, 255)", "visibility: hidden", "visibility: visible", "margin-left: 10px",   "margin-top: 5px",
   "font-size: 10px",  "font-size: 30px",    "width: calc(10px + 5%)", "opacity: 1 !important", "color: currentcolor", "margin: 0",
+  "--x: a",           "--x: b",             "--y: 1px",           "--y: 5px",           "--X: 1",             "--x: var(--y)",
 };
 
 GTEXT_CSS_Compute_Context * context() {
@@ -118,7 +121,7 @@ std::string dump(const GTEXT_CSS_Computed_Style * s) {
 }
 
 void check_set(const GTEXT_CSS_Transition_Set * set) {
-  std::set<GTEXT_CSS_Property_Id> running;
+  std::set<std::string> running;   // a longhand by its id, a custom property by its name
   for (size_t i = 0; i < gtext_css_transition_set_running_count(set); i++) {
     GTEXT_CSS_Transition_Info t{};
     if (!gtext_css_transition_set_running_at(set, i, &t)) {
@@ -130,15 +133,17 @@ void check_set(const GTEXT_CSS_Transition_Set * set) {
     if (!(t.reversing_shortening_factor >= 0 && t.reversing_shortening_factor <= 1)) {
       fail("a shortening factor is outside 0..1", std::to_string(t.reversing_shortening_factor));
     }
-    running.insert(t.property);
+    running.insert(t.property ? std::to_string(t.property) : std::string(t.custom_name.data, t.custom_name.length));
   }
   for (size_t i = 0; i < gtext_css_transition_set_completed_count(set); i++) {
     GTEXT_CSS_Property_Id p = 0;
-    if (!gtext_css_transition_set_completed_at(set, i, &p, nullptr)) {
+    GTEXT_CSS_String name{};
+    if (!gtext_css_transition_set_completed_at(set, i, &p, &name, nullptr)) {
       fail("a completed transition could not be read", "");
     }
-    if (running.count(p)) {
-      fail("a property is both running and completed", std::to_string(p));
+    const std::string key = p ? std::to_string(p) : std::string(name.data, name.length);
+    if (running.count(key)) {
+      fail("a property is both running and completed", key);
     }
   }
 }

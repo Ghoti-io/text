@@ -33,11 +33,14 @@
 
 #include "css_anim_internal.h"
 #include "css_compute_internal.h"
+#include "css_creg.h"
+#include "css_substitute_internal.h"
 
 /* ---- the set -------------------------------------------------------------------------------------------------------------------------------------- */
 
 typedef struct {
-  GTEXT_CSS_Property_Id prop;
+  GTEXT_CSS_Property_Id prop;     ///< A longhand, or 0 for a custom property ...
+  char * cname; size_t lcn;       ///< ... whose name this is (owned; NULL for a longhand).
   char * start; size_t ls;
   char * end; size_t le;
   char * rasv; size_t lr;     ///< the reversing-adjusted start value
@@ -48,6 +51,7 @@ typedef struct {
 
 typedef struct {
   GTEXT_CSS_Property_Id prop;
+  char * cname; size_t lcn;
   char * end; size_t le;
 } done_t;
 
@@ -72,6 +76,7 @@ static char * dupn(const GTEXT_Allocator * a, const char * s, size_t n) {
 }
 
 static void tr_free(const GTEXT_Allocator * a, tr_t * t) {
+  gtext_allocator_free((GTEXT_Allocator *)a, t->cname);
   gtext_allocator_free((GTEXT_Allocator *)a, t->start);
   gtext_allocator_free((GTEXT_Allocator *)a, t->end);
   gtext_allocator_free((GTEXT_Allocator *)a, t->rasv);
@@ -80,6 +85,7 @@ static void tr_free(const GTEXT_Allocator * a, tr_t * t) {
 }
 
 static void done_free(const GTEXT_Allocator * a, done_t * d) {
+  gtext_allocator_free((GTEXT_Allocator *)a, d->cname);
   gtext_allocator_free((GTEXT_Allocator *)a, d->end);
   memset(d, 0, sizeof *d);
 }
@@ -143,6 +149,7 @@ bool gtext_css_transition_set_running_at(const GTEXT_CSS_Transition_Set * set, s
   }
   const tr_t * t = &set->run[index];
   out->property = t->prop;
+  out->custom_name = (GTEXT_CSS_String){t->cname, t->lcn};
   out->start_value = (GTEXT_CSS_String){t->start, t->ls};
   out->end_value = (GTEXT_CSS_String){t->end, t->le};
   out->reversing_adjusted_start_value = (GTEXT_CSS_String){t->rasv, t->lr};
@@ -158,12 +165,15 @@ size_t gtext_css_transition_set_completed_count(const GTEXT_CSS_Transition_Set *
   return set ? set->ndone : 0;
 }
 
-bool gtext_css_transition_set_completed_at(const GTEXT_CSS_Transition_Set * set, size_t index, GTEXT_CSS_Property_Id * property, GTEXT_CSS_String * end_value) {
+bool gtext_css_transition_set_completed_at(const GTEXT_CSS_Transition_Set * set, size_t index, GTEXT_CSS_Property_Id * property, GTEXT_CSS_String * custom_name, GTEXT_CSS_String * end_value) {
   if (!set || index >= set->ndone) {
     return false;
   }
   if (property) {
     *property = set->done[index].prop;
+  }
+  if (custom_name) {
+    *custom_name = (GTEXT_CSS_String){set->done[index].cname, set->done[index].lcn};
   }
   if (end_value) {
     *end_value = (GTEXT_CSS_String){set->done[index].end, set->done[index].le};
@@ -199,12 +209,13 @@ static GTEXT_CSS_Status set_copy(const GTEXT_CSS_Transition_Set * src, GTEXT_CSS
     const tr_t * a = &src->run[i];
     tr_t * b = &c->run[i];
     *b = *a;
+    b->cname = a->lcn ? dupn(&c->alloc, a->cname, a->lcn) : NULL;
     b->start = dupn(&c->alloc, a->start, a->ls);
     b->end = dupn(&c->alloc, a->end, a->le);
     b->rasv = dupn(&c->alloc, a->rasv, a->lr);
     b->timing = dupn(&c->alloc, a->timing, a->lt);
     c->nrun = i + 1;
-    if (!b->start || !b->end || !b->rasv || !b->timing) {
+    if ((a->lcn && !b->cname) || !b->start || !b->end || !b->rasv || !b->timing) {
       gtext_css_transition_set_free(c);
       return GTEXT_CSS_E_OOM;
     }
@@ -212,9 +223,11 @@ static GTEXT_CSS_Status set_copy(const GTEXT_CSS_Transition_Set * src, GTEXT_CSS
   for (size_t i = 0; i < src->ndone; i++) {
     c->done[i].prop = src->done[i].prop;
     c->done[i].le = src->done[i].le;
+    c->done[i].lcn = src->done[i].lcn;
+    c->done[i].cname = src->done[i].lcn ? dupn(&c->alloc, src->done[i].cname, src->done[i].lcn) : NULL;
     c->done[i].end = dupn(&c->alloc, src->done[i].end, src->done[i].le);
     c->ndone = i + 1;
-    if (!c->done[i].end) {
+    if (!c->done[i].end || (src->done[i].lcn && !c->done[i].cname)) {
       gtext_css_transition_set_free(c);
       return GTEXT_CSS_E_OOM;
     }
@@ -251,7 +264,7 @@ static GTEXT_CSS_Status run_push(GTEXT_CSS_Transition_Set * s, const tr_t * t) {
   return GTEXT_CSS_OK;
 }
 
-static GTEXT_CSS_Status done_push(GTEXT_CSS_Transition_Set * s, GTEXT_CSS_Property_Id prop, char * end, size_t le) {
+static GTEXT_CSS_Status done_push(GTEXT_CSS_Transition_Set * s, GTEXT_CSS_Property_Id prop, char * cname, size_t lcn, char * end, size_t le) {
   if (s->ndone == s->capdone) {
     const size_t cap = s->capdone ? s->capdone * 2 : 4;
     done_t * bigger = gtext_allocator_realloc(&s->alloc, s->done, cap * sizeof *bigger);
@@ -262,6 +275,8 @@ static GTEXT_CSS_Status done_push(GTEXT_CSS_Transition_Set * s, GTEXT_CSS_Proper
     s->capdone = cap;
   }
   s->done[s->ndone].prop = prop;
+  s->done[s->ndone].cname = cname;
+  s->done[s->ndone].lcn = lcn;
   s->done[s->ndone].end = end;
   s->done[s->ndone].le = le;
   s->ndone++;
@@ -280,26 +295,37 @@ static void done_remove(GTEXT_CSS_Transition_Set * s, size_t i) {
   s->ndone--;
 }
 
-static size_t run_find(const GTEXT_CSS_Transition_Set * s, GTEXT_CSS_Property_Id p) {
-  for (size_t i = 0; i < s->nrun; i++) {
-    if (s->run[i].prop == p) {
-      return i;
-    }
-  }
-  return (size_t)-1;
-}
-
-static size_t done_find(const GTEXT_CSS_Transition_Set * s, GTEXT_CSS_Property_Id p) {
-  for (size_t i = 0; i < s->ndone; i++) {
-    if (s->done[i].prop == p) {
-      return i;
-    }
-  }
-  return (size_t)-1;
-}
-
 static bool same(const char * a, size_t al, const char * b, size_t bl) {
   return al == bl && (al == 0 || memcmp(a, b, al) == 0);
+}
+
+/// The property a transition is of: a longhand by its id, a custom property by its name (names of custom properties are case-sensitive).
+typedef struct {
+  GTEXT_CSS_Property_Id id;   ///< A longhand, or 0.
+  const char * name;          ///< The custom property's name when `id` is 0.
+  size_t nlen;
+} pkey;
+
+static bool key_is(GTEXT_CSS_Property_Id p, const char * cn, size_t cl, pkey k) {
+  return p || k.id ? p == k.id : same(cn, cl, k.name, k.nlen);
+}
+
+static size_t run_find(const GTEXT_CSS_Transition_Set * s, pkey k) {
+  for (size_t i = 0; i < s->nrun; i++) {
+    if (key_is(s->run[i].prop, s->run[i].cname, s->run[i].lcn, k)) {
+      return i;
+    }
+  }
+  return (size_t)-1;
+}
+
+static size_t done_find(const GTEXT_CSS_Transition_Set * s, pkey k) {
+  for (size_t i = 0; i < s->ndone; i++) {
+    if (key_is(s->done[i].prop, s->done[i].cname, s->done[i].lcn, k)) {
+      return i;
+    }
+  }
+  return (size_t)-1;
 }
 
 /* ---- the current value --------------------------------------------------------------------------------------------------------------------------- */
@@ -334,7 +360,7 @@ static GTEXT_CSS_Status tr_current(const GTEXT_CSS_Compute_Context * cc, const G
   const double p = gtext_css_easing_output(easing, (time_ms - t->start_time) / (t->end_time - t->start_time), false);
   gtext_css_easing_free(easing);
   bool discrete = false;
-  return css_blend_values_text(cc, style, t->prop, t->start, t->ls, t->end, t->le, p, a, text, length, &discrete);
+  return css_blend_key_text(cc, style, t->prop, t->cname, t->lcn, t->start, t->ls, t->end, t->le, p, a, text, length, &discrete);
 }
 
 GTEXT_CSS_Status gtext_css_transition_current_value(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Computed_Style * style, const GTEXT_CSS_Transition_Set * set, size_t index,
@@ -483,11 +509,139 @@ static long match_index(const GTEXT_CSS_Registry * r, const GTEXT_CSS_Flow * flo
   return -1;
 }
 
-/// The computed value of a property of a style, serialized (NUL-terminated, released with the allocator); NULL with GTEXT_CSS_OK for a style that has none.
-static GTEXT_CSS_Status value_text(const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Property_Id id, const GTEXT_Allocator * a, char ** text, size_t * length) {
+/// "the last value in the transition-property in the element's after-change style that matches the property" for a custom property: an item that names it (names of custom properties are case-sensitive:
+/// a <custom-ident>), or `all` when the property has a type ("all" is every property that can be animated, and a custom property that is not typed is discrete, which transitions only by being named).
+static long match_custom(const list_t * props, pkey k, bool typed) {
+  for (size_t i = props->n; i-- > 0;) {
+    const GTEXT_CSS_Value * v = &props->items[i];
+    if (v->kind != GTEXT_CSS_VAL_KEYWORD && v->kind != GTEXT_CSS_VAL_CUSTOM_IDENT) {
+      continue;
+    }
+    if (ieq(v->text.data, v->text.length, "none")) {
+      continue;
+    }
+    if (ieq(v->text.data, v->text.length, "all")) {
+      if (typed) {
+        return (long)i;
+      }
+      continue;
+    }
+    if (same(v->text.data, v->text.length, k.name, k.nlen)) {
+      return (long)i;
+    }
+  }
+  return -1;
+}
+
+typedef struct {
+  const char * p;
+  size_t n;
+} cname_t;
+
+static int cname_cmp(const void * a, const void * b) {
+  const cname_t * x = a;
+  const cname_t * y = b;
+  const size_t n = x->n < y->n ? x->n : y->n;
+  const int c = n ? memcmp(x->p, y->p, n) : 0;
+  return c ? c : (x->n > y->n) - (x->n < y->n);
+}
+
+/// The custom properties an update looks at: the names a `transition-property` item gives, the typed registered ones when it has `all`, and those with a running or completed transition. Copies of
+/// the names, sorted and without repeats; `*count` of them (the arrays are released with the set's allocator).
+static GTEXT_CSS_Status custom_candidates(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Transition_Set * w, const list_t * props, char *** names, size_t ** lens, size_t * count) {
+  *names = NULL;
+  *lens = NULL;
+  *count = 0;
+  bool all = false;
+  for (size_t i = 0; i < props->n; i++) {
+    const GTEXT_CSS_Value * v = &props->items[i];
+    all = all || ((v->kind == GTEXT_CSS_VAL_KEYWORD || v->kind == GTEXT_CSS_VAL_CUSTOM_IDENT) && ieq(v->text.data, v->text.length, "all"));
+  }
+  const size_t cap = props->n + w->nrun + w->ndone + (all ? cc->nregs : 0);
+  if (!cap) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_Allocator a = w->alloc;
+  cname_t * tmp = gtext_allocator_malloc(&a, cap * sizeof *tmp);
+  if (!tmp) {
+    return GTEXT_CSS_E_OOM;
+  }
+  size_t n = 0;
+  for (size_t i = 0; i < props->n; i++) {
+    const GTEXT_CSS_Value * v = &props->items[i];
+    if ((v->kind == GTEXT_CSS_VAL_KEYWORD || v->kind == GTEXT_CSS_VAL_CUSTOM_IDENT) && v->text.length >= 3 && v->text.data[0] == '-' && v->text.data[1] == '-') {
+      tmp[n++] = (cname_t){v->text.data, v->text.length};
+    }
+  }
+  for (size_t i = 0; all && i < cc->nregs; i++) {
+    const css_creg * cr = cc->regs[i].creg;
+    if (!cr->syntax->universal) {
+      tmp[n++] = (cname_t){cr->name, cr->name_len};
+    }
+  }
+  for (size_t i = 0; i < w->nrun; i++) {
+    if (w->run[i].lcn) {
+      tmp[n++] = (cname_t){w->run[i].cname, w->run[i].lcn};
+    }
+  }
+  for (size_t i = 0; i < w->ndone; i++) {
+    if (w->done[i].lcn) {
+      tmp[n++] = (cname_t){w->done[i].cname, w->done[i].lcn};
+    }
+  }
+  if (n > 1) {
+    qsort(tmp, n, sizeof *tmp, cname_cmp);
+    size_t k = 1;
+    for (size_t i = 1; i < n; i++) {
+      if (cname_cmp(&tmp[i], &tmp[k - 1]) != 0) {
+        tmp[k++] = tmp[i];
+      }
+    }
+    n = k;
+  }
+  char ** nm = n ? gtext_allocator_calloc(&a, n, sizeof *nm) : NULL;
+  size_t * ln = n ? gtext_allocator_calloc(&a, n, sizeof *ln) : NULL;
+  GTEXT_CSS_Status st = n && (!nm || !ln) ? GTEXT_CSS_E_OOM : GTEXT_CSS_OK;
+  for (size_t i = 0; st == GTEXT_CSS_OK && i < n; i++) {
+    nm[i] = dupn(&a, tmp[i].p, tmp[i].n);
+    ln[i] = tmp[i].n;
+    if (!nm[i]) {
+      st = GTEXT_CSS_E_OOM;
+    }
+  }
+  gtext_allocator_free(&a, tmp);
+  if (st != GTEXT_CSS_OK) {
+    for (size_t i = 0; i < n && nm; i++) {
+      gtext_allocator_free(&a, nm[i]);
+    }
+    gtext_allocator_free(&a, nm);
+    gtext_allocator_free(&a, ln);
+    return st;
+  }
+  *names = nm;
+  *lens = ln;
+  *count = n;
+  return GTEXT_CSS_OK;
+}
+
+/// The computed value of a property of a style, serialized (NUL-terminated, released with the allocator); NULL with GTEXT_CSS_OK for a style that has none. A custom property the style has no
+/// value of has the guaranteed-invalid value, which has no text of its own (an empty text is the value of `--x:;`): it is written `initial`, the declaration that gives it, which no value can be
+/// ("initial" is a CSS-wide keyword and never a computed value), so that a current value that is the guaranteed-invalid value is declared as itself.
+static GTEXT_CSS_Status value_text(const GTEXT_CSS_Computed_Style * style, pkey k, const GTEXT_Allocator * a, char ** text, size_t * length) {
   *text = NULL;
   *length = 0;
-  const GTEXT_CSS_Value * root = gtext_css_computed_root(style, id);
+  if (!k.id) {
+    const GTEXT_CSS_Custom_Value * cv = NULL;
+    if (!gtext_css_computed_custom_find(style, k.name, k.nlen, &cv) || !cv) {
+      *text = dupn(a, "initial", 7);
+      *length = 7;
+      return *text ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+    }
+    GTEXT_CSS_Serialize_Options co = gtext_css_serialize_options_default();
+    co.allocator = a;
+    return gtext_css_custom_value_text(cv, &co, text, length);
+  }
+  const GTEXT_CSS_Value * root = gtext_css_computed_root(style, k.id);
   if (!root) {
     return GTEXT_CSS_OK;
   }
@@ -496,24 +650,38 @@ static GTEXT_CSS_Status value_text(const GTEXT_CSS_Computed_Style * style, GTEXT
   return gtext_css_serialize_value_buffer(root, &so, text, length);
 }
 
+/// Whether a custom property is one a transition interpolates: registered with a syntax that is not the universal one ("the animation type is by computed value, derived from the type used in the
+/// property's syntax definition. Where there is no computed value type that corresponds to the property's specified syntax (e.g. when the syntax is the universal syntax definition) or when the custom
+/// property is not registered, the animation type is discrete", Web Animations 1).
+static bool custom_typed(const GTEXT_CSS_Compute_Context * cc, const char * name, size_t nlen) {
+  const css_ereg * reg = cc->nregs ? css_ctx_find_reg(cc, name, nlen, NULL) : NULL;
+  return reg && !reg->creg->syntax->universal;
+}
+
 /// "the property values are transitionable if they have an animation type that is neither not animatable nor discrete" (and, with transition-behavior: allow-discrete, discrete ones
 /// are): the animation type of the property, and then of the pair ("for a particular pair of property values the animation type may be discrete").
-static GTEXT_CSS_Status transitionable(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Computed_Style * style, GTEXT_CSS_Property_Id id, const char * a, size_t al, const char * b,
+static GTEXT_CSS_Status transitionable(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Computed_Style * style, pkey k, const char * a, size_t al, const char * b,
     size_t bl, bool allow_discrete, bool * out) {
   *out = false;
-  bool animatable = false;
-  const bool discrete_type = css_property_is_discrete(gtext_css_compute_context_registry(cc), id, &animatable);
-  if (!animatable) {
-    return GTEXT_CSS_OK;
+  if (k.id) {
+    bool animatable = false;
+    const bool discrete_type = css_property_is_discrete(gtext_css_compute_context_registry(cc), k.id, &animatable);
+    if (!animatable) {
+      return GTEXT_CSS_OK;
+    }
+    if (discrete_type) {
+      *out = allow_discrete;
+      return GTEXT_CSS_OK;
+    }
   }
-  if (discrete_type) {
-    *out = allow_discrete;
+  else if (!custom_typed(cc, k.name, k.nlen)) {
+    *out = allow_discrete;   /* an unregistered or universal custom property is discrete */
     return GTEXT_CSS_OK;
   }
   char * t = NULL;
   size_t n = 0;
   bool discrete = false;
-  const GTEXT_CSS_Status st = css_blend_values_text(cc, style, id, a, al, b, bl, 0.5, &cc->alloc, &t, &n, &discrete);
+  const GTEXT_CSS_Status st = css_blend_key_text(cc, style, k.id, k.name, k.nlen, a, al, b, bl, 0.5, &cc->alloc, &t, &n, &discrete);
   if (st == GTEXT_CSS_E_INVALID) {
     return GTEXT_CSS_OK;
   }
@@ -528,11 +696,13 @@ static GTEXT_CSS_Status transitionable(const GTEXT_CSS_Compute_Context * cc, con
 }
 
 /// One transition: started from `start` (a copy is made) to `end`, with the matching timing item.
-static GTEXT_CSS_Status make_tr(GTEXT_CSS_Transition_Set * w, GTEXT_CSS_Property_Id prop, const char * start, size_t ls, const char * end, size_t le, const char * rasv, size_t lr,
+static GTEXT_CSS_Status make_tr(GTEXT_CSS_Transition_Set * w, pkey key, const char * start, size_t ls, const char * end, size_t le, const char * rasv, size_t lr,
     const char * timing, size_t lt, double start_time, double end_time, double rsf, bool allow_discrete) {
   tr_t t;
   memset(&t, 0, sizeof t);
-  t.prop = prop;
+  t.prop = key.id;
+  t.cname = key.id ? NULL : dupn(&w->alloc, key.name, key.nlen);
+  t.lcn = key.id ? 0 : key.nlen;
   t.start = dupn(&w->alloc, start, ls);
   t.ls = ls;
   t.end = dupn(&w->alloc, end, le);
@@ -546,7 +716,7 @@ static GTEXT_CSS_Status make_tr(GTEXT_CSS_Transition_Set * w, GTEXT_CSS_Property
   t.rsf = rsf;
   t.allow_discrete = allow_discrete;
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
-  if (!t.start || !t.end || !t.rasv || !t.timing) {
+  if ((!key.id && !t.cname) || !t.start || !t.end || !t.rasv || !t.timing) {
     st = GTEXT_CSS_E_OOM;
   }
   else {
@@ -563,6 +733,193 @@ static double clamp01(double v) {
 }
 
 /* ---- the update ---------------------------------------------------------------------------------------------------------------------------------- */
+
+/// Whether a CSS Animation of the element applies a property in a style (a longhand by its id, a custom property by its name).
+static bool animation_applied(const GTEXT_CSS_Computed_Style * style, pkey k) {
+  if (k.id) {
+    return gtext_css_computed_animation_applied(style, k.id);
+  }
+  for (size_t i = 0; i < style->anim_applied.nnames; i++) {
+    if (same(style->anim_applied.names[i], style->anim_applied.name_lengths[i], k.name, k.nlen)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// What one update works over: the two styles, the lists of the after-change style (matched by place), the set being built.
+typedef struct {
+  const GTEXT_CSS_Compute_Context * context;
+  const GTEXT_CSS_Registry * reg;
+  const GTEXT_CSS_Computed_Style * before;
+  const GTEXT_CSS_Computed_Style * after;
+  double time_ms;
+  GTEXT_CSS_Transition_Set * w;
+  list_t durations, delays, timings, behaviors;
+  bool has_behavior;
+  GTEXT_CSS_Transition_Update * res;
+} upd_t;
+
+/// "Starting of transitions" for one property of one style change event: `m` is the index of the matching `transition-property` item (-1 for none). The steps are the ones of CSS Transitions 1, each
+/// quoted where it is followed.
+static GTEXT_CSS_Status step_key(upd_t * u, pkey k, long m) {
+  const GTEXT_CSS_Compute_Context * context = u->context;
+  const GTEXT_CSS_Registry * reg = u->reg;
+  const GTEXT_CSS_Computed_Style * before = u->before;
+  const GTEXT_CSS_Computed_Style * after = u->after;
+  const double time_ms = u->time_ms;
+  GTEXT_CSS_Transition_Set * w = u->w;
+  const GTEXT_Allocator * al = &w->alloc;
+  const list_t durations = u->durations, delays = u->delays, timings = u->timings, behaviors = u->behaviors;
+  const bool has_behavior = u->has_behavior;
+  GTEXT_CSS_Transition_Update * res = u->res;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  size_t ri = run_find(w, k);
+  size_t di = done_find(w, k);
+  if (m < 0 && ri == (size_t)-1 && di == (size_t)-1) {
+    return GTEXT_CSS_OK;
+  }
+  char *bt = NULL, *at = NULL, *cur = NULL;
+  size_t bl = 0, atl = 0, cl = 0;
+  if (before) {
+    st = value_text(before, k, al, &bt, &bl);
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = value_text(after, k, al, &at, &atl);
+  }
+  GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
+  so.allocator = al;
+  if (st == GTEXT_CSS_OK && !at) {
+    /* a property the style has no value of: nothing to transition to */
+    gtext_css_serialize_buffer_free(&so, bt);
+    return GTEXT_CSS_OK;
+  }
+  /* the matching transition duration, delay and timing function are the values of the same place in their lists ("the rules on matching lists": repeated to the length of the list) */
+  double dur = 0, delay = 0;
+  bool allow_discrete = false;
+  char * timing = NULL;
+  size_t lt = 0;
+  if (st == GTEXT_CSS_OK && m >= 0) {
+    const size_t mi = (size_t)m;
+    if (!time_of(&durations.items[mi % durations.n], &dur) || !time_of(&delays.items[mi % delays.n], &delay)) {
+      st = GTEXT_CSS_E_UNSUPPORTED;
+    }
+    allow_discrete = has_behavior && is_kw(&behaviors.items[mi % behaviors.n], "allow-discrete");
+    if (st == GTEXT_CSS_OK) {
+      GTEXT_CSS_Serialize_Options so2 = gtext_css_serialize_options_default();
+      so2.allocator = al;
+      st = gtext_css_serialize_value_buffer(&timings.items[mi % timings.n], &so2, &timing, &lt);
+    }
+  }
+  /* "Define the combined duration of the transition as the sum of max(matching transition duration, 0s) and the matching transition delay." */
+  const double d0 = dur < 0 ? 0 : dur;
+  const double combined = d0 + delay;
+  const bool animated = animation_applied(after, k) || (before && animation_applied(before, k));
+  bool tn = false;
+  if (st == GTEXT_CSS_OK && m >= 0 && bt && !animated && !same(bt, bl, at, atl)) {
+    st = transitionable(context, after, k, bt, bl, at, atl, allow_discrete, &tn);
+  }
+  /* 1. start a transition on a changed property */
+  bool started_here = false;
+  if (st == GTEXT_CSS_OK && ri == (size_t)-1 && m >= 0 && tn && combined > 0 && !(di != (size_t)-1 && same(w->done[di].end, w->done[di].le, at, atl))) {
+    if (di != (size_t)-1) {
+      done_remove(w, di);
+      di = (size_t)-1;
+      res->forgotten++;
+    }
+    st = make_tr(w, k, bt, bl, at, atl, bt, bl, timing, lt, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);
+    if (st == GTEXT_CSS_OK) {
+      res->started++;
+      started_here = true;
+    }
+  }
+  /* 2. a completed transition whose end value is not the after-change value is forgotten */
+  if (st == GTEXT_CSS_OK && !started_here && di != (size_t)-1 && !same(w->done[di].end, w->done[di].le, at, atl)) {
+    done_remove(w, di);
+    di = (size_t)-1;
+    res->forgotten++;
+  }
+  /* 3. "If the element has a running transition or completed transition for the property, and there is not a matching transition-property value, then implementations must cancel the
+     running transition or remove the completed transition from the set of completed transitions." */
+  if (st == GTEXT_CSS_OK && m < 0) {
+    if (ri != (size_t)-1) {
+      run_remove(w, ri);
+      ri = (size_t)-1;
+      res->cancelled++;
+    }
+    if (di != (size_t)-1) {
+      done_remove(w, di);
+      res->forgotten++;
+    }
+  }
+  /* 4. a running transition whose end value is not the after-change value */
+  if (st == GTEXT_CSS_OK && m >= 0 && ri != (size_t)-1 && !same(w->run[ri].end, w->run[ri].le, at, atl)) {
+    tr_t old = w->run[ri];   /* shallow: the strings stay owned by the entry until it is removed */
+    st = tr_current(context, after, &old, time_ms, al, &cur, &cl);
+    bool cur_ok = false;
+    if (st == GTEXT_CSS_OK && !same(cur, cl, at, atl)) {
+      st = transitionable(context, after, k, cur, cl, at, atl, allow_discrete, &cur_ok);
+    }
+    if (st == GTEXT_CSS_OK) {
+      if (!cur_ok || combined <= 0) {
+        /* "if the current value of the property in the running transition is equal to the value of the property in the after-change style, or if these two values are not transitionable,
+           then implementations must cancel the running transition", and the same "if the combined duration is less than or equal to 0s" */
+        run_remove(w, ri);
+        res->cancelled++;
+      }
+      else if (same(old.rasv, old.lr, at, atl)) {
+        /* the reversing-adjusted start value is the after-change value: cancel and start a transition whose reversing shortening factor is "the absolute value, clamped to the range
+           [0, 1], of the sum of: the output of the timing function of the old transition at the time of the style change event, times the reversing shortening factor of the old
+           transition; and 1 minus the reversing shortening factor of the old transition." */
+        GTEXT_CSS_Easing * e = NULL;
+        st = css_easing_from_text(reg, al, old.timing, old.lt, &e);
+        if (st == GTEXT_CSS_OK) {
+          double progress = 0;
+          if (time_ms >= old.end_time) {
+            progress = 1;
+          }
+          else if (time_ms > old.start_time && old.end_time > old.start_time) {
+            progress = (time_ms - old.start_time) / (old.end_time - old.start_time);
+          }
+          const double out_v = gtext_css_easing_output(e, progress, false);
+          gtext_css_easing_free(e);
+          const double sum = out_v * old.rsf + (1.0 - old.rsf);
+          const double rsf = clamp01(sum < 0 ? -sum : sum);
+          /* the new transition's start time: the delay when it is not negative, else the product of the shortening factor and the delay */
+          const double start_time = time_ms + (delay >= 0 ? delay : rsf * delay);
+          char * rasv = dupn(al, old.end, old.le);
+          if (!rasv) {
+            st = GTEXT_CSS_E_OOM;
+          }
+          else {
+            const size_t lr = old.le;
+            st = make_tr(w, k, cur, cl, at, atl, rasv, lr, timing, lt, start_time, start_time + d0 * rsf, rsf, allow_discrete);
+            gtext_allocator_free(al, rasv);
+            if (st == GTEXT_CSS_OK) {
+              /* the new entry is last; the old one is removed (its index has not moved) */
+              run_remove(w, ri);
+              res->cancelled++;
+              res->started++;
+            }
+          }
+        }
+      }
+      else {
+        st = make_tr(w, k, cur, cl, at, atl, cur, cl, timing, lt, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);
+        if (st == GTEXT_CSS_OK) {
+          run_remove(w, ri);
+          res->cancelled++;
+          res->started++;
+        }
+      }
+    }
+  }
+  gtext_css_serialize_buffer_free(&so, bt);
+  gtext_css_serialize_buffer_free(&so, at);
+  gtext_css_serialize_buffer_free(&so, cur);
+  gtext_css_serialize_buffer_free(&so, timing);
+  return st;
+}
 
 GTEXT_CSS_Status gtext_css_transitions_update(const GTEXT_CSS_Compute_Context * context, GTEXT_CSS_Transition_Set * set, const GTEXT_CSS_Computed_Style * before,
     const GTEXT_CSS_Computed_Style * after, double time_ms, GTEXT_CSS_Transition_Update * out) {
@@ -590,16 +947,21 @@ GTEXT_CSS_Status gtext_css_transitions_update(const GTEXT_CSS_Compute_Context * 
      transition completes, implementations must move all transitions that complete at that time from the set of running transitions to the set of completed transitions" */
   for (size_t i = 0; i < w->nrun && st == GTEXT_CSS_OK;) {
     if (w->run[i].end_time <= time_ms) {
-      const size_t d = done_find(w, w->run[i].prop);
+      const pkey rk = {w->run[i].prop, w->run[i].cname, w->run[i].lcn};
+      const size_t d = done_find(w, rk);
       if (d != (size_t)-1) {
         done_remove(w, d);
       }
       char * end = w->run[i].end;
       const size_t le = w->run[i].le;
+      char * cname = w->run[i].cname;
+      const size_t lcn = w->run[i].lcn;
       w->run[i].end = NULL;
-      st = done_push(w, w->run[i].prop, end, le);
+      w->run[i].cname = NULL;
+      st = done_push(w, w->run[i].prop, cname, lcn, end, le);
       if (st != GTEXT_CSS_OK) {
         gtext_allocator_free(al, end);
+        gtext_allocator_free(al, cname);
         break;
       }
       run_remove(w, i);
@@ -610,6 +972,7 @@ GTEXT_CSS_Status gtext_css_transitions_update(const GTEXT_CSS_Compute_Context * 
     }
   }
   const GTEXT_CSS_Flow flow = gtext_css_computed_flow(after);
+  upd_t u = {context, reg, before, after, time_ms, w, durations, delays, timings, behaviors, has_behavior, res};
   const size_t nprops = gtext_css_registry_property_count(reg);
   for (GTEXT_CSS_Property_Id id = 1; id <= nprops && st == GTEXT_CSS_OK; id++) {
     GTEXT_CSS_Property_Info pi;
@@ -622,151 +985,24 @@ GTEXT_CSS_Status gtext_css_transitions_update(const GTEXT_CSS_Compute_Context * 
       continue;
     }
     const long m = match_index(reg, &flow, &props, id, &pi);
-    size_t ri = run_find(w, id);
-    size_t di = done_find(w, id);
-    if (m < 0 && ri == (size_t)-1 && di == (size_t)-1) {
-      continue;
-    }
-    char *bt = NULL, *at = NULL, *cur = NULL;
-    size_t bl = 0, atl = 0, cl = 0;
-    if (before) {
-      st = value_text(before, id, al, &bt, &bl);
-    }
-    if (st == GTEXT_CSS_OK) {
-      st = value_text(after, id, al, &at, &atl);
-    }
-    GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
-    so.allocator = al;
-    if (st == GTEXT_CSS_OK && !at) {
-      /* a property the style has no value of: nothing to transition to */
-      gtext_css_serialize_buffer_free(&so, bt);
-      continue;
-    }
-    /* the matching transition duration, delay and timing function are the values of the same place in their lists ("the rules on matching lists": repeated to the length of the list) */
-    double dur = 0, delay = 0;
-    bool allow_discrete = false;
-    char * timing = NULL;
-    size_t lt = 0;
-    if (st == GTEXT_CSS_OK && m >= 0) {
-      const size_t k = (size_t)m;
-      if (!time_of(&durations.items[k % durations.n], &dur) || !time_of(&delays.items[k % delays.n], &delay)) {
-        st = GTEXT_CSS_E_UNSUPPORTED;
-      }
-      allow_discrete = has_behavior && is_kw(&behaviors.items[k % behaviors.n], "allow-discrete");
-      if (st == GTEXT_CSS_OK) {
-        GTEXT_CSS_Serialize_Options so2 = gtext_css_serialize_options_default();
-        so2.allocator = al;
-        st = gtext_css_serialize_value_buffer(&timings.items[k % timings.n], &so2, &timing, &lt);
-      }
-    }
-    /* "Define the combined duration of the transition as the sum of max(matching transition duration, 0s) and the matching transition delay." */
-    const double d0 = dur < 0 ? 0 : dur;
-    const double combined = d0 + delay;
-    const bool animated = gtext_css_computed_animation_applied(after, id) || (before && gtext_css_computed_animation_applied(before, id));
-    bool tn = false;
-    if (st == GTEXT_CSS_OK && m >= 0 && bt && !animated && !same(bt, bl, at, atl)) {
-      st = transitionable(context, after, id, bt, bl, at, atl, allow_discrete, &tn);
-    }
-    /* 1. start a transition on a changed property */
-    bool started_here = false;
-    if (st == GTEXT_CSS_OK && ri == (size_t)-1 && m >= 0 && tn && combined > 0 && !(di != (size_t)-1 && same(w->done[di].end, w->done[di].le, at, atl))) {
-      if (di != (size_t)-1) {
-        done_remove(w, di);
-        di = (size_t)-1;
-        res->forgotten++;
-      }
-      st = make_tr(w, id, bt, bl, at, atl, bt, bl, timing, lt, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);
-      if (st == GTEXT_CSS_OK) {
-        res->started++;
-        started_here = true;
-      }
-    }
-    /* 2. a completed transition whose end value is not the after-change value is forgotten */
-    if (st == GTEXT_CSS_OK && !started_here && di != (size_t)-1 && !same(w->done[di].end, w->done[di].le, at, atl)) {
-      done_remove(w, di);
-      di = (size_t)-1;
-      res->forgotten++;
-    }
-    /* 3. "If the element has a running transition or completed transition for the property, and there is not a matching transition-property value, then implementations must cancel the
-       running transition or remove the completed transition from the set of completed transitions." */
-    if (st == GTEXT_CSS_OK && m < 0) {
-      if (ri != (size_t)-1) {
-        run_remove(w, ri);
-        ri = (size_t)-1;
-        res->cancelled++;
-      }
-      if (di != (size_t)-1) {
-        done_remove(w, di);
-        res->forgotten++;
-      }
-    }
-    /* 4. a running transition whose end value is not the after-change value */
-    if (st == GTEXT_CSS_OK && m >= 0 && ri != (size_t)-1 && !same(w->run[ri].end, w->run[ri].le, at, atl)) {
-      tr_t old = w->run[ri];   /* shallow: the strings stay owned by the entry until it is removed */
-      st = tr_current(context, after, &old, time_ms, al, &cur, &cl);
-      bool cur_ok = false;
-      if (st == GTEXT_CSS_OK && !same(cur, cl, at, atl)) {
-        st = transitionable(context, after, id, cur, cl, at, atl, allow_discrete, &cur_ok);
-      }
-      if (st == GTEXT_CSS_OK) {
-        if (!cur_ok || combined <= 0) {
-          /* "if the current value of the property in the running transition is equal to the value of the property in the after-change style, or if these two values are not transitionable,
-             then implementations must cancel the running transition", and the same "if the combined duration is less than or equal to 0s" */
-          run_remove(w, ri);
-          res->cancelled++;
-        }
-        else if (same(old.rasv, old.lr, at, atl)) {
-          /* the reversing-adjusted start value is the after-change value: cancel and start a transition whose reversing shortening factor is "the absolute value, clamped to the range
-             [0, 1], of the sum of: the output of the timing function of the old transition at the time of the style change event, times the reversing shortening factor of the old
-             transition; and 1 minus the reversing shortening factor of the old transition." */
-          GTEXT_CSS_Easing * e = NULL;
-          st = css_easing_from_text(reg, al, old.timing, old.lt, &e);
-          if (st == GTEXT_CSS_OK) {
-            double progress = 0;
-            if (time_ms >= old.end_time) {
-              progress = 1;
-            }
-            else if (time_ms > old.start_time && old.end_time > old.start_time) {
-              progress = (time_ms - old.start_time) / (old.end_time - old.start_time);
-            }
-            const double out_v = gtext_css_easing_output(e, progress, false);
-            gtext_css_easing_free(e);
-            const double sum = out_v * old.rsf + (1.0 - old.rsf);
-            const double rsf = clamp01(sum < 0 ? -sum : sum);
-            /* the new transition's start time: the delay when it is not negative, else the product of the shortening factor and the delay */
-            const double start_time = time_ms + (delay >= 0 ? delay : rsf * delay);
-            char * rasv = dupn(al, old.end, old.le);
-            if (!rasv) {
-              st = GTEXT_CSS_E_OOM;
-            }
-            else {
-              const size_t lr = old.le;
-              st = make_tr(w, id, cur, cl, at, atl, rasv, lr, timing, lt, start_time, start_time + d0 * rsf, rsf, allow_discrete);
-              gtext_allocator_free(al, rasv);
-              if (st == GTEXT_CSS_OK) {
-                /* the new entry is last; the old one is removed (its index has not moved) */
-                run_remove(w, ri);
-                res->cancelled++;
-                res->started++;
-              }
-            }
-          }
-        }
-        else {
-          st = make_tr(w, id, cur, cl, at, atl, cur, cl, timing, lt, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);
-          if (st == GTEXT_CSS_OK) {
-            run_remove(w, ri);
-            res->cancelled++;
-            res->started++;
-          }
-        }
-      }
-    }
-    gtext_css_serialize_buffer_free(&so, bt);
-    gtext_css_serialize_buffer_free(&so, at);
-    gtext_css_serialize_buffer_free(&so, cur);
-    gtext_css_serialize_buffer_free(&so, timing);
+    pkey k = {id, NULL, 0};
+    st = step_key(&u, k, m);
   }
+  /* the custom properties a transition can be of: those a `transition-property` item names (`all` names the registered ones that have a type), and those that have a transition running or completed
+     (so that one no longer named is cancelled). Nothing is asked of a custom property of the style that none of these says: a document with a thousand of them pays for the ones it transitions. */
+  char ** names = NULL;
+  size_t *lens = NULL, nnames = 0;
+  st = st == GTEXT_CSS_OK ? custom_candidates(context, w, &props, &names, &lens, &nnames) : st;
+  for (size_t n = 0; n < nnames && st == GTEXT_CSS_OK; n++) {
+    pkey k = {0, names[n], lens[n]};
+    const bool typed = custom_typed(context, k.name, k.nlen);
+    st = step_key(&u, k, match_custom(&props, k, typed));
+  }
+  for (size_t n = 0; n < nnames; n++) {
+    gtext_allocator_free((GTEXT_Allocator *)al, names[n]);
+  }
+  gtext_allocator_free((GTEXT_Allocator *)al, names);
+  gtext_allocator_free((GTEXT_Allocator *)al, lens);
   if (st != GTEXT_CSS_OK) {
     gtext_css_transition_set_free(w);
     return st;

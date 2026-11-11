@@ -96,6 +96,11 @@ GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTE
 GTEXT_CSS_Status css_blend_values_text(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Computed_Style * color_style, GTEXT_CSS_Property_Id id, const char * a, size_t an, const char * b,
     size_t bn, double p, const GTEXT_Allocator * alloc, char ** text, size_t * length, bool * discrete);
 
+/// css_blend_values_text() for a property that may be a custom one: `id` is a longhand, or 0 and `name` is the custom property's name (a registered one's values are typed values of its syntax and
+/// are combined as that type says; an unregistered or universal one's are texts, which are discrete: `*discrete` is set and `a` is given below 0.5, `b` from 0.5 on).
+GTEXT_CSS_Status css_blend_key_text(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Computed_Style * color_style, GTEXT_CSS_Property_Id id, const char * name, size_t name_length,
+    const char * a, size_t an, const char * b, size_t bn, double p, const GTEXT_Allocator * alloc, char ** text, size_t * length, bool * discrete);
+
 /// The property's animation type is `discrete` or `not animatable` in the registry: its values are not interpolated.
 bool css_property_is_discrete(const GTEXT_CSS_Registry * registry, GTEXT_CSS_Property_Id id, bool * animatable);
 
