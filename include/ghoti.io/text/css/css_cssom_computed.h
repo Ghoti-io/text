@@ -53,6 +53,7 @@
 #define GHOTI_IO_GTEXT_CSS_CSS_CSSOM_COMPUTED_H
 
 #include <ghoti.io/text/css/css_cssom_core.h>
+#include <ghoti.io/text/css/css_custom_function.h>
 #include <ghoti.io/text/css/css_cssom_decl.h>
 #include <ghoti.io/text/macros.h>
 #include <stdbool.h>
@@ -221,6 +222,31 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_document_container_interface(GTEXT_CSSOM_
  * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM; the limits of css_at_property.h (GTEXT_CSS_E_LIMIT_REGISTRY ...) when the rules are more than it holds, and the statuses of building the index.
  */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_document_property_rules(GTEXT_CSSOM_Document * document, const GTEXT_CSS_At_Property_Set ** set, bool * applied);
+
+/**
+ * @brief The custom functions that the `@function` rules of the document's style sheets define.
+ *
+ * What gtext_cssom_document_property_rules() is for `@property`: the set the document's compute context is made with, so that `getComputedStyle()` evaluates `--name(...)` where a
+ * custom property takes a value. "If more than one @function exists for a given name, then the rule in the stronger cascade layer wins, and rules defined later win within the same
+ * layer" (CSS Functions and Mixins 1, "Defining Custom Functions"); the rules are those of the sheets that take part (not disabled, media true for the conditions), in the order the cascade
+ * reads the sheets, entering `@layer` blocks and the `@media`, `@supports` and `@container` rules whose condition holds. Inspect the set with gtext_css_function_count(),
+ * gtext_css_function_at(), gtext_css_function_find() and gtext_css_function_parameter(), and gtext_css_function_diagnostic_total() and gtext_css_function_diagnostic() for the rules that were not valid.
+ * The set keeps copies of the rules (`own_rules`), so what it returns for a function stays valid for the set's life.
+ *
+ * **What it is applied to.** The compute context the document makes for itself is made with this set; it is made again when the set changes (a sheet with such a rule inserted, removed,
+ * disabled, or its rules edited, or the conditions changing what a conditional rule holds). A compute context the caller supplies (GTEXT_CSSOM_Config::compute_context) keeps its own
+ * functions: the rules are reported here and `*applied` is false.
+ *
+ * **Not read.** As for `@property`: the sheets registered for the user-agent and user origins are compiled and have no rules to read, and the sheets an `@import` rule loaded are not entered.
+ *
+ * **Lifetime.** The set is the document's: valid until the next call that makes the index current after the sheets changed.
+ *
+ * @param document The document. Not NULL.
+ * @param set Receives the set, or NULL when no rule defines a function and none raised a diagnostic (a sheet of style rules alone is not even read). Not NULL.
+ * @param applied Receives whether the document's computed styles use it; NULL if not wanted.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM; the limits of css_custom_function.h (GTEXT_CSS_E_LIMIT_REGISTRY ...) when the rules are more than it holds, and the statuses of building the index.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_document_function_rules(GTEXT_CSSOM_Document * document, const GTEXT_CSS_Function_Set ** set, bool * applied);
 
 #ifdef __cplusplus
 }

@@ -1686,6 +1686,23 @@ GTEXT_CSS_Status gtext_cssom_document_property_rules(GTEXT_CSSOM_Document * docu
   return GTEXT_CSS_OK;
 }
 
+GTEXT_CSS_Status gtext_cssom_document_function_rules(GTEXT_CSSOM_Document * document, const GTEXT_CSS_Function_Set ** set, bool * applied) {
+  if (!document || !set) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  css_core * core = css_document_core(document);
+  const GTEXT_CSS_Rule_Index * index = NULL;
+  const GTEXT_CSS_Status st = css_index_current(core, &index);   /* the set is current with the index */
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  *set = core->fns;
+  if (applied) {
+    *applied = core->config.compute_context == NULL;
+  }
+  return GTEXT_CSS_OK;
+}
+
 bool css_computed_position_text(const GTEXT_CSSOM_Decl * d, const char ** text, size_t * length) {
   if (!d || !d->comp || !d->comp->position) {
     return false;

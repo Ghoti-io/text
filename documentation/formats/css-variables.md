@@ -606,4 +606,8 @@ body is read when it is called, so the declarations of a body are bounded per ca
 and not a stack: a call is a frame of the same explicit stack as `var()`).
 
 A document (`css_cssom_computed.h`) collects the `@function` rules of its sheets that take part, in cascade order, as it does the `@property` rules, and the compute context it makes is
-made again only when the functions change.
+made again only when the functions change. `gtext_cssom_document_function_rules()` hands out the set the document evaluates with (NULL when no
+rule defines a function and none raised a diagnostic; `applied` false for a document whose compute context the caller supplied, which keeps its own functions), the way
+`gtext_cssom_document_property_rules()` hands out the registrations: `gtext_css_function_count()`, `gtext_css_function_at()`, `gtext_css_function_find()` and `gtext_css_function_parameter()`
+inspect it (the name, each parameter's name, type and default, the return type, whether the body has a `result`, the layer and the sheet), `gtext_css_function_diagnostic_total()` and
+`gtext_css_function_diagnostic()` say which rules were ignored and why, and the set stays valid until the next call that makes the document's index current after its sheets changed.
