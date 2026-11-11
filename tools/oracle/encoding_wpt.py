@@ -36,7 +36,7 @@ browser's own loader (a byte order mark deciding a document's encoding, sniffing
 a form posted to a `data:` URL and read back through `postMessage`. **What does not**, and why, is NOT_RUN and NOT_RUN_DIRECTORIES: the streams (the Streams API),
 `encodeInto` (an API of its own), and the files about the JavaScript bindings. A file or directory that is in none of the lists fails the run.
 
-The count of passed and failed tests of each file is in tools/oracle/encoding_wpt_expected.txt, and the run fails on a failure, on a count
+The count of passed and failed tests of each file is in tools/oracle/encoding_wpt_expected.txt, and the run fails on a failure (but for the tests of KNOWN_FAILURES, each with its reason: a listed test that passes fails the run too), on a count
 that has changed (in either direction: a test that passes now and did not is a change to read, not a gain to keep) and on a file that ran nothing.
 `--update` prints the list the run found. A file named in RUN, NOT_RUN, NOT_RUN_PAGES or NOT_RUN_DIRECTORIES that is not in the suite, one that is listed as not run
 and has a line in the counts (it runs), and one listed twice, fail the run.
@@ -48,7 +48,7 @@ read them back to the page's own `utf16` string.
 
 --plant NAME corrupts the run, to show the gate fails (run-encoding-oracle.sh --controls): bridge-drops-a-byte (the bridge loses the last byte of
 every input of more than three), expected-count (the list says one test more), no-such-file (a file that is not in the suite), unlisted-file, stale-listing (a file listed as not run that
-is not in the suite), stateful-expectation (the page's expected bytes are changed).
+is not in the suite), stateful-expectation (the page's expected bytes are changed), stale-known-failure (a test that passes is listed as a known failure).
 
 Copyright 2026 by Corey Pennycuff
 """
@@ -104,6 +104,9 @@ RUN = [
 # WPT_COMMIT that adds a file or a directory makes the run fail until somebody has said what to do with it.
 NOT_RUN = OrderedDict([
     ("encodeInto.any.js", "TextEncoder.encodeInto: an API of its own, with a destination of fixed size"),
+    ("encodeInto-tail-unmodified.any.js", "TextEncoder.encodeInto: the bytes of a destination of fixed size beyond the count written stay as they were; this library's encoder writes to a sink, "
+                                          "which is handed the bytes that were written and nothing else, so there is no destination to leave bytes in (the page's other assertion, that the written "
+                                          "bytes decode to the part of the source that was read, is the round trip of the differential)"),
     ("idlharness.any.js", "the Web IDL interface checks"),
     ("textdecoder-arguments.any.js", "JavaScript argument conversion (a detached buffer in an options getter)"),
     ("unsupported-labels.window.js", "a window: iframes and `fetch`"),
@@ -113,6 +116,19 @@ NOT_RUN_DIRECTORIES = OrderedDict([
     ("streams", "TextDecoderStream and TextEncoderStream: the Streams API"),
     ("resources", "helpers of the tests, not tests"),
 ])
+# Tests of the suite that this library fails and is known to fail, by file and test name, with the reason. The run requires each of them to fail (a listed test that passes is
+# a stale line and fails the run: the plant `stale-known-failure` shows it), and counts it as failed in tools/oracle/encoding_wpt_expected.txt, so a second failure in the
+# file, or this one passing, changes a number that is read. Nothing else is excused.
+KNOWN_FAILURES = {
+    "textdecoder-mistakes.any.js": OrderedDict([
+        ("EUC-JP JIS0212 state after a fatal streaming error",
+         "the page puts `8F A2 20` through a fatal TextDecoder in stream mode, which throws, and reads `A1 A1` next, expecting ' \\u3000': the byte the EUC-JP handler put back "
+         "(the standard's `restore byte to ioQueue`, which is the 0x20) is still in the decoder's I/O queue, because decode() does not clear it before it throws. This library's "
+         "decoder starts a new stream after a fatal error (its documented behavior, which the page's other cases of a thrown error agree with) and counts the restored byte as "
+         "taken (`input_bytes` is up to and including the byte at which the failure was found), so the byte is gone and the next call gives U+3000 alone. What the standard keeps "
+         "(the restored bytes, and whatever follows in the input) is not something the decoder can hand back; the fix is a change of the decoder's contract, specified as G8"),
+    ]),
+}
 # The HTML pages that are tests and are not run, with the reason (a page that includes testharness.js and is neither emulated by wpt.mjs nor here fails the run).
 NOT_RUN_PAGES = OrderedDict([
     ("bom-handling.html", "the browser's loader: `document.characterSet` of a page that starts with a byte order mark"),
@@ -280,7 +296,7 @@ def stale_listings(expected):
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("binary")
-    ap.add_argument("--plant", choices=("bridge-drops-a-byte", "expected-count", "no-such-file", "unlisted-file", "stale-listing", "stateful-expectation"))
+    ap.add_argument("--plant", choices=("bridge-drops-a-byte", "expected-count", "no-such-file", "unlisted-file", "stale-listing", "stateful-expectation", "stale-known-failure"))
     ap.add_argument("--update", action="store_true")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args(argv)
@@ -312,13 +328,22 @@ def main(argv):
 
     tally = OrderedDict((f, [0, 0]) for f in files)
     failures = []
+    known = {(f, n): False for f, names in KNOWN_FAILURES.items() for n in names}
+    if args.plant == "stale-known-failure":
+        known[("api-basics.any.js", "a test that passes")] = False
     for r in results:
         t = tally[r["file"]]
         if r["status"] == "pass":
             t[0] += r.get("count", 1)
         else:
             t[1] += 1
-            failures.append("%s: %s -- %s" % (r["file"], r["name"], r["message"]))
+            if (r["file"], r["name"]) in known:
+                known[(r["file"], r["name"])] = True
+            else:
+                failures.append("%s: %s -- %s" % (r["file"], r["name"], r["message"]))
+    for (f, n), failed_as_listed in known.items():
+        if not failed_as_listed:
+            failures.append("%s: %s -- listed as a known failure, and it does not fail (a stale line of KNOWN_FAILURES)" % (f, n))
     if args.update:
         for f, (p, x) in tally.items():
             print("%s\t%d\t%d" % (f, p, x))

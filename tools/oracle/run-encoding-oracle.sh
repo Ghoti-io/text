@@ -154,6 +154,7 @@ check_controls() {
 	expect wpt-unlisted "Files of the suite that are neither run nor listed" run_wpt "$runner" --plant unlisted-file
 	expect wpt-stale-listing "Listed files of the suite that are gone, or that run" run_wpt "$runner" --plant stale-listing
 	expect wpt-stateful-page "Failed tests of the standard's suite" run_wpt "$runner" --plant stateful-expectation
+	expect wpt-stale-known-failure "does not fail (a stale line of KNOWN_FAILURES)" run_wpt "$runner" --plant stale-known-failure
 	# The differential, against corruptions of its own answers, of the list and of the standard's data (the exhaustive UTF population is left out of
 	# the controls: it is the same code and takes minutes).
 	for p in ours-extra-char ours-lost-char; do

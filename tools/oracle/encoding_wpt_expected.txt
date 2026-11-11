@@ -6,6 +6,7 @@
 # The run fails on a failed test, on a file that ran nothing, and on any of these numbers changing, in either direction: a count that moves means the
 # suite changed under the pin, or a test now passes that did not (`encoding_wpt.py --update` prints the new list). Either is a change to read.
 #
+# A failed test of this list is one of KNOWN_FAILURES of tools/oracle/encoding_wpt.py, each with its reason (the run fails on any other, and on a listed one that passes).
 # file <TAB> passed <TAB> failed
 api-basics.any.js	6	0
 api-invalid-label.any.js	3421	0
@@ -24,7 +25,7 @@ textdecoder-fatal-streaming.any.js	2	0
 textdecoder-fatal.any.js	36	0
 textdecoder-ignorebom.any.js	4	0
 textdecoder-labels.any.js	222	0
-textdecoder-mistakes.any.js	87	0
+textdecoder-mistakes.any.js	107	1
 textdecoder-streaming.any.js	32	0
 textdecoder-utf16-surrogates.any.js	10	0
 textencoder-constructor-non-utf.any.js	79	0
