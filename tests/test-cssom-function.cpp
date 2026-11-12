@@ -225,14 +225,17 @@ TEST(CssomFunctionSet, ACallerSuppliedComputeContextKeepsItsOwnFunctionsAndTheRu
   GTEXT_CSS_Compute_Result cr;
   std::memset(&cr, 0, sizeof cr);
   ASSERT_EQ(gtext_css_compute_context_new(R(), &env, &co, &ctx, &cr), GTEXT_CSS_OK);
-  Cs m(page("@function --a() { result: 1px; }"), [&](GTEXT_CSSOM_Config & c) { c.compute_context = ctx; });
-  bool applied = true;
-  EXPECT_EQ(functions_of(m.doc->d, &applied), (std::vector<std::string>{"--a() result"}));
-  EXPECT_FALSE(applied);
-  EXPECT_EQ(gtext_cssom_document_function_rules(nullptr, nullptr, nullptr), GTEXT_CSS_E_INVALID);
-  const GTEXT_CSS_Function_Set * set = nullptr;
-  EXPECT_EQ(gtext_cssom_document_function_rules(nullptr, &set, nullptr), GTEXT_CSS_E_INVALID);
-  EXPECT_EQ(gtext_cssom_document_function_rules(m.doc->d, nullptr, nullptr), GTEXT_CSS_E_INVALID);
+  {   /* the caller's context outlives the document that was given it, and the caller frees it */
+    Cs m(page("@function --a() { result: 1px; }"), [&](GTEXT_CSSOM_Config & c) { c.compute_context = ctx; });
+    bool applied = true;
+    EXPECT_EQ(functions_of(m.doc->d, &applied), (std::vector<std::string>{"--a() result"}));
+    EXPECT_FALSE(applied);
+    EXPECT_EQ(gtext_cssom_document_function_rules(nullptr, nullptr, nullptr), GTEXT_CSS_E_INVALID);
+    const GTEXT_CSS_Function_Set * set = nullptr;
+    EXPECT_EQ(gtext_cssom_document_function_rules(nullptr, &set, nullptr), GTEXT_CSS_E_INVALID);
+    EXPECT_EQ(gtext_cssom_document_function_rules(m.doc->d, nullptr, nullptr), GTEXT_CSS_E_INVALID);
+  }
+  gtext_css_compute_context_free(ctx);
 }
 
 }  // namespace
