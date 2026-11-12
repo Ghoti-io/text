@@ -54,9 +54,10 @@ def seed(o0, o1, o2, text):
 
 def main():
     texts = list(HARD)
-    vec = os.path.join(ROOT, "build", "css-property-vectors", "selector.json")
-    if os.path.exists(vec):
-        texts += [v["value"] for v in json.load(open(vec, encoding="utf-8"))]
+    # the selectors of the pinned web-platform-tests pages, one JSON string per line: a tracked input, so the seeds do not depend on whether a conformance run has left a
+    # build product behind (check-fuzz-seed-generators refuses a generator that names the build directory)
+    with open(os.path.join(HERE, "fuzz-selector-vectors.jsonl"), encoding="utf-8") as fh:
+        texts += [json.loads(line) for line in fh if line.strip()]
     rows = open(os.path.join(ROOT, "tests", "css_selector_rows.h"), encoding="utf-8").read()
     texts += [m.group(1).replace('\\"', '"').replace("\\\\", "\\") for m in re.finditer(r'^  \{"(?:[^"\\]|\\.)*", "((?:[^"\\]|\\.)*)",', rows, re.M)]
     seen = []

@@ -53,9 +53,8 @@ def main():
     out = {}
     probes = []
     p = os.path.join(ROOT, "tests", "css_media_rows.h")
-    if os.path.exists(p):
-        for m in re.finditer(r'\{"[^"]*", "([^"]*)", "([^"]*)"', open(p, encoding="utf-8").read()):
-            probes += [m.group(1), m.group(2)]
+    for m in re.finditer(r'\{"[^"]*", "([^"]*)", "([^"]*)"', open(p, encoding="utf-8").read()):
+        probes += [m.group(1), m.group(2)]
     for q in HARD + probes:
         b = q.encode("utf-8")
         add(out, 0, 0, b)
