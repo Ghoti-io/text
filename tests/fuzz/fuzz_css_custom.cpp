@@ -543,17 +543,17 @@ void check_compute(const std::vector<Decl> & parent_decls, const std::vector<Dec
     if (rules) {
       // the decision the fixed point rests on, asked of every registration with the universal syntax and an initial value, whatever the style holds: a declaration that is invalid at
       // computed-value time computes to the guaranteed-invalid value (Values 5), not to the initial value
-      std::string probe;
+      std::vector<Decl> probe;   /* declarations and not a text for declarations() to split: that refuses a name of more than 64 bytes, and a registration's name may be as long as it likes */
       std::vector<std::string> names;
       for (size_t i = 0; i < gtext_css_at_property_count(rules); i++) {
         GTEXT_CSS_Custom_Info at;
         if (gtext_css_at_property_at(rules, i, &at) && at.universal && at.has_initial) {
-          probe += std::string(at.name, at.name_length) + ": var(--no-such-property-anywhere);\n";
+          probe.push_back(Decl{std::string(at.name, at.name_length), "var(--no-such-property-anywhere)"});
           names.push_back(std::string(at.name, at.name_length));
         }
       }
       GTEXT_CSS_Declaration_Block * pb2 = nullptr;
-      if (!names.empty() && build(declarations(probe), nullptr, &pb2, input) == GTEXT_CSS_OK) {
+      if (!names.empty() && build(probe, nullptr, &pb2, input) == GTEXT_CSS_OK) {
         GTEXT_CSS_Computed_Style * made = nullptr;
         GTEXT_CSS_Compute_Result r4{};
         if (gtext_css_compute_style(ctx, pb2, nullptr, element_of(o0), &made, &r4) == GTEXT_CSS_OK) {
