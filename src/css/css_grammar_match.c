@@ -107,6 +107,7 @@ typedef struct {
   uint32_t bad;     ///< First item at or after this one, in the view, that `<any-value>` refuses.
   uint32_t badd;    ///< The same for `<declaration-value>`, which also refuses a top-level `;` and `!`.
   bool ws_before;   ///< White space preceded it.
+  bool in_anchor;   ///< It is an argument of an anchor() or anchor-size() function (where an anchor function may stand as a fallback).
 } mitem;
 
 /// An interval of positions, inclusive.
@@ -640,6 +641,10 @@ static bool build_items(M * m, const GTEXT_CSS_Component_Value * values, size_t 
       item->child = NO_ITEM;
       item->orig = (uint32_t)i;
       item->ws_before = ws;
+      if (pv.parent != NO_ITEM) {
+        const GTEXT_CSS_Component_Value * pcv = m->items[pv.parent].cv;
+        item->in_anchor = pcv->kind == GTEXT_CSS_VALUE_FUNCTION && (css_ascii_ieq(&pcv->value, "anchor") || css_ascii_ieq(&pcv->value, "anchor-size"));
+      }
       ws = false;
       const uint32_t index = (uint32_t)m->nitems++;
       if ((v->kind == GTEXT_CSS_VALUE_FUNCTION || v->kind == GTEXT_CSS_VALUE_BLOCK)) {
@@ -1135,8 +1140,8 @@ static bool math_item(M * m, uint32_t pos, const xinfo ** out) {
   xinfo * xi = &m->x[pos];
   if (xi->state == X_NONE) {
     const GTEXT_CSS_Component_Value * v = m->items[pos].cv;
-    /* (an anchor function is a math function where the property allows it: it "resolves to a <length>", and stands alone as the fallback of another) */
-    const bool anchor = v && v->kind == GTEXT_CSS_VALUE_FUNCTION &&
+    /* (an anchor function is a math function where the property allows it and it stands in the arguments of another: it "resolves to a <length>", so it is the fallback of another; elsewhere the grammar of the property reads it) */
+    const bool anchor = v && v->kind == GTEXT_CSS_VALUE_FUNCTION && m->items[pos].in_anchor &&
         (((m->anchor_functions & GTEXT_CSS_MATH_ANCHOR) && css_ascii_ieq(&v->value, "anchor")) || ((m->anchor_functions & GTEXT_CSS_MATH_ANCHOR_SIZE) && css_ascii_ieq(&v->value, "anchor-size")));
     if (!v || v->kind != GTEXT_CSS_VALUE_FUNCTION || !(anchor || css_math_accepts_function(v->value.data, v->value.length))) {
       xi->state = X_NOT_MATH;

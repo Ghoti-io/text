@@ -1122,6 +1122,8 @@ TEST(CssProperty, AnchorFunctionsAreLengthsInACalculationOfThePropertiesThatTake
   EXPECT_EQ(parse(r, "top", "calc(1px + anchor(top, anchor(--a left, 5%)))"), "valid:calc(1px + anchor(top, anchor(--a left, 5%)))");
   EXPECT_EQ(parse(r, "left", "anchor(left, anchor-size(--a width, 3px))"), "valid:anchor(left, anchor-size(--a width, 3px))") << "anchor-size() is for the inset properties as well";
   EXPECT_EQ(parse(r, "width", "anchor-size(width, anchor(top))"), "invalid") << "anchor() is not for the sizing properties, in a fallback either";
+  EXPECT_EQ(parse(r, "width", "anchor-size(, 10px)"), "invalid") << "only a fallback is read as a length: an anchor function that stands in a property is read by the property's grammar (web-platform-tests anchor-size-parse-invalid)";
+  EXPECT_EQ(parse(r, "top", "anchor(, anchor(top))"), "invalid");
   EXPECT_EQ(parse(r, "top", "anchor(top, anchor(bogus))"), "invalid") << "the nested function is read as any other";
   EXPECT_EQ(parse(r, "top", "anchor(top, anchor(--a top, 1s))"), "invalid") << "and has a <length-percentage> fallback of its own";
   EXPECT_EQ(parse(r, "color", "rgb(anchor(top, anchor(--a top)), 0, 0)"), "invalid");
