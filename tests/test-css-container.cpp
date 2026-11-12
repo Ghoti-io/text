@@ -25,6 +25,9 @@
  * and the sheets and indexes that carry them. Each rule is quoted from Conditional 5 (served 2026-10-28) in the test that checks it.
  */
 
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -501,9 +504,69 @@ TEST(CssContainerCache, ACallThatIsSharedAnswersAsOneThatIsNot) {
 
 namespace {
 
+/* An allocator that gives back, for a request, the block most recently freed with the same size (and only then a new one): what a C library's free list tends to do, made certain, so that a
+ * query parsed after another was freed is at the first one's address whatever the C library does (a test that waited for the library to do it passed in two runs of three). */
+struct ReuseAllocator {
+  struct Block { size_t n; Block * next; };
+  std::vector<Block *> freed, all;
+  static void * get(void * c, size_t n) {
+    auto * self = static_cast<ReuseAllocator *>(c);
+    for (size_t i = self->freed.size(); i-- > 0;) {
+      if (self->freed[i]->n == n) {
+        Block * b = self->freed[i];
+        self->freed.erase(self->freed.begin() + static_cast<std::ptrdiff_t>(i));
+        return reinterpret_cast<char *>(b) + 16;
+      }
+    }
+    auto * b = static_cast<Block *>(std::malloc(16 + n));
+    if (!b) {
+      return nullptr;
+    }
+    b->n = n;
+    self->all.push_back(b);
+    return reinterpret_cast<char *>(b) + 16;
+  }
+  static void * m(void * c, size_t n) { return get(c, n ? n : 1); }
+  static void * z(void * c, size_t k, size_t n) {
+    if (n && k > SIZE_MAX / n) {
+      return nullptr;
+    }
+    const size_t total = k * n;
+    void * p = get(c, total != 0 ? total : 1);
+    if (p) {
+      std::memset(p, 0, total);
+    }
+    return p;
+  }
+  static void f(void * c, void * p) {
+    if (p) {
+      static_cast<ReuseAllocator *>(c)->freed.push_back(reinterpret_cast<Block *>(static_cast<char *>(p) - 16));
+    }
+  }
+  static void * r(void * c, void * p, size_t n) {
+    void * q = get(c, n ? n : 1);
+    if (q && p) {
+      const size_t old = reinterpret_cast<Block *>(static_cast<char *>(p) - 16)->n;
+      std::memcpy(q, p, old < n ? old : n);
+      f(c, p);
+    }
+    return q;
+  }
+  GTEXT_Allocator allocator() { return GTEXT_Allocator{this, m, z, r, f}; }
+  ~ReuseAllocator() {
+    for (Block * b : all) {
+      std::free(b);
+    }
+  }
+};
+
 bool eval_transient(Doc & d, const std::string & q, int element, GTEXT_CSS_Condition_Call * call, GTEXT_CSS_Status * st) {
+  static ReuseAllocator reuse;
+  static const GTEXT_Allocator alloc = reuse.allocator();
+  GTEXT_CSS_Media_Options options = gtext_css_media_options_default();
+  options.allocator = &alloc;
   GTEXT_CSS_Container_Query * query = nullptr;
-  EXPECT_EQ(gtext_css_container_parse(q.data(), q.size(), nullptr, &query, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_container_parse(q.data(), q.size(), &options, &query, nullptr), GTEXT_CSS_OK);
   bool m = false;
   *st = gtext_css_conditions_evaluate_container(d.cond, query, synth::Tree::H(element), false, call, &m);
   gtext_css_media_list_free(query);
