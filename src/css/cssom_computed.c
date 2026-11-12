@@ -1437,10 +1437,16 @@ static void pseudo_key(const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_F
     if (s->pseudo == GTEXT_CSS_SEL_PE_SCROLL_BUTTON_FN && flow) {
       const int slot = css_scroll_button_slot(s, flow);
       if (slot >= 0) {
-        const int n = snprintf(buf, cap, "scroll-button(%d)", slot);
-        if (n > 0 && (size_t)n < cap) {
+        /* the slot is a button of the four, 0..3: written by hand because src/css reaches no C library for a number */
+        static const char prefix[] = "scroll-button(";
+        const size_t n = sizeof prefix - 1 + 2;
+        if (slot <= 3 && n < cap) {
+          memcpy(buf, prefix, sizeof prefix - 1);
+          buf[sizeof prefix - 1] = (char)('0' + slot);
+          buf[sizeof prefix] = ')';
+          buf[n] = '\0';
           *key = buf;
-          *length = (size_t)n;
+          *length = n;
         }
       }
     }
