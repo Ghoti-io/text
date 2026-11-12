@@ -211,7 +211,7 @@ PY
 		--work "$scratch/plant-$name" --stage classify --replay "$replay"
 done
 # the `functions` scope: a population and a list of its own (css_style_divergences_functions.txt), whose key is a page of the css-mixins pins. It is run unedited, with the list tampered with
-# in each way, and with this library's evaluation of custom functions undone in the ways of tools/conformance/CSS_FUNCTION_PLANTS.
+# in each way, and with this library's evaluation of custom functions undone in the ways of tools/oracle/css_style_function_plants.txt (the plants of tools/conformance/CSS_FUNCTION_PLANTS this scope sees).
 fbase=$scratch/functions-base
 CSS_STYLE_ORACLE_SCOPE=functions CSS_STYLE_ORACLE_SCHEMES=light $diff_py --work "$fbase" --stage all --list "$functions_list" --witnesses "$functions_witnesses" >"$log" 2>&1 || { echo "the functions scope does not pass unedited" >&2; cat "$log" >&2; exit 1; }
 tail -2 "$log"
@@ -232,7 +232,10 @@ expect functions-list-blanket-reason "LIST" fclassify --list "$scratch/f-blanket
 expect functions-list-empty "UNLISTED" fclassify --list "$scratch/f-empty"
 grep -v "^$ffirst	" "$functions_witnesses" > "$scratch/f-no-witness" || true
 expect functions-witness-missing "WITNESS" fclassify --witnesses "$scratch/f-no-witness"
-fplants=$(awk -F'\t' '!/^#/ && NF >= 5 && $2 == "css_substitute.c" { print $1 }' "$root/tools/conformance/CSS_FUNCTION_PLANTS")
+fplants=$(grep -v '^#' "$root/tools/oracle/css_style_function_plants.txt" | grep -v '^$')
+for name in $fplants; do
+	awk -F'\t' -v n="$name" '!/^#/ && $1 == n && $2 == "css_substitute.c" { found = 1 } END { exit !found }' "$root/tools/conformance/CSS_FUNCTION_PLANTS" || { echo "control: css_style_function_plants.txt names $name, which CSS_FUNCTION_PLANTS has no plant of in css_substitute.c" >&2; exit 1; }
+done
 for name in $fplants; do
 	rm -rf "$scratch/fp-$name"
 	mkdir -p "$scratch/fp-$name"

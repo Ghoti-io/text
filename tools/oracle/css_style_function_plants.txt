@@ -1,0 +1,14 @@
+# The plants of tools/conformance/CSS_FUNCTION_PLANTS (css_substitute.c) that the functions scope of the style differential sees: run-css-style-oracle.sh --controls undoes each of them
+# in this library and requires the differential to report it. The others are seen by the unit tests of the evaluation and not here, because no template of the pinned css-mixins pages
+# asks what they decide (each was run and the differential stayed silent, or, for style-query-inherit-reads-the-element-and-not-the-calling-context, the planted library could not
+# answer the population at all). One name a line.
+function-cycle-not-guarded
+function-default-ignored
+function-body-cannot-see-the-call-site
+function-return-type-ignored
+function-guard-not-released
+function-brace-argument-keeps-its-braces
+function-inherit-reads-its-own-scope
+function-initial-registration-not-handed-down-a-chain
+style-query-ignores-the-registration-of-a-parameter
+style-query-initial-keyword-is-the-registrations-initial-value
