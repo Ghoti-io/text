@@ -49,7 +49,7 @@
  *   the unit that did not complete a UTF-16 surrogate pair, a byte of an ISO-2022-JP escape sequence that was not one) is the first thing the next call
  *   reads, ahead of its own input. `GTEXT_Decoder_Result::held_bytes` says how many. They are bytes the decoder took from an earlier call, so they are not
  *   in the next call's `input_bytes`, and **the caller's own input after the byte at which the error was found** (`input_bytes` of the failing call
- *   says where) is still the caller's, to hand over again as the standard's queue would hold it. The held bytes are the first bytes of the new stream:
+ *   says where) is not kept: it is the caller's, to hand over again if it wants it read (the standard's own tests expect a fatal UTF-8 error to leave nothing behind, so the web runners drop it). The held bytes are the first bytes of the new stream:
  *   `error_offset` and the offsets of a source map count them first (offset 0 is the first held byte, and the call's input begins after them), and a
  *   byte order mark cannot begin it (with `bom_sniffing` a mark in the next call is not looked for). A flush, gtext_decoder_reset(), a failure that is
  *   not an error in the data (a limit, a refusing sink) and an error in a call that did flush abandon them with the rest of the stream.
@@ -165,7 +165,7 @@ typedef struct {
                                 ///< input ended in the middle of a sequence. 0 otherwise.
   size_t held_bytes;            ///< On GTEXT_ENCODING_E_MALFORMED in a call that did not flush: the bytes the decoder kept for the next call, which reads them before
                                 ///< its input (the standard's "restore byte to ioQueue": the I/O queue outlives the error). They are not counted in `input_bytes`, and the
-                                ///< caller's own input from `input_bytes` on is still its own to hand back. 0 otherwise.
+                                ///< caller's own input from `input_bytes` on is not kept. 0 otherwise.
   bool bom_found;               ///< `bom_sniffing` took a byte order mark during this call.
   size_t steps;                 ///< Handler steps taken during this call, restored bytes read again included: the work, which is at most
                                 ///< four per byte of input (and none for the runs of ASCII that are copied whole).

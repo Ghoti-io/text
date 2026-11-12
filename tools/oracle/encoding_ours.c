@@ -389,7 +389,7 @@ static void answer_decode(FILE * out, GTEXT_Encoding_Status s, const Bytes * b, 
   } else {
     fprintf(out, "ERR %s %zu ", status_name(s), r->error_offset);
     put_hex(out, b->data, b->len);
-    fprintf(out, " %zu\n", r->input_bytes); /* (the bytes of the call that were taken: what is after them is still in the standard's I/O queue) */
+    fputc('\n', out);
   }
 }
 
