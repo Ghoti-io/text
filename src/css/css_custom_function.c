@@ -775,7 +775,8 @@ static GTEXT_CSS_Status read_body(GTEXT_CSS_Function_Set * s, const GTEXT_CSS_Ru
       const GTEXT_CSS_Declaration * decl = &item->declarations[k];
       s->work++;
       if (ieq(&decl->name, "result") && !decl->important) {
-        d->has_result = true;
+        /* a value that is not a <declaration-value> (a stray `)`) is an invalid declaration, ignored as in any rule: the function has no result by it */
+        d->has_result = d->has_result || css_declaration_value_ok(decl->value, 0, decl->value_count);
       }
       else if (decl->name.length > 2 && decl->name.data[0] == '-' && decl->name.data[1] == '-') {
         continue;   /* a local variable */

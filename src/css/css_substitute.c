@@ -5012,6 +5012,9 @@ static GTEXT_CSS_Status scope_for_body(css_sub * sub, frame_t * f, const scope_t
     for (size_t k = 0; k < item->declaration_count && st == GTEXT_CSS_OK; k++) {
       const GTEXT_CSS_Declaration * decl = &item->declarations[k];
       sub->work++;
+      if (((decl->name.length > 2 && decl->name.data[0] == '-' && decl->name.data[1] == '-') || (fn_name_is(&decl->name, "result") && !decl->important)) && !css_declaration_value_ok(decl->value, 0, decl->value_count)) {
+        continue;   /* a value that is not a <declaration-value> (a stray `)`) is an invalid declaration, ignored as in any rule */
+      }
       entry_t e;
       memset(&e, 0, sizeof e);
       e.reg = -1;

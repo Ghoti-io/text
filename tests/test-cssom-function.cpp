@@ -59,6 +59,17 @@ TEST(CssomFunction, AFunctionNoRuleDefinesIsGuaranteedInvalid) {
   EXPECT_EQ(m.value("#a", "height"), "7px");
 }
 
+/* "result: <declaration-value>" and a local variable's value are <declaration-value>s: one with a stray `)` is an invalid declaration, ignored as it is in a style rule, and not a result that
+   comes out as a custom property value no declaration could write (the fuzz harness of custom properties found `result: #(--x) * 2);` come out so). */
+TEST(CssomFunction, AResultOrALocalVariableWithAStrayClosingParenthesisIsAnInvalidDeclaration) {
+  Cs m(page("@function --a() { result: 1px); } @function --b() { result: 1px; result: 2px); } @function --c() { --v: 3px); result: 4px; } @function --d() { --v: 3px; --v: 5px); result: var(--v); } "
+            "#a { width: --a(); height: --b(); top: --c(); left: --d() }"));
+  EXPECT_EQ(m.value("#a", "width"), "auto") << "no result: the function is guaranteed-invalid";
+  EXPECT_EQ(m.value("#a", "height"), "1px") << "the later result is invalid and ignored: the earlier one stands";
+  EXPECT_EQ(m.value("#a", "top"), "4px") << "the local variable is ignored, the result is not";
+  EXPECT_EQ(m.value("#a", "left"), "3px") << "the later local variable is invalid and ignored";
+}
+
 TEST(CssomFunction, ARuleInALaterSheetWinsOverAnEarlierOne) {
   Cs m("<!DOCTYPE html><html><head><style>@function --f() { result: 1px; }</style><style>@function --f() { result: 2px; } #b { width: --f() }</style></head><body><p id=b>x</p></body></html>");
   EXPECT_EQ(m.value("#b", "width"), "2px");
