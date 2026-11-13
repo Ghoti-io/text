@@ -466,8 +466,14 @@ static bool eval_pseudo_class(struct GTEXT_CSS_Selector_Match_Context * ctx, con
   case GTEXT_CSS_SEL_PC_IS_FN:
   case GTEXT_CSS_SEL_PC_WHERE_FN: return css_match_any(ctx, s->list, e);
   case GTEXT_CSS_SEL_PC_NOT_FN: {
+    /* On the featureless host a compound that has a simple selector the host may not match matches nothing, and the negation of it matches nothing either (`:not(:host.c)` and
+       `:not(.c:host)` are not true of the host: css-selectors/featureless-006.html, both browsers), where `:not(:host(.c))` and `:not(:not(:host))` are the answers of their parts. */
+    const bool saved = ctx->featureless_hit;
+    ctx->featureless_hit = false;
     const bool m = css_match_any(ctx, s->list, e);
-    return ctx->status == GTEXT_CSS_OK && !m;
+    const bool hit = ctx->featureless_hit;
+    ctx->featureless_hit = saved || hit;
+    return ctx->status == GTEXT_CSS_OK && !m && !hit;
   }
   case GTEXT_CSS_SEL_PC_HAS_FN: return css_match_has(ctx, s, e);
   case GTEXT_CSS_SEL_PC_ROOT: return is_root(ctx, e);
@@ -505,7 +511,7 @@ static bool eval_pseudo_class(struct GTEXT_CSS_Selector_Match_Context * ctx, con
     }
     return false;
   }
-  case GTEXT_CSS_SEL_PC_HOST: return ctx->tree_scope && ctx->iface.shadow_scope(ctx->iface.user, e) == ctx->tree_scope;
+  case GTEXT_CSS_SEL_PC_HOST: return ctx->tree_scope && !ctx->host_arg && ctx->iface.shadow_scope(ctx->iface.user, e) == ctx->tree_scope; // in the argument of `:host()` or `:host-context()` it is a selector the argument does not take: it matches nothing (css-shadow/host-in-host-context-selector.html)
   case GTEXT_CSS_SEL_PC_HOST_FN: {
     if (!ctx->tree_scope || ctx->iface.shadow_scope(ctx->iface.user, e) != ctx->tree_scope) {
       return false;
@@ -581,7 +587,7 @@ static bool is_featureless_host(struct GTEXT_CSS_Selector_Match_Context * ctx, E
 static bool host_allows(const GTEXT_CSS_Simple * s) {
   return s->kind == GTEXT_CSS_SIMPLE_NESTING ||
       (s->kind == GTEXT_CSS_SIMPLE_PSEUDO_CLASS && (s->pseudo == GTEXT_CSS_SEL_PC_HOST || s->pseudo == GTEXT_CSS_SEL_PC_HOST_FN || s->pseudo == GTEXT_CSS_SEL_PC_HOST_CONTEXT_FN ||
-          s->pseudo == GTEXT_CSS_SEL_PC_IS_FN || s->pseudo == GTEXT_CSS_SEL_PC_WHERE_FN));
+          s->pseudo == GTEXT_CSS_SEL_PC_IS_FN || s->pseudo == GTEXT_CSS_SEL_PC_WHERE_FN || s->pseudo == GTEXT_CSS_SEL_PC_NOT_FN));
 }
 
 bool css_match_compound(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CSS_Compound * cmp, El element, size_t limit) {
@@ -601,6 +607,7 @@ bool css_match_compound(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTE
       return false;
     }
     if (featureless && !host_allows(s)) {
+      ctx->featureless_hit = true;
       return false;
     }
     if (!eval_simple(ctx, s, element)) {
@@ -634,7 +641,7 @@ bool css_match_any(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTEXT_CS
 static bool list_names_host(const GTEXT_CSS_Selector_List * l, unsigned depth);
 
 /// Whether a compound has `:host`, `:host()` or `:host-context()` among its simple selectors, or `&`, which may stand for a selector that has (the matching of `&` decides), or a
-/// `:is()` or `:where()` one of whose selectors does (looked through to a fixed depth; deeper is taken as yes, which only offers the host to a compound that then fails).
+/// `:is()`, `:where()` or `:not()` one of whose selectors does (looked through to a fixed depth; deeper is taken as yes, which only offers the host to a compound that then fails).
 static bool compound_names_host_depth(const GTEXT_CSS_Compound * cmp, unsigned depth) {
   for (size_t i = 0; i < cmp->simple_count; i++) {
     const GTEXT_CSS_Simple * s = &cmp->simples[i];
@@ -645,7 +652,7 @@ static bool compound_names_host_depth(const GTEXT_CSS_Compound * cmp, unsigned d
       if (s->pseudo == GTEXT_CSS_SEL_PC_HOST || s->pseudo == GTEXT_CSS_SEL_PC_HOST_FN || s->pseudo == GTEXT_CSS_SEL_PC_HOST_CONTEXT_FN) {
         return true;
       }
-      if ((s->pseudo == GTEXT_CSS_SEL_PC_IS_FN || s->pseudo == GTEXT_CSS_SEL_PC_WHERE_FN) && list_names_host(s->list, depth + 1)) {
+      if ((s->pseudo == GTEXT_CSS_SEL_PC_IS_FN || s->pseudo == GTEXT_CSS_SEL_PC_WHERE_FN || s->pseudo == GTEXT_CSS_SEL_PC_NOT_FN) && list_names_host(s->list, depth + 1)) {
         return true;
       }
     }

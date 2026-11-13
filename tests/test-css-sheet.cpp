@@ -1243,6 +1243,69 @@ TEST(CssSheetMutants, QuirksModeFoldsClassAndIdInTheBucketsAndNotOtherwise) {
   EXPECT_EQ(st, GTEXT_CSS_E_INVALID);
 }
 
+TEST(CssSheetMutants, AHostPseudoClassInTheArgumentOfHostContextOrHostMatchesNothing) {
+  /* the pinned page css-shadow/host-in-host-context-selector.html: `:host-context(:host)` does not match (both browsers), and the argument of `:host()` is the same */
+  Compiled inner(":host-context(:host) { color: red } :host(:host) { background-color: blue } :host { margin-top: 5px }");
+  ASSERT_EQ(inner.st, GTEXT_CSS_OK);
+  Page pg;
+  const int h0 = pg.t.add(0, "x-outer");
+  const int s0 = pg.t.attach_shadow(h0);
+  (void)s0;
+  pg.open();
+  Index ix;
+  ASSERT_EQ(ix.add(inner, GTEXT_CSS_ORIGIN_AUTHOR, s0, 1), GTEXT_CSS_OK);
+  ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+  EXPECT_EQ(win(pg, ix, h0, "margin-top"), "5px") << "`:host` itself matches the host";
+  EXPECT_EQ(win(pg, ix, h0, "color"), "-") << ":host-context(:host) matches nothing";
+  EXPECT_EQ(win(pg, ix, h0, "background-color"), "-") << ":host(:host) matches nothing";
+}
+
+TEST(CssSheetMutants, ANegationOfWhatTheFeaturelessHostMatchesIsTrueOfItAndAPoisonedCompoundIsNotNegated) {
+  /* css-selectors/featureless-006.html, which both browsers pass but for the `:has()` cases they differ on: seen from inside its shadow tree the host is matched by :host and what is built
+     of it, so `:not(:not(:host))` and `:not(:host(.nope))` are true of it, where a compound that has `:host` and a simple selector the host may not match matches nothing, and so does
+     its negation. */
+  struct Case {
+    const char * selector;
+    bool matches;
+  };
+  const Case cases[] = {
+      {":host", true},
+      {":not(:host)", false},
+      {":not(:not(:host))", true},
+      {":not(:not(:not(:host)))", false},
+      {":is(:not(:not(:host)))", true},
+      {":not(:is(:host, div))", false},
+      {":not(div)", false},
+      {":not(.foo)", false},
+      {":not(:host(.nope))", true},
+      {":not(:host(.host))", false},
+      {":is(:not(:host(.nope)))", true},
+      {":not(:host.host)", false},
+      {":not(.foo:host)", false},
+      {":not(:host > .foo)", false},
+      {":not(:not(:host))::before", true},
+  };
+  for (const Case & c : cases) {
+    SCOPED_TRACE(c.selector);
+    Compiled inner(std::string(c.selector) + " { color: red }");
+    ASSERT_EQ(inner.st, GTEXT_CSS_OK);
+    Page pg;
+    const int h0 = pg.t.add(0, "div", "", {"host"});
+    const int s0 = pg.t.attach_shadow(h0);
+    pg.t.add_in_shadow(s0, "div", "", {"inner"});
+    pg.open();
+    Index ix;
+    ASSERT_EQ(ix.add(inner, GTEXT_CSS_ORIGIN_AUTHOR, s0, 1), GTEXT_CSS_OK);
+    ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
+    if (std::string(c.selector).find("::before") == std::string::npos) {
+      EXPECT_EQ(win(pg, ix, h0, "color"), c.matches ? "red" : "-");
+    }
+    else {
+      EXPECT_EQ(win(pg, ix, h0, "color", "::before"), c.matches ? "red" : "-");
+    }
+  }
+}
+
 TEST(CssSheetMutants, HostContextClimbsTheFlatTreeThroughShadowRootsAndSlots) {
   /* Scoping 1: `:host-context()` looks at the host and its ancestors in the flat tree: across a shadow root to its host, and from a slotted element to its slot. */
   Compiled inner(":host-context(.ctx) { color: red } :host-context(.dd) { background-color: blue } :host-context(.sl) { margin-top: 5px } :host-context(.nope) { margin-left: 1px }");

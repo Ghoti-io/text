@@ -85,6 +85,7 @@ struct GTEXT_CSS_Selector_Match_Context {
   El scope;                          ///< The `:scope` element now (NULL: the root).
   const void * tree_scope;
   bool host_arg;                     ///< The argument of `:host()` or `:host-context()` is being matched: the host is seen as the tree it is in sees it.
+  bool featureless_hit;              ///< A compound met the featureless host with a simple selector the host may not match (set by css_match_compound(); read and restored by `:not()`).
   const css_nest * nest;
   const GTEXT_CSS_Complex * implied_cx; ///< A rule of a sheet imported with `scope()` is being matched: this complex has the implied `:where(:scope)` before it (its compounds are inside the scoping root, strictly).
   const void * memo_aux;             ///< The aux key now: the scope element while a scope-dependent selector is read, else NULL.
