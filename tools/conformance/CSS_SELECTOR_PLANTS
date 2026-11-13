@@ -101,3 +101,6 @@ a-webkit-pseudo-element-keeps-the-case-it-was-written-in	css_selector_parse.c	sd
 webkit-without-a-hyphen-is-a-webkit-pseudo-element	css_selector_parse.c	css_sel_ieq(nm->data, 8, "-webkit-", 8)	css_sel_ieq(nm->data, 7, "-webkit", 7)	selector
 two-webkit-pseudo-elements-are-the-same-one	css_match.c	(sel_rows[a->pseudo].flags & SELF_WEBKIT) && (a->name.length	0 && (sel_rows[a->pseudo].flags & SELF_WEBKIT) && (a->name.length	sheet
 sibling-index-steps-wrong	css_markup.c	    index = a->pindex + 1;	    index = a->pindex + 2;	match
+featureless-poison-not-read	css_match.c	return ctx->status == GTEXT_CSS_OK && !m && !hit;	return ctx->status == GTEXT_CSS_OK && !m;	sheet
+featureless-poison-set-in-any-order	css_match.c	        ctx->featureless_hit = true; // whatever the order	        // whatever the order	sheet
+host-pseudo-class-in-its-own-argument	css_match.c	ctx->tree_scope && !ctx->host_arg && ctx->iface.shadow_scope(ctx->iface.user, e) == ctx->tree_scope; // in the argument	ctx->tree_scope && ctx->iface.shadow_scope(ctx->iface.user, e) == ctx->tree_scope; // in the argument	sheet

@@ -469,10 +469,13 @@ static bool eval_pseudo_class(struct GTEXT_CSS_Selector_Match_Context * ctx, con
     /* On the featureless host a compound that has a simple selector the host may not match matches nothing, and the negation of it matches nothing either (`:not(:host.c)` and
        `:not(.c:host)` are not true of the host: css-selectors/featureless-006.html, both browsers), where `:not(:host(.c))` and `:not(:not(:host))` are the answers of their parts. */
     const bool saved = ctx->featureless_hit;
+    const bool saved_memo = ctx->opt.disable_memo;
     ctx->featureless_hit = false;
+    ctx->opt.disable_memo = saved_memo || ctx->tree_scope != NULL; // a memoized answer would not carry the flag, and the flag decides: inside a shadow tree the argument is matched afresh
     const bool m = css_match_any(ctx, s->list, e);
+    ctx->opt.disable_memo = saved_memo;
     const bool hit = ctx->featureless_hit;
-    ctx->featureless_hit = saved || hit;
+    ctx->featureless_hit = saved;   // the flag is this :not()'s own: a poisoned compound under it makes it false, and what it answers is all the :not() above it sees
     return ctx->status == GTEXT_CSS_OK && !m && !hit;
   }
   case GTEXT_CSS_SEL_PC_HAS_FN: return css_match_has(ctx, s, e);
@@ -601,13 +604,17 @@ bool css_match_compound(struct GTEXT_CSS_Selector_Match_Context * ctx, const GTE
     }
   }
   const bool featureless = is_featureless_host(ctx, element);
+  if (featureless) {
+    for (size_t i = 0; i < limit; i++) {
+      if (!host_allows(&cmp->simples[i])) {
+        ctx->featureless_hit = true; // whatever the order of the simple selectors: the compound matches nothing, and the :not() around it says so
+        return false;
+      }
+    }
+  }
   for (size_t i = 0; i < limit; i++) {
     const GTEXT_CSS_Simple * s = &cmp->simples[i];
     if (s->never) {
-      return false;
-    }
-    if (featureless && !host_allows(s)) {
-      ctx->featureless_hit = true;
       return false;
     }
     if (!eval_simple(ctx, s, element)) {

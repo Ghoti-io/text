@@ -1284,6 +1284,8 @@ TEST(CssSheetMutants, ANegationOfWhatTheFeaturelessHostMatchesIsTrueOfItAndAPois
       {":not(.foo:host)", false},
       {":not(:host > .foo)", false},
       {":not(:not(:host))::before", true},
+      {":not(:host(.nope).c)", false},   // the order of the simple selectors does not matter
+      {":not(.c:host(.nope))", false},
   };
   for (const Case & c : cases) {
     SCOPED_TRACE(c.selector);
@@ -1299,6 +1301,7 @@ TEST(CssSheetMutants, ANegationOfWhatTheFeaturelessHostMatchesIsTrueOfItAndAPois
     ASSERT_EQ(ix.freeze(), GTEXT_CSS_OK);
     if (std::string(c.selector).find("::before") == std::string::npos) {
       EXPECT_EQ(win(pg, ix, h0, "color"), c.matches ? "red" : "-");
+      EXPECT_EQ(win(pg, ix, h0, "color"), c.matches ? "red" : "-") << "asked again, as the memo would answer it";
     }
     else {
       EXPECT_EQ(win(pg, ix, h0, "color", "::before"), c.matches ? "red" : "-");
