@@ -3588,8 +3588,8 @@ static size_t * node_path(const GTEXT_Markup_Node * n, size_t * depth) {
   return path;
 }
 
-static GTEXT_Markup_Node * node_at(GTEXT_Markup_Document * m, const size_t * path, size_t depth) {
-  GTEXT_Markup_Node * n = gtext_markup_document_root(m);
+static GTEXT_Markup_Node * node_from(GTEXT_Markup_Node * start, const size_t * path, size_t depth) {
+  GTEXT_Markup_Node * n = start;
   while (depth-- > 0 && n) {
     n = gtext_markup_node_first_child(n);
     for (size_t i = path[depth]; n && i > 0; i--) {
@@ -3597,6 +3597,38 @@ static GTEXT_Markup_Node * node_at(GTEXT_Markup_Document * m, const size_t * pat
     }
   }
   return n;
+}
+
+static GTEXT_Markup_Node * node_at(GTEXT_Markup_Document * m, const size_t * path, size_t depth) {
+  return node_from(gtext_markup_document_root(m), path, depth);
+}
+
+/* The node of the new world that stands where `n` stood in the old one: by its path from the document's root, or, for a node of a shadow tree, by the path of its host and then its path in the
+   root (the shadow roots of a world that has not been mutated are the declarative ones, which the new world has made again). *fail is set for a node that is in neither. */
+static GTEXT_Markup_Node * carry_node(world * ow, world * nw, GTEXT_Markup_Node * n, int * fail) {
+  GTEXT_Markup_Node * top = tree_top(n);
+  size_t depth;
+  size_t * path = node_path(n, &depth);
+  GTEXT_Markup_Node * out = NULL;
+  if (top == gtext_markup_document_root(ow->markup)) {
+    out = node_at(nw->markup, path, depth);
+  }
+  else {
+    const shadow * sh = shadow_by_root(ow, top);
+    if (!sh || tree_top(sh->host) != gtext_markup_document_root(ow->markup)) {
+      *fail = 1;   /* a detached node, or a shadow tree inside another: not found again by a path */
+    }
+    else {
+      size_t hdepth;
+      size_t * hpath = node_path(sh->host, &hdepth);
+      GTEXT_Markup_Node * host = node_at(nw->markup, hpath, hdepth);
+      free(hpath);
+      const shadow * nsh = host ? shadow_by_host(nw, host) : NULL;
+      out = nsh ? node_from(nsh->root, path, depth) : NULL;
+    }
+  }
+  free(path);
+  return out;
 }
 
 static int program_open(program * p, size_t extent) {
@@ -3616,33 +3648,22 @@ static int program_open(program * p, size_t extent) {
   }
   if (had) {
     world * ow = &old;
+    int carry_failed = 0;
     for (size_t i = 0; i < ow->nelems; i++) {
-      if (ow->elems[i].node && tree_top(ow->elems[i].node) != gtext_markup_document_root(ow->markup)) {
-        /* a node of a shadow tree (or a detached one) is not found again by its path from the document's root: the program has to say so, not be given another node */
-        world_close(nw);
-        p->w = old;
-        return 0;
-      }
-    }
-    for (size_t i = 0; i < ow->nelems; i++) {
-      GTEXT_Markup_Node * n = NULL;
-      if (ow->elems[i].node) {
-        size_t depth;
-        size_t * path = node_path(ow->elems[i].node, &depth);
-        n = node_at(nw->markup, path, depth);
-        free(path);
-      }
-      put_elem(nw, ow->elems[i].name, n);
+      put_elem(nw, ow->elems[i].name, ow->elems[i].node ? carry_node(ow, nw, ow->elems[i].node, &carry_failed) : NULL);
     }
     for (size_t i = 0; i < ow->nlists; i++) {
       GTEXT_Markup_Node ** nodes = malloc((ow->lists[i].n ? ow->lists[i].n : 1) * sizeof *nodes);
       for (size_t k = 0; k < ow->lists[i].n; k++) {
-        size_t depth;
-        size_t * path = node_path(ow->lists[i].nodes[k], &depth);
-        nodes[k] = node_at(nw->markup, path, depth);
-        free(path);
+        nodes[k] = carry_node(ow, nw, ow->lists[i].nodes[k], &carry_failed);
       }
       put_list(nw, ow->lists[i].name, nodes, ow->lists[i].n);
+    }
+    if (carry_failed) {
+      /* the program has to say so, not be given another node */
+      world_close(nw);
+      p->w = old;
+      return 0;
     }
     for (size_t i = 0; i < ow->nregs; i++) {
       put_reg(nw, ow->regs[i].name, val(ow->regs[i].v.kind, ow->regs[i].v.s, ow->regs[i].v.n));
