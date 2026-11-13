@@ -69,6 +69,11 @@ SRC_RE = re.compile(r'\bsrc\s*=\s*["\']?([^"\'\s>]+)', re.I)
 CALL_RE = re.compile(r'(?<![\w.$])(?:test|promise_test|async_test)\s*\(')
 HELPER_CALL_RE = re.compile(r'(?<![\w.$])(?<!function )test_\w+\s*\(')
 HELPER_DEF_RE = re.compile(r'\bfunction\s+(test_\w+)\s*\(|\b(?:const|let|var)\s+(test_\w+)\s*=')
+# The tests a call of a modeled helper makes (tools/css/cssom_eval.py MODELED_HELPERS: resources/matchmedia-utils.js): `query_should_be_unknown` makes two, the others one. The census counts them
+# by the page's own text, so that its count of a page that calls them is not the evaluator's.
+HELPER_TESTS = {'query_should_be_css_parseable': 1, 'query_should_not_be_css_parseable': 1, 'query_should_be_js_parseable': 1, 'query_should_not_be_js_parseable': 1,
+                'query_should_be_known': 1, 'query_should_be_unknown': 2}
+MODELED_HELPER_CALL_RE = re.compile(r'(?<![\w.$])(' + '|'.join(HELPER_TESTS) + r')\s*\(')
 REFTEST_RE = re.compile(r'rel=["\']?(?:match|mismatch)')
 
 
@@ -145,6 +150,9 @@ def features(wpt, rel, rulevec):
         marks.append('rule-vectors')
     defined = {a or b for a, b in HELPER_DEF_RE.findall(own)}
     calls = len(CALL_RE.findall(own)) + len([c for c in HELPER_CALL_RE.findall(own) if c.split('(')[0].strip() not in defined])
+    if any(os.path.basename(h) == 'matchmedia-utils.js' for h in helpers):
+        defined_here = set(re.findall(r'\bfunction\s+(\w+)\s*\(', own))
+        calls += sum(HELPER_TESTS[m.group(1)] for m in MODELED_HELPER_CALL_RE.finditer(own) if m.group(1) not in defined_here)
     if reftest or not harness or calls == 0:
         calls = 1 if not rulevec else calls
     return calls, sorted(set(marks)), sorted(set(helpers))

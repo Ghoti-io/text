@@ -74,10 +74,12 @@ OWNERS = [
     (r'^css/css-values/tree-counting/sibling-(index|count)-keyframe-', 'owner: animation sampling (a layer the library does not have: the value of a property under an animation at a time, here with sibling-index() in its keyframes)'),
     (r'^css/(css-shapes|css-masking/clip-path)/(basic-shape-)?interpolation', 'owner: animation sampling (a layer the library does not have: the value of a property midway through an interpolation)'),
     (r'^css/css-(animations|transitions|anchor-position)/', 'owner: animation sampling and anchor positioning (a layer the library does not have: computed values under a running animation, anchor() resolution)'),
+    (r'^css/css-shadow/keyframes', 'owner: src/css keyframes and the cascade of a shadow tree (a `@keyframes` of a shadow tree\'s sheet is not collected: the library collects those of the document scope only)'),
     (r'^css/css-(cascade|variables|mixins|properties-values-api)/', 'owner: src/css cascade and custom properties'),
     (r'^css/(css-grid|css-flexbox|css-align|css-sizing|css-box|css-multicol|css-logical|css-position|css-tables|css-forms)/', 'owner: src/css computed layer for the box properties'),
     (r'^css/(css-values|css-color|css-color-adjust|css-images|css-backgrounds|css-text|css-fonts|css-ui|css-content|css-lists|css-counter-styles|filter-effects|css-masking|css-transforms|fill-stroke|css-shapes|css-writing-modes|css-overflow|css-display|css-contain|css-pseudo)/',
      'owner: src/css computed value of the property'),
+    (r'^css/css-shadow/', 'owner: src/css selector, condition and cascade layers'),
     (r'^css/(selectors|css-conditional|mediaqueries|cssom|cssom-view|css-nesting|css-scoping|css-syntax|css-viewport|css-env|css-page|css-gaps|css-text-decor|css-inline|css-ruby|scroll-animations|css-easing|css-shadow-parts|css-regions)/',
      'owner: src/css selector, condition and cascade layers'),
 ]

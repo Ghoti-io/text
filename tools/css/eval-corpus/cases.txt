@@ -715,3 +715,61 @@ outcome 0 unmodeled:host-style-margin-trim
 <!DOCTYPE html><title>t</title><div id=c><div id=a></div></div><script>
 test(() => { document.getElementById("c").style.marginTrim = "block"; assert_equals(getComputedStyle(document.getElementById("a")).marginTop, "0px"); }, "t");
 </script>
+=== matchMedia-makes-a-list-and-media-and-matches-are-reads-of-the-library
+tests 1
+has mql|o1|(min-width: 1px)
+has mqread|r1|o1|media
+has mqread|r2|o1|matches
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { const m = window.matchMedia("(min-width: 1px)"); assert_equals(m.media, "(min-width: 1px)"); assert_true(m.matches); }, "t");
+</script>
+=== a-member-of-a-media-query-list-that-is-not-modeled-is-listed
+tests 1
+outcome 0 unmodeled:dom-MediaQueryList-addListener
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { matchMedia("all").addListener(() => {}); }, "t");
+</script>
+=== matchMedia-of-a-value-only-the-library-has-is-not-folded
+tests 1
+outcome 0 unmodeled:computed-value-expression
+---
+<!DOCTYPE html><title>t</title><div id=a></div><script>
+test(() => { matchMedia(getComputedStyle(document.getElementById("a")).color); }, "t");
+</script>
+=== attachShadow-is-an-op-and-the-root-is-a-node-with-the-sheets-of-a-scope
+tests 1
+has attach|e2|e1|open
+has radoptn|
+has rnsheets|
+---
+<!DOCTYPE html><title>t</title><div id=host></div><script>
+test(() => {
+  const root = document.getElementById("host").attachShadow({mode: "open"});
+  assert_equals(root.adoptedStyleSheets.length, 0);
+  assert_equals(root.styleSheets.length, 0);
+}, "t");
+</script>
+=== attachShadow-with-a-member-that-is-not-modeled-or-no-mode-is-listed
+tests 2
+outcome 0 unmodeled:host-attachShadow-argument
+outcome 1 unmodeled:host-attachShadow-argument
+---
+<!DOCTYPE html><title>t</title><div id=host></div><script>
+test(() => { document.getElementById("host").attachShadow({mode: "open", slotAssignment: "manual"}); }, "manual slots");
+test(() => { document.getElementById("host").attachShadow({}); }, "no mode");
+</script>
+=== a-declarative-shadow-root-is-read-and-the-ids-in-its-content-are-not-the-documents
+tests 1
+has elem|e1|byid|inside
+---
+<!DOCTYPE html><title>t</title><div id=host><template shadowrootmode="open"><p id=inside></p></template></div><script>
+test(() => { assert_equals(document.getElementById("inside"), null); }, "t");
+</script>
+=== a-template-that-is-not-a-shadow-root-leaves-the-page-unread
+unread
+---
+<!DOCTYPE html><title>t</title><template><p id=inside></p></template><script>
+test(() => { assert_true(true); }, "t");
+</script>

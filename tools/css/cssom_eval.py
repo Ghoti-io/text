@@ -416,11 +416,12 @@ class HostRuleList(Host):
 
 
 class HostSheetList(Host):
-    """`document.styleSheets` (kind 'doc') or `document.adoptedStyleSheets` (kind 'adopted')."""
+    """`document.styleSheets` (kind 'doc') or `document.adoptedStyleSheets` (kind 'adopted'); with ``root`` (the name of a node), the same lists of that shadow root."""
 
-    def __init__(self, kind):
+    def __init__(self, kind, root=None):
         Host.__init__(self, kind)
         self.kind = kind
+        self.root = root
 
 
 class HostCtor(Host):
@@ -461,10 +462,10 @@ class HostCSS(Host):
 # the ops that change the tree, an attribute, a style attribute or a rule: after one the runner's document is no longer a parse of a prefix of the markup
 SHEET_OPS = {'sheetof', 'nsheets', 'sheetat', 'newsheet', 'replacesync', 'rlen', 'ruleat', 'rparent', 'rsheet', 'rstyle', 'omedia', 'kfind', 'ownernode', 'ownerrule', 'rattr', 'rtype',
              'shattr', 'insertrule', 'deleterule', 'addrule', 'removerule', 'appendrule', 'rset', 'sdisabled', 'mtext', 'mlen', 'mitem', 'mset', 'mappend', 'mdelete', 'rinst', 'klen', 'kat', 'adoptset',
-             'adoptpush', 'adoptn', 'adoptat', 'try', 'endtry'}
+             'adoptpush', 'adoptn', 'adoptat', 'rnsheets', 'rsheetat', 'radoptset', 'radoptpush', 'radoptn', 'radoptat', 'try', 'endtry'}
 MUTATING_OPS = SHEET_OPS | {'setattr', 'rmattr', 'classadd', 'classremove', 'classtoggle', 'sset', 'sattrset', 'scsstext', 'sremove',
-                'create', 'ctext', 'ccomment', 'cfrag', 'clone', 'append', 'prepend', 'replacechildren', 'appendchild', 'insertbefore', 'removechild', 'replacechild', 'remove', 'before', 'after',
-                'replacewith', 'tcset', 'dset', 'ihset'}
+                'create', 'ctext', 'ccomment', 'cfrag', 'attach', 'clone', 'append', 'prepend', 'replacechildren', 'appendchild', 'insertbefore', 'removechild', 'replacechild', 'remove', 'before', 'after',
+                'replacewith', 'tcset', 'dset', 'ihset', 'ihsetu'}
 
 STYLE_METHODS = {'getPropertyValue', 'getPropertyPriority', 'setProperty', 'removeProperty', 'item'}
 STYLE_NON_PROPS = {'length', 'cssText', 'parentRule', 'cssFloat'}
@@ -674,11 +675,45 @@ class Interp:
         g['Math'] = HostMath('Math')
         g['CSS'] = HostCSS('CSS')
         g['console'] = JObj(log=Native(lambda i, t, a: UNDEF, 'log'), warn=Native(lambda i, t, a: UNDEF), error=Native(lambda i, t, a: UNDEF), info=Native(lambda i, t, a: UNDEF))
+        g['matchMedia'] = Native(self.n_matchMedia, 'matchMedia')
         for name in ('test', 'setup', 'assert_equals', 'assert_not_equals', 'assert_true', 'assert_false', 'assert_array_equals', 'assert_approx_equals', 'assert_greater_than',
                      'assert_less_than', 'assert_greater_than_equal', 'assert_less_than_equal', 'assert_in_array', 'assert_unreached', 'assert_regexp_match', 'assert_class_string',
                      'add_completion_callback', 'done', 'getComputedStyle', 'parseInt', 'parseFloat', 'isNaN', 'String', 'Number', 'Boolean', 'Array', 'Object', 'JSON', 'isFinite',
                      'assert_throws_dom', 'assert_throws_js', 'assert_throws_exactly', 'assert_implements', 'assert_implements_optional'):
             g[name] = Native(getattr(self, 'n_' + name, None) or self.n_unsupported(name), name)
+
+    def n_matchMedia(self, interp, this, args):
+        """`window.matchMedia(text)`: a MediaQueryList of the runner's document (its `media` and `matches` are reads of the library, `mql` and `mqread`)."""
+        self.need_dom()
+        if not args:
+            raise Unmodeled('host-matchMedia-argument')   # a TypeError of the page
+        if isinstance(args[0], Rt):
+            raise Unmodeled('computed-value-expression')
+        if isinstance(args[0], Host):
+            raise Unmodeled('host-matchMedia-argument')
+        n = self.new_node('o')
+        self.emit('mql', n, to_str(args[0]))
+        return HostObj(n, 'mql', False)
+
+    def n_query_is_css_parseable(self, interp, this, args):
+        """matchmedia-utils.js `query_is_css_parseable(query)`: the helper makes a `<style>`, inserts `@media <query>{}` into its sheet and reads the rule back; it leaves nothing in the
+        page (the rules are deleted and the element removed in a `finally`). The runner does it on a constructed sheet, with the same insertRule (`mqcss`): a loop on a read and a
+        `try`/`finally` are what the evaluator does not fold."""
+        self.need_dom()
+        if not args:
+            raise Unmodeled('host-query_is_css_parseable-argument')
+        if isinstance(args[0], Rt):
+            raise Unmodeled('computed-value-expression')
+        if isinstance(args[0], Host):
+            raise Unmodeled('host-query_is_css_parseable-argument')
+        r = self.new_reg()
+        self.emit('mqcss', r, to_str(args[0]))
+        return Rt(r, 'b')
+
+    def override_helpers(self, scope):
+        """After a modeled helper's declarations are hoisted: the functions of MODELED_HELPER_NATIVES are the runner's."""
+        if 'query_is_css_parseable' in scope.vars and isinstance(scope.vars['query_is_css_parseable'], Func):
+            scope.vars['query_is_css_parseable'] = Native(self.n_query_is_css_parseable, 'query_is_css_parseable')
 
     def n_unsupported(self, name):
         def f(interp, this, args):
@@ -2124,7 +2159,7 @@ MATH = {
 SPECIAL_ELEM_PROPS = {
     'body': 'body', 'documentElement': 'html', 'head': 'head',
 }
-ELEM_NAV = {'parentElement': 'parentElement', 'parentNode': 'parentNode', 'firstElementChild': 'firstElementChild', 'lastElementChild': 'lastElementChild',
+ELEM_NAV = {'shadowRoot': 'shadowRoot', 'host': 'host', 'assignedSlot': 'assignedSlot', 'parentElement': 'parentElement', 'parentNode': 'parentNode', 'firstElementChild': 'firstElementChild', 'lastElementChild': 'lastElementChild',
             'nextElementSibling': 'nextElementSibling', 'previousElementSibling': 'previousElementSibling', 'firstChild': 'firstChild', 'lastChild': 'lastChild',
             'nextSibling': 'nextSibling', 'previousSibling': 'previousSibling'}
 # the reads of a node that give a register: property -> kind of the value
@@ -2433,7 +2468,55 @@ DOM_METHODS = {
 }
 
 
+def m_attach_shadow(el):
+    def call(i, a):
+        i.need_dom()
+        if not a or not isinstance(a[0], JObj):
+            raise Unmodeled('host-attachShadow-argument')
+        init = a[0]
+        mode = init.get('mode', UNDEF)
+        if not isinstance(mode, str) or any(k not in ('mode', 'delegatesFocus', 'clonable', 'serializable') for k in init):
+            raise Unmodeled('host-attachShadow-argument')   # slotAssignment and customElementRegistry are not modeled
+        n = i.new_node('e')
+        i.emit('attach', n, el.name, mode)
+        return HostElem(n)
+    return call
+
+
+def m_get_element_by_id(el):
+    def call(i, a):
+        i.need_dom()
+        if not a or not isinstance(a[0], str):
+            raise Unmodeled('host-getElementById-argument')
+        n = i.new_node('e')
+        i.emit('elem', n, 'byidin', el.name, a[0])
+        return HostElem(n, True)
+    return call
+
+
+def m_set_html_unsafe(el):
+    def call(i, a):
+        i.need_dom()
+        if not a or isinstance(a[0], (Rt, Host)):
+            raise Unmodeled('host-setHTMLUnsafe-argument')
+        i.emit('ihsetu', el.name, null_empty(a[0]))
+        return UNDEF
+    return call
+
+
 def elem_get(interp, el, key, for_call):
+    if key == 'getElementById':
+        return BoundMethod(m_get_element_by_id(el))
+    if key == 'setHTMLUnsafe':
+        return BoundMethod(m_set_html_unsafe(el))
+    if key == 'attachShadow':
+        return BoundMethod(m_attach_shadow(el))
+    if key == 'styleSheets':
+        interp.need_dom()
+        return HostSheetList('doc', el.name)
+    if key == 'adoptedStyleSheets':
+        interp.need_dom()
+        return HostSheetList('adopted', el.name)
     if key == 'sheet':
         n = interp.new_node('o')
         interp.emit('sheetof', n, el.name)
@@ -2540,12 +2623,20 @@ def elem_set(interp, el, key, value):
     if key in ('id', 'className'):
         interp.emit('setattr', el.name, 'id' if key == 'id' else 'class', to_str(value))
         return
+    if key == 'slot':
+        interp.emit('setattr', el.name, 'slot', to_str(value))
+        return
     if key in ('textContent', 'innerHTML'):
         # [LegacyNullToEmptyString] for both: null is the empty string
         interp.emit('tcset' if key == 'textContent' else 'ihset', el.name, null_empty(value))
         return
     if key == 'data':
         interp.emit('dset', el.name, to_str(value))
+        return
+    if key == 'adoptedStyleSheets':
+        if not isinstance(value, JArr) or any(not (isinstance(x, HostObj) and x.kind == 'sheet') for x in value):
+            raise Unmodeled('host-adoptedStyleSheets-assign')
+        interp.emit('radoptset', el.name, *[x.name for x in value])
         return
     raise Unmodeled('dom-element-assign-' + key)
 
@@ -2684,15 +2775,16 @@ def lookup_obj(interp, op, owner, kind, *fields, nullable=True):
 
 
 def sheetlist_get(interp, lst, key, for_call):
+    rt = (lst.root,) if lst.root else ()
     if lst.kind == 'doc':
         if key == 'length':
             r = interp.new_reg()
-            interp.emit('nsheets', r)
+            interp.emit('rnsheets' if rt else 'nsheets', r, *rt)
             return Rt(r, 'n')
         if key == 'item' or re.fullmatch(r'\d+', key):
             def at(i, a, mode):
                 n = i.new_node('o')
-                i.emit('sheetat', n, str(int(a[0])), mode)
+                i.emit('rsheetat' if rt else 'sheetat', n, *rt, str(int(a[0])), mode)
                 return HostObj(n, 'sheet')
             if key == 'item':
                 def item(i, a):
@@ -2704,19 +2796,19 @@ def sheetlist_get(interp, lst, key, for_call):
         raise Unmodeled('dom-styleSheets-' + key)
     if key == 'length':
         r = interp.new_reg()
-        interp.emit('adoptn', r)
+        interp.emit('radoptn' if rt else 'adoptn', r, *rt)
         return Rt(r, 'n')
     if re.fullmatch(r'\d+', key):
         n = interp.new_node('o')
-        interp.emit('adoptat', n, key)
+        interp.emit('radoptat' if rt else 'adoptat', n, *rt, key)
         return HostObj(n, 'sheet')
     if key == 'push':
         def push(i, a):
             if len(a) != 1 or not isinstance(a[0], HostObj) or a[0].kind != 'sheet':
                 raise Unmodeled('host-adoptedStyleSheets-push')
-            i.emit('adoptpush', a[0].name)
+            i.emit('radoptpush' if rt else 'adoptpush', *rt, a[0].name)
             r = i.new_reg()
-            i.emit('adoptn', r)
+            i.emit('radoptn' if rt else 'adoptn', r, *rt)
             return Rt(r, 'n')
         return BoundMethod(push)
     raise Unmodeled('dom-adoptedStyleSheets-' + key)
@@ -2747,6 +2839,12 @@ RULE_NON_ATTRS = {'cssRules', 'style', 'media', 'parentRule', 'parentStyleSheet'
 
 
 def obj_get(interp, ob, key, for_call):
+    if ob.kind == 'mql':
+        if key in ('media', 'matches'):
+            r = interp.new_reg()
+            interp.emit('mqread', r, ob.name, key)
+            return Rt(r, 's' if key == 'media' else 'b')
+        raise Unmodeled('dom-MediaQueryList-' + key)
     if ob.kind == 'media':
         if key == 'mediaText':
             r = interp.new_reg()
@@ -2911,7 +3009,8 @@ class PageScan(html.parser.HTMLParser):
         self.links = []
         self.doctype = False
         self.in_script = False
-        self.templates = 0
+        self.templates = 0       # templates that are not declarative shadow roots: their content is not the document's, and the evaluator does not read it
+        self.template_depth = 0  # inside a template (the ids of its content are not the document's)
         self.odd = []
         self.script_ends = []    # the offset just after each script's end tag (inline or not), in document order
         self.script_spans = []   # (start, end) of each script's text, in characters
@@ -2940,13 +3039,15 @@ class PageScan(html.parser.HTMLParser):
             self.in_title = True
             self.title_buf = []
         self.elements += 1
-        if 'id' in a and a['id'] is not None:
+        if tag == 'template':
+            self.template_depth += 1
+            if (a.get('shadowrootmode') or '').lower() not in ('open', 'closed'):
+                self.templates += 1
+        if 'id' in a and a['id'] is not None and not (self.template_depth and tag != 'template'):
             self.ids.append(a['id'])
             self.id_positions.append((a['id'], self.elements))
         if tag == 'link' and (a.get('rel') or '').lower() == 'stylesheet':
             self.links.append(a.get('href'))
-        if tag == 'template':
-            self.templates += 1
         if tag in ('iframe', 'object', 'embed', 'svg', 'math'):
             self.odd.append(tag)
 
@@ -2959,6 +3060,8 @@ class PageScan(html.parser.HTMLParser):
             self.title_buf.append('&#%s;' % name)
 
     def handle_endtag(self, tag):
+        if tag == 'template' and self.template_depth:
+            self.template_depth -= 1
         if tag == 'title' and self.in_title:
             self.in_title = False
             self.title = html.unescape(''.join(self.title_buf))
@@ -2985,8 +3088,32 @@ CALL_SITE = re.compile(r'(?<![\w.$])(?:test|promise_test|async_test)\s*\(')
 HARNESS_SRC = ('testharness.js', 'testharnessreport.js')
 
 
-def evaluate_page(rel, text):
-    """The PageResult for an HTML page, or None when the page cannot be read as a whole (see the module comment)."""
+# The helper scripts of the pinned pages that the evaluator runs as part of the page, by base name: their source is read from the pin next to the page, and what a helper function does that the
+# evaluator cannot fold (a loop on a read, a try with a finally) is a native of MODELED_HELPER_NATIVES, which the helper's own declaration does not replace.
+MODELED_HELPERS = ('matchmedia-utils.js',)
+
+
+LAST_UNREAD = None
+
+
+def unread(why):
+    """Why the last page was not read (for the people who run the evaluator by hand): evaluate_page returns None."""
+    global LAST_UNREAD
+    LAST_UNREAD = why
+    return None
+
+
+def helper_path(wpt, rel, src):
+    """Where the pin has the helper a page loads as ``src``: next to the page for a relative address (`resources/matchmedia-utils.js`), under the pin's root for a root-relative one
+    (`/css/mediaqueries/resources/matchmedia-utils.js`); None when that is not the file the evaluator models (the same base name from another directory is another script)."""
+    src = src.split('?')[0]
+    path = os.path.normpath(os.path.join(wpt, src.lstrip('/')) if src.startswith('/') else os.path.join(wpt, os.path.dirname(rel), src))
+    expected = os.path.normpath(os.path.join(wpt, 'css', 'mediaqueries', 'resources', 'matchmedia-utils.js'))
+    return path if path == expected and os.path.exists(path) else None
+
+
+def evaluate_page(rel, text, wpt=None):
+    """The PageResult for an HTML page, or None when the page cannot be read as a whole (see the module comment). ``wpt`` is the pin's root, where the modeled helpers are read from."""
     scan = PageScan()
     try:
         scan.text = text
@@ -2995,17 +3122,19 @@ def evaluate_page(rel, text):
         scan.feed(text)
         scan.close()
     except Exception:
-        return None
+        return unread('markup-parse')
     srcs = [a.get('src') for a, _, _ in scan.scripts if a.get('src')]
     # `scripts` holds the inline ones in `scan.scripts`; src scripts show as empty text with a src attribute
     inline = [(a, t, mark) for a, t, mark in scan.scripts if not a.get('src')]
     for a, t, mark in scan.scripts:
-        if a.get('src') and os.path.basename(a['src'].split('?')[0]) not in ('testharness.js', 'testharnessreport.js'):
-            return None
+        if a.get('src') and os.path.basename(a['src'].split('?')[0]) not in ('testharness.js', 'testharnessreport.js') + MODELED_HELPERS:
+            return unread('helper-script:' + a['src'])
+        if a.get('src') and os.path.basename(a['src'].split('?')[0]) in MODELED_HELPERS and (wpt is None or helper_path(wpt, rel, a['src']) is None):
+            return unread('helper-script:' + a['src'])
         if a.get('type') and a['type'].lower() not in ('text/javascript', 'application/javascript', 'text/ecmascript', ''):
-            return None
+            return unread('script-type')
     if scan.links or scan.templates or scan.odd:
-        return None
+        return unread('links-templates-or-frames:%s' % (scan.links[:1] or ['template'] * bool(scan.templates) or scan.odd[:1]))
     res = PageResult()
     res.html = text
     res.ids = scan.ids
@@ -3013,19 +3142,26 @@ def evaluate_page(rel, text):
     res.static_calls = sum(len(CALL_SITE.findall(t)) for _, t, _ in inline)
     it = Interp([])
     it.title = scan.title if scan.title else os.path.basename(rel).split('.')[0]   # testharness.js get_title(): the title's first text node, else the file's name up to its first dot
-    for (attrs, source, mark), end in [(sc, e) for sc, e in zip(scan.scripts, scan.script_ends) if not sc[0].get('src')]:
+    for (attrs, source, mark), end in [(sc, e) for sc, e in zip(scan.scripts, scan.script_ends) if not sc[0].get('src') or os.path.basename(sc[0]['src'].split('?')[0]) in MODELED_HELPERS]:
+        if attrs.get('src'):
+            try:
+                source = open(helper_path(wpt, rel, attrs['src']), encoding='utf-8').read()
+            except (OSError, TypeError):
+                return unread('helper-read')
+            attrs = {}
         it.enter_script(len(text[:end].encode('utf-8', 'surrogatepass')), [i for i, pos in scan.id_positions if pos <= mark])
         try:
             prog = J.parse_program(source)
         except Exception:
-            return None
+            return unread('script-parse')
         scope = it.glob
         try:
             it.hoist(prog, scope)
+            it.override_helpers(scope)
             for st in prog:
                 it.exec(st, scope)
-        except (Unmodeled, JSThrow, BreakSignal, ContinueSignal, ReturnSignal, RecursionError):
-            return None   # a top-level statement the evaluator cannot run: the set of tests is not known
+        except (Unmodeled, JSThrow, BreakSignal, ContinueSignal, ReturnSignal, RecursionError) as e:
+            return unread('top-level:%s' % (getattr(e, 'construct', None) or type(e).__name__))   # a top-level statement the evaluator cannot run: the set of tests is not known
     res.ops = it.ops
     res.tests = it.tests
     return res

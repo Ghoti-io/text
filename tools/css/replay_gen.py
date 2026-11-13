@@ -134,6 +134,8 @@ def translate(op):
             return '%s = %s.querySelectorAll(%s)[%s] || null;' % (E(r), root, jstr(a[3]), a[4] if len(a) > 4 else '0')
         if how == 'nav':
             return '%s = %s.%s;' % (E(r), E(a[2]), a[3])
+        if how == 'byidin':
+            return '%s = %s.getElementById(%s);' % (E(r), E(a[2]), jstr(a[3]))
     if n == 'gcs':
         # with no pseudo-element the call has one argument: both browsers answer a root's rlh differently when an explicit undefined is passed
         return '%s = getComputedStyle(%s%s);' % (S(a[0]), E(a[1]), '' if a[2] == '' else ', ' + jstr(a[2]))
@@ -212,6 +214,22 @@ def translate(op):
         return '%s = %s.outerHTML;' % (Rg(a[0]), E(a[1]))
     if n == 'ihset':
         return '%s.innerHTML = %s;' % (E(a[0]), jstr(a[1]))
+    if n == 'ihsetu':
+        return '%s.setHTMLUnsafe(%s);' % (E(a[0]), jstr(a[1]))
+    if n == 'attach':
+        return '%s = %s.attachShadow({mode: %s});' % (E(a[0]), E(a[1]), jstr(a[2]))
+    if n == 'rnsheets':
+        return '%s = %s.styleSheets.length;' % (Rg(a[0]), E(a[1]))
+    if n == 'rsheetat':
+        return '%s = %s.styleSheets[%s];' % (O(a[0]), E(a[1]), a[2])
+    if n == 'radoptset':
+        return '%s.adoptedStyleSheets = [%s];' % (E(a[0]), ', '.join(O(x) for x in a[1:]))
+    if n == 'radoptpush':
+        return '%s.adoptedStyleSheets.push(%s);' % (E(a[0]), O(a[1]))
+    if n == 'radoptn':
+        return '%s = %s.adoptedStyleSheets.length;' % (Rg(a[0]), E(a[1]))
+    if n == 'radoptat':
+        return '%s = %s.adoptedStyleSheets[%s];' % (O(a[0]), E(a[1]), a[2])
     if n == 'nread':
         if a[2] == 'hasChildNodes':
             return '%s = %s.hasChildNodes();' % (Rg(a[0]), E(a[1]))
@@ -316,6 +334,15 @@ def translate(op):
         return '%s = document.adoptedStyleSheets.length;' % Rg(a[0])
     if n == 'adoptat':
         return '%s = document.adoptedStyleSheets[%s];' % (O(a[0]), a[1])
+    if n == 'mql':
+        return '%s = window.matchMedia(%s);' % (O(a[0]), jstr(a[1]))
+    if n == 'mqread':
+        return '%s = %s.%s;' % (Rg(a[0]), O(a[1]), a[2])
+    if n == 'mqcss':
+        # resources/matchmedia-utils.js query_is_css_parseable(), as the helper writes it (the runner does it on a constructed sheet)
+        return ('%s = (function (query) { const style = document.createElement("style"); style.type = "text/css"; document.head.appendChild(style); const sheet = style.sheet; '
+                'try { sheet.insertRule("@media " + query + "{}", 0); return sheet.cssRules.length == 1 && sheet.cssRules[0].media.mediaText != "not all"; } '
+                'finally { while (sheet.cssRules.length) sheet.deleteRule(0); style.remove(); } })(%s);') % (Rg(a[0]), jstr(a[1]))
     if n == 'try':
         return 'try {'
     if n == 'endtry':
@@ -422,6 +449,8 @@ def replay_page(html, ends_to_spans, ops, plant=None):
     pieces, last = [], 0
     for end, body in script_bodies(ops):
         if end not in ends_to_spans:
+            if all(op[0] == 'doc' for op in body):
+                continue   # a modeled helper script (src): it runs as it is, and defines functions that no op calls
             raise ValueError('no inline script ends at byte %d' % end)
         a, b = ends_to_spans[end]
         pieces.append(html[last:a])

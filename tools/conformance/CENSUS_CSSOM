@@ -2,9 +2,9 @@
 # tests the extractor gives each, the test calls the census counts on its own, the markers of the page and the helper scripts it loads. See the script for the columns.
 # pin	569958747e678ad0f7b5e8452c7ae3097e714bbe
 # pages	5585
-# tests	25120
-# calls	14462
-# calls-differ-pages	1188
+# tests	25163
+# calls	14691
+# calls-differ-pages	1163
 css/CSS2/abspos/adjacent-to-relpos-inline-in-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/adjacent-to-relpos-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/remove-block-between-inline-and-abspos.html	1	1	layout-geometry,reftest	
@@ -342,7 +342,7 @@ css/css-anchor-position/anchored-transition-display-none-001.html	1	1	function,r
 css/css-anchor-position/anchored-transition-display-none-002.html	1	1	function,reftest	/common/reftest-wait.js,/common/rendering-utils.js
 css/css-anchor-position/at-position-try-allowed-declarations.html	56	2	function,loop,sheets	
 css/css-anchor-position/at-position-try-cssom.html	265	11	function,layout-geometry,loop,sheets	
-css/css-anchor-position/at-position-try-invalidation-shadow-dom.html	5	4	function,layout-geometry,shadow,sheets	
+css/css-anchor-position/at-position-try-invalidation-shadow-dom.html	4	4	function,layout-geometry,shadow,sheets	
 css/css-anchor-position/at-position-try-invalidation.html	4	4	function,layout-geometry,sheets	
 css/css-anchor-position/at-position-try-parse.html	12	12	fonts,rule-vectors	/css/support/parsing-testcommon.js
 css/css-anchor-position/auto-inset-margin-getComputedStyle.html	12	1	computed,function,loop	
@@ -2753,7 +2753,7 @@ css/css-pseudo/highlight-cascade/highlight-cascade-010.html	1	1	computed,functio
 css/css-pseudo/highlight-cascade/highlight-cascade-011.html	4	2	computed,function	../support/selections.js
 css/css-pseudo/highlight-cascade/highlight-cascade-currentcolor-color-mix.html	2	2	computed,function	
 css/css-pseudo/highlight-cascade/highlight-cascade-parent-style-change.html	1	1	computed,function	
-css/css-pseudo/highlight-cascade/highlight-cascade-shadow-boundary.html	4	2	computed,function,shadow	
+css/css-pseudo/highlight-cascade/highlight-cascade-shadow-boundary.html	2	2	computed,function,shadow	
 css/css-pseudo/highlight-cascade/highlight-currentcolor-computed-inheritance.html	6	1	computed,function,loop	
 css/css-pseudo/highlight-cascade/highlight-currentcolor-computed-visited.html	1	1	computed,function,loop	
 css/css-pseudo/highlight-cascade/highlight-currentcolor-computed.html	1	1	computed,function,loop	
@@ -2778,7 +2778,7 @@ css/css-pseudo/parsing/marker-supported-properties-in-animation.html	98	2	comput
 css/css-pseudo/placeholder-inherit.html	1	1	computed,function	
 css/css-pseudo/pseudo-replaced-elements.html	1	1	computed,function,loop	
 css/css-pseudo/scroll-button-pseudo-element-click.html	1	1	function,input-driver,timing	/resources/testdriver-actions.js
-css/css-pseudo/selection-universal-shadow-dom.html	3	1	computed,function,shadow	
+css/css-pseudo/selection-universal-shadow-dom.html	1	1	computed,function,shadow	
 css/css-pseudo/target-text-dynamic-001.html	1	1	function,reftest,sheets,timing	/common/reftest-wait.js
 css/css-pseudo/target-text-dynamic-003.html	1	1	function,reftest,sheets,timing	/common/reftest-wait.js
 css/css-pseudo/target-text-dynamic-004.html	1	1	function,reftest,sheets,timing	/common/reftest-wait.js
@@ -3000,19 +3000,19 @@ css/css-shadow/part/simple-inline.html	2	1	computed,function	support/shadow-help
 css/css-shadow/part/simple.html	2	1	computed,function	support/shadow-helper.js
 css/css-shadow/part/style-sharing.html	1	1	computed,function,shadow	
 css/css-shadow/scope-pseudo-in-shadow.html	1	1	computed,function,shadow	
-css/css-shadow/shadow-cascade-order-001.html	6	2	computed,function,loop,shadow	
+css/css-shadow/shadow-cascade-order-001.html	64	2	computed,function,loop,shadow	
 css/css-shadow/shadow-disabled-sheet-001.html	1	1	layout-geometry,reftest,shadow,sheets	
-css/css-shadow/shadow-host-removal-invalidation.html	2	1	computed,function,shadow	
+css/css-shadow/shadow-host-removal-invalidation.html	1	1	computed,function,shadow	
 css/css-shadow/shadow-host-style-sharing.html	6	6	computed,custom-element,function,layout-geometry,loop,shadow,sheets	
 css/css-shadow/shadow-host-with-before-after.html	1	1	computed,reftest,shadow	
 css/css-shadow/shadow-multiple-links.html	1	1	function,shadow	
-css/css-shadow/shadow-reassign-dynamic-003.html	4	2	computed,function,shadow	
+css/css-shadow/shadow-reassign-dynamic-003.html	2	2	computed,function,shadow	
 css/css-shadow/shadow-reassign-dynamic-005-crash.html	1	1	crash,layout-geometry,shadow	
 css/css-shadow/shadow-shared-style-cache-001.html	1	1	computed,function,shadow	
 css/css-shadow/slot-non-html-display-value.html	1	1	computed,function	
 css/css-shadow/slotted-invalidation.html	1	1	computed,function,shadow	
-css/css-shadow/slotted-link.html	3	1	computed,function,shadow	
-css/css-shadow/slotted-nested.html	7	2	computed,function,shadow	
+css/css-shadow/slotted-link.html	1	1	computed,function,shadow	
+css/css-shadow/slotted-nested.html	2	2	computed,function,shadow	
 css/css-shadow/slotted-slot.html	1	1	computed,function,shadow	
 css/css-shadow/slotted-text-with-flex.html	1	1	layout-geometry,reftest,shadow	
 css/css-shadow/slotted-user-agent-part-invalidation.html	1	1	computed,function,shadow	
@@ -4616,7 +4616,7 @@ css/css-values/rlh-invalidation.html	1	1	fonts,function,layout-geometry,timing
 css/css-values/rlh-on-root-lengths.html	1	1	computed,function	
 css/css-values/sign-in-keyframes-with-relative-units.html	2	2	computed,fonts,function	
 css/css-values/signs-abs-computed.html	200	146	function	../support/numeric-testcommon.js
-css/css-values/tree-counting/calc-sibling-function-in-shadow-dom.html	5	3	computed,function,shadow	
+css/css-values/tree-counting/calc-sibling-function-in-shadow-dom.html	3	3	computed,function,shadow	
 css/css-values/tree-counting/calc-sibling-function.html	7	7	computed,function	
 css/css-values/tree-counting/sibling-function-container-query-invalidation.html	8	8	computed,function	
 css/css-values/tree-counting/sibling-function-container-query.html	6	6	computed,function	
@@ -5105,8 +5105,8 @@ css/cssom/adoptedstylesheets-adopt-style.tentative.html	1	1	custom-element,refte
 css/cssom/adoptedstylesheets-cascade-order.html	13	13	computed,function,shadow,sheets	
 css/cssom/adoptedstylesheets-invalid-assignment-crash.html	1	1	crash,sheets	
 css/cssom/adoptedstylesheets-modify-array-and-sheet.html	3	3	computed,function,sheets	
-css/cssom/adoptedstylesheets-observablearray-removal.html	10	6	computed,function,loop,shadow,sheets	
-css/cssom/adoptedstylesheets-observablearray.html	9	5	computed,function,shadow,sheets	
+css/cssom/adoptedstylesheets-observablearray-removal.html	12	6	computed,function,loop,shadow,sheets	
+css/cssom/adoptedstylesheets-observablearray.html	5	5	computed,function,shadow,sheets	
 css/cssom/all-initial-csstext.html	1	1	reftest,sheets	
 css/cssom/at-namespace.html	1	1	computed,function,sheets	
 css/cssom/base-uri.html	4	3	computed,function,timing	
@@ -5216,7 +5216,7 @@ css/cssom/getComputedStyle-resolved-min-size-auto.html	1	1	computed,function,loo
 css/cssom/getComputedStyle-root-variables.html	1	1	computed,function	
 css/cssom/getComputedStyle-root.html	1	1	computed,function	
 css/cssom/getComputedStyle-shadow-host.html	1	1	computed,custom-element,function,shadow	
-css/cssom/getComputedStyle-shadow-inherit.html	3	2	computed,function,shadow	
+css/cssom/getComputedStyle-shadow-inherit.html	2	2	computed,function,shadow	
 css/cssom/getComputedStyle-special-chars-crash.html	1	1	computed,crash	
 css/cssom/getComputedStyle-sticky-pos-percent.html	1	1	computed,function	
 css/cssom/getComputedStyle-style-element-updates.html	4	4	computed,function	
@@ -5265,7 +5265,7 @@ css/cssom/resolved-border-width.html	1	1	computed,function,loop
 css/cssom/rule-restrictions.html	2	2	function,sheets	
 css/cssom/selectorSerialize.html	23	23	function,layout-geometry,sheets	
 css/cssom/selectorText-modification-restyle-001.html	1	1	reftest,sheets	
-css/cssom/selectorText-modification-restyle-002.html	4	2	computed,function,shadow,sheets	
+css/cssom/selectorText-modification-restyle-002.html	2	2	computed,function,shadow,sheets	
 css/cssom/serialization-CSSDeclaration-with-important.html	4	4	function	
 css/cssom/serialize-all-longhands.html	2	2	computed,function,loop	
 css/cssom/serialize-custom-props.html	10	4	computed,function,register-property	
@@ -5367,11 +5367,11 @@ css/mediaqueries/device-aspect-ratio-002.html	1	1	reftest
 css/mediaqueries/device-aspect-ratio-003.html	1	1	reftest	
 css/mediaqueries/device-aspect-ratio-004.html	1	1	reftest	
 css/mediaqueries/device-aspect-ratio-006.html	1	1	reftest	
-css/mediaqueries/display-mode.html	12	1	frame-or-popup,function,media	resources/matchmedia-utils.js
-css/mediaqueries/display-state.tentative.html	11	1	frame-or-popup,function,media	/css/mediaqueries/resources/matchmedia-utils.js
-css/mediaqueries/dynamic-range.html	17	5	function,media	resources/matchmedia-utils.js
-css/mediaqueries/forced-colors.html	10	1	function,media	resources/matchmedia-utils.js
-css/mediaqueries/inverted-colors.html	10	2	function,media	resources/matchmedia-utils.js
+css/mediaqueries/display-mode.html	12	17	frame-or-popup,function,media	resources/matchmedia-utils.js
+css/mediaqueries/display-state.tentative.html	11	16	frame-or-popup,function,media	/css/mediaqueries/resources/matchmedia-utils.js
+css/mediaqueries/dynamic-range.html	23	23	function,media	resources/matchmedia-utils.js
+css/mediaqueries/forced-colors.html	16	16	function,media	resources/matchmedia-utils.js
+css/mediaqueries/inverted-colors.html	15	15	function,media	resources/matchmedia-utils.js
 css/mediaqueries/match-media-parsing.html	34	1	function,media	
 css/mediaqueries/media-query-matches-in-iframe.html	7	6	function,layout-geometry,loop,media,timing	
 css/mediaqueries/mq-dynamic-empty-children.html	2	1	computed,frame-or-popup,function,timing	
@@ -5379,25 +5379,25 @@ css/mediaqueries/mq-escaped-serialization.html	1	1	function,sheets
 css/mediaqueries/mq-invalid-media-type-005.html	1	1	function,loop,sheets	
 css/mediaqueries/mq-invalid-media-type-layer-002.html	1	1	function,loop,sheets	
 css/mediaqueries/mq-unknown-feature-custom-property.html	1	1	function,sheets	
-css/mediaqueries/navigation-controls.tentative.html	6	1	function,media	resources/matchmedia-utils.js
+css/mediaqueries/navigation-controls.tentative.html	8	8	function,media	resources/matchmedia-utils.js
 css/mediaqueries/nested-media-queries.html	1	1	function,sheets	
-css/mediaqueries/overflow-media-features.html	20	5	function,media	resources/matchmedia-utils.js
+css/mediaqueries/overflow-media-features.html	28	28	function,media	resources/matchmedia-utils.js
 css/mediaqueries/preferences-colorScheme.tentative.https.html	13	13	function,media,timing	./resources/preferences-helper.js
 css/mediaqueries/preferences-contrast.tentative.https.html	14	14	function,media,timing	./resources/preferences-helper.js
 css/mediaqueries/preferences-reducedData.tentative.https.html	13	13	function,media,timing	./resources/preferences-helper.js
 css/mediaqueries/preferences-reducedMotion.tentative.https.html	13	13	function,media,timing	./resources/preferences-helper.js
 css/mediaqueries/preferences-reducedTransparency.tentative.https.html	13	13	function,media,timing	./resources/preferences-helper.js
-css/mediaqueries/prefers-color-scheme.html	11	1	function,media	resources/matchmedia-utils.js
-css/mediaqueries/prefers-contrast.html	16	1	function,media	resources/matchmedia-utils.js
-css/mediaqueries/prefers-reduced-data.html	11	2	function,media	resources/matchmedia-utils.js
-css/mediaqueries/prefers-reduced-motion.html	10	1	function,media	resources/matchmedia-utils.js
-css/mediaqueries/prefers-reduced-transparency.html	11	2	function,media	resources/matchmedia-utils.js
+css/mediaqueries/prefers-color-scheme.html	18	18	function,media	resources/matchmedia-utils.js
+css/mediaqueries/prefers-contrast.html	26	26	function,media	resources/matchmedia-utils.js
+css/mediaqueries/prefers-reduced-data.html	17	17	function,media	resources/matchmedia-utils.js
+css/mediaqueries/prefers-reduced-motion.html	16	16	function,media	resources/matchmedia-utils.js
+css/mediaqueries/prefers-reduced-transparency.html	17	17	function,media	resources/matchmedia-utils.js
 css/mediaqueries/relative-units-005.html	4	3	function,layout-geometry,media	
-css/mediaqueries/resizable.tentative.html	10	1	function,media	/css/mediaqueries/resources/matchmedia-utils.js
-css/mediaqueries/scripting.html	9	2	function,media	resources/matchmedia-utils.js
+css/mediaqueries/resizable.tentative.html	16	16	function,media	/css/mediaqueries/resources/matchmedia-utils.js
+css/mediaqueries/scripting.html	12	12	function,media	resources/matchmedia-utils.js
 css/mediaqueries/style-media-attribute-change-in-iframe.html	1	1	computed,function,timing	
 css/mediaqueries/test_media_queries.html	15	15	computed,frame-or-popup,function,loop,sheets	
-css/mediaqueries/update-media-feature.html	11	4	function,media	resources/matchmedia-utils.js
+css/mediaqueries/update-media-feature.html	14	14	function,media	resources/matchmedia-utils.js
 css/motion/change-offset-path.html	1	1	function,reftest,timing	
 css/motion/offset-rotate-004.html	1	1	computed,function,reftest,timing	
 css/motion/offset-rotate-005.html	1	1	computed,function,reftest,timing	
@@ -5523,10 +5523,10 @@ css/selectors/invalidation/has-with-pseudo-class.html	18	1	computed,function
 css/selectors/invalidation/heading-pseudo-class-in-has-with-headingoffset.html	31	4	computed,function	
 css/selectors/invalidation/heading-pseudo-class-in-has-with-slot-reassignment.html	29	3	computed,function,shadow	
 css/selectors/invalidation/heading-pseudo-class-in-has.html	31	6	computed,function	
-css/selectors/invalidation/host-context-pseudo-class-in-has.html	11	1	computed,function,shadow	
-css/selectors/invalidation/host-has-shadow-tree-element-at-nonsubject-position.html	52	1	computed,function,shadow	
-css/selectors/invalidation/host-has-shadow-tree-element-at-subject-position.html	52	1	computed,function,shadow	
-css/selectors/invalidation/host-pseudo-class-in-has.html	8	1	computed,function,shadow	
+css/selectors/invalidation/host-context-pseudo-class-in-has.html	6	1	computed,function,shadow	
+css/selectors/invalidation/host-has-shadow-tree-element-at-nonsubject-position.html	26	1	computed,function,shadow	
+css/selectors/invalidation/host-has-shadow-tree-element-at-subject-position.html	26	1	computed,function,shadow	
+css/selectors/invalidation/host-pseudo-class-in-has.html	4	1	computed,function,shadow	
 css/selectors/invalidation/hover-active-pseudo-classes-when-ancestor-changes.html	1	1	computed,function,input-driver,layout-geometry,timing	/resources/testdriver-actions.js
 css/selectors/invalidation/input-in-range-in-has-with-readonly.html	4	4	computed,function	
 css/selectors/invalidation/input-pseudo-classes-in-has.html	10	10	computed,function	
@@ -5573,7 +5573,7 @@ css/selectors/is-specificity-shadow.html	1	1	computed,function
 css/selectors/is-specificity.html	1	1	computed,function	
 css/selectors/is-where-error-recovery.html	1	1	computed,function,loop,sheets	
 css/selectors/is-where-pseudo-classes.html	1	1	computed,function	
-css/selectors/is-where-shadow.html	9	3	computed,function,shadow	
+css/selectors/is-where-shadow.html	3	3	computed,function,shadow	
 css/selectors/media/media-playing-paused-style-invalidation.html	3	3	computed,function,media,timing	/common/media.js
 css/selectors/not-specificity.html	8	1	computed,function	
 css/selectors/nth-child-large-anplusb-clamp.html	3	3	function,sheets	

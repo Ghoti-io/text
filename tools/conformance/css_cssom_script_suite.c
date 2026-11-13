@@ -58,6 +58,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #define MAX_FIELDS 40
 
@@ -190,6 +191,16 @@ typedef struct {
   size_t n;
 } nodelist;
 
+/* A shadow tree: its root is a fragment of the page's Markup document (not a node of the document's own tree: the tree of the host does not hold it), `host` the element it is attached
+   to; its scope is registered with the CSSOM document and its `<style>` elements are read by a binding of their own (the binding's `root` option). */
+typedef struct {
+  GTEXT_Markup_Node * root;
+  GTEXT_Markup_Node * host;
+  int open;
+  GTEXT_CSSOM_Scope * scope;
+  GTEXT_CSSOM_Markup_Binding * binding;
+} shadow;
+
 typedef struct {
   GTEXT_CSS_Registry * registry;
   GTEXT_CSS_Conditions * conditions;
@@ -212,6 +223,10 @@ typedef struct {
   size_t nlists, caplists;
   object * objs;
   size_t nobjs, capobjs;
+  shadow * shadows;
+  size_t nshadows, capshadows;
+  uint64_t epoch;   /* what changed the flat tree without changing the Markup document: a shadow root attached */
+  GTEXT_CSS_Element_Interface iface;   /* the adapter's, with the shadow trees */
 } world;
 
 /* The user agent's style sheet is the part of the HTML rendering section that the display and the body's margin need; the library has no user agent sheet of its own. */
@@ -375,6 +390,362 @@ static const GTEXT_CSS_Computed_Style * runner_container_style(void * user, GTEX
   return ci.computed_style(ci.user, element);
 }
 
+static int is_element(const GTEXT_Markup_Node * n);
+static int local_is(const GTEXT_Markup_Node * n, const char * name);
+static int attr_get(const GTEXT_Markup_Node * n, const char * name, const char ** value, size_t * len);
+
+/* ---- shadow trees ---------------------------------------------------------------------------------------------------------------------------- */
+
+/* The element interface is the Markup adapter's for everything but the shadow trees, which the adapter does not see (css_markup.h: a Markup tree has no shadow roots). The callbacks that are
+   ours reach the world through this pointer, as the callbacks of the adapter reach the adapter; one world is open at a time. */
+static world * g_world;
+
+static GTEXT_Markup_Node * tree_top(const GTEXT_Markup_Node * n) {
+  GTEXT_Markup_Node * top = (GTEXT_Markup_Node *)n;
+  for (GTEXT_Markup_Node * p = gtext_markup_node_parent(top); p; p = gtext_markup_node_parent(top)) {
+    top = p;
+  }
+  return top;
+}
+
+static shadow * shadow_by_root(world * w, const GTEXT_Markup_Node * root) {
+  for (size_t i = 0; i < w->nshadows; i++) {
+    if (w->shadows[i].root == root) {
+      return &w->shadows[i];
+    }
+  }
+  return NULL;
+}
+
+static shadow * shadow_by_host(world * w, const GTEXT_Markup_Node * host) {
+  for (size_t i = 0; i < w->nshadows; i++) {
+    if (w->shadows[i].host == host) {
+      return &w->shadows[i];
+    }
+  }
+  return NULL;
+}
+
+/* the shadow tree a node is in, or NULL */
+static shadow * shadow_of_node(world * w, const GTEXT_Markup_Node * n) {
+  return w->nshadows ? shadow_by_root(w, tree_top(n)) : NULL;
+}
+
+/* the value of an attribute of an element ("" for none), in a buffer that stays valid as long as the element's attribute does */
+static const char * attr_or_empty(const GTEXT_Markup_Node * el, const char * name, size_t * len) {
+  const char * v = "";
+  size_t l = 0;
+  if (!attr_get(el, name, &v, &l)) {
+    v = "";
+    l = 0;
+  }
+  if (len) {
+    *len = l;
+  }
+  return v;
+}
+
+/* The slot of a shadow tree that an element with this `slot` attribute is assigned to (DOM, "find a slot": the first `slot` element in tree order whose `name` is the same). */
+static GTEXT_Markup_Node * shadow_find_slot(const shadow * sh, const char * name, size_t name_len) {
+  for (GTEXT_Markup_Node * n = gtext_markup_node_next_in_order(sh->root, sh->root, false); n; n = gtext_markup_node_next_in_order(sh->root, n, false)) {
+    if (is_element(n) && local_is(n, "slot")) {
+      size_t l;
+      const char * v = attr_or_empty(n, "name", &l);
+      if (l == name_len && memcmp(v, name, l) == 0) {
+        return n;
+      }
+    }
+  }
+  return NULL;
+}
+
+/* the slot an element is assigned to: its parent is a shadow host with a shadow root, and it is an element (a text node is assigned too, and is not asked about here) */
+static GTEXT_Markup_Node * assigned_slot_of(world * w, const GTEXT_Markup_Node * el) {
+  GTEXT_Markup_Node * p = gtext_markup_node_parent(el);
+  if (!w->nshadows || !is_element(p) || !is_element(el)) {
+    return NULL;
+  }
+  const shadow * sh = shadow_by_host(w, p);
+  if (!sh) {
+    return NULL;
+  }
+  size_t l;
+  const char * v = attr_or_empty(el, "slot", &l);
+  return shadow_find_slot(sh, v, l);
+}
+
+static const GTEXT_CSS_Element_Interface * base_iface(void) {
+  return gtext_css_markup_interface(g_world->adapter);
+}
+
+static GTEXT_CSS_Element_Handle cb_inheritance_parent(void * user, GTEXT_CSS_Element_Handle h) {
+  (void)user;
+  world * w = g_world;
+  const GTEXT_CSS_Element_Interface * b = base_iface();
+  if (w->nshadows) {
+    GTEXT_Markup_Node * slot = assigned_slot_of(w, h);
+    if (slot) {
+      return slot;   /* the flat tree: a slotted node is a child of its slot */
+    }
+    if (!is_element(gtext_markup_node_parent(h))) {
+      const shadow * sh = shadow_of_node(w, h);
+      if (sh) {
+        return sh->host;   /* the top of a shadow tree: its parent in the flat tree is the host */
+      }
+    }
+  }
+  return b->parent(b->user, h);
+}
+
+static const void * cb_tree_scope(void * user, GTEXT_CSS_Element_Handle h) {
+  (void)user;
+  const shadow * sh = shadow_of_node(g_world, h);
+  const GTEXT_CSS_Element_Interface * b = base_iface();
+  return sh ? (const void *)sh->root : b->tree_scope(b->user, h);
+}
+
+static GTEXT_CSS_Element_Handle cb_containing_host(void * user, GTEXT_CSS_Element_Handle h) {
+  (void)user;
+  const shadow * sh = shadow_of_node(g_world, h);
+  return sh ? sh->host : NULL;
+}
+
+static const void * cb_shadow_scope(void * user, GTEXT_CSS_Element_Handle h) {
+  (void)user;
+  const shadow * sh = g_world->nshadows ? shadow_by_host(g_world, h) : NULL;
+  return sh ? (const void *)sh->root : NULL;
+}
+
+static GTEXT_CSS_Element_Handle cb_assigned_slot(void * user, GTEXT_CSS_Element_Handle h) {
+  (void)user;
+  return assigned_slot_of(g_world, h);
+}
+
+/* `::part(name)` of a host (CSS Shadow Parts 1): the element is in the host's shadow tree and has the name in its `part` attribute, or it is in the shadow tree of a nested host whose
+   `exportparts` forwards one of its part names, as the same name or another, into the host's tree, and so on up to the host asked about. */
+static bool cb_has_part(void * user, GTEXT_CSS_Element_Handle h, GTEXT_CSS_Element_Handle host, const GTEXT_CSS_String * name) {
+  (void)user;
+  world * w = g_world;
+  if (!is_element(h)) {
+    return false;
+  }
+  char names[64][64];
+  size_t count = 0;
+  /* the names the element has from the point of view of its own tree's host */
+  {
+    size_t n;
+    const char * v = attr_or_empty(h, "part", &n);
+    size_t i = 0;
+    while (i < n && count < 64) {
+      while (i < n && isspace((unsigned char)v[i])) {
+        i++;
+      }
+      size_t j = i;
+      while (j < n && !isspace((unsigned char)v[j])) {
+        j++;
+      }
+      if (j > i && j - i < 64) {
+        memcpy(names[count], v + i, j - i);
+        names[count][j - i] = '\0';
+        count++;
+      }
+      i = j;
+    }
+  }
+  const shadow * sh = shadow_of_node(w, h);
+  while (sh && sh->host != host) {
+    /* forward through sh->host's exportparts into the tree that holds that host */
+    char out[64][64];
+    size_t nout = 0;
+    size_t n;
+    const char * v = attr_or_empty(sh->host, "exportparts", &n);
+    size_t i = 0;
+    while (i < n) {
+      size_t j = i;
+      while (j < n && v[j] != ',') {
+        j++;
+      }
+      /* "inner" or "inner : outer", white space around either */
+      size_t a = i, b = j;
+      while (a < b && isspace((unsigned char)v[a])) {
+        a++;
+      }
+      while (b > a && isspace((unsigned char)v[b - 1])) {
+        b--;
+      }
+      size_t colon = a;
+      while (colon < b && v[colon] != ':') {
+        colon++;
+      }
+      size_t ie = colon, os = colon < b ? colon + 1 : a, oe = b;
+      while (ie > a && isspace((unsigned char)v[ie - 1])) {
+        ie--;
+      }
+      while (os < oe && isspace((unsigned char)v[os])) {
+        os++;
+      }
+      if (ie > a && oe > os && ie - a < 64 && oe - os < 64) {
+        for (size_t k = 0; k < count; k++) {
+          if (strlen(names[k]) == ie - a && memcmp(names[k], v + a, ie - a) == 0 && nout < 64) {
+            memcpy(out[nout], v + os, oe - os);
+            out[nout][oe - os] = '\0';
+            nout++;
+          }
+        }
+      }
+      i = j + 1;
+    }
+    memcpy(names, out, sizeof names);
+    count = nout;
+    sh = shadow_of_node(w, sh->host);
+  }
+  if (!sh || sh->host != host) {
+    return false;
+  }
+  for (size_t k = 0; k < count; k++) {
+    if (strlen(names[k]) == name->length && memcmp(names[k], name->data, name->length) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/* Whether the element is connected (its shadow-including root is the document), and part of the flat tree: an element that is a child of a shadow host is only in it when it is assigned to
+   a slot that is in it. The bits of GTEXT_CSSOM_Config::element_state; the third, a rendered browsing context, is always true. */
+static uint32_t runner_element_state(void * user, const void * element) {
+  world * w = user;
+  const GTEXT_Markup_Node * doc = gtext_markup_document_root(w->markup);
+  uint32_t bits = GTEXT_CSSOM_ELEMENT_IN_RENDERED_CONTEXT;
+  bool flat = true, conn = false;
+  const GTEXT_Markup_Node * e = element;
+  for (size_t guard = 0; guard < 4096; guard++) {
+    GTEXT_Markup_Node * p = gtext_markup_node_parent(e);
+    if (is_element(p)) {
+      if (w->nshadows && shadow_by_host(w, p)) {
+        const GTEXT_Markup_Node * slot = assigned_slot_of(w, e);
+        if (!slot) {
+          flat = false;
+          e = p;   /* not in the flat tree: the rest of the question is about the host */
+        }
+        else {
+          e = slot;
+        }
+      }
+      else {
+        e = p;
+      }
+      continue;
+    }
+    const GTEXT_Markup_Node * top = p ? p : e;
+    if (top == doc) {
+      conn = true;
+      break;
+    }
+    const shadow * sh = w->nshadows ? shadow_by_root(w, top) : NULL;
+    if (!sh) {
+      break;
+    }
+    e = sh->host;
+  }
+  if (conn) {
+    bits |= GTEXT_CSSOM_ELEMENT_CONNECTED;
+  }
+  if (flat) {
+    bits |= GTEXT_CSSOM_ELEMENT_IN_FLAT_TREE;
+  }
+  return bits;
+}
+
+/* the tree version of the config: the Markup document's, and the shadow roots attached (which change the flat tree and nothing the document counts) */
+static uint64_t runner_tree_version(void * user) {
+  const world * w = user;
+  return gtext_markup_document_generation(w->markup) + w->epoch;
+}
+
+static void world_interface(world * w) {
+  w->iface = *gtext_css_markup_interface(w->adapter);
+  w->iface.inheritance_parent = cb_inheritance_parent;
+  w->iface.tree_scope = cb_tree_scope;
+  w->iface.containing_host = cb_containing_host;
+  w->iface.shadow_scope = cb_shadow_scope;
+  w->iface.assigned_slot = cb_assigned_slot;
+  w->iface.has_part = cb_has_part;
+}
+
+/* Attach a shadow root to a host: a fragment of the document's Markup (`root`, which may be a `<template>`'s content: a declarative shadow root) is registered as the host's tree. */
+static GTEXT_CSS_Status shadow_attach(world * w, GTEXT_Markup_Node * host, GTEXT_Markup_Node * root, int open, shadow ** out) {
+  if (w->nshadows == w->capshadows) {
+    w->capshadows = w->capshadows ? w->capshadows * 2 : 8;
+    w->shadows = realloc(w->shadows, w->capshadows * sizeof *w->shadows);
+    if (!w->shadows) {
+      abort();
+    }
+  }
+  const shadow * outer = shadow_of_node(w, host);
+  GTEXT_CSSOM_Scope_Options so = gtext_cssom_scope_options_default();
+  so.handle = root;
+  so.shadow = true;
+  so.parent = outer ? outer->scope : NULL;
+  so.implicit_root = host;
+  shadow sh;
+  memset(&sh, 0, sizeof sh);
+  sh.root = root;
+  sh.host = host;
+  sh.open = open;
+  GTEXT_CSS_Status st = gtext_cssom_scope_new(w->doc, &so, &sh.scope);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  GTEXT_CSSOM_Markup_Options mo = gtext_cssom_markup_options_default();
+  mo.root = root;
+  st = gtext_cssom_markup_binding_new(w->doc, sh.scope, w->markup, &mo, &sh.binding);
+  if (st != GTEXT_CSS_OK) {
+    gtext_cssom_scope_release(sh.scope);
+    return st;
+  }
+  w->shadows[w->nshadows] = sh;
+  *out = &w->shadows[w->nshadows++];
+  w->epoch++;
+  return gtext_cssom_markup_sync(sh.binding, NULL);
+}
+
+/* The declarative shadow roots of a parse (HTML, "a start tag whose tag name is template": a template with a `shadowrootmode` attribute that is a child of an element becomes that
+   element's shadow root and is not in the tree): the template is taken out of its host and its content is the host's shadow tree. Done for the content of each too. */
+static void shadow_adopt_declarative(world * w, GTEXT_Markup_Node * root) {
+  GTEXT_Markup_Node ** found = NULL;
+  size_t n = 0, cap = 0;
+  for (GTEXT_Markup_Node * x = gtext_markup_node_next_in_order(root, root, false); x; x = gtext_markup_node_next_in_order(root, x, false)) {
+    if (is_element(x) && local_is(x, "template") && gtext_markup_element_template_content(x)) {
+      const char * v;
+      size_t l;
+      if (attr_get(x, "shadowrootmode", &v, &l) && ((l == 4 && strncasecmp(v, "open", 4) == 0) || (l == 6 && strncasecmp(v, "closed", 6) == 0)) && is_element(gtext_markup_node_parent(x))) {
+        if (n == cap) {
+          cap = cap ? cap * 2 : 8;
+          found = realloc(found, cap * sizeof *found);
+        }
+        found[n++] = x;
+      }
+    }
+  }
+  for (size_t i = 0; i < n; i++) {
+    GTEXT_Markup_Node * t = found[i];
+    GTEXT_Markup_Node * host = gtext_markup_node_parent(t);
+    GTEXT_Markup_Node * content = gtext_markup_element_template_content(t);
+    const char * v;
+    size_t l;
+    attr_get(t, "shadowrootmode", &v, &l);
+    shadow * sh = NULL;
+    if (shadow_by_host(w, host)) {
+      continue;   /* a second one on one host is left where it is (HTML: it is not a shadow root) */
+    }
+    gtext_markup_remove(t);
+    if (shadow_attach(w, host, content, l == 4, &sh) == GTEXT_CSS_OK) {
+      shadow_adopt_declarative(w, content);
+    }
+  }
+  free(found);
+}
+
 static int world_open(world * w, const char * html, size_t html_len) {
   memset(w, 0, sizeof *w);
   if (gtext_css_registry_new(NULL, &w->registry) != GTEXT_CSS_OK) {
@@ -395,12 +766,16 @@ static int world_open(world * w, const char * html, size_t html_len) {
     return 0;
   }
   w->match_options = gtext_css_markup_match_options(w->adapter);
+  g_world = w;
+  world_interface(w);
   GTEXT_CSSOM_Config c = gtext_cssom_config_default();
   c.registry = w->registry;
-  c.element_interface = gtext_css_markup_interface(w->adapter);
+  c.element_interface = &w->iface;
   c.match_options = &w->match_options;
-  c.tree_version = &gtext_cssom_markup_tree_version;
-  c.tree_version_user = w->markup;
+  c.tree_version = &runner_tree_version;
+  c.tree_version_user = w;
+  c.element_state = &runner_element_state;
+  c.element_state_user = w;
   GTEXT_CSSOM_Layout_Interface layout;
   memset(&layout, 0, sizeof layout);
   layout.size = sizeof layout;
@@ -455,6 +830,7 @@ static int world_open(world * w, const char * html, size_t html_len) {
       gtext_cssom_markup_sync(w->binding, NULL) != GTEXT_CSS_OK) {
     return 0;
   }
+  shadow_adopt_declarative(w, gtext_markup_document_root(w->markup));
   w->attr = gtext_cssom_markup_inline_binding();
   w->capelems = w->capstyles = w->capregs = 32;
   w->elems = calloc(w->capelems, sizeof *w->elems);
@@ -494,6 +870,11 @@ static void world_close(world * w) {
   free(w->elems);
   free(w->styles);
   free(w->regs);
+  for (size_t i = 0; i < w->nshadows; i++) {
+    gtext_cssom_markup_binding_free(w->shadows[i].binding);
+    gtext_cssom_scope_release(w->shadows[i].scope);
+  }
+  free(w->shadows);
   gtext_cssom_markup_binding_free(w->binding);
   gtext_cssom_transition_tracker_free(w->tracker);
   gtext_cssom_document_release(w->doc);
@@ -962,6 +1343,9 @@ static void sync_world(world * w) {
   if (w->binding) {
     gtext_cssom_markup_sync(w->binding, NULL);
   }
+  for (size_t i = 0; i < w->nshadows; i++) {
+    gtext_cssom_markup_sync(w->shadows[i].binding, NULL);
+  }
 }
 
 static int node_is_inclusive_ancestor(const GTEXT_Markup_Node * a, const GTEXT_Markup_Node * n) {
@@ -973,8 +1357,20 @@ static int node_is_inclusive_ancestor(const GTEXT_Markup_Node * a, const GTEXT_M
   return 0;
 }
 
+/* connected: the shadow-including root is the document (a node in a shadow tree is connected when its host is) */
 static int node_connected(world * w, const GTEXT_Markup_Node * n) {
-  return node_is_inclusive_ancestor(gtext_markup_document_root(w->markup), n);
+  for (size_t guard = 0; guard < 4096; guard++) {
+    const GTEXT_Markup_Node * top = tree_top(n);
+    if (top == gtext_markup_document_root(w->markup)) {
+      return 1;
+    }
+    const shadow * sh = shadow_by_root(w, top);
+    if (!sh) {
+      return 0;
+    }
+    n = sh->host;
+  }
+  return 0;
 }
 
 /* An argument that is a node or a string (the argument list of append(), before(), replaceChildren()...): a string is made a text node, null is the text "null". Returns the node. */
@@ -1166,8 +1562,11 @@ static GTEXT_HTML_Namespace html_namespace_of(const GTEXT_Markup_Node * el) {
 static char * set_inner_html(world * w, GTEXT_Markup_Node * el, const char * text, size_t len) {
   GTEXT_HTML_Fragment_Context ctx;
   memset(&ctx, 0, sizeof ctx);
-  ctx.ns = html_namespace_of(el);
-  ctx.local_name = gtext_markup_element_local_name(el);
+  /* a shadow root's innerHTML is parsed in the context of its host */
+  const shadow * home = gtext_markup_node_kind(el) == GTEXT_MARKUP_KIND_FRAGMENT ? shadow_by_root(w, el) : NULL;
+  GTEXT_Markup_Node * context = home ? home->host : el;
+  ctx.ns = html_namespace_of(context);
+  ctx.local_name = gtext_markup_element_local_name(context);
   ctx.quirks = gtext_markup_document_mode(w->markup);
   for (const GTEXT_Markup_Node * p = el; p; p = gtext_markup_node_parent(p)) {
     if (gtext_markup_node_kind(p) == GTEXT_MARKUP_KIND_ELEMENT && strcmp(gtext_markup_element_local_name(p), "form") == 0) {
@@ -1190,7 +1589,7 @@ static char * set_inner_html(world * w, GTEXT_Markup_Node * el, const char * tex
     return markup_exception("innerHTML", ms);
   }
   GTEXT_Markup_Node * target = el;
-  if (strcmp(gtext_markup_element_local_name(el), "template") == 0 && gtext_markup_element_template_content(el)) {
+  if (!home && strcmp(gtext_markup_element_local_name(el), "template") == 0 && gtext_markup_element_template_content(el)) {
     target = gtext_markup_element_template_content(el);
   }
   return replace_all(target, copy, "innerHTML");
@@ -1266,6 +1665,63 @@ static int dom_op(world * w, const op * o, int * program_error, char ** failure)
     else {
       put_elem(w, o->f[1], n);
     }
+    return 1;
+  }
+  if (strcmp(name, "attach") == 0) {
+    NEEDN(4);   /* attach R E MODE: element.attachShadow({mode}): R is the shadow root */
+    NODE(host, 2);
+    if (!is_element(host->node)) {
+      *program_error = 1;
+      *failure = dups("attach on a node that is not an element");
+      return 1;
+    }
+    const int open = strcmp(o->f[3], "open") == 0;
+    if (!open && strcmp(o->f[3], "closed") != 0) {
+      *failure = dups("TypeError: attachShadow: the mode is not open or closed");
+      return 1;
+    }
+    /* DOM, "attach a shadow root" and "valid shadow host name": an HTML element of one of these names or a valid custom element name, which has no shadow root yet */
+    static const char * const hosts[] = {"article", "aside", "blockquote", "body", "div", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "main", "nav", "p", "section", "span"};
+    const char * ln = gtext_markup_element_local_name(host->node);
+    const char * ns = gtext_markup_element_namespace(host->node);
+    int valid = ns && strcmp(ns, GTEXT_MARKUP_NS_HTML) == 0;
+    if (valid) {
+      int listed = 0;
+      for (size_t i = 0; i < sizeof hosts / sizeof *hosts; i++) {
+        listed = listed || strcmp(ln, hosts[i]) == 0;
+      }
+      /* a valid custom element name: starts with a lower case letter, has a hyphen, no upper case; and is not one of the names SVG and MathML reserve */
+      int custom = ln[0] >= 'a' && ln[0] <= 'z' && strchr(ln, '-') != NULL;
+      static const char * const reserved[] = {"annotation-xml", "color-profile", "font-face", "font-face-src", "font-face-uri", "font-face-format", "font-face-name", "missing-glyph"};
+      for (size_t i = 0; custom && i < sizeof reserved / sizeof *reserved; i++) {
+        custom = strcmp(ln, reserved[i]) != 0;
+      }
+      for (const char * c = ln; custom && *c; c++) {
+        custom = !(*c >= 'A' && *c <= 'Z');
+      }
+      valid = listed || custom;
+    }
+    if (!valid) {
+      *failure = dups("NotSupportedError: attachShadow: this element does not support attachShadow");
+      return 1;
+    }
+    if (shadow_by_host(w, host->node)) {
+      *failure = dups("NotSupportedError: attachShadow: the element already is a shadow host");
+      return 1;
+    }
+    GTEXT_Markup_Node * root = NULL;
+    ms = gtext_markup_create_fragment(w->markup, &root);
+    if (ms != GTEXT_MARKUP_OK) {
+      *failure = markup_exception("attachShadow", ms);
+      return 1;
+    }
+    shadow * made = NULL;
+    GTEXT_CSS_Status st = shadow_attach(w, host->node, root, open, &made);
+    if (st != GTEXT_CSS_OK) {
+      *failure = status_failure("attachShadow", st);
+      return 1;
+    }
+    put_elem(w, o->f[1], root);
     return 1;
   }
   if (strcmp(name, "cfrag") == 0) {
@@ -1524,10 +1980,13 @@ static int dom_op(world * w, const op * o, int * program_error, char ** failure)
     *failure = serialize_to_reg(w, o->f[1], n->node, name[0] == 'i' ? GTEXT_HTML_SERIALIZE_CHILDREN : GTEXT_HTML_SERIALIZE_OUTER);
     return 1;
   }
-  if (strcmp(name, "ihset") == 0) {
-    NEEDN(3);
+  if (strcmp(name, "ihset") == 0 || strcmp(name, "ihsetu") == 0) {
+    NEEDN(3);   /* ihset NODE TEXT: innerHTML = TEXT; ihsetu: setHTMLUnsafe(TEXT), which also reads declarative shadow roots */
     NODE(n, 1);
     *failure = set_inner_html(w, n->node, o->f[2], o->l[2]);
+    if (!*failure && strcmp(name, "ihsetu") == 0) {
+      shadow_adopt_declarative(w, n->node);
+    }
     sync_world(w);
     return 1;
   }
@@ -1722,7 +2181,7 @@ static int dom_op(world * w, const op * o, int * program_error, char ** failure)
 
 /* ---- the style sheet ops: sheets, rules, rule lists and media lists as objects of the page ------------------------------------------------------- */
 
-enum { OBJ_SHEET = 1, OBJ_RULE, OBJ_MEDIA };
+enum { OBJ_SHEET = 1, OBJ_RULE, OBJ_MEDIA, OBJ_MQL };
 enum { ST_OBJECT = 0, ST_NULL, ST_UNDEFINED };
 
 static void obj_release(object * o) {
@@ -1735,6 +2194,9 @@ static void obj_release(object * o) {
     }
     else if (o->kind == OBJ_MEDIA) {
       gtext_cssom_media_release(o->ptr);
+    }
+    else if (o->kind == OBJ_MQL) {
+      gtext_cssom_media_query_list_release(o->ptr);
     }
   }
   o->ptr = NULL;
@@ -1831,7 +2293,8 @@ static int sheet_op(world * w, const op * o, int * program_error, char ** failur
       put_obj(w, o->f[1], OBJ_SHEET, ST_UNDEFINED, NULL);
     }
     else {
-      put_found(w, o->f[1], OBJ_SHEET, gtext_cssom_markup_sheet_of(w->binding, e->node), ST_NULL);
+      const shadow * home = shadow_of_node(w, e->node);
+      put_found(w, o->f[1], OBJ_SHEET, gtext_cssom_markup_sheet_of(home ? home->binding : w->binding, e->node), ST_NULL);
     }
     return 1;
   }
@@ -2258,6 +2721,148 @@ static int sheet_op(world * w, const op * o, int * program_error, char ** failur
     put_bool(w, o->f[1], yes);
     return 1;
   }
+  if (strcmp(name, "mql") == 0) {
+    NEEDS(3);   /* mql O TEXT: window.matchMedia(text) */
+    GTEXT_CSSOM_Media_Query_List * list = NULL;
+    st = gtext_cssom_match_media(w->doc, o->f[2], o->l[2], &list);
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception("matchMedia", st);
+      return 1;
+    }
+    put_obj(w, o->f[1], OBJ_MQL, ST_OBJECT, list);
+    return 1;
+  }
+  if (strcmp(name, "mqread") == 0) {
+    NEEDS(4);   /* mqread R O media|matches */
+    OBJ(ob, 2, OBJ_MQL);
+    if (strcmp(o->f[3], "media") == 0) {
+      char * text = NULL;
+      size_t n = 0;
+      st = gtext_cssom_media_query_list_media(ob->ptr, &text, &n);
+      if (st != GTEXT_CSS_OK) {
+        *failure = css_exception("media", st);
+        return 1;
+      }
+      put_reg(w, o->f[1], take_string(w, text, n));
+    }
+    else {
+      bool matches = false;
+      st = gtext_cssom_media_query_list_matches(ob->ptr, &matches);
+      if (st != GTEXT_CSS_OK) {
+        *failure = status_failure("matches", st);
+        return 1;
+      }
+      put_bool(w, o->f[1], matches);
+    }
+    return 1;
+  }
+  if (strcmp(name, "mqcss") == 0) {
+    /* mqcss R TEXT: matchmedia-utils.js query_is_css_parseable(): `@media <text>{}` inserted into an empty sheet is one rule and its media text is not `not all`; the sheet is the
+       helper's style element's, here a constructed one (the same insertRule), and nothing is left in the page */
+    NEEDS(3);
+    GTEXT_CSSOM_Sheet_Options so = gtext_cssom_sheet_options_default();
+    GTEXT_CSSOM_Sheet * sh = NULL;
+    st = gtext_cssom_sheet_new_constructed(w->doc, &so, &sh);
+    if (st != GTEXT_CSS_OK) {
+      *failure = css_exception("new CSSStyleSheet", st);
+      return 1;
+    }
+    char * rule_text = fmt("@media %s{}", o->f[2]);
+    GTEXT_CSSOM_Rule * made = NULL;
+    st = gtext_cssom_sheet_insert_rule(sh, rule_text, strlen(rule_text), 0, &made, &oc);
+    free(rule_text);
+    if (st != GTEXT_CSS_OK) {
+      gtext_cssom_sheet_release(sh);
+      *failure = css_exception("insertRule", st);
+      return 1;
+    }
+    int result = 0;
+    const GTEXT_CSSOM_Rule_List * list = NULL;
+    if (gtext_cssom_sheet_rules(sh, &list) == GTEXT_CSS_OK && list && gtext_cssom_rule_list_length(list) == 1) {
+      GTEXT_CSSOM_Media_List * m = NULL;
+      if (gtext_cssom_rule_media(made, &m) == GTEXT_CSS_OK) {
+        char * text = NULL;
+        size_t n = 0;
+        if (gtext_cssom_media_text(m, &text, &n) == GTEXT_CSS_OK) {
+          result = !(n == 7 && memcmp(text, "not all", 7) == 0);
+          gtext_cssom_buffer_free(gtext_cssom_document_allocator(w->doc), text);
+        }
+        gtext_cssom_media_release(m);
+      }
+    }
+    gtext_cssom_rule_release(made);
+    gtext_cssom_sheet_release(sh);
+    put_bool(w, o->f[1], result);
+    return 1;
+  }
+  if (strncmp(name, "r", 1) == 0 && (strcmp(name, "rnsheets") == 0 || strcmp(name, "rsheetat") == 0 || strcmp(name, "radoptset") == 0 || strcmp(name, "radoptpush") == 0 ||
+                                      strcmp(name, "radoptn") == 0 || strcmp(name, "radoptat") == 0)) {
+    /* the sheets of a shadow root's scope: rnsheets R ROOT; rsheetat O ROOT INDEX null|undefined; radoptset ROOT SHEET...; radoptpush ROOT SHEET; radoptn R ROOT; radoptat O ROOT INDEX */
+    const int root_field = (strcmp(name, "radoptset") == 0 || strcmp(name, "radoptpush") == 0) ? 1 : 2;
+    if ((size_t)root_field >= o->n) {
+      *program_error = 1;
+      *failure = fmt("the op %s has no root", name);
+      return 1;
+    }
+    elem * re = find_elem(w, o->f[root_field]);
+    shadow * sr = re && re->node ? shadow_by_root(w, re->node) : NULL;
+    if (!sr) {
+      *program_error = 1;
+      *failure = fmt("the op %s names %s, which is not a shadow root the program made", name, o->f[root_field]);
+      return 1;
+    }
+    sync_world(w);
+    if (strcmp(name, "rnsheets") == 0) {
+      NEEDS(3);
+      put_num(w, o->f[1], gtext_cssom_scope_sheet_count(sr->scope));
+    }
+    else if (strcmp(name, "rsheetat") == 0) {
+      NEEDS(5);
+      put_found(w, o->f[1], OBJ_SHEET, gtext_cssom_scope_sheet_at(sr->scope, (size_t)strtoull(o->f[3], NULL, 10)), o->f[4][0] == 'n' ? ST_NULL : ST_UNDEFINED);
+    }
+    else if (strcmp(name, "radoptn") == 0) {
+      NEEDS(3);
+      put_num(w, o->f[1], gtext_cssom_scope_adopted_count(sr->scope));
+    }
+    else if (strcmp(name, "radoptat") == 0) {
+      NEEDS(4);
+      put_found(w, o->f[1], OBJ_SHEET, gtext_cssom_scope_adopted_at(sr->scope, (size_t)strtoull(o->f[3], NULL, 10)), ST_UNDEFINED);
+    }
+    else if (strcmp(name, "radoptpush") == 0) {
+      NEEDS(3);
+      OBJ(sh, 2, OBJ_SHEET);
+      st = gtext_cssom_scope_adopted_insert(sr->scope, sh->ptr, gtext_cssom_scope_adopted_count(sr->scope), &oc);
+      if (st != GTEXT_CSS_OK) {
+        *failure = css_exception("adoptedStyleSheets", st);
+      }
+    }
+    else {
+      GTEXT_CSSOM_Sheet * list[64];
+      if (o->n > 65) {
+        *program_error = 1;
+        *failure = dups("radoptset has too many sheets");
+        return 1;
+      }
+      for (size_t i = 2; i < o->n; i++) {
+        object * ob = find_obj(w, o->f[i]);
+        if (!ob) {
+          *program_error = 1;
+          *failure = dups("radoptset names an object the program did not make");
+          return 1;
+        }
+        if (ob->state != ST_OBJECT || ob->kind != OBJ_SHEET) {
+          *failure = dups("TypeError: adoptedStyleSheets takes sheets");
+          return 1;
+        }
+        list[i - 2] = ob->ptr;
+      }
+      st = gtext_cssom_scope_adopted_set(sr->scope, list, o->n - 2, &oc);
+      if (st != GTEXT_CSS_OK) {
+        *failure = css_exception("adoptedStyleSheets", st);
+      }
+    }
+    return 1;
+  }
   if (strcmp(name, "adoptset") == 0) {
     /* document.adoptedStyleSheets = [sheets]: the checks of the setter are the library's */
     GTEXT_CSSOM_Sheet * list[64];
@@ -2392,6 +2997,21 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
         gtext_markup_query_free(NULL, nodes);
       }
     }
+    else if (strcmp(how, "byidin") == 0) {
+      /* elem R byidin ROOT ID: getElementById of a shadow root (a DocumentFragment): the first element of its tree with the id */
+      elem * r = o->n > 4 ? find_elem(w, o->f[3]) : NULL;
+      if (!r || !r->node) {
+        *program_error = 1;
+        return dups("elem byidin names a root the program did not make");
+      }
+      for (GTEXT_Markup_Node * x = gtext_markup_node_next_in_order(r->node, r->node, 0); x && !found; x = gtext_markup_node_next_in_order(r->node, x, 0)) {
+        const char * v;
+        size_t vl;
+        if (is_element(x) && attr_get(x, "id", &v, &vl) && vl == o->l[4] && memcmp(v, o->f[4], vl) == 0) {
+          found = x;
+        }
+      }
+    }
     else if (strcmp(how, "list") == 0) {
       nodelist * l = o->n > 4 ? find_list(w, o->f[3]) : NULL;
       if (!l) {
@@ -2440,6 +3060,23 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
       }
       else if (strcmp(what, "parentNode") == 0) {
         found = gtext_markup_node_parent(n);
+      }
+      else if (strcmp(what, "shadowRoot") == 0) {
+        const shadow * sh = is_element(n) ? shadow_by_host(w, n) : NULL;
+        found = sh && sh->open ? sh->root : NULL;
+      }
+      else if (strcmp(what, "host") == 0) {
+        const shadow * sh = shadow_by_root(w, n);
+        if (!sh) {
+          *program_error = 1;
+          return dups("elem nav host on a node that is not a shadow root");
+        }
+        found = sh->host;
+      }
+      else if (strcmp(what, "assignedSlot") == 0) {
+        GTEXT_Markup_Node * slot = assigned_slot_of(w, n);
+        const shadow * sh = slot ? shadow_by_host(w, gtext_markup_node_parent(n)) : NULL;
+        found = sh && sh->open ? slot : NULL;
       }
       else if (strcmp(what, "nextElementSibling") == 0) {
         found = element_sibling(n, 1);

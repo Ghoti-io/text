@@ -1218,9 +1218,9 @@ def interpret_page(wpt, rel, text, unextracted):
     census = _census()
     calls, marks, helpers = census.features(wpt, rel, False)
     blocked = {'timing', 'input-driver', 'frame-or-popup', 'typed-om', 'register-property', 'view-transition', 'custom-element', 'fonts'}
-    if blocked & set(marks) or helpers:
+    if blocked & set(marks) or [h for h in helpers if os.path.basename(h) not in EVAL.MODELED_HELPERS]:
         return
-    res = EVAL.evaluate_page(rel, text)
+    res = EVAL.evaluate_page(rel, text, wpt)
     if res is None or not res.tests:
         return
     unextracted[:] = [u for u in unextracted if u[0] != rel]
