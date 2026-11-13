@@ -732,6 +732,64 @@ TEST(CssomMarkupInline, TheDeclarationOfAMarkupElementWritesTheAttributeAndSeesA
   gtext_cssom_decl_release(d);
 }
 
+TEST(CssomMarkup, ABindingWithARootReadsThatTreeOnlyAndAStyleIsConnectedWhenItIsInThatTree) {
+  Mk m;
+  ASSERT_EQ(m.sync(), GTEXT_CSS_OK);
+  ASSERT_EQ(m.count(), 2u);
+  // a shadow root is a fragment of the page's Markup document that no node of the document holds, with a scope of its own
+  GTEXT_Markup_Node * root = nullptr;
+  ASSERT_EQ(gtext_markup_create_fragment(m.markup(), &root), GTEXT_MARKUP_OK);
+  GTEXT_CSSOM_Scope_Options so = gtext_cssom_scope_options_default();
+  so.handle = root;
+  so.shadow = true;
+  GTEXT_CSSOM_Scope * shadow = nullptr;
+  ASSERT_EQ(gtext_cssom_scope_new(m.d(), &so, &shadow), GTEXT_CSS_OK);
+  GTEXT_CSSOM_Markup_Options mo = gtext_cssom_markup_options_default();
+  mo.root = root;
+  GTEXT_CSSOM_Markup_Binding * inner = nullptr;
+  ASSERT_EQ(gtext_cssom_markup_binding_new(m.d(), shadow, m.markup(), &mo, &inner), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_cssom_markup_sync(inner, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_cssom_scope_sheet_count(shadow), 0u);
+
+  GTEXT_Markup_Node * style = nullptr;
+  ASSERT_EQ(gtext_markup_create_element(m.markup(), GTEXT_MARKUP_NS_HTML, nullptr, "style", &style), GTEXT_MARKUP_OK);
+  set_text(m.markup(), style, ".a { color: green }");
+  // not yet inserted: no sheet; in the root's tree: one in the shadow scope and none in the document's
+  ASSERT_EQ(gtext_cssom_markup_sync(inner, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_cssom_scope_sheet_count(shadow), 0u);
+  append(root, style);
+  ASSERT_EQ(gtext_cssom_markup_sync(inner, nullptr), GTEXT_CSS_OK);
+  ASSERT_EQ(m.sync(), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_cssom_scope_sheet_count(shadow), 1u) << "a style in the tree of the binding's root is connected";
+  EXPECT_EQ(m.count(), 2u) << "and the document's binding does not read it";
+  GTEXT_CSSOM_Sheet * sheet = gtext_cssom_markup_sheet_of(inner, style);
+  ASSERT_NE(sheet, nullptr);
+  EXPECT_EQ(gtext_cssom_sheet_owner_node(sheet), style);
+  EXPECT_EQ(gtext_cssom_markup_sheet_of(m.binding, style), nullptr);
+  gtext_cssom_sheet_release(sheet);
+
+  // out of the tree: the sheet leaves the scope
+  ASSERT_EQ(gtext_markup_remove(style), GTEXT_MARKUP_OK);
+  ASSERT_EQ(gtext_cssom_markup_sync(inner, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_cssom_scope_sheet_count(shadow), 0u);
+  gtext_cssom_markup_binding_free(inner);
+  gtext_cssom_scope_release(shadow);
+}
+
+TEST(CssomMarkup, ABindingMadeWithAnOptionsStructThatEndsBeforeTheRootHasNoRoot) {
+  Mk m;
+  GTEXT_CSSOM_Markup_Options mo = gtext_cssom_markup_options_default();
+  mo.root = m.el("#d");
+  mo.size = offsetof(GTEXT_CSSOM_Markup_Options, root);   // a caller built before the field: it is the same as none
+  GTEXT_CSSOM_Markup_Binding * b = nullptr;
+  ASSERT_EQ(gtext_cssom_markup_binding_new(m.d(), m.scope(), m.markup(), &mo, &b), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_cssom_markup_sync(b, nullptr), GTEXT_CSS_OK);
+  GTEXT_CSSOM_Sheet * s = gtext_cssom_markup_sheet_of(b, m.el("#s1"));
+  EXPECT_NE(s, nullptr) << "the document's whole tree is read, not the subtree of #d";
+  gtext_cssom_sheet_release(s);
+  gtext_cssom_markup_binding_free(b);
+}
+
 TEST(CssomMarkupInline, TheStyleAttributeIsNotAStyleElementAndASyncAfterAWriteWalksButMakesNothing) {
   Mk m;
   ASSERT_EQ(m.sync(), GTEXT_CSS_OK);

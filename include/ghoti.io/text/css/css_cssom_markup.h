@@ -129,9 +129,12 @@ typedef struct {
   const char * base_url;         ///< The document's base URL for the sheets of `<style>` elements (opaque, copied, never parsed); NULL for none.
   GTEXT_CSSOM_Link_Fn link;      ///< Asked for the text of each `<link rel=stylesheet>`. NULL: a link has no sheet.
   void * link_user;              ///< Passed to `link`.
+  /** The root of the tree the binding reads and the one a style element must be in to be **connected**: a shadow root's fragment for the binding of a shadow tree's scope. NULL: the document's
+   *  root. The binding of a scope reads one tree (a shadow tree is its own, its host's tree does not hold it), and the Markup document generation it shortcuts on is the whole document's. */
+  const GTEXT_Markup_Node * root;
 } GTEXT_CSSOM_Markup_Options;
 
-/** @brief The defaults, spelled out: `size` set, `html` and `svg` true, no base URL, no link callback. */
+/** @brief The defaults, spelled out: `size` set, `html` and `svg` true, no base URL, no link callback, the document's root. */
 GTEXT_API GTEXT_CSSOM_Markup_Options gtext_cssom_markup_options_default(void);
 
 /**

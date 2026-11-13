@@ -815,6 +815,9 @@ GTEXT_CSS_Status gtext_cssom_markup_binding_new(GTEXT_CSSOM_Document * document,
       b->options.link = NULL;
       b->options.link_user = NULL;
     }
+    if (n < offsetof(GTEXT_CSSOM_Markup_Options, root) + sizeof options->root) {
+      b->options.root = NULL;
+    }
   }
   if (b->options.base_url) {
     b->base_url = dup_n(b, b->options.base_url, strlen(b->options.base_url));
@@ -904,9 +907,14 @@ static bool order_remove_at(GTEXT_CSSOM_Markup_Binding * b, size_t i) {
   return true;
 }
 
+/// The root of what the binding reads: the options' `root` (a shadow root's fragment), else the document's.
+static const GTEXT_Markup_Node * binding_root(const GTEXT_CSSOM_Markup_Binding * b) {
+  return b->options.root ? b->options.root : gtext_markup_document_root(b->markup);
+}
+
 static GTEXT_CSS_Status sync_walk(GTEXT_CSSOM_Markup_Binding * b, GTEXT_CSSOM_Outcome * outcome, uint64_t generation) {
   /* A. read: the elements that qualify, in tree order. Nothing is changed by this. */
-  const GTEXT_Markup_Node * root = gtext_markup_document_root(b->markup);
+  const GTEXT_Markup_Node * root = binding_root(b);
   size_t ncand = 0, capcand = 0;
   cand * cands = NULL;
   b->counters.walks++;
@@ -1059,7 +1067,7 @@ GTEXT_CSS_Status gtext_cssom_markup_sync(GTEXT_CSSOM_Markup_Binding * b, GTEXT_C
 /* ---- one element ------------------------------------------------------------------------------------------------------------------------------------- */
 
 static bool connected(const GTEXT_CSSOM_Markup_Binding * b, const GTEXT_Markup_Node * el) {
-  const GTEXT_Markup_Node * root = gtext_markup_document_root(b->markup);
+  const GTEXT_Markup_Node * root = binding_root(b);
   for (const GTEXT_Markup_Node * x = el; x; x = gtext_markup_node_parent(x)) {
     if (x == root) {
       return true;
