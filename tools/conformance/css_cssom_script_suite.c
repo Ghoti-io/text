@@ -197,6 +197,7 @@ typedef struct {
   GTEXT_Markup_Node * root;
   GTEXT_Markup_Node * host;
   int open;
+  int declarative;   /* made by a template at parse time: attachShadow() on its host clears and returns it (DOM, "attach a shadow root") */
   GTEXT_CSSOM_Scope * scope;
   GTEXT_CSSOM_Markup_Binding * binding;
 } shadow;
@@ -595,7 +596,9 @@ static bool cb_has_part(void * user, GTEXT_CSS_Element_Handle h, GTEXT_CSS_Eleme
       }
       i = j + 1;
     }
-    memcpy(names, out, sizeof names);
+    for (size_t k = 0; k < nout; k++) {
+      memcpy(names[k], out[k], sizeof names[k]);
+    }
     count = nout;
     sh = shadow_of_node(w, sh->host);
   }
@@ -672,6 +675,37 @@ static void world_interface(world * w) {
   w->iface.has_part = cb_has_part;
 }
 
+/* DOM, "valid shadow host name": an HTML element of one of these names, or a valid custom element name */
+static int valid_shadow_host(const GTEXT_Markup_Node * host) {
+  static const char * const hosts[] = {"article", "aside", "blockquote", "body", "div", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "main", "nav", "p", "section", "span"};
+  const char * ln = gtext_markup_element_local_name(host);
+  const char * ns = gtext_markup_element_namespace(host);
+  if (!ln || !ns || strcmp(ns, GTEXT_MARKUP_NS_HTML) != 0) {
+    return 0;
+  }
+  for (size_t i = 0; i < sizeof hosts / sizeof *hosts; i++) {
+    if (strcmp(ln, hosts[i]) == 0) {
+      return 1;
+    }
+  }
+  /* a valid custom element name: starts with a lower case letter, has a hyphen, no upper case; and is not one of the names SVG and MathML reserve */
+  static const char * const reserved[] = {"annotation-xml", "color-profile", "font-face", "font-face-src", "font-face-uri", "font-face-format", "font-face-name", "missing-glyph"};
+  if (!(ln[0] >= 'a' && ln[0] <= 'z') || !strchr(ln, '-')) {
+    return 0;
+  }
+  for (size_t i = 0; i < sizeof reserved / sizeof *reserved; i++) {
+    if (strcmp(ln, reserved[i]) == 0) {
+      return 0;
+    }
+  }
+  for (const char * c = ln; *c; c++) {
+    if (*c >= 'A' && *c <= 'Z') {
+      return 0;
+    }
+  }
+  return 1;
+}
+
 /* Attach a shadow root to a host: a fragment of the document's Markup (`root`, which may be a `<template>`'s content: a declarative shadow root) is registered as the host's tree. */
 static GTEXT_CSS_Status shadow_attach(world * w, GTEXT_Markup_Node * host, GTEXT_Markup_Node * root, int open, shadow ** out) {
   if (w->nshadows == w->capshadows) {
@@ -718,7 +752,7 @@ static void shadow_adopt_declarative(world * w, GTEXT_Markup_Node * root) {
     if (is_element(x) && local_is(x, "template") && gtext_markup_element_template_content(x)) {
       const char * v;
       size_t l;
-      if (attr_get(x, "shadowrootmode", &v, &l) && ((l == 4 && strncasecmp(v, "open", 4) == 0) || (l == 6 && strncasecmp(v, "closed", 6) == 0)) && is_element(gtext_markup_node_parent(x))) {
+      if (attr_get(x, "shadowrootmode", &v, &l) && ((l == 4 && strncasecmp(v, "open", 4) == 0) || (l == 6 && strncasecmp(v, "closed", 6) == 0)) && is_element(gtext_markup_node_parent(x)) && valid_shadow_host(gtext_markup_node_parent(x))) {
         if (n == cap) {
           cap = cap ? cap * 2 : 8;
           found = realloc(found, cap * sizeof *found);
@@ -740,6 +774,7 @@ static void shadow_adopt_declarative(world * w, GTEXT_Markup_Node * root) {
     }
     gtext_markup_remove(t);
     if (shadow_attach(w, host, content, l == 4, &sh) == GTEXT_CSS_OK) {
+      sh->declarative = 1;
       shadow_adopt_declarative(w, content);
     }
   }
@@ -1680,33 +1715,23 @@ static int dom_op(world * w, const op * o, int * program_error, char ** failure)
       *failure = dups("TypeError: attachShadow: the mode is not open or closed");
       return 1;
     }
-    /* DOM, "attach a shadow root" and "valid shadow host name": an HTML element of one of these names or a valid custom element name, which has no shadow root yet */
-    static const char * const hosts[] = {"article", "aside", "blockquote", "body", "div", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "main", "nav", "p", "section", "span"};
-    const char * ln = gtext_markup_element_local_name(host->node);
-    const char * ns = gtext_markup_element_namespace(host->node);
-    int valid = ns && strcmp(ns, GTEXT_MARKUP_NS_HTML) == 0;
-    if (valid) {
-      int listed = 0;
-      for (size_t i = 0; i < sizeof hosts / sizeof *hosts; i++) {
-        listed = listed || strcmp(ln, hosts[i]) == 0;
-      }
-      /* a valid custom element name: starts with a lower case letter, has a hyphen, no upper case; and is not one of the names SVG and MathML reserve */
-      int custom = ln[0] >= 'a' && ln[0] <= 'z' && strchr(ln, '-') != NULL;
-      static const char * const reserved[] = {"annotation-xml", "color-profile", "font-face", "font-face-src", "font-face-uri", "font-face-format", "font-face-name", "missing-glyph"};
-      for (size_t i = 0; custom && i < sizeof reserved / sizeof *reserved; i++) {
-        custom = strcmp(ln, reserved[i]) != 0;
-      }
-      for (const char * c = ln; custom && *c; c++) {
-        custom = !(*c >= 'A' && *c <= 'Z');
-      }
-      valid = listed || custom;
-    }
-    if (!valid) {
+    /* DOM, "attach a shadow root": an element that is a valid shadow host; one that has a root already is an error, unless that root was made by a template and has this mode, which is
+       cleared and returned */
+    if (!valid_shadow_host(host->node)) {
       *failure = dups("NotSupportedError: attachShadow: this element does not support attachShadow");
       return 1;
     }
-    if (shadow_by_host(w, host->node)) {
-      *failure = dups("NotSupportedError: attachShadow: the element already is a shadow host");
+    shadow * existing = shadow_by_host(w, host->node);
+    if (existing) {
+      if (!existing->declarative || existing->open != open) {
+        *failure = dups("NotSupportedError: attachShadow: the element already is a shadow host");
+        return 1;
+      }
+      char * cleared = replace_all(existing->root, NULL, "attachShadow");
+      free(cleared);
+      existing->declarative = 0;
+      sync_world(w);
+      put_elem(w, o->f[1], existing->root);
       return 1;
     }
     GTEXT_Markup_Node * root = NULL;
@@ -1985,7 +2010,8 @@ static int dom_op(world * w, const op * o, int * program_error, char ** failure)
     NODE(n, 1);
     *failure = set_inner_html(w, n->node, o->f[2], o->l[2]);
     if (!*failure && strcmp(name, "ihsetu") == 0) {
-      shadow_adopt_declarative(w, n->node);
+      GTEXT_Markup_Node * tc = is_element(n->node) && local_is(n->node, "template") ? gtext_markup_element_template_content(n->node) : NULL;
+      shadow_adopt_declarative(w, tc ? tc : n->node);
     }
     sync_world(w);
     return 1;
@@ -3007,7 +3033,7 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
       for (GTEXT_Markup_Node * x = gtext_markup_node_next_in_order(r->node, r->node, 0); x && !found; x = gtext_markup_node_next_in_order(r->node, x, 0)) {
         const char * v;
         size_t vl;
-        if (is_element(x) && attr_get(x, "id", &v, &vl) && vl == o->l[4] && memcmp(v, o->f[4], vl) == 0) {
+        if (o->l[4] > 0 && is_element(x) && attr_get(x, "id", &v, &vl) && vl == o->l[4] && memcmp(v, o->f[4], vl) == 0) {
           found = x;
         }
       }
@@ -3590,6 +3616,14 @@ static int program_open(program * p, size_t extent) {
   }
   if (had) {
     world * ow = &old;
+    for (size_t i = 0; i < ow->nelems; i++) {
+      if (ow->elems[i].node && tree_top(ow->elems[i].node) != gtext_markup_document_root(ow->markup)) {
+        /* a node of a shadow tree (or a detached one) is not found again by its path from the document's root: the program has to say so, not be given another node */
+        world_close(nw);
+        p->w = old;
+        return 0;
+      }
+    }
     for (size_t i = 0; i < ow->nelems; i++) {
       GTEXT_Markup_Node * n = NULL;
       if (ow->elems[i].node) {

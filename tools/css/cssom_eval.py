@@ -380,9 +380,10 @@ class HostElem(Host):
     """A node of the document (an element, a text node, a fragment): the evaluator knows its name in the program, not what it is. ``nullable``: the lookup that made it may have found nothing, so
     the page's use of it as a condition is a fact of the document that the evaluator cannot decide."""
 
-    def __init__(self, name, nullable=False):
+    def __init__(self, name, nullable=False, root=False):
         Host.__init__(self, name)
         self.nullable = nullable
+        self.root = root   # the node is a shadow root (what attachShadow() and .shadowRoot gave): the members of a DocumentFragment that an element has not
 
 
 class HostStyle(Host):
@@ -2477,9 +2478,11 @@ def m_attach_shadow(el):
         mode = init.get('mode', UNDEF)
         if not isinstance(mode, str) or any(k not in ('mode', 'delegatesFocus', 'clonable', 'serializable') for k in init):
             raise Unmodeled('host-attachShadow-argument')   # slotAssignment and customElementRegistry are not modeled
+        if any(init.get(k, False) not in (False, UNDEF) for k in ('clonable', 'serializable')):
+            raise Unmodeled('host-attachShadow-argument')   # they change cloneNode() and getHTML(), which the program does not carry
         n = i.new_node('e')
         i.emit('attach', n, el.name, mode)
-        return HostElem(n)
+        return HostElem(n, False, True)
     return call
 
 
@@ -2499,12 +2502,14 @@ def m_set_html_unsafe(el):
         i.need_dom()
         if not a or isinstance(a[0], (Rt, Host)):
             raise Unmodeled('host-setHTMLUnsafe-argument')
-        i.emit('ihsetu', el.name, null_empty(a[0]))
+        i.emit('ihsetu', el.name, to_str(a[0]))
         return UNDEF
     return call
 
 
 def elem_get(interp, el, key, for_call):
+    if key in ('getElementById', 'styleSheets', 'adoptedStyleSheets', 'host') and not el.root:
+        raise Unmodeled('dom-element-' + key)   # members of a shadow root: on an element they are undefined (or another thing), and the evaluator does not know which
     if key == 'getElementById':
         return BoundMethod(m_get_element_by_id(el))
     if key == 'setHTMLUnsafe':
@@ -2524,7 +2529,7 @@ def elem_get(interp, el, key, for_call):
     if key in ELEM_NAV:
         n = interp.new_node('e')
         interp.emit('elem', n, 'nav', el.name, ELEM_NAV[key])
-        return HostElem(n, True)
+        return HostElem(n, True, key == 'shadowRoot')
     if key in NODE_READS:
         r = interp.new_reg()
         interp.emit('nread', r, el.name, key)
@@ -3039,11 +3044,13 @@ class PageScan(html.parser.HTMLParser):
             self.in_title = True
             self.title_buf = []
         self.elements += 1
+        declarative = tag == 'template' and (a.get('shadowrootmode') or '').lower() in ('open', 'closed')
         if tag == 'template':
             self.template_depth += 1
-            if (a.get('shadowrootmode') or '').lower() not in ('open', 'closed'):
+            if not declarative:
                 self.templates += 1
-        if 'id' in a and a['id'] is not None and not (self.template_depth and tag != 'template'):
+        # the id of an element in a template's content is not the document's, and a declarative template is not in the tree at all
+        if 'id' in a and a['id'] is not None and not (self.template_depth and (tag != 'template' or declarative or self.template_depth > 1)):
             self.ids.append(a['id'])
             self.id_positions.append((a['id'], self.elements))
         if tag == 'link' and (a.get('rel') or '').lower() == 'stylesheet':
@@ -3114,6 +3121,8 @@ def helper_path(wpt, rel, src):
 
 def evaluate_page(rel, text, wpt=None):
     """The PageResult for an HTML page, or None when the page cannot be read as a whole (see the module comment). ``wpt`` is the pin's root, where the modeled helpers are read from."""
+    global LAST_UNREAD
+    LAST_UNREAD = None
     scan = PageScan()
     try:
         scan.text = text
@@ -3134,7 +3143,7 @@ def evaluate_page(rel, text, wpt=None):
         if a.get('type') and a['type'].lower() not in ('text/javascript', 'application/javascript', 'text/ecmascript', ''):
             return unread('script-type')
     if scan.links or scan.templates or scan.odd:
-        return unread('links-templates-or-frames:%s' % (scan.links[:1] or ['template'] * bool(scan.templates) or scan.odd[:1]))
+        return unread('links-templates-or-frames:%s' % ', '.join((scan.links[:1] or ['template'] * bool(scan.templates) or scan.odd[:1])))
     res = PageResult()
     res.html = text
     res.ids = scan.ids
@@ -3143,6 +3152,7 @@ def evaluate_page(rel, text, wpt=None):
     it = Interp([])
     it.title = scan.title if scan.title else os.path.basename(rel).split('.')[0]   # testharness.js get_title(): the title's first text node, else the file's name up to its first dot
     for (attrs, source, mark), end in [(sc, e) for sc, e in zip(scan.scripts, scan.script_ends) if not sc[0].get('src') or os.path.basename(sc[0]['src'].split('?')[0]) in MODELED_HELPERS]:
+        from_helper = bool(attrs.get('src'))
         if attrs.get('src'):
             try:
                 source = open(helper_path(wpt, rel, attrs['src']), encoding='utf-8').read()
@@ -3157,7 +3167,8 @@ def evaluate_page(rel, text, wpt=None):
         scope = it.glob
         try:
             it.hoist(prog, scope)
-            it.override_helpers(scope)
+            if from_helper:
+                it.override_helpers(scope)
             for st in prog:
                 it.exec(st, scope)
         except (Unmodeled, JSThrow, BreakSignal, ContinueSignal, ReturnSignal, RecursionError) as e:

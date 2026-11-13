@@ -773,3 +773,12 @@ unread
 <!DOCTYPE html><title>t</title><template><p id=inside></p></template><script>
 test(() => { assert_true(true); }, "t");
 </script>
+=== members-of-a-shadow-root-on-an-element-are-not-modeled
+tests 2
+outcome 0 unmodeled:dom-element-getElementById
+outcome 1 unmodeled:host-attachShadow-argument
+---
+<!DOCTYPE html><title>t</title><div id=host></div><script>
+test(() => { document.getElementById("host").getElementById("x"); }, "an element has no getElementById");
+test(() => { document.getElementById("host").attachShadow({mode: "open", clonable: true}); }, "clonable changes cloneNode");
+</script>
