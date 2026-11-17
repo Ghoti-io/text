@@ -1070,7 +1070,14 @@ TEST(CssProperty, AFamilyNameDoesNotHoldAGenericKeywordOrACssWideKeyword) {
   // Fonts 4, 2.1.1: "Any identifier which could be misinterpreted as a pre-defined keyword in the font-family value definition, or the CSS-wide keywords, is not
   // allowed."; Cascade 5 makes revert-rule a CSS-wide keyword
   EXPECT_EQ(parse(r, "font-family", "cursive serif"), "invalid");
-  EXPECT_EQ(parse(r, "font-family", "Times serif"), "invalid");
+  EXPECT_EQ(parse(r, "font-family", "serif Times"), "invalid");
+  // GTEXT_CSS_READING_FAMILY_KEYWORD_ONLY_FIRST (css_readings.h): only the first identifier of a name is looked at, as Chrome 157 does, so the names of real fonts hold
+  // the words of the keywords
+  EXPECT_EQ(parse(r, "font-family", "Times serif"), "valid:Times serif");
+  EXPECT_EQ(parse(r, "font-family", "Times inherit"), "invalid") << "a CSS-wide keyword is refused wherever it stands";
+  EXPECT_EQ(parse(r, "font-family", "Noto Color Emoji"), "valid:Noto Color Emoji");
+  EXPECT_EQ(parse(r, "font-family", "Noto Sans Math, STIX Two Math"), "valid:Noto Sans Math, STIX Two Math");
+  EXPECT_EQ(parse(r, "font-family", "Foo fangsong, Bar system-ui"), "valid:Foo fangsong, Bar system-ui");
   EXPECT_EQ(parse(r, "font-family", "FirstName, LastName, revert-rule"), "invalid");
   EXPECT_EQ(parse(r, "font-family", "serif, cursive"), "valid:serif, cursive");
   EXPECT_EQ(parse(r, "font-family", "\"cursive\", Times New Roman"), "valid:\"cursive\", Times New Roman") << "quoted, a generic name is a family name";

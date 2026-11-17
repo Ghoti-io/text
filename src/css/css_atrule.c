@@ -36,6 +36,7 @@
 #include "css_atrule_tables.h"
 #include "css_fndef.h"
 #include "css_registry_internal.h"
+#include "css_readings.h"
 
 #define DEF_DESCRIPTORS ((size_t)4096)
 #define DEF_CHILDREN ((size_t)65536)
@@ -901,7 +902,7 @@ static bool family_names(ctx * c, const GTEXT_CSS_Component_Value * p, size_t n,
     else {
       size_t total = 0;
       for (size_t i = 0; i < nt; i++) {
-        if (toks[i]->kind != GTEXT_CSS_VALUE_TOKEN || toks[i]->type != GTEXT_CSS_TOKEN_IDENT || css_is_reserved_family_word(&toks[i]->value)) {
+        if (toks[i]->kind != GTEXT_CSS_VALUE_TOKEN || toks[i]->type != GTEXT_CSS_TOKEN_IDENT || ((i == 0 || !GTEXT_CSS_READING_FAMILY_KEYWORD_ONLY_FIRST) ? css_is_reserved_family_word(&toks[i]->value) : wide_keyword_name(&toks[i]->value))) {
           *valid = false;
           return true;
         }

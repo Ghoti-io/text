@@ -64,4 +64,15 @@
  */
 #define GTEXT_CSS_READING_ENV_UNKNOWN_NAME_VALID 1
 
+/**
+ * An unquoted font family name of several identifiers, as in `Noto Color Emoji` or `Foo serif`.
+ *
+ * Fonts 4, 2.1.1 says "Any identifier which could be misinterpreted as a pre-defined keyword in the font-family value definition, or the CSS-wide keywords, is not allowed", and
+ * its rule for a keyword is that a name that is "the same as" one must be quoted. 0 applies the sentence to every identifier of the name, so `Noto Color Emoji` is invalid
+ * (it holds `emoji`). 1 applies it to the first identifier only for the generic family words (a CSS-wide keyword is refused wherever it stands, as the at-rule tests of both browsers' descriptors hold), which is what Chrome 157.0.8103.78 answers (`CSS.supports`: `Foo emoji`, `Foo serif`, `Foo math`, and `Foo system-ui`
+ * are valid, `serif Foo` is not) and what real fonts need (Noto Color Emoji, Noto Sans Math, STIX Two Math). Used by the matcher of `<font-family-custom-ident>` (css_grammar_match.c) and by
+ * the family names of the at-rules (css_atrule.c); held by the CssProperty and CssAtRule tests named AFamilyName...
+ */
+#define GTEXT_CSS_READING_FAMILY_KEYWORD_ONLY_FIRST 1
+
 #endif

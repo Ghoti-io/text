@@ -1670,7 +1670,14 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
   case NT_FAMILY_IDENT:
     /* Fonts 4 (served 2026-10-31), 2.1.1: "Any identifier which could be misinterpreted as a pre-defined keyword in the font-family value definition, or the CSS-wide
        keywords, is not allowed." (css_value.c holds the list: the at-rules' family names use it too) */
-    return tok(v, GTEXT_CSS_TOKEN_IDENT) && !css_is_reserved_family_word(&v->value);
+    if (!tok(v, GTEXT_CSS_TOKEN_IDENT)) {
+      return false;
+    }
+    /* GTEXT_CSS_READING_FAMILY_KEYWORD_ONLY_FIRST: a generic family word that follows another identifier in the same name is not looked at (a CSS-wide keyword still is) */
+    if (GTEXT_CSS_READING_FAMILY_KEYWORD_ONLY_FIRST && pos > 0 && m->items[pos - 1].cv && tok(m->items[pos - 1].cv, GTEXT_CSS_TOKEN_IDENT)) {
+      return !is_css_wide(&v->value);
+    }
+    return !css_is_reserved_family_word(&v->value);
   case NT_STRING_NONEMPTY:
     /* Animations 1 (served 2026-10-31), <keyframes-name>: "The <string> additionally excludes the empty string (but allows the string "none" and other excluded keywords)." */
     return tok(v, GTEXT_CSS_TOKEN_STRING) && v->value.length > 0;

@@ -587,6 +587,8 @@ TEST(CssAtrule, ANameListHoldsNoUnquotedGenericFamily) {
   EXPECT_FALSE(Parsed("@font-feature-values serif { @styleset { a: 1 } }").res.valid);
   EXPECT_FALSE(Parsed("@font-feature-values Foo, sans-serif { @styleset { a: 1 } }").res.valid);
   EXPECT_FALSE(Parsed("@font-feature-values foo inherit { }").res.valid);
+  EXPECT_TRUE(Parsed("@font-feature-values Noto Color Emoji { @styleset { a: 1 } }").res.valid) << "GTEXT_CSS_READING_FAMILY_KEYWORD_ONLY_FIRST: only the first identifier is a generic family word";
+  EXPECT_FALSE(Parsed("@font-feature-values emoji Foo { }").res.valid);
   EXPECT_TRUE(Parsed("@font-feature-values \"serif\", Foo Bar { @styleset { a: 1 } }").res.valid);
   EXPECT_EQ(Parsed("@font-palette-values --p { font-family: a, serif }").desc("font-family"), "-");
   EXPECT_EQ(Parsed("@font-palette-values --p { font-family: a, \"serif\" }").desc("font-family"), "a, \"serif\"");
