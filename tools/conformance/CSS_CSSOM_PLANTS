@@ -458,7 +458,7 @@ layout-transitions-not-asked	cssom_computed.c	  if (!core->no_transitions && cor
 tracker-first-event-has-a-before-style	cssom_computed.c	e->before && e->before->cc == after->cc ? e->before : NULL, after,	after, after,	transition
 tracker-keeps-the-previous-style	cssom_computed.c	  gtext_css_computed_free(e->before);\n  e->before = gtext_css_computed_retain(after);\n  return GTEXT_CSS_OK;	  return GTEXT_CSS_OK;	transition
 tracker-pseudo-element-shares-the-elements-set	cssom_computed.c	    *key = s->name.data ? s->name.data : "";\n    *length = s->name.data ? s->name.length : 0;	    *key = "";\n    *length = 0;	transition
-tracker-forget-keeps-the-set	cssom_computed.c	    if (tracker->entries[i].element == element) {\n      entry_release(tracker, &tracker->entries[i]);	    if (0 && tracker->entries[i].element == element) {\n      entry_release(tracker, &tracker->entries[i]);	transition
+tracker-forget-keeps-the-set	cssom_computed.c	    if (tracker->entries[i].element != element) {\n      i++;\n      continue;	    if (1) {\n      i++;\n      continue;	transition
 tracker-chain-skips-the-ancestors	cssom_computed.c	  for (size_t i = n; st == GTEXT_CSS_OK && i-- > 0;) {\n    /* each element's own after-change style	  for (size_t i = n > 0 ? 1 : 0; st == GTEXT_CSS_OK && i-- > 0;) {\n    /* each element's own after-change style	transition
 scroll-button-physical-direction-ignores-the-flow	css_match.c	    const GTEXT_CSS_Flow * flow = ctx->request_flow ? ctx->request_flow : &initial;	    const GTEXT_CSS_Flow * flow = &initial;	computed,match
 scroll-button-star-selects-nothing	css_match.c	    if (a->anb_a == 1) {\n      return true;	    if (a->anb_a == 1) {\n      return false;	computed,match
@@ -553,3 +553,11 @@ scroll-button-keyed-in-the-initial-flow	cssom_computed.c	  if (e && e->before) {
 an-anchor-function-is-no-length-where-it-stands-alone-as-a-fallback	css_math.c	  if (ctx && is_anchor_function(fn, ctx->anchor_functions)) {\n    /* an anchor function that stands alone	  if (0 && ctx && is_anchor_function(fn, ctx->anchor_functions)) {\n    /* an anchor function that stands alone	computed
 the-grammar-does-not-take-an-anchor-function-as-a-length-percentage	css_grammar_match.c	    const bool anchor = v && v->kind == GTEXT_CSS_VALUE_FUNCTION &&	    const bool anchor = 0 && v && v->kind == GTEXT_CSS_VALUE_FUNCTION &&	computed
 all-names-the-universal-registrations	css_transition.c	      if (typed) {\n        return (long)i;\n      }	      if (1) {\n        return (long)i;\n      }	transition
+tracker-display-none-element-keeps-its-transitions	cssom_computed.c	    if (st == GTEXT_CSS_OK && after && !style_is_display_none(core, after)) {	    if (st == GTEXT_CSS_OK && after) {	transition
+tracker-display-none-ancestor-does-not-hide-the-descendants	cssom_computed.c	      hidden = true;\n      st = tracker_unrender(tracker, chain[i], NULL, 0);	      st = tracker_unrender(tracker, chain[i], NULL, 0);	transition
+tracker-unrender-keeps-the-before-change-style	cssom_computed.c	    gtext_css_computed_free(e->before);\n    e->before = NULL;\n  }\n  return GTEXT_CSS_OK;	  }\n  return GTEXT_CSS_OK;	transition
+tracker-unrender-does-not-cancel	cssom_computed.c	    GTEXT_CSS_Status st = gtext_css_transition_set_cancel_all(e->set, t->time_ms);	    GTEXT_CSS_Status st = GTEXT_CSS_OK;	transition
+tracker-events-pseudo-elements-in-creation-order	cssom_computed.c	  const int ra = pseudo_rank(a), rb = pseudo_rank(b);	  const int ra = 0, rb = 0;	transition
+tracker-events-pseudo-element-without-two-colons	cssom_computed.c	(pseudo[0] == ':' ? (length > 1 && pseudo[1] == ':' ? 0 : 1) : 2);	(pseudo[0] == ':' ? 0 : 2);	transition
+tracker-events-retired-entries-not-reported	cssom_computed.c	  const size_t total = tracker->count + tracker->nretired;	  const size_t total = tracker->count;	transition
+tracker-forget-drops-the-cancellations	cssom_computed.c	    st = gtext_css_transition_set_cancel_all(tracker->entries[i].set, tracker->time_ms);	    st = GTEXT_CSS_OK;	transition

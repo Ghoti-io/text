@@ -30,7 +30,10 @@
  *  - "This specification maintains the invariant that there is never both a running transition and a completed transition for the same property and element";
  *  - a running transition has an end time not before its start time, and a shortening factor in 0..1;
  *  - the style shown at the time of an event after it ran is a style, and a style computed from the same set at the same time twice is the same (a pure function of its inputs);
- *  - a failed allocation (every fourth input arms one) is OOM or OK, leaves the set as it was, and leaks nothing.
+ *  - a failed allocation (every fourth input arms one) is OOM or OK, leaves the set as it was, and leaks nothing;
+ *  - the animation frames taken between the events (Transitions 2, "Event dispatch"): a frame answers OK or OOM and leaves nothing behind when it fails (the same frame is then made again), the
+ *    elapsed time of an event is finite and not negative, the events of a frame are in the composite order (generation, then the name of the property), the first event of a transition is its
+ *    `transitionrun`, nothing follows a `transitioncancel`, a transition is cancelled once, and the snapshot of a running transition (its `CSSTransition`) has the id and the property of the set's.
  *
  * Build with: make fuzz-css-transition      Run: make fuzz-run-css-transition
  */
@@ -120,6 +123,69 @@ std::string dump(const GTEXT_CSS_Computed_Style * s) {
   return out;
 }
 
+/// What the frames have said of each transition so far.
+struct Ledger {
+  std::set<uint64_t> started;      // a transitionrun was seen
+  std::set<uint64_t> cancelled;    // a transitioncancel was seen
+};
+
+/// One animation frame at a time, with an allocation that may fail: the events are checked, and a failed frame leaves nothing.
+void take_frame(GTEXT_CSS_Transition_Set * set, double time, FaultAllocator & fa, bool oom, size_t arm, Ledger & ledger) {
+  GTEXT_CSS_Transition_Events * ev = nullptr;
+  if (gtext_css_transition_events_new(&fa.alloc, &ev) != GTEXT_CSS_OK) {
+    return;
+  }
+  const size_t held = fa.live.size();
+  if (oom) {
+    fa.arm(arm);
+  }
+  GTEXT_CSS_Status st = gtext_css_transition_set_frame(set, time, ev);
+  fa.disarm();
+  if (st == GTEXT_CSS_E_OOM) {
+    if (gtext_css_transition_events_count(ev) != 0) {
+      fail("a failed frame reported events", "");
+    }
+    st = gtext_css_transition_set_frame(set, time, ev);
+  }
+  (void)held;
+  if (st != GTEXT_CSS_OK) {
+    fail("a frame failed with a status other than OOM", std::to_string(static_cast<int>(st)));
+  }
+  uint64_t generation = 0, previous = 0;
+  std::string name;
+  for (size_t i = 0; i < gtext_css_transition_events_count(ev); i++) {
+    GTEXT_CSS_Transition_Event e{};
+    if (!gtext_css_transition_events_at(ev, i, &e)) {
+      fail("an event could not be read", "");
+    }
+    if (!(e.elapsed_time >= 0) || e.elapsed_time > 1e12) {
+      fail("an event has an elapsed time out of range", std::to_string(e.elapsed_time));
+    }
+    const std::string n(e.property_name.data, e.property_name.length);
+    if (e.generation < generation || (e.generation == generation && e.transition != previous && n < name)) {
+      fail("the events of a frame are not in the composite order", n);
+    }
+    generation = e.generation;
+    previous = e.transition;
+    name = n;
+    if (ledger.cancelled.count(e.transition)) {
+      fail("an event follows a transitioncancel", n);
+    }
+    if (e.type == GTEXT_CSS_TRANSITION_EVENT_RUN) {
+      if (!ledger.started.insert(e.transition).second) {
+        fail("a transition ran twice", n);
+      }
+    }
+    else if (!ledger.started.count(e.transition)) {
+      fail("an event of a transition that has not run", n);
+    }
+    if (e.type == GTEXT_CSS_TRANSITION_EVENT_CANCEL) {
+      ledger.cancelled.insert(e.transition);
+    }
+  }
+  gtext_css_transition_events_free(ev);
+}
+
 void check_set(const GTEXT_CSS_Transition_Set * set) {
   std::set<std::string> running;   // a longhand by its id, a custom property by its name
   for (size_t i = 0; i < gtext_css_transition_set_running_count(set); i++) {
@@ -134,6 +200,13 @@ void check_set(const GTEXT_CSS_Transition_Set * set) {
       fail("a shortening factor is outside 0..1", std::to_string(t.reversing_shortening_factor));
     }
     running.insert(t.property ? std::to_string(t.property) : std::string(t.custom_name.data, t.custom_name.length));
+    GTEXT_CSS_Transition_Animation an{};
+    if (gtext_css_transition_set_animation_at(context(), set, i, t.start_time_ms, &an) != GTEXT_CSS_OK) {
+      fail("a running transition has no snapshot", "");
+    }
+    if (an.id != t.id || an.transition_property.length != t.property_name.length) {
+      fail("the snapshot of a transition is not the transition", std::to_string(t.id));
+    }
   }
   for (size_t i = 0; i < gtext_css_transition_set_completed_count(set); i++) {
     GTEXT_CSS_Property_Id p = 0;
@@ -162,6 +235,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   }
   std::string base = kBase[data[1] % (sizeof kBase / sizeof *kBase)];
   GTEXT_CSS_Computed_Style * before = nullptr;
+  Ledger ledger;
   double time = 0;
   for (size_t i = 2; i + 2 < size && i < 2 + 3 * 12; i += 3) {
     if (data[i] % 5 == 0) {
@@ -190,6 +264,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       fail("an update failed with a status other than OOM", std::to_string(static_cast<int>(st)));
     }
     check_set(set);
+    if (data[i + 1] % 3 != 0) {
+      take_frame(set, time + (data[i] % 4) * 100.0, fa, oom, 1 + data[i + 1] % 30, ledger);
+    }
     GTEXT_CSS_Computed_Style * shown = nullptr;
     GTEXT_CSS_Computed_Style * again = nullptr;
     if (style_of(decls, set, time, nullptr, &shown) != GTEXT_CSS_OK || style_of(decls, set, time, nullptr, &again) != GTEXT_CSS_OK) {

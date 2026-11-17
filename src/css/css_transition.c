@@ -47,7 +47,24 @@ typedef struct {
   char * timing; size_t lt;   ///< the matching timing function, serialized
   double start_time, end_time, rsf;
   bool allow_discrete;
+  char * pname; size_t lpn;   ///< the expanded transition property name (owned)
+  uint64_t id, generation;
+  double delay;               ///< the start delay of the effect: start time minus the time of the style change event
+  GTEXT_CSS_Transition_Phase phase;   ///< the phase the last frame left it in (idle until a frame sees it)
+  bool ready;                 ///< a frame has seen it ("the animation is ready")
 } tr_t;
+
+/// A transition that left the running set and has an event the next frame owes: a transitioncancel (cancelled after a frame saw it begin and before it ended), or the events up to transitionend
+/// (completed before a frame saw it end).
+typedef struct {
+  char * pname; size_t lpn;
+  GTEXT_CSS_Property_Id prop;
+  uint64_t id, generation;
+  double start_time, end_time, delay;
+  double elapsed;             ///< a cancellation: the active time at the moment, in ms
+  GTEXT_CSS_Transition_Phase phase;   ///< the phase the last frame saw it in
+  bool cancelled;
+} gone_t;
 
 typedef struct {
   GTEXT_CSS_Property_Id prop;
@@ -61,7 +78,11 @@ struct GTEXT_CSS_Transition_Set {
   size_t nrun, caprun;
   done_t * done;
   size_t ndone, capdone;
+  gone_t * gone;
+  size_t ngone, capgone;
   uint64_t version;
+  uint64_t next_id;       ///< the last transition id given
+  uint64_t generation;    ///< the "current transition generation" of this element: one for each style change event that changed the set
 };
 
 static char * dupn(const GTEXT_Allocator * a, const char * s, size_t n) {
@@ -77,6 +98,7 @@ static char * dupn(const GTEXT_Allocator * a, const char * s, size_t n) {
 
 static void tr_free(const GTEXT_Allocator * a, tr_t * t) {
   gtext_allocator_free((GTEXT_Allocator *)a, t->cname);
+  gtext_allocator_free((GTEXT_Allocator *)a, t->pname);
   gtext_allocator_free((GTEXT_Allocator *)a, t->start);
   gtext_allocator_free((GTEXT_Allocator *)a, t->end);
   gtext_allocator_free((GTEXT_Allocator *)a, t->rasv);
@@ -90,7 +112,18 @@ static void done_free(const GTEXT_Allocator * a, done_t * d) {
   memset(d, 0, sizeof *d);
 }
 
+static void gone_free(const GTEXT_Allocator * a, gone_t * g) {
+  gtext_allocator_free((GTEXT_Allocator *)a, g->pname);
+  memset(g, 0, sizeof *g);
+}
+
 static void contents_free(GTEXT_CSS_Transition_Set * s) {
+  for (size_t i = 0; i < s->ngone; i++) {
+    gone_free(&s->alloc, &s->gone[i]);
+  }
+  gtext_allocator_free(&s->alloc, s->gone);
+  s->gone = NULL;
+  s->ngone = s->capgone = 0;
   for (size_t i = 0; i < s->nrun; i++) {
     tr_free(&s->alloc, &s->run[i]);
   }
@@ -129,7 +162,7 @@ void gtext_css_transition_set_free(GTEXT_CSS_Transition_Set * set) {
 }
 
 void gtext_css_transition_set_clear(GTEXT_CSS_Transition_Set * set) {
-  if (set && (set->nrun || set->ndone)) {
+  if (set && (set->nrun || set->ndone || set->ngone)) {
     contents_free(set);
     set->version++;
   }
@@ -158,6 +191,10 @@ bool gtext_css_transition_set_running_at(const GTEXT_CSS_Transition_Set * set, s
   out->reversing_shortening_factor = t->rsf;
   out->timing_function = (GTEXT_CSS_String){t->timing, t->lt};
   out->allow_discrete = t->allow_discrete;
+  out->id = t->id;
+  out->generation = t->generation;
+  out->property_name = (GTEXT_CSS_String){t->pname, t->lpn};
+  out->delay_ms = t->delay;
   return true;
 }
 
@@ -189,6 +226,25 @@ static GTEXT_CSS_Status set_copy(const GTEXT_CSS_Transition_Set * src, GTEXT_CSS
     return st;
   }
   c->version = src->version;
+  c->next_id = src->next_id;
+  c->generation = src->generation;
+  if (src->ngone) {
+    c->gone = gtext_allocator_calloc(&c->alloc, src->ngone, sizeof *c->gone);
+    if (!c->gone) {
+      gtext_css_transition_set_free(c);
+      return GTEXT_CSS_E_OOM;
+    }
+    c->capgone = src->ngone;
+    for (size_t i = 0; i < src->ngone; i++) {
+      c->gone[i] = src->gone[i];
+      c->gone[i].pname = dupn(&c->alloc, src->gone[i].pname, src->gone[i].lpn);
+      c->ngone = i + 1;
+      if (!c->gone[i].pname) {
+        gtext_css_transition_set_free(c);
+        return GTEXT_CSS_E_OOM;
+      }
+    }
+  }
   if (src->nrun) {
     c->run = gtext_allocator_calloc(&c->alloc, src->nrun, sizeof *c->run);
     if (!c->run) {
@@ -214,8 +270,9 @@ static GTEXT_CSS_Status set_copy(const GTEXT_CSS_Transition_Set * src, GTEXT_CSS
     b->end = dupn(&c->alloc, a->end, a->le);
     b->rasv = dupn(&c->alloc, a->rasv, a->lr);
     b->timing = dupn(&c->alloc, a->timing, a->lt);
+    b->pname = dupn(&c->alloc, a->pname, a->lpn);
     c->nrun = i + 1;
-    if ((a->lcn && !b->cname) || !b->start || !b->end || !b->rasv || !b->timing) {
+    if ((a->lcn && !b->cname) || !b->start || !b->end || !b->rasv || !b->timing || !b->pname) {
       gtext_css_transition_set_free(c);
       return GTEXT_CSS_E_OOM;
     }
@@ -245,9 +302,15 @@ static void set_take(GTEXT_CSS_Transition_Set * dst, GTEXT_CSS_Transition_Set * 
   dst->done = src->done;
   dst->ndone = src->ndone;
   dst->capdone = src->capdone;
+  dst->gone = src->gone;
+  dst->ngone = src->ngone;
+  dst->capgone = src->capgone;
+  dst->next_id = src->next_id;
+  dst->generation = src->generation;
   src->run = NULL;
   src->done = NULL;
-  src->nrun = src->caprun = src->ndone = src->capdone = 0;
+  src->gone = NULL;
+  src->nrun = src->caprun = src->ndone = src->capdone = src->ngone = src->capgone = 0;
 }
 
 static GTEXT_CSS_Status run_push(GTEXT_CSS_Transition_Set * s, const tr_t * t) {
@@ -293,6 +356,69 @@ static void done_remove(GTEXT_CSS_Transition_Set * s, size_t i) {
   done_free(&s->alloc, &s->done[i]);
   memmove(&s->done[i], &s->done[i + 1], (s->ndone - i - 1) * sizeof *s->done);
   s->ndone--;
+}
+
+/// The phase of the effect of a transition at a time (Web Animations, "Animation effect phases and states"; the effect has no end delay, a fill of backwards, one iteration and a forwards direction):
+/// before while the time is before the start time, after from the end time (an effect with no active duration is never active), active between.
+static GTEXT_CSS_Transition_Phase phase_at(double start_time, double end_time, double time_ms) {
+  if (time_ms < start_time) {
+    return GTEXT_CSS_TRANSITION_PHASE_BEFORE;
+  }
+  if (time_ms >= end_time) {
+    return GTEXT_CSS_TRANSITION_PHASE_AFTER;
+  }
+  return GTEXT_CSS_TRANSITION_PHASE_ACTIVE;
+}
+
+static double clamp_range(double v, double lo, double hi) {
+  return v < lo ? lo : (v > hi ? hi : v);
+}
+
+/// Room for `more` entries that left the running set (so that moving one cannot fail).
+static GTEXT_CSS_Status gone_reserve(GTEXT_CSS_Transition_Set * s, size_t more) {
+  if (s->ngone + more <= s->capgone) {
+    return GTEXT_CSS_OK;
+  }
+  size_t cap = s->capgone ? s->capgone : 4;
+  while (cap < s->ngone + more) {
+    cap *= 2;
+  }
+  gone_t * bigger = gtext_allocator_realloc(&s->alloc, s->gone, cap * sizeof *bigger);
+  if (!bigger) {
+    return GTEXT_CSS_E_OOM;
+  }
+  s->gone = bigger;
+  s->capgone = cap;
+  return GTEXT_CSS_OK;
+}
+
+/// Running transition `i` leaves the set at a time, cancelled or completed, and is removed. If a frame has seen it in a phase that owes an event (Transitions 2, "Event dispatch": a cancelled
+/// transition that is not idle and not after owes a transitioncancel, with "the active time of the animation at the moment it was canceled calculated using a fill mode of both"; a completed one
+/// that is not yet after owes the events up to transitionend) the entry moves to the list of what the next frame reports. Needs room in `gone` for one more (gone_reserve()) when it can fail.
+static GTEXT_CSS_Status run_leave(GTEXT_CSS_Transition_Set * s, size_t i, double time_ms, bool cancelled) {
+  tr_t * t = &s->run[i];
+  const bool owes = cancelled ? (t->phase != GTEXT_CSS_TRANSITION_PHASE_IDLE && t->phase != GTEXT_CSS_TRANSITION_PHASE_AFTER) : t->phase != GTEXT_CSS_TRANSITION_PHASE_AFTER;
+  if (owes) {
+    GTEXT_CSS_Status st = gone_reserve(s, 1);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+    gone_t * g = &s->gone[s->ngone++];
+    g->pname = t->pname;
+    g->lpn = t->lpn;
+    t->pname = NULL;
+    g->prop = t->prop;
+    g->id = t->id;
+    g->generation = t->generation;
+    g->start_time = t->start_time;
+    g->end_time = t->end_time;
+    g->delay = t->delay;
+    g->phase = t->phase;
+    g->cancelled = cancelled;
+    g->elapsed = clamp_range(time_ms - t->start_time, 0, t->end_time - t->start_time);
+  }
+  run_remove(s, i);
+  return GTEXT_CSS_OK;
 }
 
 static bool same(const char * a, size_t al, const char * b, size_t bl) {
@@ -696,10 +822,26 @@ static GTEXT_CSS_Status transitionable(const GTEXT_CSS_Compute_Context * cc, con
 }
 
 /// One transition: started from `start` (a copy is made) to `end`, with the matching timing item.
-static GTEXT_CSS_Status make_tr(GTEXT_CSS_Transition_Set * w, pkey key, const char * start, size_t ls, const char * end, size_t le, const char * rasv, size_t lr,
-    const char * timing, size_t lt, double start_time, double end_time, double rsf, bool allow_discrete) {
+static GTEXT_CSS_Status make_tr(GTEXT_CSS_Transition_Set * w, const GTEXT_CSS_Registry * reg, pkey key, const char * start, size_t ls, const char * end, size_t le, const char * rasv,
+    size_t lr, const char * timing, size_t lt, double event_time, double start_time, double end_time, double rsf, bool allow_discrete) {
   tr_t t;
   memset(&t, 0, sizeof t);
+  const char * pname = key.name;
+  size_t lpn = key.nlen;
+  if (key.id) {
+    GTEXT_CSS_Property_Info pi;
+    if (!gtext_css_registry_property_info(reg, key.id, &pi)) {
+      return GTEXT_CSS_E_INVALID;
+    }
+    pname = pi.name;
+    lpn = pi.name_length;
+  }
+  t.pname = dupn(&w->alloc, pname, lpn);
+  t.lpn = lpn;
+  t.id = ++w->next_id;
+  t.generation = w->generation;
+  t.delay = start_time - event_time;
+  t.phase = GTEXT_CSS_TRANSITION_PHASE_IDLE;
   t.prop = key.id;
   t.cname = key.id ? NULL : dupn(&w->alloc, key.name, key.nlen);
   t.lcn = key.id ? 0 : key.nlen;
@@ -716,7 +858,7 @@ static GTEXT_CSS_Status make_tr(GTEXT_CSS_Transition_Set * w, pkey key, const ch
   t.rsf = rsf;
   t.allow_discrete = allow_discrete;
   GTEXT_CSS_Status st = GTEXT_CSS_OK;
-  if ((!key.id && !t.cname) || !t.start || !t.end || !t.rasv || !t.timing) {
+  if ((!key.id && !t.cname) || !t.start || !t.end || !t.rasv || !t.timing || !t.pname) {
     st = GTEXT_CSS_E_OOM;
   }
   else {
@@ -827,7 +969,7 @@ static GTEXT_CSS_Status step_key(upd_t * u, pkey k, long m) {
       di = (size_t)-1;
       res->forgotten++;
     }
-    st = make_tr(w, k, bt, bl, at, atl, bt, bl, timing, lt, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);
+    st = make_tr(w, reg, k, bt, bl, at, atl, bt, bl, timing, lt, time_ms, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);
     if (st == GTEXT_CSS_OK) {
       res->started++;
       started_here = true;
@@ -843,11 +985,11 @@ static GTEXT_CSS_Status step_key(upd_t * u, pkey k, long m) {
      running transition or remove the completed transition from the set of completed transitions." */
   if (st == GTEXT_CSS_OK && m < 0) {
     if (ri != (size_t)-1) {
-      run_remove(w, ri);
+      st = run_leave(w, ri, time_ms, true);
       ri = (size_t)-1;
       res->cancelled++;
     }
-    if (di != (size_t)-1) {
+    if (st == GTEXT_CSS_OK && di != (size_t)-1) {
       done_remove(w, di);
       res->forgotten++;
     }
@@ -864,7 +1006,7 @@ static GTEXT_CSS_Status step_key(upd_t * u, pkey k, long m) {
       if (!cur_ok || combined <= 0) {
         /* "if the current value of the property in the running transition is equal to the value of the property in the after-change style, or if these two values are not transitionable,
            then implementations must cancel the running transition", and the same "if the combined duration is less than or equal to 0s" */
-        run_remove(w, ri);
+        st = run_leave(w, ri, time_ms, true);
         res->cancelled++;
       }
       else if (same(old.rasv, old.lr, at, atl)) {
@@ -893,11 +1035,11 @@ static GTEXT_CSS_Status step_key(upd_t * u, pkey k, long m) {
           }
           else {
             const size_t lr = old.le;
-            st = make_tr(w, k, cur, cl, at, atl, rasv, lr, timing, lt, start_time, start_time + d0 * rsf, rsf, allow_discrete);
+            st = make_tr(w, reg, k, cur, cl, at, atl, rasv, lr, timing, lt, time_ms, start_time, start_time + d0 * rsf, rsf, allow_discrete);
             gtext_allocator_free(al, rasv);
             if (st == GTEXT_CSS_OK) {
               /* the new entry is last; the old one is removed (its index has not moved) */
-              run_remove(w, ri);
+              st = run_leave(w, ri, time_ms, true);
               res->cancelled++;
               res->started++;
             }
@@ -905,9 +1047,9 @@ static GTEXT_CSS_Status step_key(upd_t * u, pkey k, long m) {
         }
       }
       else {
-        st = make_tr(w, k, cur, cl, at, atl, cur, cl, timing, lt, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);
+        st = make_tr(w, reg, k, cur, cl, at, atl, cur, cl, timing, lt, time_ms, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);
         if (st == GTEXT_CSS_OK) {
-          run_remove(w, ri);
+          st = run_leave(w, ri, time_ms, true);
           res->cancelled++;
           res->started++;
         }
@@ -943,6 +1085,8 @@ GTEXT_CSS_Status gtext_css_transitions_update(const GTEXT_CSS_Compute_Context * 
     return st;
   }
   const GTEXT_Allocator * al = &w->alloc;
+  /* "Associated with each top-level browsing context is a current transition generation that is incremented on each style change event" (Transitions 2): one for each of this element's */
+  w->generation++;
   /* "Running transitions complete at a time that is equal to or after their end time, but prior to the first style change event whose time is equal to or after their end time. When a
      transition completes, implementations must move all transitions that complete at that time from the set of running transitions to the set of completed transitions" */
   for (size_t i = 0; i < w->nrun && st == GTEXT_CSS_OK;) {
@@ -964,7 +1108,10 @@ GTEXT_CSS_Status gtext_css_transitions_update(const GTEXT_CSS_Compute_Context * 
         gtext_allocator_free(al, cname);
         break;
       }
-      run_remove(w, i);
+      st = run_leave(w, i, time_ms, false);
+      if (st != GTEXT_CSS_OK) {
+        break;
+      }
       res->completed++;
     }
     else {
@@ -1012,5 +1159,328 @@ GTEXT_CSS_Status gtext_css_transitions_update(const GTEXT_CSS_Compute_Context * 
     set->version++;
   }
   gtext_css_transition_set_free(w);
+  return GTEXT_CSS_OK;
+}
+
+/* ---- the events ----------------------------------------------------------------------------------------------------------------------------------- */
+
+typedef struct {
+  GTEXT_CSS_Transition_Event_Type type;
+  uint64_t transition, generation;
+  GTEXT_CSS_Property_Id property;
+  size_t name_off, name_len;
+  double elapsed_ms;
+} ev_t;
+
+struct GTEXT_CSS_Transition_Events {
+  GTEXT_Allocator alloc;
+  ev_t * ev;
+  size_t n, cap;
+  char * pool;
+  size_t npool, cappool;
+};
+
+GTEXT_CSS_Status gtext_css_transition_events_new(const GTEXT_Allocator * allocator, GTEXT_CSS_Transition_Events ** out) {
+  if (!out) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  *out = NULL;
+  GTEXT_Allocator a = allocator ? *allocator : *gtext_allocator_default();
+  GTEXT_CSS_Transition_Events * e = gtext_allocator_calloc(&a, 1, sizeof *e);
+  if (!e) {
+    return GTEXT_CSS_E_OOM;
+  }
+  e->alloc = a;
+  *out = e;
+  return GTEXT_CSS_OK;
+}
+
+void gtext_css_transition_events_free(GTEXT_CSS_Transition_Events * events) {
+  if (!events) {
+    return;
+  }
+  GTEXT_Allocator a = events->alloc;
+  gtext_allocator_free(&a, events->ev);
+  gtext_allocator_free(&a, events->pool);
+  gtext_allocator_free(&a, events);
+}
+
+size_t gtext_css_transition_events_count(const GTEXT_CSS_Transition_Events * events) {
+  return events ? events->n : 0;
+}
+
+bool gtext_css_transition_events_at(const GTEXT_CSS_Transition_Events * events, size_t index, GTEXT_CSS_Transition_Event * out) {
+  if (!events || !out || index >= events->n) {
+    return false;
+  }
+  const ev_t * e = &events->ev[index];
+  out->type = e->type;
+  out->transition = e->transition;
+  out->generation = e->generation;
+  out->property = e->property;
+  out->property_name = (GTEXT_CSS_String){events->pool + e->name_off, e->name_len};
+  out->elapsed_time = e->elapsed_ms / 1000.0;
+  return true;
+}
+
+GTEXT_CSS_Status gtext_css_transition_events_reserve(GTEXT_CSS_Transition_Events * events, size_t more_events, size_t more_name_bytes) {
+  if (!events) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  if (more_events > SIZE_MAX / sizeof(ev_t) - events->n || more_name_bytes > SIZE_MAX / 2 - events->npool) {
+    return GTEXT_CSS_E_OOM;
+  }
+  if (events->n + more_events > events->cap) {
+    const size_t cap = events->n + more_events;
+    ev_t * bigger = gtext_allocator_realloc(&events->alloc, events->ev, cap * sizeof *bigger);
+    if (!bigger) {
+      return GTEXT_CSS_E_OOM;
+    }
+    events->ev = bigger;
+    events->cap = cap;
+  }
+  if (events->npool + more_name_bytes > events->cappool) {
+    const size_t cap = events->npool + more_name_bytes;
+    char * bigger = gtext_allocator_realloc(&events->alloc, events->pool, cap ? cap : 1);
+    if (!bigger) {
+      return GTEXT_CSS_E_OOM;
+    }
+    events->pool = bigger;
+    events->cappool = cap;
+  }
+  return GTEXT_CSS_OK;
+}
+
+void gtext_css_transition_set_frame_bound(const GTEXT_CSS_Transition_Set * set, size_t * events, size_t * name_bytes) {
+  size_t ne = 0, nb = 0;
+  if (set) {
+    ne = 3 * (set->nrun + set->ngone);
+    for (size_t i = 0; i < set->nrun; i++) {
+      nb += set->run[i].lpn;
+    }
+    for (size_t i = 0; i < set->ngone; i++) {
+      nb += set->gone[i].lpn;
+    }
+  }
+  if (events) {
+    *events = ne;
+  }
+  if (name_bytes) {
+    *name_bytes = nb;
+  }
+}
+
+/// The events of one transition moving from one phase to another (Transitions 2, "Event dispatch", the table), with the elapsed times in ms: "interval start" is `max(min(-start delay, active
+/// duration), 0)` and "interval end" is `max(min(associated effect end - start delay, active duration), 0)`. Returns how many (0 to 3).
+static size_t phase_events(GTEXT_CSS_Transition_Phase from, GTEXT_CSS_Transition_Phase to, double delay, double duration, GTEXT_CSS_Transition_Event_Type type[3], double elapsed[3]) {
+  const double s0 = -delay < duration ? -delay : duration;
+  const double istart = s0 <= 0 ? 0.0 : s0;
+  const double effect_end = delay + duration;
+  const double e0 = effect_end - delay < duration ? effect_end - delay : duration;
+  const double iend = e0 <= 0 ? 0.0 : e0;
+  const GTEXT_CSS_Transition_Event_Type R = GTEXT_CSS_TRANSITION_EVENT_RUN, S = GTEXT_CSS_TRANSITION_EVENT_START, E = GTEXT_CSS_TRANSITION_EVENT_END;
+  size_t n = 0;
+#define EV(t, ms) (type[n] = (t), elapsed[n] = (ms), n++)
+  if (from == to) {
+    return 0;
+  }
+  switch (from) {
+    case GTEXT_CSS_TRANSITION_PHASE_IDLE:
+      EV(R, istart);
+      if (to == GTEXT_CSS_TRANSITION_PHASE_ACTIVE || to == GTEXT_CSS_TRANSITION_PHASE_AFTER) {
+        EV(S, istart);
+      }
+      if (to == GTEXT_CSS_TRANSITION_PHASE_AFTER) {
+        EV(E, iend);
+      }
+      break;
+    case GTEXT_CSS_TRANSITION_PHASE_BEFORE:
+      EV(S, istart);
+      if (to == GTEXT_CSS_TRANSITION_PHASE_AFTER) {
+        EV(E, iend);
+      }
+      break;
+    case GTEXT_CSS_TRANSITION_PHASE_ACTIVE:
+      EV(E, to == GTEXT_CSS_TRANSITION_PHASE_AFTER ? iend : istart);
+      break;
+    case GTEXT_CSS_TRANSITION_PHASE_AFTER:
+      EV(S, iend);
+      if (to == GTEXT_CSS_TRANSITION_PHASE_BEFORE) {
+        EV(E, istart);
+      }
+      break;
+  }
+#undef EV
+  return n;
+}
+
+/// Append the events of one transition (the room is reserved): the name once, the events sharing it.
+static void events_add(GTEXT_CSS_Transition_Events * ev, uint64_t id, uint64_t generation, GTEXT_CSS_Property_Id prop, const char * pname, size_t lpn, size_t n,
+    const GTEXT_CSS_Transition_Event_Type * type, const double * elapsed) {
+  if (!n) {
+    return;
+  }
+  const size_t off = ev->npool;
+  if (lpn) {
+    memcpy(ev->pool + off, pname, lpn);
+  }
+  ev->npool += lpn;
+  for (size_t i = 0; i < n; i++) {
+    ev_t * e = &ev->ev[ev->n++];
+    e->type = type[i];
+    e->transition = id;
+    e->generation = generation;
+    e->property = prop;
+    e->name_off = off;
+    e->name_len = lpn;
+    e->elapsed_ms = elapsed[i];
+  }
+}
+
+/// "Within the set of CSS Transitions ... sort A and B in ascending order by the Unicode codepoints that make up the expanded transition property name of each transition" after the transition
+/// generation; the order the events of one transition were appended in is kept (a stable insertion sort of the events of one frame, which are nearly in order already).
+static bool ev_after(const GTEXT_CSS_Transition_Events * l, const ev_t * a, const ev_t * b) {
+  if (a->generation != b->generation) {
+    return a->generation > b->generation;
+  }
+  if (a->transition == b->transition) {
+    return false;
+  }
+  const size_t m = a->name_len < b->name_len ? a->name_len : b->name_len;
+  const int c = m ? memcmp(l->pool + a->name_off, l->pool + b->name_off, m) : 0;
+  if (c) {
+    return c > 0;
+  }
+  if (a->name_len != b->name_len) {
+    return a->name_len > b->name_len;
+  }
+  return a->transition > b->transition;
+}
+
+static void ev_sort(GTEXT_CSS_Transition_Events * l, size_t from) {
+  for (size_t i = from + 1; i < l->n; i++) {
+    ev_t x = l->ev[i];
+    size_t j = i;
+    while (j > from && ev_after(l, &l->ev[j - 1], &x)) {
+      l->ev[j] = l->ev[j - 1];
+      j--;
+    }
+    l->ev[j] = x;
+  }
+}
+
+GTEXT_CSS_Status gtext_css_transition_set_frame(GTEXT_CSS_Transition_Set * set, double time_ms, GTEXT_CSS_Transition_Events * events) {
+  if (!set || !events || time_ms != time_ms) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  size_t ne, nb;
+  gtext_css_transition_set_frame_bound(set, &ne, &nb);
+  GTEXT_CSS_Status st = gtext_css_transition_events_reserve(events, ne, nb);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  /* nothing below can fail, so the set is only changed by a frame that is reported whole */
+  const size_t first = events->n;
+  GTEXT_CSS_Transition_Event_Type type[3];
+  double elapsed[3];
+  for (size_t i = 0; i < set->ngone; i++) {
+    gone_t * g = &set->gone[i];
+    const double duration = g->end_time - g->start_time;
+    size_t n;
+    if (g->cancelled) {
+      type[0] = GTEXT_CSS_TRANSITION_EVENT_CANCEL;
+      elapsed[0] = g->elapsed;
+      n = 1;
+    }
+    else {
+      n = phase_events(g->phase, GTEXT_CSS_TRANSITION_PHASE_AFTER, g->delay, duration, type, elapsed);
+    }
+    events_add(events, g->id, g->generation, g->prop, g->pname, g->lpn, n, type, elapsed);
+    gone_free(&set->alloc, g);
+  }
+  set->ngone = 0;
+  for (size_t i = 0; i < set->nrun; i++) {
+    tr_t * t = &set->run[i];
+    const GTEXT_CSS_Transition_Phase to = phase_at(t->start_time, t->end_time, time_ms);
+    const size_t n = phase_events(t->phase, to, t->delay, t->end_time - t->start_time, type, elapsed);
+    events_add(events, t->id, t->generation, t->prop, t->pname, t->lpn, n, type, elapsed);
+    t->phase = to;
+    t->ready = true;
+  }
+  ev_sort(events, first);
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_css_transition_set_cancel_all(GTEXT_CSS_Transition_Set * set, double time_ms) {
+  if (!set || time_ms != time_ms) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  if (!set->nrun && !set->ndone) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Status st = gone_reserve(set, set->nrun);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  while (set->nrun) {
+    st = run_leave(set, set->nrun - 1, time_ms, true);   /* the room is reserved */
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+  }
+  while (set->ndone) {
+    done_remove(set, set->ndone - 1);
+  }
+  set->version++;
+  return GTEXT_CSS_OK;
+}
+
+/* ---- the CSSTransition snapshot ------------------------------------------------------------------------------------------------------------------- */
+
+GTEXT_CSS_Status gtext_css_transition_set_animation_at(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Transition_Set * set, size_t index, double time_ms,
+    GTEXT_CSS_Transition_Animation * out) {
+  if (!context || !set || !out || index >= set->nrun || time_ms != time_ms) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  const tr_t * t = &set->run[index];
+  const double duration = t->end_time - t->start_time;
+  const double event_time = t->start_time - t->delay;
+  memset(out, 0, sizeof *out);
+  out->id = t->id;
+  out->generation = t->generation;
+  out->transition_property = (GTEXT_CSS_String){t->pname, t->lpn};
+  out->pending = !t->ready;
+  out->start_time_resolved = t->ready;
+  out->start_time_ms = event_time;
+  /* "the animation's current time": the time since it started, held at 0 while it is pending */
+  out->current_time_ms = t->ready ? time_ms - event_time : 0;
+  out->local_time_ms = out->current_time_ms;
+  out->delay_ms = t->delay;
+  out->end_delay_ms = 0;
+  out->duration_ms = duration;
+  out->easing = (GTEXT_CSS_String){t->timing, t->lt};
+  out->active_duration_ms = duration;
+  out->end_time_ms = t->delay + duration;
+  out->start_value = (GTEXT_CSS_String){t->start, t->ls};
+  out->end_value = (GTEXT_CSS_String){t->end, t->le};
+  const double local = out->current_time_ms;
+  out->phase = local < t->delay ? GTEXT_CSS_TRANSITION_PHASE_BEFORE : (local >= out->end_time_ms ? GTEXT_CSS_TRANSITION_PHASE_AFTER : GTEXT_CSS_TRANSITION_PHASE_ACTIVE);
+  out->play_state = out->pending || local < out->end_time_ms ? GTEXT_CSS_TRANSITION_PLAY_RUNNING : GTEXT_CSS_TRANSITION_PLAY_FINISHED;
+  /* "the active time" with a fill of backwards ("fill of a new transition", the pinned CSSTransition pages): before the effect it is 0 (the start of the first iteration), after it it is unresolved,
+     so the progress is null */
+  if (out->phase != GTEXT_CSS_TRANSITION_PHASE_AFTER) {
+    double input = 0;
+    if (out->phase == GTEXT_CSS_TRANSITION_PHASE_ACTIVE) {
+      input = (local - t->delay) / duration;
+    }
+    GTEXT_CSS_Easing * easing = NULL;
+    GTEXT_CSS_Status st = css_easing_from_text(gtext_css_compute_context_registry(context), &set->alloc, t->timing, t->lt, &easing);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+    out->progress = gtext_css_easing_output(easing, input, out->phase == GTEXT_CSS_TRANSITION_PHASE_BEFORE);
+    gtext_css_easing_free(easing);
+    out->has_progress = true;
+  }
   return GTEXT_CSS_OK;
 }

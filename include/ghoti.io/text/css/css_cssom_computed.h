@@ -139,8 +139,50 @@ GTEXT_API void gtext_cssom_transition_tracker_set_time(GTEXT_CSSOM_Transition_Tr
  */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_transition_tracker_flush(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element, const char * pseudo, size_t pseudo_length);
 
-/** @brief Forget an element and its pseudo-elements ("If an element is no longer in the document, implementations must cancel any running transitions on it"). @return How many entries went. */
-GTEXT_API size_t gtext_cssom_transition_tracker_forget(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element);
+/**
+ * @brief Forget an element and its pseudo-elements ("If an element is no longer in the document, implementations must cancel any running transitions on it and remove transitions on it from the
+ * completed transitions"). A transition that an animation frame had seen is cancelled as the specification says, and its transitioncancel is reported by the next gtext_cssom_transition_tracker_events().
+ * @param gone Receives how many entries went; may be NULL. @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM (each entry is forgotten whole or not at all: `*gone` says how many were, and the call is made again for the rest).
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_transition_tracker_forget(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element, size_t * gone);
+
+/** @brief The events of one animation frame of a tracker. Opaque; release with gtext_cssom_transition_events_free(). */
+typedef struct GTEXT_CSSOM_Transition_Events GTEXT_CSSOM_Transition_Events;
+
+/**
+ * @struct GTEXT_CSSOM_Transition_Event
+ * @brief An event of a tracker's frame: what to dispatch (css_transition.h) and at what: the element, and with `pseudo_element` the pseudo-element (`TransitionEvent.pseudoElement`: its name with two
+ * colons, as it was first given to gtext_cssom_transition_tracker_flush() with the second colon of the legacy spelling added; empty for the element itself). Valid until the list is freed.
+ */
+typedef struct {
+  const void * element;                     ///< The element (the tree's own handle): "The target for a transition event is the transition's owning element".
+  GTEXT_CSS_String pseudo_element;
+  GTEXT_CSS_Transition_Event event;
+} GTEXT_CSSOM_Transition_Event;
+
+/** @brief How many events. NULL is 0. */
+GTEXT_API size_t gtext_cssom_transition_events_count(const GTEXT_CSSOM_Transition_Events * events);
+
+/** @brief Event `index` in the order to dispatch them. @return false past the end. */
+GTEXT_API bool gtext_cssom_transition_events_at(const GTEXT_CSSOM_Transition_Events * events, size_t index, GTEXT_CSSOM_Transition_Event * out);
+
+/** @brief Release a list of events; NULL is ignored. */
+GTEXT_API void gtext_cssom_transition_events_free(GTEXT_CSSOM_Transition_Events * events);
+
+/**
+ * @brief One animation frame of the tracker at its time (gtext_cssom_transition_tracker_set_time()): the events of every element and pseudo-element, as gtext_css_transition_set_frame() reports them for
+ * each set, and the transitioncancel events of the elements that were forgotten.
+ *
+ * Order: by element (the order the tracker first saw it in; a flush brings the ancestors of an element in before it, and the tree order of a document is not something the library sees, so a caller
+ * that needs it sorts by element), then the pseudo-elements of one element as Transitions 2, "Animation composite order", sorts them (the element, `::marker`, `::before`, any other by the codepoints
+ * of its name, `::after`), then the composite order of the set. A frame does not flush: elements whose style changed since their last style change event have not started their transitions until
+ * gtext_cssom_transition_tracker_flush() is called for them, as in a browser, where the frame follows the style update.
+ *
+ * All or nothing: on a failure no set has moved on and nothing is reported.
+ *
+ * @param out Receives the list (possibly empty), which the caller releases. @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_transition_tracker_events(GTEXT_CSSOM_Transition_Tracker * tracker, GTEXT_CSSOM_Transition_Events ** out);
 
 /** @brief For GTEXT_CSSOM_Layout_Interface::transitions: the set of an element or pseudo-element and the tracker's time. `*set` is NULL for one with no running transition. */
 GTEXT_API GTEXT_CSS_Status gtext_cssom_transition_tracker_lookup(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element, const GTEXT_CSS_Selector_List * pseudo,

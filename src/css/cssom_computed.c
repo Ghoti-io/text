@@ -1287,6 +1287,9 @@ typedef struct {
   size_t key_length;
   GTEXT_CSS_Transition_Set * set;
   GTEXT_CSS_Computed_Style * before; ///< The after-change style of the previous style change event, or NULL before the first.
+  char * display;                    ///< `TransitionEvent.pseudoElement`: the pseudo-element's name with its two colons as first flushed, "" for the element.
+  size_t display_length;
+  uint64_t element_seq;              ///< The order the tracker first saw the entry's element in (the entries of one element share it).
 } tracker_entry;
 
 struct GTEXT_CSSOM_Transition_Tracker {
@@ -1294,6 +1297,9 @@ struct GTEXT_CSSOM_Transition_Tracker {
   GTEXT_Allocator alloc;
   tracker_entry * entries;
   size_t count, cap;
+  tracker_entry * retired;           ///< Entries of elements that were forgotten with transitions cancelled, kept until their transitioncancel events are reported.
+  size_t nretired, capretired;
+  uint64_t seq;
   double time_ms;
   uint64_t version;
 };
@@ -1318,6 +1324,7 @@ static void entry_release(GTEXT_CSSOM_Transition_Tracker * t, tracker_entry * e)
   gtext_css_transition_set_free(e->set);
   gtext_css_computed_free(e->before);
   gtext_allocator_free(&t->alloc, e->key);
+  gtext_allocator_free(&t->alloc, e->display);
   memset(e, 0, sizeof *e);
 }
 
@@ -1328,7 +1335,11 @@ void gtext_cssom_transition_tracker_free(GTEXT_CSSOM_Transition_Tracker * tracke
   for (size_t i = 0; i < tracker->count; i++) {
     entry_release(tracker, &tracker->entries[i]);
   }
+  for (size_t i = 0; i < tracker->nretired; i++) {
+    entry_release(tracker, &tracker->retired[i]);
+  }
   GTEXT_Allocator a = tracker->alloc;
+  gtext_allocator_free(&a, tracker->retired);
   gtext_allocator_free(&a, tracker->entries);
   gtext_allocator_free(&a, tracker);
 }
@@ -1354,7 +1365,24 @@ static tracker_entry * entry_find(GTEXT_CSSOM_Transition_Tracker * t, const void
   return NULL;
 }
 
-static GTEXT_CSS_Status entry_get(GTEXT_CSSOM_Transition_Tracker * t, const void * element, const char * key, size_t key_length, tracker_entry ** out) {
+/// The `pseudoElement` of an event: the pseudo-element's name "beginning with two colons"; the legacy single-colon spelling gets its second.
+static char * display_name(const GTEXT_Allocator * a, const char * pseudo, size_t length, size_t * out_length) {
+  const size_t extra = length == 0 ? 0 : (pseudo[0] == ':' ? (length > 1 && pseudo[1] == ':' ? 0 : 1) : 2);
+  char * d = gtext_allocator_malloc((GTEXT_Allocator *)a, length + extra + 1);
+  if (d) {
+    for (size_t i = 0; i < extra; i++) {
+      d[i] = ':';
+    }
+    if (length) {
+      memcpy(d + extra, pseudo, length);
+    }
+    d[length + extra] = '\0';
+    *out_length = length + extra;
+  }
+  return d;
+}
+
+static GTEXT_CSS_Status entry_get(GTEXT_CSSOM_Transition_Tracker * t, const void * element, const char * key, size_t key_length, const char * pseudo, size_t pseudo_length, tracker_entry ** out) {
   tracker_entry * e = entry_find(t, element, key, key_length);
   if (e) {
     *out = e;
@@ -1381,9 +1409,21 @@ static GTEXT_CSS_Status entry_get(GTEXT_CSSOM_Transition_Tracker * t, const void
   }
   fresh.key[key_length] = '\0';
   fresh.key_length = key_length;
-  const GTEXT_CSS_Status st = gtext_css_transition_set_new(&t->alloc, &fresh.set);
+  fresh.element_seq = 0;
+  for (size_t i = 0; i < t->count; i++) {
+    if (t->entries[i].element == element) {
+      fresh.element_seq = t->entries[i].element_seq;
+      break;
+    }
+  }
+  if (!fresh.element_seq) {
+    fresh.element_seq = ++t->seq;
+  }
+  fresh.display = display_name(&t->alloc, pseudo, pseudo_length, &fresh.display_length);
+  GTEXT_CSS_Status st = fresh.display ? gtext_css_transition_set_new(&t->alloc, &fresh.set) : GTEXT_CSS_E_OOM;
   if (st != GTEXT_CSS_OK) {
     gtext_allocator_free(&t->alloc, fresh.key);
+    gtext_allocator_free(&t->alloc, fresh.display);
     return st;
   }
   t->entries[t->count] = fresh;
@@ -1391,26 +1431,80 @@ static GTEXT_CSS_Status entry_get(GTEXT_CSSOM_Transition_Tracker * t, const void
   return GTEXT_CSS_OK;
 }
 
-size_t gtext_cssom_transition_tracker_forget(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element) {
-  size_t gone = 0;
-  if (!tracker) {
-    return 0;
+/// Move an entry whose transitions were cancelled to the retired ones when the next frame owes events for them, else release it.
+static GTEXT_CSS_Status retire_or_release(GTEXT_CSSOM_Transition_Tracker * t, tracker_entry * e) {
+  size_t ne, nb;
+  gtext_css_transition_set_frame_bound(e->set, &ne, &nb);
+  if (!ne) {
+    entry_release(t, e);
+    return GTEXT_CSS_OK;
   }
-  for (size_t i = 0; i < tracker->count;) {
-    if (tracker->entries[i].element == element) {
-      entry_release(tracker, &tracker->entries[i]);
-      memmove(&tracker->entries[i], &tracker->entries[i + 1], (tracker->count - i - 1) * sizeof *tracker->entries);
-      tracker->count--;
-      gone++;
+  if (t->nretired == t->capretired) {
+    const size_t cap = t->capretired ? t->capretired * 2 : 4;
+    tracker_entry * bigger = gtext_allocator_realloc(&t->alloc, t->retired, cap * sizeof *bigger);
+    if (!bigger) {
+      return GTEXT_CSS_E_OOM;
     }
-    else {
-      i++;
-    }
+    t->retired = bigger;
+    t->capretired = cap;
   }
+  gtext_css_computed_free(e->before);
+  e->before = NULL;
+  t->retired[t->nretired++] = *e;
+  memset(e, 0, sizeof *e);
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_cssom_transition_tracker_forget(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element, size_t * gone) {
   if (gone) {
+    *gone = 0;
+  }
+  if (!tracker || !element) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  /* "If an element is no longer in the document, implementations must cancel any running transitions on it": the cancellations are the element's events, which the next frame reports. */
+  size_t room = 0;
+  for (size_t i = 0; i < tracker->count; i++) {
+    if (tracker->entries[i].element == element) {
+      room++;
+    }
+  }
+  if (tracker->nretired + room > tracker->capretired) {
+    size_t cap = tracker->capretired ? tracker->capretired : 4;
+    while (cap < tracker->nretired + room) {
+      cap *= 2;
+    }
+    tracker_entry * bigger = gtext_allocator_realloc(&tracker->alloc, tracker->retired, cap * sizeof *bigger);
+    if (!bigger) {
+      return GTEXT_CSS_E_OOM;
+    }
+    tracker->retired = bigger;
+    tracker->capretired = cap;
+  }
+  /* each entry is forgotten whole (cancelled, then moved or released, which cannot fail now that the room is reserved), so a failure of a later one leaves the earlier ones forgotten and the tracker consistent */
+  size_t n = 0;
+  GTEXT_CSS_Status st = GTEXT_CSS_OK;
+  for (size_t i = 0; i < tracker->count && st == GTEXT_CSS_OK;) {
+    if (tracker->entries[i].element != element) {
+      i++;
+      continue;
+    }
+    st = gtext_css_transition_set_cancel_all(tracker->entries[i].set, tracker->time_ms);
+    if (st != GTEXT_CSS_OK) {
+      break;
+    }
+    (void)retire_or_release(tracker, &tracker->entries[i]);   /* the room is reserved */
+    memmove(&tracker->entries[i], &tracker->entries[i + 1], (tracker->count - i - 1) * sizeof *tracker->entries);
+    tracker->count--;
+    n++;
+  }
+  if (n) {
     tracker->version++;
   }
-  return gone;
+  if (gone) {
+    *gone = n;
+  }
+  return st;
 }
 
 /// The flow that says which button of a scroll container `::scroll-button(up)` is: the one of the originating element as of the last style change event the tracker saw for it (the initial flow
@@ -1469,10 +1563,39 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_lookup(GTEXT_CSSOM_Transition_Tr
   return GTEXT_CSS_OK;
 }
 
+/// Whether a style has `display: none` (the element has no box, and neither has anything below it: "being rendered", Transitions 2).
+static bool style_is_display_none(css_core * core, const GTEXT_CSS_Computed_Style * style) {
+  const GTEXT_CSS_Property_Id display = gtext_css_registry_find_property(core->registry, "display", 7);
+  const GTEXT_CSS_Value * root = display ? gtext_css_computed_root(style, display) : NULL;
+  return root && root->kind == GTEXT_CSS_VAL_KEYWORD && root->text.length == 4 && memcmp(root->text.data, "none", 4) == 0;
+}
+
+/// An element (key NULL) or one pseudo-element that is not being rendered: its running transitions are cancelled, its completed ones removed, and it has no before-change style for the next event.
+static GTEXT_CSS_Status tracker_unrender(GTEXT_CSSOM_Transition_Tracker * t, const void * element, const char * key, size_t key_length) {
+  for (size_t i = 0; i < t->count; i++) {
+    tracker_entry * e = &t->entries[i];
+    if (e->element != element || (key && !(e->key_length == key_length && (key_length == 0 || memcmp(e->key, key, key_length) == 0)))) {
+      continue;
+    }
+    const uint64_t was = gtext_css_transition_set_version(e->set);
+    GTEXT_CSS_Status st = gtext_css_transition_set_cancel_all(e->set, t->time_ms);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+    if (gtext_css_transition_set_version(e->set) != was) {
+      t->version++;
+    }
+    gtext_css_computed_free(e->before);
+    e->before = NULL;
+  }
+  return GTEXT_CSS_OK;
+}
+
 /// One style change event of one element or pseudo-element: update its set against the style of the previous event, and keep this one.
-static GTEXT_CSS_Status tracker_step(GTEXT_CSSOM_Transition_Tracker * t, const void * element, const char * key, size_t key_length, GTEXT_CSS_Computed_Style * after) {
+static GTEXT_CSS_Status tracker_step(GTEXT_CSSOM_Transition_Tracker * t, const void * element, const char * key, size_t key_length, const char * pseudo, size_t pseudo_length,
+    GTEXT_CSS_Computed_Style * after) {
   tracker_entry * e = NULL;
-  GTEXT_CSS_Status st = entry_get(t, element, key, key_length, &e);
+  GTEXT_CSS_Status st = entry_get(t, element, key, key_length, pseudo, pseudo_length, &e);
   if (st != GTEXT_CSS_OK) {
     return st;
   }
@@ -1525,22 +1648,34 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_flush(GTEXT_CSSOM_Transition_Tra
   }
   core->in_callback--;
   GTEXT_CSS_Flow element_flow = {GTEXT_CSS_WRITING_MODE_HORIZONTAL_TB, GTEXT_CSS_DIRECTION_LTR, GTEXT_CSS_TEXT_ORIENTATION_MIXED};   /* the originating element's, for a pseudo-element's key */
+  bool hidden = false;   /* an element with `display: none` has no box, and neither has anything below it */
   for (size_t i = n; st == GTEXT_CSS_OK && i-- > 0;) {
     /* each element's own after-change style: the chain above it is computed again, which keeps this call free of any cache the shown styles use */
     GTEXT_CSS_Computed_Style * after = NULL;
-    st = gtext_cssom_document_after_change_style(tracker->document, chain[i], NULL, 0, &after);
-    if (st == GTEXT_CSS_OK && after) {
-      if (i == 0) {
-        element_flow = gtext_css_computed_flow(after);
-      }
-      st = tracker_step(tracker, chain[i], "", 0, after);
+    st = hidden ? GTEXT_CSS_OK : gtext_cssom_document_after_change_style(tracker->document, chain[i], NULL, 0, &after);
+    if (st == GTEXT_CSS_OK && after && i == 0) {
+      element_flow = gtext_css_computed_flow(after);
+    }
+    if (st == GTEXT_CSS_OK && after && !style_is_display_none(core, after)) {
+      st = tracker_step(tracker, chain[i], "", 0, "", 0, after);
+    }
+    else if (st == GTEXT_CSS_OK) {
+      /* an element that is not rendered: "Transitions and animations should not occur on display:none elements" (the pinned `display-none-no-animations.html`), and "implementations must also
+         cancel any running transitions on elements that are no longer being rendered and remove transitions on them from the set of completed transitions" (Transitions 2); with no
+         before-change style, since it has none when it is rendered again */
+      hidden = true;
+      st = tracker_unrender(tracker, chain[i], NULL, 0);
     }
     gtext_css_computed_free(after);
   }
   gtext_allocator_free(&tracker->alloc, (void *)chain);
   if (st == GTEXT_CSS_OK && pseudo && pseudo_length) {
     GTEXT_CSS_Computed_Style * after = NULL;
-    st = gtext_cssom_document_after_change_style(tracker->document, element, pseudo, pseudo_length, &after);
+    st = hidden ? GTEXT_CSS_OK : gtext_cssom_document_after_change_style(tracker->document, element, pseudo, pseudo_length, &after);
+    if (st == GTEXT_CSS_OK && after && style_is_display_none(core, after)) {
+      gtext_css_computed_free(after);
+      after = NULL;
+    }
     if (st == GTEXT_CSS_OK && after) {
       GTEXT_CSS_Selector_List * list = NULL;
       bool null_obj = false;
@@ -1550,13 +1685,189 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_flush(GTEXT_CSSOM_Transition_Tra
         size_t kl;
         char buf[32];
         pseudo_key(list, &element_flow, buf, sizeof buf, &key, &kl);
-        st = tracker_step(tracker, element, key, kl, after);
+        st = tracker_step(tracker, element, key, kl, pseudo, pseudo_length, after);
+      }
+      gtext_css_selector_list_free(list);
+    }
+    else if (st == GTEXT_CSS_OK) {
+      /* a pseudo-element that is not generated is not being rendered */
+      GTEXT_CSS_Selector_List * list = NULL;
+      bool null_obj = false;
+      st = parse_pseudo(core, pseudo, pseudo_length, &list, &null_obj);
+      if (st == GTEXT_CSS_OK && list) {
+        const char * key;
+        size_t kl;
+        char buf[32];
+        pseudo_key(list, &element_flow, buf, sizeof buf, &key, &kl);
+        st = tracker_unrender(tracker, element, key, kl);
       }
       gtext_css_selector_list_free(list);
     }
     gtext_css_computed_free(after);
   }
   return st;
+}
+
+/* ---- the events of the tracker ------------------------------------------------------------------------------------------------------------------- */
+
+struct GTEXT_CSSOM_Transition_Events {
+  GTEXT_Allocator alloc;
+  GTEXT_CSS_Transition_Events * list;
+  const void ** element;      ///< For each event.
+  size_t * owner;             ///< For each event: the entry's index among the owners (below).
+  size_t n, cap;
+  char ** names;              ///< The `pseudoElement` of each owner (owned).
+  size_t * name_lengths;
+  size_t nowners;
+};
+
+void gtext_cssom_transition_events_free(GTEXT_CSSOM_Transition_Events * events) {
+  if (!events) {
+    return;
+  }
+  for (size_t i = 0; i < events->nowners; i++) {
+    gtext_allocator_free(&events->alloc, events->names[i]);
+  }
+  GTEXT_Allocator a = events->alloc;
+  gtext_css_transition_events_free(events->list);
+  gtext_allocator_free(&a, events->element);
+  gtext_allocator_free(&a, events->owner);
+  gtext_allocator_free(&a, events->names);
+  gtext_allocator_free(&a, events->name_lengths);
+  gtext_allocator_free(&a, events);
+}
+
+size_t gtext_cssom_transition_events_count(const GTEXT_CSSOM_Transition_Events * events) {
+  return events ? events->n : 0;
+}
+
+bool gtext_cssom_transition_events_at(const GTEXT_CSSOM_Transition_Events * events, size_t index, GTEXT_CSSOM_Transition_Event * out) {
+  if (!events || !out || index >= events->n || !gtext_css_transition_events_at(events->list, index, &out->event)) {
+    return false;
+  }
+  out->element = events->element[index];
+  out->pseudo_element = (GTEXT_CSS_String){events->names[events->owner[index]], events->name_lengths[events->owner[index]]};
+  return true;
+}
+
+/// The place of a pseudo-element among those of one element (Transitions 2, "Animation composite order"): the element, `::marker`, `::before`, any other by the codepoints of its name, `::after`.
+static int pseudo_rank(const tracker_entry * e) {
+  if (e->display_length == 0) {
+    return 0;
+  }
+  static const char * const fixed[] = {"::marker", "::before", "::after"};
+  static const int rank[] = {1, 2, 4};
+  for (size_t k = 0; k < 3; k++) {
+    const size_t n = strlen(fixed[k]);
+    if (e->display_length == n) {
+      size_t i = 0;
+      while (i < n && (e->display[i] | 0x20) == (fixed[k][i] | 0x20)) {
+        i++;
+      }
+      if (i == n) {
+        return rank[k];
+      }
+    }
+  }
+  return 3;
+}
+
+static bool entry_after(const tracker_entry * a, const tracker_entry * b) {
+  if (a->element_seq != b->element_seq) {
+    return a->element_seq > b->element_seq;
+  }
+  const int ra = pseudo_rank(a), rb = pseudo_rank(b);
+  if (ra != rb) {
+    return ra > rb;
+  }
+  const size_t m = a->display_length < b->display_length ? a->display_length : b->display_length;
+  const int c = m ? memcmp(a->display, b->display, m) : 0;
+  return c ? c > 0 : a->display_length > b->display_length;
+}
+
+GTEXT_CSS_Status gtext_cssom_transition_tracker_events(GTEXT_CSSOM_Transition_Tracker * tracker, GTEXT_CSSOM_Transition_Events ** out) {
+  if (!tracker || !out) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  *out = NULL;
+  /* the entries that have something to report, in the composite order of their owners: by element (the order the tracker first saw it in: a flush brings an element's ancestors in before it), then
+     the pseudo-element's place; the order of the elements is not the tree order of the document, which the library does not see, and a caller that needs it sorts the events by element */
+  const size_t total = tracker->count + tracker->nretired;
+  const tracker_entry ** order = gtext_allocator_calloc(&tracker->alloc, total ? total : 1, sizeof *order);
+  if (!order) {
+    return GTEXT_CSS_E_OOM;
+  }
+  size_t m = 0, need_events = 0, need_names = 0;
+  for (size_t i = 0; i < total; i++) {
+    const tracker_entry * e = i < tracker->count ? &tracker->entries[i] : &tracker->retired[i - tracker->count];
+    size_t ne, nb;
+    gtext_css_transition_set_frame_bound(e->set, &ne, &nb);
+    if (ne) {
+      size_t j = m++;
+      while (j > 0 && entry_after(order[j - 1], e)) {
+        order[j] = order[j - 1];
+        j--;
+      }
+      order[j] = e;
+      need_events += ne;
+      need_names += nb;
+    }
+  }
+  GTEXT_CSSOM_Transition_Events * ev = gtext_allocator_calloc(&tracker->alloc, 1, sizeof *ev);
+  GTEXT_CSS_Status st = ev ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  if (ev) {
+    ev->alloc = tracker->alloc;
+    st = gtext_css_transition_events_new(&tracker->alloc, &ev->list);
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = gtext_css_transition_events_reserve(ev->list, need_events, need_names);
+  }
+  if (st == GTEXT_CSS_OK) {
+    ev->element = gtext_allocator_calloc(&tracker->alloc, need_events ? need_events : 1, sizeof *ev->element);
+    ev->owner = gtext_allocator_calloc(&tracker->alloc, need_events ? need_events : 1, sizeof *ev->owner);
+    ev->names = gtext_allocator_calloc(&tracker->alloc, m ? m : 1, sizeof *ev->names);
+    ev->name_lengths = gtext_allocator_calloc(&tracker->alloc, m ? m : 1, sizeof *ev->name_lengths);
+    if (!ev->element || !ev->owner || !ev->names || !ev->name_lengths) {
+      st = GTEXT_CSS_E_OOM;
+    }
+  }
+  for (size_t i = 0; i < m && st == GTEXT_CSS_OK; i++) {
+    ev->names[i] = gtext_allocator_malloc(&tracker->alloc, order[i]->display_length + 1);
+    if (!ev->names[i]) {
+      st = GTEXT_CSS_E_OOM;
+      break;
+    }
+    if (order[i]->display_length) {
+      memcpy(ev->names[i], order[i]->display, order[i]->display_length);
+    }
+    ev->names[i][order[i]->display_length] = '\0';
+    ev->name_lengths[i] = order[i]->display_length;
+    ev->nowners = i + 1;
+  }
+  /* everything is reserved: no frame below can fail, so the sets move on together or not at all */
+  for (size_t i = 0; i < m && st == GTEXT_CSS_OK; i++) {
+    const size_t before = gtext_css_transition_events_count(ev->list);
+    tracker_entry * e = (tracker_entry *)order[i];
+    st = gtext_css_transition_set_frame(e->set, tracker->time_ms, ev->list);
+    for (size_t k = before; st == GTEXT_CSS_OK && k < gtext_css_transition_events_count(ev->list); k++) {
+      ev->element[k] = e->element;
+      ev->owner[k] = i;
+    }
+  }
+  gtext_allocator_free(&tracker->alloc, (void *)order);
+  if (st != GTEXT_CSS_OK) {
+    gtext_cssom_transition_events_free(ev);
+    return st;
+  }
+  ev->n = gtext_css_transition_events_count(ev->list);
+  ev->cap = need_events;
+  /* a retired entry has told everything it owed */
+  for (size_t i = 0; i < tracker->nretired; i++) {
+    entry_release(tracker, &tracker->retired[i]);
+  }
+  tracker->nretired = 0;
+  *out = ev;
+  return GTEXT_CSS_OK;
 }
 
 static GTEXT_CSSOM_Decl * require_computed(GTEXT_CSSOM_Decl * decl) {

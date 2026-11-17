@@ -57,8 +57,35 @@ origin as a custom property declaration, so a `var()` that reads it, and every p
 two styles not comparable, so no transition starts for that event (the tracker already treated a change of context so: "Registering (or changing the registration) of a custom property can change its computed
 value, which can start or interrupt a CSS transition").
 
+# Events and `CSSTransition`
+
+The library owns no clock and no event loop, so the events of CSS Transitions 1 and 2 are a **frame** of a set: `gtext_css_transition_set_frame(set, time, events)` compares the phase each transition was
+in the last time it was framed with its phase at `time`, and appends what Transitions 2, "Event dispatch", says to dispatch to a list (`gtext_css_transition_events_*`), in the order to dispatch it. The
+phase is `idle` until a frame sees the transition, then `before` (the time is before the start time), `active` (from the start time to the end time) or `after` (from the end time on; a transition with no
+duration is never active); the table of that section gives the events of a change (idle to before: `transitionrun`; idle to active: `transitionrun`, `transitionstart`; before to after:
+`transitionstart`, `transitionend`; active to after: `transitionend`; after to active, before and the rest as the table says, for a caller whose clock moves backwards) and their times: `elapsedTime` is
+in seconds, the *interval start* `max(min(-start delay, active duration), 0)` for `transitionrun` and `transitionstart` and the *interval end*, the active duration, for `transitionend`. A cancellation
+is queued as it happens (a style change event that cancels, replaces or reverses a transition; `gtext_css_transition_set_cancel_all()` for an element that is no longer being rendered) and the next frame
+reports it as a `transitioncancel` whose `elapsedTime` is "the active time of the animation at the moment it was canceled calculated using a fill mode of both" (clamped to the transition's active
+interval, so 0 in the delay phase). A transition that was cancelled before any frame saw it reports nothing (idle to idle), and one that completes in a style change event before any frame saw it reports its
+`transitionrun`, `transitionstart` and `transitionend` at the next. The events of one frame are in the composite order of the transitions: by transition generation (the number of the style change event that
+started it, for the set), then by the codepoints of the expanded transition property name (`GTEXT_CSS_Transition_Event::property_name`: the longhand's name, or the custom property's), and a
+`transitioncancel` has the generation it had. `gtext_css_transition_set_frame_bound()` and `gtext_css_transition_events_reserve()` let a caller that takes the frames of many sets into one list
+reserve the room first, so that no frame can fail (a frame is all or nothing in any case). `gtext_css_transition_set_clear()` is the same as cancelling without the events: the set of something that is gone.
+
+`gtext_css_transition_set_animation_at()` is the **`CSSTransition`** of a running transition at a time, as a value (`GTEXT_CSS_Transition_Animation`): `transitionProperty`, `playState`, `pending`, `startTime`
+(unresolved until the first frame after the transition was made) and `currentTime`, and the effect as `getTiming()` and `getComputedTiming()` read it (the delay, an `endDelay` of 0, the duration, the
+easing, a fill of `backwards`, one iteration, and the `progress` that the timing function gives, null after the effect), with the start and the end value of the two keyframes. The library keeps no objects, so
+the caller that has one holds it by the transition's `id`, which the events carry too (the `animation` of a `TransitionEvent`), and learns from the events that it finished (a `transitionend`) or was
+cancelled (a `transitioncancel`). The methods of `Animation` that change a transition (`pause()`, `finish()`, `reverse()`, setting `currentTime`, `timeline = null`, the `ready` and `finished` promises)
+belong to the Web Animations model, which the library does not implement.
+
+The tracker (css-cssom.md) is the document's consumer of both: `gtext_cssom_transition_tracker_events()` is the frame of every element and pseudo-element at the tracker's time, with each event's element and
+`pseudoElement`, and an element that is not being rendered (`display: none`, itself or an ancestor) or no longer in the document has its transitions cancelled, as Transitions 2 says ("must also cancel any running
+transitions on elements that are no longer being rendered", and in a document with `display: none` "Transitions and animations should not occur").
+
 # What is not here
 
-The events (transitionrun, transitionstart, transitionend, transitioncancel) and the `CSSTransition` object: the update returns counts and the caller can read the set before and after. `@starting-style` is the style options' `starting_style` flag (compute the starting style, then the style, and give the first as the before-change style).
+`@starting-style` is the style options' `starting_style` flag (compute the starting style, then the style, and give the first as the before-change style).
 The specification builds the after-change style from the *before-change* `animation-*` values; this library asks the two styles which properties an animation applies, which agrees for every
 property an animation applies in both and differs when an animation starts or ends in the same event as a change of the property it did not apply before.

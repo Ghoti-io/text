@@ -163,9 +163,13 @@ TEST(CssomTransition, ForgettingAnElementCancelsItsTransitions) {
   t.flush("#t");
   t.at(500);
   EXPECT_EQ(t.width("#t"), "150px");
-  EXPECT_EQ(gtext_cssom_transition_tracker_forget(t.tracker, t.m.handle("#t")), 1u);
+  size_t gone = 99;
+  EXPECT_EQ(gtext_cssom_transition_tracker_forget(t.tracker, t.m.handle("#t"), &gone), GTEXT_CSS_OK);
+  EXPECT_EQ(gone, 1u);
   EXPECT_EQ(t.width("#t"), "200px");
-  EXPECT_EQ(gtext_cssom_transition_tracker_forget(t.tracker, t.m.handle("#t")), 0u);
+  EXPECT_EQ(gtext_cssom_transition_tracker_forget(t.tracker, t.m.handle("#t"), &gone), GTEXT_CSS_OK);
+  EXPECT_EQ(gone, 0u);
+  EXPECT_EQ(gtext_cssom_transition_tracker_forget(t.tracker, nullptr, &gone), GTEXT_CSS_E_INVALID);
 }
 
 /* A reversal half way: the transition back is shortened to the distance travelled (Transitions 1, "Faster reversing of interrupted transitions"). */
@@ -449,6 +453,215 @@ TEST(CssomTransition, ARegisteredCustomIdentIsADiscretePairAndWithoutAllowDiscre
   t.flush("#t");
   t.at(250);
   EXPECT_EQ(t.width("#t", nullptr, "--k"), "b");
+}
+
+/* ---- events ----------------------------------------------------------------------------------------------------------------------------------------- */
+
+/// A list of events as text: `type:pseudo:name:elapsed` for each, joined by spaces; `at_element` says whether every event is at the element of `selector`.
+std::string text_of(Tr & t, const GTEXT_CSSOM_Transition_Events * ev, const char * selector, bool * at_element = nullptr) {
+  static const char * const names[] = {"run", "start", "end", "cancel"};
+  std::string out;
+  bool ok = true;
+  for (size_t i = 0; i < gtext_cssom_transition_events_count(ev); i++) {
+    GTEXT_CSSOM_Transition_Event e{};
+    EXPECT_TRUE(gtext_cssom_transition_events_at(ev, i, &e));
+    ok = ok && e.element == t.m.handle(selector);
+    char buf[40];
+    std::snprintf(buf, sizeof buf, "%g", e.event.elapsed_time);
+    out += std::string(i ? " " : "") + names[e.event.type] + ":" + std::string(e.pseudo_element.data, e.pseudo_element.length) + ":" +
+        std::string(e.event.property_name.data, e.event.property_name.length) + ":" + buf;
+  }
+  if (at_element) {
+    *at_element = ok;
+  }
+  return out;
+}
+
+/// One frame of the tracker at its time, as text.
+std::string frame(Tr & t, const char * selector, bool * at_element = nullptr) {
+  GTEXT_CSSOM_Transition_Events * ev = nullptr;
+  EXPECT_EQ(gtext_cssom_transition_tracker_events(t.tracker, &ev), GTEXT_CSS_OK);
+  const std::string out = text_of(t, ev, selector, at_element);
+  gtext_cssom_transition_events_free(ev);
+  return out;
+}
+
+/* "The target for a transition event is the transition's owning element": a class change starts the transition at the next style change event, and the frame after it reports the run and the start
+   at the element and the end at the end time. */
+TEST(CssomTransitionEvents, AFrameReportsTheEventsAtTheOwningElement) {
+  Tr t(page(kBox));
+  t.at(0);
+  t.flush("#t");
+  EXPECT_EQ(frame(t, "#t"), "") << "a first event starts nothing";
+  t.set_class("#t", "on");
+  t.flush("#t");
+  bool at_element = false;
+  EXPECT_EQ(frame(t, "#t", &at_element), "run::width:0 start::width:0");
+  EXPECT_TRUE(at_element);
+  t.at(500);
+  EXPECT_EQ(frame(t, "#t"), "");
+  t.at(1000);
+  EXPECT_EQ(frame(t, "#t"), "end::width:1");
+  EXPECT_EQ(frame(t, "#t"), "");
+}
+
+/* "implementations must also cancel any running transitions on elements that are no longer being rendered" (Transitions 2): the element becomes `display: none`, its transition is cancelled at the
+   active time, and a transition that had not yet been seen by a frame reports nothing. When it is rendered again it has no before-change style, so the first event starts nothing. */
+TEST(CssomTransitionEvents, AnElementThatIsNotRenderedHasItsTransitionsCancelled) {
+  Tr t(page("#t { width: 100px; transition: width 1s linear } #t.on { width: 200px } #t.off { display: none }"));
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  EXPECT_EQ(frame(t, "#t"), "run::width:0 start::width:0");
+  t.at(400);
+  t.set_class("#t", "on off");
+  t.flush("#t");
+  EXPECT_EQ(frame(t, "#t"), "cancel::width:0.4");
+  EXPECT_EQ(frame(t, "#t"), "");
+  t.set_class("#t", "on");
+  t.at(500);
+  t.flush("#t");
+  EXPECT_EQ(t.width("#t"), "200px") << "rendered again: no before-change style, so no transition";
+  EXPECT_EQ(frame(t, "#t"), "");
+  /* the transition that no frame saw */
+  Tr u(page("#t { width: 100px; transition: width 1s linear } #t.on { width: 200px } #t.off { display: none }"));
+  u.at(0);
+  u.flush("#t");
+  u.set_class("#t", "on");
+  u.flush("#t");
+  u.at(100);
+  u.set_class("#t", "on off");
+  u.flush("#t");
+  EXPECT_EQ(frame(u, "#t"), "") << "cancelled before any frame saw it";
+}
+
+/* An element below a `display: none` ancestor is not being rendered either: its transition is cancelled by a flush of the element alone. When it is rendered again it has no before-change style, so a
+   change made while it was hidden does not start a transition. */
+TEST(CssomTransitionEvents, AnAncestorThatIsNotRenderedHidesTheDescendantAndTheNextEventHasNoBeforeStyle) {
+  Tr t(page("#p.off { display: none } #t { width: 100px; transition: width 1s linear } #t.on { width: 200px }", "<div id=p><div id=t></div></div>"));
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  EXPECT_EQ(frame(t, "#t"), "run::width:0 start::width:0");
+  t.at(400);
+  t.set_class("#p", "off");
+  t.flush("#t");
+  EXPECT_EQ(frame(t, "#t"), "cancel::width:0.4");
+  t.set_class("#t", "");
+  t.set_class("#p", "");
+  t.at(500);
+  t.flush("#t");
+  EXPECT_EQ(frame(t, "#t"), "") << "rendered again: no before-change style, so the change made while hidden starts nothing";
+  EXPECT_EQ(t.width("#t"), "100px");
+}
+
+/* "If an element is no longer in the document, implementations must cancel any running transitions on it": its transitioncancel is the event of an element that is gone, reported once. */
+TEST(CssomTransitionEvents, ForgettingAnElementReportsItsCancellationOnce) {
+  Tr t(page(kBox));
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  EXPECT_EQ(frame(t, "#t"), "run::width:0 start::width:0");
+  t.at(250);
+  size_t gone = 0;
+  ASSERT_EQ(gtext_cssom_transition_tracker_forget(t.tracker, t.m.handle("#t"), &gone), GTEXT_CSS_OK);
+  EXPECT_EQ(gone, 1u);
+  EXPECT_EQ(frame(t, "#t"), "cancel::width:0.25");
+  EXPECT_EQ(frame(t, "#t"), "");
+}
+
+/* "With regard to pseudo-elements, the sort order is as follows: element, ::marker, ::before, any other pseudo-elements ..., ::after, element children". The pseudo-elements are flushed in the opposite
+   order; `pseudoElement` has its two colons, and the legacy single-colon spelling gets its second. */
+TEST(CssomTransitionEvents, PseudoElementsAreInTheCompositeOrderAndNamedWithTwoColons) {
+  const char * css = "#t { width: 100px; transition: width 1s linear } #t.on { width: 200px }"
+                     "#t::before { content: 'a'; color: rgb(0, 0, 0); transition: color 1s linear } #t.on::before { color: rgb(100, 100, 100) }"
+                     "#t::after { content: 'b'; color: rgb(0, 0, 0); transition: color 1s linear } #t.on::after { color: rgb(100, 100, 100) }";
+  Tr t(page(css));
+  t.at(0);
+  t.flush("#t", "::after");
+  t.flush("#t", ":before");
+  t.set_class("#t", "on");
+  t.flush("#t", "::after");
+  t.flush("#t", ":before");
+  bool at_element = false;
+  EXPECT_EQ(frame(t, "#t", &at_element), "run::width:0 start::width:0 run:::before:color:0 start:::before:color:0 run:::after:color:0 start:::after:color:0");
+  EXPECT_TRUE(at_element);
+}
+
+/* All or nothing: every allocation of a tracker's frame fails in turn (the list, its room, the order, the names), and of the forgetting of an element (the room of the retired entries): a failure
+   reports nothing and moves no set on, and the same call then reports everything. */
+TEST(CssomTransitionEventsOom, EveryAllocationOfAFrameAndOfForgettingFailsCleanly) {
+  EXPECT_EQ(gtext_cssom_transition_tracker_events(nullptr, nullptr), GTEXT_CSS_E_INVALID);
+  for (int forget = 0; forget < 2; forget++) {
+    size_t failures = 0;
+    for (size_t n = 1; n < 100000; n++) {
+      FaultAllocator fa;
+      bool done = false;
+      {
+        Tr t(page(kBox), true, &fa.alloc);
+        t.at(0);
+        t.flush("#t");
+        t.set_class("#t", "on");
+        t.flush("#t");
+        EXPECT_EQ(frame(t, "#t"), "run::width:0 start::width:0");
+        t.at(400);
+        t.set_class("#t", "");
+        t.flush("#t");
+        /* the reversal cancelled the transition and started another: a cancel, a run and a start are owed */
+        GTEXT_CSSOM_Transition_Events * ev = nullptr;
+        size_t gone = 0;
+        GTEXT_CSS_Status st;
+        fa.arm(n);
+        if (forget) {
+          st = gtext_cssom_transition_tracker_forget(t.tracker, t.m.handle("#t"), &gone);
+        }
+        else {
+          st = gtext_cssom_transition_tracker_events(t.tracker, &ev);
+        }
+        fa.disarm();
+        if (!fa.failed) {
+          EXPECT_EQ(st, GTEXT_CSS_OK) << n;
+          done = true;
+        }
+        else {
+          failures++;
+          EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n;
+          EXPECT_EQ(ev, nullptr) << n;
+          EXPECT_EQ(gone, 0u) << n;
+        }
+        std::string text;
+        if (!forget && ev) {
+          text = text_of(t, ev, "#t");
+        }
+        gtext_cssom_transition_events_free(ev);
+        ev = nullptr;
+        if (forget) {
+          if (fa.failed) {
+            ASSERT_EQ(gtext_cssom_transition_tracker_forget(t.tracker, t.m.handle("#t"), &gone), GTEXT_CSS_OK) << n;
+          }
+          EXPECT_EQ(gone, 1u) << n;
+          /* the new transition had no frame: only the cancelled one is owed */
+          EXPECT_EQ(frame(t, "#t"), "cancel::width:0.4") << n;
+        }
+        else {
+          if (!ev && text.empty()) {
+            text = frame(t, "#t");
+          }
+          EXPECT_EQ(text, "cancel::width:0.4 run::width:0 start::width:0") << n;
+        }
+        (void)failures;
+      }
+      EXPECT_EQ(fa.live.size(), 0u) << n << ": a block is left";
+      EXPECT_EQ(fa.bad_frees, 0u) << n;
+      if (done || ::testing::Test::HasFailure()) {
+        break;
+      }
+    }
+    EXPECT_GT(failures, 0u);
+  }
 }
 
 } // namespace
