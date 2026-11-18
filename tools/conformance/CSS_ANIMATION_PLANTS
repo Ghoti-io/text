@@ -111,6 +111,7 @@ join-script-task-ready-at-the-style-events-time	css_animations.c	c->css_task && 
 addition-of-filter-lists-is-accumulation	css_anim_sample.c	  const char separator = ra && rb && op == CSS_BLEND_ADD ? concatenation_separator(s, k) : 0;	  const char separator = 0;	sample
 addition-of-shadow-lists-has-no-comma	css_anim_sample.c	          if (separator == ',') {\n            joined[at++] = ',';\n          }	          if (0) {\n            joined[at++] = ',';\n          }	sample
 addition-of-a-list-and-none-is-concatenated-with-it	css_anim_sample.c	      if (none_a || none_b) {	      if (0) {	sample
+lh-in-font-size-is-the-elements-own	css_compute_units.c	    if (st->current == cc->pid[CSS_P_LINE_HEIGHT] || st->current == cc->pid[CSS_P_FONT_SIZE]) {	    if (st->current == cc->pid[CSS_P_LINE_HEIGHT]) {	compute
 filter-lists-of-different-lengths-are-discrete	css_anim_sample.c	!filter_items(rb, &ib, &nb) || na == nb) {	!filter_items(rb, &ib, &nb) || 1) {	sample
 filter-padding-ignores-the-common-prefix	css_anim_sample.c	    if (!same_function_name(&shorter_items[i], &longer[i])) {	    if (0) {	sample
 identity-of-brightness-is-zero	css_anim_sample.c	{"brightness", "brightness(1)"}	{"brightness", "brightness(0)"}	sample

@@ -411,6 +411,11 @@ TEST(CssCompute, FontMetricsAndTheNormalLineHeightComeFromTheEnvironmentsCallbac
   EXPECT_EQ(computed("font-size: 10px", "width: 2lh", "width", &env), "24px");
   EXPECT_EQ(computed("font-size: 10px", "line-height: 2; width: 3lh", "width", &env), "60px");
   EXPECT_EQ(computed("font-size: 10px; line-height: 30px", "font-size: 20px; line-height: 5px; width: 1rlh", "width", &env), "30px");
+  // CSS Values 4, "Font-relative Lengths": "when lh or rlh units are used in the value of the line-height property or font-affecting properties on the element they refer to, they resolve against the
+  // computed line-height and font metrics of the parent element": in font-size, the line height is the parent's and not the element's own, which depends on the font size being computed
+  EXPECT_EQ(computed("font-size: 10px; line-height: 40px", "font-size: 1lh; line-height: 7px", "font-size", &env), "40px");
+  EXPECT_EQ(computed("font-size: 10px; line-height: 40px", "font-size: 2lh; line-height: 7px; width: 1em", "width", &env), "80px") << "the font size that follows is the one the parent's line height gave";
+  EXPECT_EQ(computed("font-size: 10px", "font-size: 1lh; line-height: 7px", "font-size", &env), "12px") << "a parent whose line height is normal: the environment's metric";
   // a callback that gives no metric is unsupported, naming the unit
   m.refuse = true;
   Context ctx(R(), &env);

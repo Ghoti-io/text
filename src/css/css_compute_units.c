@@ -192,8 +192,10 @@ bool css_st_unit_px(css_state * st, GTEXT_CSS_Unit unit, double * px) {
   case GTEXT_CSS_UNIT_REX: case GTEXT_CSS_UNIT_RCH: case GTEXT_CSS_UNIT_RCAP: case GTEXT_CSS_UNIT_RIC:
     return metric_px(st, unit, true, px);
   case GTEXT_CSS_UNIT_LH: {
-    /* the line height of the element, or of its parent in line-height itself */
-    if (st->current == cc->pid[CSS_P_LINE_HEIGHT]) {
+    /* the line height of the element, or of its parent in line-height itself and in font-size (CSS Values 4: "when lh or rlh units are used in the value of the line-height property or font-affecting
+       properties on the element they refer to, they resolve against the computed line-height and font metrics of the parent element": the font size being computed is the one the line height would
+       be a multiple of) */
+    if (st->current == cc->pid[CSS_P_LINE_HEIGHT] || st->current == cc->pid[CSS_P_FONT_SIZE]) {
       if (st->parent) {
         const double fp = css_st_parent_font_px(st);
         return line_height_px(st, st->parent, gtext_css_value_set_root(st->parent->vals[cc->pid[CSS_P_LINE_HEIGHT] - 1]), fp, false, name, px);
