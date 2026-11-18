@@ -2,3 +2,4 @@
 animtiming	test-anim-timing.cpp
 animcss	test-anim-css.cpp
 animworld	test-anim-world.cpp
+animanim	test-anim-animation.cpp

@@ -38,6 +38,7 @@ typedef struct {
   double elapsed;
   bool resolved;
   double scheduled_ms;
+  GTEXT_Anim_Time current, timeline;
 } ev_t;
 
 struct GTEXT_Anim_Events {
@@ -89,6 +90,8 @@ bool gtext_anim_events_at(const GTEXT_Anim_Events * events, size_t index, GTEXT_
   out->pseudo_element = (GTEXT_CSS_String){e->pseudo_len ? events->pool + e->pseudo_off : NULL, e->pseudo_len};
   out->name = (GTEXT_CSS_String){e->name_len ? events->pool + e->name_off : NULL, e->name_len};
   out->elapsed_time = e->elapsed;
+  out->current_time = e->current;
+  out->timeline_time = e->timeline;
   out->scheduled_time = (GTEXT_Anim_Time){e->resolved, e->resolved ? e->scheduled_ms : 0.0};
   return true;
 }
@@ -163,6 +166,8 @@ GTEXT_Anim_Status gtext_anim_events_append(GTEXT_Anim_Events * events, const GTE
   e->elapsed = event->elapsed_time;
   e->resolved = event->scheduled_time.resolved;
   e->scheduled_ms = event->scheduled_time.resolved ? event->scheduled_time.ms : 0.0;
+  e->current = (GTEXT_Anim_Time){event->current_time.resolved, event->current_time.resolved ? event->current_time.ms : 0.0};
+  e->timeline = (GTEXT_Anim_Time){event->timeline_time.resolved, event->timeline_time.resolved ? event->timeline_time.ms : 0.0};
   return GTEXT_ANIM_OK;
 }
 

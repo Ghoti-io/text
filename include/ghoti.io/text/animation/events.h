@@ -51,7 +51,10 @@ typedef enum {
   GTEXT_ANIM_EVENT_TRANSITIONRUN,
   GTEXT_ANIM_EVENT_TRANSITIONSTART,
   GTEXT_ANIM_EVENT_TRANSITIONEND,
-  GTEXT_ANIM_EVENT_TRANSITIONCANCEL
+  GTEXT_ANIM_EVENT_TRANSITIONCANCEL,
+  GTEXT_ANIM_EVENT_FINISH,              ///< An `AnimationPlaybackEvent` `finish` ("Updating the finished state").
+  GTEXT_ANIM_EVENT_CANCEL,              ///< `cancel` ("Canceling an animation").
+  GTEXT_ANIM_EVENT_REMOVE               ///< `remove` ("Removing replaced animations").
 } GTEXT_Anim_Event_Type;
 
 /** @struct GTEXT_Anim_Event @brief One event to dispatch. Strings are valid until the next call that changes the list (append, reserve, clear, sort) or frees it. */
@@ -62,6 +65,8 @@ typedef struct {
   GTEXT_CSS_String pseudo_element;      ///< `pseudoElement`: the name with two colons, or empty for the element.
   GTEXT_CSS_String name;                ///< `animationName`, or `propertyName` of a transition.
   double elapsed_time;                  ///< `elapsedTime`, in seconds.
+  GTEXT_Anim_Time current_time;         ///< `currentTime` of an `AnimationPlaybackEvent` (`null` when unresolved); unresolved for the other events.
+  GTEXT_Anim_Time timeline_time;        ///< `timelineTime` of an `AnimationPlaybackEvent`; unresolved for the other events.
   GTEXT_Anim_Time scheduled_time;       ///< The scheduled event time on the clock of the document timeline, in milliseconds; unresolved for an animation with no start time.
 } GTEXT_Anim_Event;
 

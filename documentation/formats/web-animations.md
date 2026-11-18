@@ -2,13 +2,13 @@
 
 # The Web Animations model
 
-Headers: `animation/timing.h`, `animation/events.h`, `animation/css_animations.h`, `animation/world.h` (all through `animation.h`), `css_cssom_computed.h` (the tracker).
+Headers: `animation/timing.h`, `animation/animation.h`, `animation/events.h`, `animation/css_animations.h`, `animation/world.h` (all through `animation.h`), `css_cssom_computed.h` (the tracker).
 
 Web Animations 1, CSS Animations 2 and CSS Transitions 2 (pinned by `tools/css/DRAFTS_SHA256`) are built here as a model that owns **no clock, no promise and no event loop**: every call that depends on a
 time takes it, an unresolved time is a value (`GTEXT_Anim_Time`, never a NaN), the events a frame owes are returned in the order the specification gives and the host dispatches them, and an exception
 of the IDL is a status (`GTEXT_Anim_Status`) that a binding throws. What is built is the part that needs only the style change events: the timing of an effect, the CSS Animations and CSS Transitions of an
-element, and `getAnimations()`. The Animation state machine (`play()`, `pause()`, `finish()`, `cancel()`, `reverse()`, `currentTime = ...`, the `ready` and `finished` promises, pending tasks that script
-starts), `KeyframeEffect` and the effect stack, `Element.animate()` and scroll and view timelines are not here.
+element, and `getAnimations()`, and the Animation state machine as a value of its own (`animation/animation.h`). `KeyframeEffect` and the effect stack, `Element.animate()`, scroll and view
+timelines, and the use of the state machine by the CSS animations and transitions of the tracker (a `CSSAnimation` that script plays, pauses or seeks) are not here.
 
 # Timing (`animation/timing.h`)
 
@@ -18,6 +18,20 @@ directed progress, the before flag, the transformed progress). `gtext_anim_compu
 and the endpoint-inclusive flag. `gtext_anim_timing_validate()` and `gtext_anim_timing_update()` are the checks and the delta update of "Updating the timing of an AnimationEffect" (a `TypeError` for a negative
 `iterationStart`, a negative or NaN `iterations` or `duration`, an easing that is not one `<easing-function>`; all or nothing), and `gtext_anim_easing_parse()` reads the easing member. The older
 `gtext_css_anim_timing()` (a playback rate of 1, an iteration start of 0) is the sampler's fast path, and a test holds the two to the same answer on a grid of more than 20,000 inputs.
+
+# The Animation state machine (`animation/animation.h`)
+
+`GTEXT_Anim_Animation` is an `Animation` with an associated effect that is its timing only: the **play state**, the pending play and pause tasks, the start time, the hold time, the playback rate and the
+pending playback rate, the replace state, and the `ready` and `finished` promises. Each procedure of "Animation model" is one function that names the section it is (`play()` is "play an animation" with
+auto-rewind, `updatePlaybackRate()` is "seamlessly update the playback rate", `finish()` is "finish an animation", `cancel()`, `reverse()`, `persist()`, `currentTime = x` is "set the current time",
+`startTime = x` is "set the start time", `playbackRate = x` is "set the playback rate"). Every call takes `now`, the current time of the animation's timeline (unresolved for an inactive one), and the
+animation never reads a time. What the specification does "as soon as the animation is ready" is a flag that `gtext_anim_animation_run_pending()` runs at the first resolved tick the host gives it, and what it
+does in a microtask (the finish notification steps) is a flag that `gtext_anim_animation_checkpoint()` runs. A promise is a **generation** and a state: `ready_generation` and `finished_generation` go up when the
+specification makes a new promise (a pause or play that finds no pending task, a cancel, an animation that leaves the finished state), and the *notes* (`gtext_anim_animation_note_at()`) say which generation
+settles when and in what order, so a binding keeps one promise for each generation and settles it on the note. The `finish`, `cancel` and `remove` events are appended to the event list of a frame
+(`gtext_anim_animation_take_events()`, with `currentTime`, `timelineTime` and the scheduled event time as the specification computes them), in the same list as the events of CSS animations and transitions.
+A call that makes an exception changes nothing; one that cannot reserve room for its notes and events fails whole with `GTEXT_ANIM_OOM`. Not in it: a timeline that is not monotonic and is changed to or from
+(Web Animations 2 changes "Setting the timeline of an animation": `GTEXT_ANIM_NOT_SUPPORTED`), an effect that is more than its timing, and the decision that an animation is replaced (which needs the effect stack).
 
 # The CSS animations of an element (`animation/css_animations.h`)
 
@@ -43,6 +57,6 @@ equal times (an animation with no start time has an unresolved scheduled time, w
 
 # Checks
 
-`tests/test-anim-timing.cpp`, `test-anim-css.cpp` and `test-anim-world.cpp` (each rule a test that quotes its text, an allocation sweep, planted defects of every function in
+`tests/test-anim-timing.cpp`, `test-anim-animation.cpp`, `test-anim-css.cpp` and `test-anim-world.cpp` (each rule a test that quotes its text, an allocation sweep, planted defects of every function in
 `tools/conformance/CSS_ANIMATION_PLANTS` and `CSS_CSSOM_PLANTS`, each seen to fail); the pages of web-platform-tests that read `getAnimations()` and the effect's timing are scored by the CSSOM script gate against
 the recorded answers of both browsers.

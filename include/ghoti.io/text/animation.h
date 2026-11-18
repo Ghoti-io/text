@@ -23,7 +23,7 @@
  * @brief Public umbrella header for the Web Animations model.
  *
  * Include <ghoti.io/text/animation.h> for the model of Web Animations 1 as a value and a state, with no clock, no promise and no event loop of its own: the timing of an effect
- * (timing.h), the events a frame owes (events.h), the CSS Animations of an element (css_animations.h) and the animations of a document (world.h).
+ * (timing.h), the Animation state machine (animation.h), the events a frame owes (events.h), the CSS Animations of an element (css_animations.h) and the animations of a document (world.h).
  */
 
 #ifndef GHOTI_IO_GTEXT_ANIMATION_H
@@ -31,6 +31,7 @@
 
 #include <ghoti.io/text/macros.h>
 
+#include <ghoti.io/text/animation/animation.h>
 #include <ghoti.io/text/animation/css_animations.h>
 #include <ghoti.io/text/animation/events.h>
 #include <ghoti.io/text/animation/timing.h>

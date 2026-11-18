@@ -72,3 +72,24 @@ anim-world-subtree-has-no-descendants	world.c	      const bool below = subtree &
 anim-world-irrelevant-animations-are-listed	world.c	      if (relevant_only && !ai.relevant) {	      if (0 && relevant_only && !ai.relevant) {	animworld
 anim-world-frame-takes-the-transitions-again	world.c	  if (!world->stash) {	  if (1) {	animworld
 anim-world-transition-events-are-not-sorted-with-the-animations	world.c	  gtext_anim_events_sort(all);	  (void)gtext_anim_events_sort;	animworld
+anim-state-pause-pending-does-not-win-over-running	animation.c	  if (a->pending_pause || (!a->start.resolved && !a->pending_play)) {	  if ((!a->start.resolved && !a->pending_play)) {	animanim
+anim-play-rewinds-at-the-end-only-past-it	animation.c	    if (r >= 0 && (!cur.resolved || cur.ms < 0 || cur.ms >= end)) {	    if (r >= 0 && (!cur.resolved || cur.ms < 0 || cur.ms > end)) {	animanim
+anim-play-rewinds-a-paused-animation	animation.c	  if (!seek.resolved && !a->start.resolved && !cur.resolved) {	  if (!seek.resolved && !a->start.resolved) {	animanim
+anim-play-task-ignores-the-hold-time	animation.c	    a->start = a->rate == 0.0 ? at(ready) : at(ready - a->hold.ms / a->rate);	    a->start = at(ready);	animanim
+anim-pause-task-ignores-the-rate	animation.c	      a->hold = at((ready - a->start.ms) * a->rate);	      a->hold = at(ready - a->start.ms);	animanim
+anim-cancel-keeps-the-finished-promise	animation.c	    a->finished_generation++;\n    a->finished = GTEXT_ANIM_PROMISE_PENDING;\n    const GTEXT_Anim_Time tt	    const GTEXT_Anim_Time tt	animanim
+anim-reset-pending-tasks-keeps-the-pending-rate	animation.c	  apply_pending_rate(a);\n  if (a->ready == GTEXT_ANIM_PROMISE_PENDING) {\n    a->ready = GTEXT_ANIM_PROMISE_REJECTED;	  if (a->ready == GTEXT_ANIM_PROMISE_PENDING) {\n    a->ready = GTEXT_ANIM_PROMISE_REJECTED;	animanim
+anim-finish-notifies-in-a-microtask	animation.c	  update_finished(a, now, true, true);\n  return GTEXT_ANIM_OK;\n}\n\n/* "Set the playback rate". */	  update_finished(a, now, true, false);\n  return GTEXT_ANIM_OK;\n}\n\n/* "Set the playback rate". */	animanim
+anim-seek-does-not-complete-a-pending-pause	animation.c	    a->start = UNRESOLVED;\n    a->pending_pause = false;\n    resolve_ready(a);\n  }\n  update_finished(a, now, true, false);	    a->pending_pause = false;\n    resolve_ready(a);\n  }\n  update_finished(a, now, true, false);	animanim
+anim-playback-rate-change-jumps-the-current-time	animation.c	    (void)do_set_current_time(a, previous_time, now);	    (void)previous_time;	animanim
+anim-update-rate-of-a-finished-animation-restarts-it	animation.c	      a->start = a->pending_rate == 0.0 ? at(now.ms) : at(now.ms - unconstrained.ms / a->pending_rate);	      a->start = at(now.ms);	animanim
+anim-reverse-does-not-invert	animation.c	  const double inverse = -effective_rate(a);	  const double inverse = effective_rate(a);	animanim
+anim-finish-of-a-reversed-animation-goes-to-the-end	animation.c	  const double limit = a->rate > 0 ? effect_end(a) : 0.0;	  const double limit = effect_end(a);	animanim
+anim-finish-event-scheduled-at-the-end-time-itself	animation.c	  return at(end * (1.0 / a->rate) + a->start.ms);	  return at(end);	animanim
+anim-replaceable-needs-no-finished-state	animation.c	  if (play_state(a, now) != GTEXT_ANIM_PLAY_FINISHED || a->replace == GTEXT_ANIM_REPLACE_REMOVED	  if (a->replace == GTEXT_ANIM_REPLACE_REMOVED	animanim
+anim-persisted-is-replaced	animation.c	  if (st != GTEXT_ANIM_OK || !c.in_effect || a->replace != GTEXT_ANIM_REPLACE_ACTIVE) {	  if (st != GTEXT_ANIM_OK || !c.in_effect) {	animanim
+anim-finish-microtask-is-synchronous	animation.c	    } else {\n      a->finish_microtask = true;\n    }	    } else {\n      a->finish_microtask = false;\n      finish_notification_steps(a, now);\n    }	animanim
+anim-finish-notification-does-not-check-the-state	animation.c	  if (play_state(a, now) != GTEXT_ANIM_PLAY_FINISHED) {\n    return;\n  }\n  if (a->finished == GTEXT_ANIM_PROMISE_PENDING) {	  if (a->finished == GTEXT_ANIM_PROMISE_PENDING) {	animanim
+anim-update-finished-keeps-the-hold-time-of-the-last-seek-out	animation.c	  const GTEXT_Anim_Time unconstrained = current_time(a, now, did_seek);	  const GTEXT_Anim_Time unconstrained = current_time(a, now, true);	animanim
+anim-hold-at-the-end-ignores-the-previous-time	animation.c	        a->hold = at(a->previous_current.ms > end ? a->previous_current.ms : end);	        a->hold = at(end);	animanim
+anim-hold-at-zero-ignores-the-previous-time	animation.c	        a->hold = at(a->previous_current.ms < 0 ? a->previous_current.ms : 0.0);	        a->hold = at(0.0);	animanim
