@@ -38,6 +38,9 @@
 
 /* ---- the set -------------------------------------------------------------------------------------------------------------------------------------- */
 
+/// The most cancelled or completed transitions a set holds for the next frame to report.
+#define MAX_OWED 4096
+
 typedef struct {
   GTEXT_CSS_Property_Id prop;     ///< A longhand, or 0 for a custom property ...
   char * cname; size_t lcn;       ///< ... whose name this is (owned; NULL for a longhand).
@@ -82,6 +85,7 @@ struct GTEXT_CSS_Transition_Set {
   size_t ngone, capgone;
   uint64_t version;
   uint64_t next_id;       ///< the last transition id given
+  uint64_t lost;          ///< owed events dropped past MAX_OWED
   uint64_t generation;    ///< the "current transition generation" of this element: one for each style change event that changed the set
 };
 
@@ -172,6 +176,20 @@ uint64_t gtext_css_transition_set_version(const GTEXT_CSS_Transition_Set * set) 
   return set ? set->version : 0;
 }
 
+uint64_t gtext_css_transition_set_last_id(const GTEXT_CSS_Transition_Set * set) {
+  return set ? set->next_id : 0;
+}
+
+void gtext_css_transition_set_start_ids_after(GTEXT_CSS_Transition_Set * set, uint64_t id) {
+  if (set && set->next_id < id) {
+    set->next_id = id;
+  }
+}
+
+uint64_t gtext_css_transition_set_events_lost(const GTEXT_CSS_Transition_Set * set) {
+  return set ? set->lost : 0;
+}
+
 size_t gtext_css_transition_set_running_count(const GTEXT_CSS_Transition_Set * set) {
   return set ? set->nrun : 0;
 }
@@ -228,6 +246,7 @@ static GTEXT_CSS_Status set_copy(const GTEXT_CSS_Transition_Set * src, GTEXT_CSS
   c->version = src->version;
   c->next_id = src->next_id;
   c->generation = src->generation;
+  c->lost = src->lost;
   if (src->ngone) {
     c->gone = gtext_allocator_calloc(&c->alloc, src->ngone, sizeof *c->gone);
     if (!c->gone) {
@@ -307,6 +326,7 @@ static void set_take(GTEXT_CSS_Transition_Set * dst, GTEXT_CSS_Transition_Set * 
   dst->capgone = src->capgone;
   dst->next_id = src->next_id;
   dst->generation = src->generation;
+  dst->lost = src->lost;
   src->run = NULL;
   src->done = NULL;
   src->gone = NULL;
@@ -376,6 +396,13 @@ static double clamp_range(double v, double lo, double hi) {
 
 /// Room for `more` entries that left the running set (so that moving one cannot fail).
 static GTEXT_CSS_Status gone_reserve(GTEXT_CSS_Transition_Set * s, size_t more) {
+  /* a set that nobody takes frames of would hold what it owes for ever: the oldest are dropped (and counted) past a bound */
+  while (s->ngone + more > MAX_OWED && s->ngone > 0) {
+    gone_free(&s->alloc, &s->gone[0]);
+    memmove(&s->gone[0], &s->gone[1], (s->ngone - 1) * sizeof *s->gone);
+    s->ngone--;
+    s->lost++;
+  }
   if (s->ngone + more <= s->capgone) {
     return GTEXT_CSS_OK;
   }
@@ -1275,9 +1302,9 @@ void gtext_css_transition_set_frame_bound(const GTEXT_CSS_Transition_Set * set, 
 static size_t phase_events(GTEXT_CSS_Transition_Phase from, GTEXT_CSS_Transition_Phase to, double delay, double duration, GTEXT_CSS_Transition_Event_Type type[3], double elapsed[3]) {
   const double s0 = -delay < duration ? -delay : duration;
   const double istart = s0 <= 0 ? 0.0 : s0;
-  const double effect_end = delay + duration;
-  const double e0 = effect_end - delay < duration ? effect_end - delay : duration;
-  const double iend = e0 <= 0 ? 0.0 : e0;
+  /* "max(min(associated effect end - start delay, active duration), 0)": the effect ends at the start delay plus the active duration (and no end delay), so it is the active duration; written so
+     that no rounding of the sum can make it differ */
+  const double iend = duration <= 0 ? 0.0 : duration;
   const GTEXT_CSS_Transition_Event_Type R = GTEXT_CSS_TRANSITION_EVENT_RUN, S = GTEXT_CSS_TRANSITION_EVENT_START, E = GTEXT_CSS_TRANSITION_EVENT_END;
   size_t n = 0;
 #define EV(t, ms) (type[n] = (t), elapsed[n] = (ms), n++)
@@ -1423,7 +1450,9 @@ GTEXT_CSS_Status gtext_css_transition_set_cancel_all(GTEXT_CSS_Transition_Set * 
     return st;
   }
   while (set->nrun) {
-    st = run_leave(set, set->nrun - 1, time_ms, true);   /* the room is reserved */
+    /* "Running transitions complete at a time that is equal to or after their end time, but prior to the first style change event whose time is equal to or after their end time": one that is
+       over has completed, and reports its end and not a cancellation */
+    st = run_leave(set, set->nrun - 1, time_ms, set->run[set->nrun - 1].end_time > time_ms);   /* the room is reserved */
     if (st != GTEXT_CSS_OK) {
       return st;
     }

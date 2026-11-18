@@ -1300,6 +1300,7 @@ struct GTEXT_CSSOM_Transition_Tracker {
   tracker_entry * retired;           ///< Entries of elements that were forgotten with transitions cancelled, kept until their transitioncancel events are reported.
   size_t nretired, capretired;
   uint64_t seq;
+  uint64_t id_high;                  ///< The greatest transition id any of the tracker's sets gave: a set made later starts after it, so an id is never given twice for one tracker.
   double time_ms;
   uint64_t version;
 };
@@ -1345,7 +1346,7 @@ void gtext_cssom_transition_tracker_free(GTEXT_CSSOM_Transition_Tracker * tracke
 }
 
 void gtext_cssom_transition_tracker_set_time(GTEXT_CSSOM_Transition_Tracker * tracker, double time_ms) {
-  if (tracker && tracker->time_ms != time_ms) {
+  if (tracker && time_ms == time_ms && tracker->time_ms != time_ms) {   /* a time that is not a number is not a time */
     tracker->time_ms = time_ms;
     tracker->version++;
   }
@@ -1421,6 +1422,9 @@ static GTEXT_CSS_Status entry_get(GTEXT_CSSOM_Transition_Tracker * t, const void
   }
   fresh.display = display_name(&t->alloc, pseudo, pseudo_length, &fresh.display_length);
   GTEXT_CSS_Status st = fresh.display ? gtext_css_transition_set_new(&t->alloc, &fresh.set) : GTEXT_CSS_E_OOM;
+  if (st == GTEXT_CSS_OK) {
+    gtext_css_transition_set_start_ids_after(fresh.set, t->id_high);
+  }
   if (st != GTEXT_CSS_OK) {
     gtext_allocator_free(&t->alloc, fresh.key);
     gtext_allocator_free(&t->alloc, fresh.display);
@@ -1429,6 +1433,13 @@ static GTEXT_CSS_Status entry_get(GTEXT_CSSOM_Transition_Tracker * t, const void
   t->entries[t->count] = fresh;
   *out = &t->entries[t->count++];
   return GTEXT_CSS_OK;
+}
+
+static void note_ids(GTEXT_CSSOM_Transition_Tracker * t, const GTEXT_CSS_Transition_Set * set) {
+  const uint64_t last = gtext_css_transition_set_last_id(set);
+  if (last > t->id_high) {
+    t->id_high = last;
+  }
 }
 
 /// Move an entry whose transitions were cancelled to the retired ones when the next frame owes events for them, else release it.
@@ -1493,6 +1504,7 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_forget(GTEXT_CSSOM_Transition_Tr
     if (st != GTEXT_CSS_OK) {
       break;
     }
+    note_ids(tracker, tracker->entries[i].set);
     (void)retire_or_release(tracker, &tracker->entries[i]);   /* the room is reserved */
     memmove(&tracker->entries[i], &tracker->entries[i + 1], (tracker->count - i - 1) * sizeof *tracker->entries);
     tracker->count--;
@@ -1570,6 +1582,19 @@ static bool style_is_display_none(css_core * core, const GTEXT_CSS_Computed_Styl
   return root && root->kind == GTEXT_CSS_VAL_KEYWORD && root->text.length == 4 && memcmp(root->text.data, "none", 4) == 0;
 }
 
+/// Whether the entry has a running transition of `display`.
+static bool entry_transitions_display(GTEXT_CSSOM_Transition_Tracker * t, css_core * core, const void * element, const char * key, size_t key_length) {
+  const tracker_entry * e = entry_find(t, element, key, key_length);
+  const GTEXT_CSS_Property_Id display = gtext_css_registry_find_property(core->registry, "display", 7);
+  GTEXT_CSS_Transition_Info info;
+  for (size_t i = 0; e && display && gtext_css_transition_set_running_at(e->set, i, &info); i++) {
+    if (info.property == display) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// An element (key NULL) or one pseudo-element that is not being rendered: its running transitions are cancelled, its completed ones removed, and it has no before-change style for the next event.
 static GTEXT_CSS_Status tracker_unrender(GTEXT_CSSOM_Transition_Tracker * t, const void * element, const char * key, size_t key_length) {
   for (size_t i = 0; i < t->count; i++) {
@@ -1608,6 +1633,7 @@ static GTEXT_CSS_Status tracker_step(GTEXT_CSSOM_Transition_Tracker * t, const v
   if (gtext_css_transition_set_version(e->set) != was) {
     t->version++;
   }
+  note_ids(t, e->set);
   gtext_css_computed_free(e->before);
   e->before = gtext_css_computed_retain(after);
   return GTEXT_CSS_OK;
@@ -1656,8 +1682,14 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_flush(GTEXT_CSSOM_Transition_Tra
     if (st == GTEXT_CSS_OK && after && i == 0) {
       element_flow = gtext_css_computed_flow(after);
     }
-    if (st == GTEXT_CSS_OK && after && !style_is_display_none(core, after)) {
+    if (st == GTEXT_CSS_OK && after) {
       st = tracker_step(tracker, chain[i], "", 0, "", 0, after);
+      /* an after-change style with `display: none` is not rendered unless a transition of `display` (`allow-discrete`, Transitions 2) is holding the element: "Transitions and animations should not
+         occur on display:none elements" (the pinned `display-none-no-animations.html`), but the element that fades out and then goes away is being rendered while it does */
+      if (st == GTEXT_CSS_OK && style_is_display_none(core, after) && !entry_transitions_display(tracker, core, chain[i], "", 0)) {
+        hidden = true;
+        st = tracker_unrender(tracker, chain[i], NULL, 0);
+      }
     }
     else if (st == GTEXT_CSS_OK) {
       /* an element that is not rendered: "Transitions and animations should not occur on display:none elements" (the pinned `display-none-no-animations.html`), and "implementations must also
@@ -1672,10 +1704,7 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_flush(GTEXT_CSSOM_Transition_Tra
   if (st == GTEXT_CSS_OK && pseudo && pseudo_length) {
     GTEXT_CSS_Computed_Style * after = NULL;
     st = hidden ? GTEXT_CSS_OK : gtext_cssom_document_after_change_style(tracker->document, element, pseudo, pseudo_length, &after);
-    if (st == GTEXT_CSS_OK && after && style_is_display_none(core, after)) {
-      gtext_css_computed_free(after);
-      after = NULL;
-    }
+    bool none = st == GTEXT_CSS_OK && after && style_is_display_none(core, after);
     if (st == GTEXT_CSS_OK && after) {
       GTEXT_CSS_Selector_List * list = NULL;
       bool null_obj = false;
@@ -1686,6 +1715,9 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_flush(GTEXT_CSSOM_Transition_Tra
         char buf[32];
         pseudo_key(list, &element_flow, buf, sizeof buf, &key, &kl);
         st = tracker_step(tracker, element, key, kl, pseudo, pseudo_length, after);
+        if (st == GTEXT_CSS_OK && none && !entry_transitions_display(tracker, core, element, key, kl)) {
+          st = tracker_unrender(tracker, element, key, kl);
+        }
       }
       gtext_css_selector_list_free(list);
     }

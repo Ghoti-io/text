@@ -44,3 +44,5 @@ snapshot-has-a-progress-after-the-effect	css_transition.c	  if (out->phase != GT
 snapshot-before-phase-is-active	css_transition.c	out->phase = local < t->delay ? GTEXT_CSS_TRANSITION_PHASE_BEFORE : 	out->phase = 0 ? GTEXT_CSS_TRANSITION_PHASE_BEFORE : 	transition
 frame-keeps-the-events-it-reported	css_transition.c	    gone_free(&set->alloc, g);\n  }\n  set->ngone = 0;	    gone_free(&set->alloc, g);\n  }	transition,fuzzseeds
 snapshot-has-another-transitions-id	css_transition.c	  out->id = t->id;\n  out->generation = t->generation;\n  out->transition_property	  out->id = t->id + 1;\n  out->generation = t->generation;\n  out->transition_property	transition,fuzzseeds
+cancel-all-cancels-a-finished-transition	css_transition.c	set->run[set->nrun - 1].end_time > time_ms);	true);	transition
+owed-events-are-not-bounded	css_transition.c	  while (s->ngone + more > MAX_OWED && s->ngone > 0) {	  while (0 && s->ngone + more > MAX_OWED && s->ngone > 0) {	transition

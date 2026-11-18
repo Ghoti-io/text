@@ -265,7 +265,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     }
     check_set(set);
     if (data[i + 1] % 3 != 0) {
-      take_frame(set, time + (data[i] % 4) * 100.0, fa, oom, 1 + data[i + 1] % 30, ledger);
+      take_frame(set, time + (data[i] % 4) * 100.0, fa, oom, 1 + data[i + 1] % 3, ledger);
     }
     GTEXT_CSS_Computed_Style * shown = nullptr;
     GTEXT_CSS_Computed_Style * again = nullptr;

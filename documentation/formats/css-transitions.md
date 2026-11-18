@@ -81,8 +81,10 @@ cancelled (a `transitioncancel`). The methods of `Animation` that change a trans
 belong to the Web Animations model, which the library does not implement.
 
 The tracker (css-cssom.md) is the document's consumer of both: `gtext_cssom_transition_tracker_events()` is the frame of every element and pseudo-element at the tracker's time, with each event's element and
-`pseudoElement`, and an element that is not being rendered (`display: none`, itself or an ancestor) or no longer in the document has its transitions cancelled, as Transitions 2 says ("must also cancel any running
-transitions on elements that are no longer being rendered", and in a document with `display: none` "Transitions and animations should not occur").
+`pseudoElement`, and a flush of an element that is not being rendered (its after-change style has `display: none`, or that of an ancestor in the flushed chain, unless a running transition of `display` holds it) and `forget()` of an element that is no longer in the document cancel its transitions, as Transitions 2 says ("must also cancel any running
+transitions on elements that are no longer being rendered"; "Transitions and animations should not occur on display:none elements" in the pinned `display-none-no-animations.html`). A flush of an element does not reach its descendants that are not in its chain.
+
+The library has no pending play task, so a transition's first frame sees its real phase: one that is active at its first frame reports `transitionrun` and `transitionstart` together (the table's "idle -> active" row), where an implementation that holds a transition pending for a frame reports the run first (the pinned `event-dispatch.tentative.html` says "whether or not the transition is still pending depends on the implementation"). A set holds at most 4,096 events it owes the next frame (`gtext_css_transition_set_events_lost()` counts what a caller that never takes frames lost).
 
 # What is not here
 

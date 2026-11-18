@@ -988,6 +988,37 @@ TEST(CssTransitionEvents, CancelAllCancelsTheRunningAndForgetsTheCompleted) {
   EXPECT_EQ(frame(cleared.set, 100), "") << "clear() is the set of something that is gone: no events";
 }
 
+/* "Running transitions complete at a time that is equal to or after their end time, but prior to the first style change event whose time is equal to or after their end time": an element that stops
+   being rendered after its transition is over has completed it, and reports its end. */
+TEST(CssTransitionEvents, CancellingAfterTheEndTimeReportsTheEndAndNotACancellation) {
+  Tx t;
+  ASSERT_EQ(t.event("opacity: 0", kFade + "opacity: 1", 0), GTEXT_CSS_OK);
+  EXPECT_EQ(frame(t.set, 500), "run:opacity:0 start:opacity:0");
+  ASSERT_EQ(gtext_css_transition_set_cancel_all(t.set, 1500), GTEXT_CSS_OK);
+  EXPECT_EQ(frame(t.set, 1500), "end:opacity:1");
+}
+
+/* A set that nobody takes frames of holds a bounded number of owed events and counts the rest as lost, and ids are never given twice by a set that was told where to start. */
+TEST(CssTransitionEvents, AnUnframedSetHoldsABoundedNumberOfOwedEventsAndIdsStartAfterWhatTheyAreTold) {
+  Tx t;
+  const std::string tr = "transition: opacity 1s linear, color 1s linear; ";
+  const std::string a = tr + "opacity: 1; color: red", b = tr + "opacity: 0; color: blue";
+  double now = 0;
+  for (int i = 0; i < 2100; i++) {
+    ASSERT_EQ(t.event(i % 2 ? a : b, i % 2 ? b : a, now), GTEXT_CSS_OK);
+    now += 10;
+    ASSERT_EQ(t.event(i % 2 ? b : a, i % 2 ? b : a, now + 2000), GTEXT_CSS_OK) << "completes";
+    now += 3000;
+  }
+  EXPECT_GT(gtext_css_transition_set_events_lost(t.set), 0u);
+  EXPECT_LE(gtext_css_transition_set_events_lost(t.set), 4200u);
+  GTEXT_CSS_Transition_Set * fresh = nullptr;
+  ASSERT_EQ(gtext_css_transition_set_new(nullptr, &fresh), GTEXT_CSS_OK);
+  gtext_css_transition_set_start_ids_after(fresh, gtext_css_transition_set_last_id(t.set));
+  EXPECT_EQ(gtext_css_transition_set_last_id(fresh), gtext_css_transition_set_last_id(t.set));
+  gtext_css_transition_set_free(fresh);
+}
+
 /* A reversal: "Reversed playback after completion: transitionrun, transitionstart, transitionend, transitionstart, transitionend" is for a seeked transition; a CSS reversal cancels the running
    transition and starts a new one, whose effect is shortened (its end event has the shortened duration, "interval end" of its own effect). */
 TEST(CssTransitionEvents, AReversalCancelsTheOldAndTheShortenedNewOneEndsAtItsOwnDuration) {

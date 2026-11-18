@@ -26,6 +26,7 @@
  * on a read, and a transition of an inherited property is inherited.
  */
 
+#include <cmath>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -534,6 +535,56 @@ TEST(CssomTransitionEvents, AnElementThatIsNotRenderedHasItsTransitionsCancelled
   u.set_class("#t", "on off");
   u.flush("#t");
   EXPECT_EQ(frame(u, "#t"), "") << "cancelled before any frame saw it";
+}
+
+/* The element that fades out and then goes away: `transition: opacity, display allow-discrete` holds it rendered while `display` transitions (Transitions 2), so its opacity transition runs instead of being
+   cancelled at the style change event; with no transition of `display` the element is not rendered and nothing runs. */
+TEST(CssomTransitionEvents, ADisplayTransitionKeepsAnElementThatGoesToDisplayNoneRendered) {
+  const char * css = "#t { width: 100px; opacity: 1; transition: opacity 1s linear, display 1s allow-discrete } #t.off { display: none; opacity: 0 }";
+  Tr t(page(css));
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "off");
+  t.flush("#t");
+  EXPECT_EQ(frame(t, "#t"), "run::display:0 start::display:0 run::opacity:0 start::opacity:0");
+  Tr u(page("#t { opacity: 1; transition: opacity 1s linear } #t.off { display: none; opacity: 0 }"));
+  u.at(0);
+  u.flush("#t");
+  u.set_class("#t", "off");
+  u.flush("#t");
+  EXPECT_EQ(frame(u, "#t"), "") << "nothing runs on a display:none element";
+}
+
+/* A time that is not a number is not a time: the tracker keeps the one it had, and forgetting an element still works. Ids are not given twice for an element that is forgotten and seen again. */
+TEST(CssomTransitionEvents, ANotANumberTimeIsIgnoredAndAnIdIsNotGivenTwiceForAForgottenElement) {
+  Tr t(page(kBox));
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  EXPECT_EQ(frame(t, "#t"), "run::width:0 start::width:0");
+  t.at(250);
+  t.at(std::nan(""));
+  size_t gone = 0;
+  ASSERT_EQ(gtext_cssom_transition_tracker_forget(t.tracker, t.m.handle("#t"), &gone), GTEXT_CSS_OK);
+  EXPECT_EQ(gone, 1u);
+  GTEXT_CSSOM_Transition_Events * ev = nullptr;
+  ASSERT_EQ(gtext_cssom_transition_tracker_events(t.tracker, &ev), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_cssom_transition_events_count(ev), 1u);
+  GTEXT_CSSOM_Transition_Event old{};
+  ASSERT_TRUE(gtext_cssom_transition_events_at(ev, 0, &old));
+  gtext_cssom_transition_events_free(ev);
+  t.set_class("#t", "");
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  ASSERT_EQ(gtext_cssom_transition_tracker_events(t.tracker, &ev), GTEXT_CSS_OK);
+  GTEXT_CSSOM_Transition_Event fresh{};
+  ASSERT_GT(gtext_cssom_transition_events_count(ev), 0u);
+  ASSERT_TRUE(gtext_cssom_transition_events_at(ev, 0, &fresh));
+  gtext_css_transition_events_free(nullptr);
+  gtext_cssom_transition_events_free(ev);
+  EXPECT_NE(fresh.event.transition, old.event.transition);
 }
 
 /* An element below a `display: none` ancestor is not being rendered either: its transition is cancelled by a flush of the element alone. When it is rendered again it has no before-change style, so a

@@ -127,6 +127,18 @@ GTEXT_API void gtext_css_transition_set_clear(GTEXT_CSS_Transition_Set * set);
 /** @brief A number that changes whenever the running or the completed transitions do (a cache key for a style computed with the set). NULL is 0. */
 GTEXT_API uint64_t gtext_css_transition_set_version(const GTEXT_CSS_Transition_Set * set);
 
+/** @brief The last transition id the set has given (0 before any). */
+GTEXT_API uint64_t gtext_css_transition_set_last_id(const GTEXT_CSS_Transition_Set * set);
+
+/** @brief Make the ids this set gives from now on greater than `id`, so that sets of one owner (the tracker's: an element forgotten and added again) never give one id to two transitions. */
+GTEXT_API void gtext_css_transition_set_start_ids_after(GTEXT_CSS_Transition_Set * set, uint64_t id);
+
+/**
+ * @brief How many events the set dropped unreported. A set holds the cancellations and completions that the next frame owes, at most 4,096 of them; a caller that never takes frames (it has no use for
+ * the events) loses the oldest past that, and this counts them. A caller that takes a frame between style change events loses none.
+ */
+GTEXT_API uint64_t gtext_css_transition_set_events_lost(const GTEXT_CSS_Transition_Set * set);
+
 /** @brief How many transitions are running. NULL is 0. */
 GTEXT_API size_t gtext_css_transition_set_running_count(const GTEXT_CSS_Transition_Set * set);
 
@@ -216,8 +228,8 @@ GTEXT_API size_t gtext_css_transition_events_count(const GTEXT_CSS_Transition_Ev
 GTEXT_API bool gtext_css_transition_events_at(const GTEXT_CSS_Transition_Events * events, size_t index, GTEXT_CSS_Transition_Event * out);
 
 /**
- * @brief The most events (and the most bytes of names) that a frame of the set can add: three events for each running transition and one for each cancelled or completed one that is waiting
- * to be reported. A caller that takes the frames of many sets into one list reserves the sum first, and then no frame can fail.
+ * @brief The most events (and the most bytes of names) that a frame of the set can add: three events (run, start, end) for each running transition and for each cancelled or completed one that is
+ * waiting to be reported. A caller that takes the frames of many sets into one list reserves the sum first, and then no frame can fail.
  * @param set The set (NULL is 0 and 0). @param events Receives the most events; may be NULL. @param name_bytes Receives the most bytes of names; may be NULL.
  */
 GTEXT_API void gtext_css_transition_set_frame_bound(const GTEXT_CSS_Transition_Set * set, size_t * events, size_t * name_bytes);
@@ -254,9 +266,9 @@ typedef enum {
 
 /**
  * @struct GTEXT_CSS_Transition_Animation
- * @brief A `CSSTransition` as the Web Animations interface reads it at a time. Strings are valid until the set is updated, framed or freed.
+ * @brief A `CSSTransition` as the Web Animations interface reads it at a time. Strings are valid until the set is updated, cleared, cancelled, or freed.
  *
- * `start_time_ms` is the time of the style change event (the animation's start: its effect begins `delay_ms` later), and is unresolved (`start_time_resolved` false, `pending` true) until the first
+ * `start_time_ms` is the time of the style change event (the animation's start: its effect begins `delay_ms` later; it is meaningful only when `start_time_resolved`: until then `startTime` is null), and is unresolved (`start_time_resolved` false, `pending` true) until the first
  * frame after the transition was made ("a start time ... resolved when the animation is ready"); `current_time_ms` is the time since then (0 while pending). The effect's timing is that of the
  * transition: `fill: "backwards"`, one iteration, `direction: "normal"`, `endDelay` 0, the matching `transition-timing-function` as `easing`; its computed timing is `active_duration_ms` (the duration),
  * `end_time_ms` (delay plus duration) and, when the effect is not before it or after it with no fill, `progress` (the output of the timing function at the effect's progress) and `current_iteration` 0.
