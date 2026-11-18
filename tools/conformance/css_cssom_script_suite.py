@@ -155,6 +155,10 @@ def answer(msg):
 
 
 MESSAGE_OWNERS = [
+    (r'Background transition from @starting-style value', 'owner: src/css transition tracker (the before-change style of an element\'s first style comes from `@starting-style`, Transitions 2 "starting-style": not built)'),
+    (r'but got "(left|top|right|bottom) \d+(\.\d+)?px"$', 'owner: src/css animation sampling (an interpolated background-position component is written with its origin keyword; both browsers write the offset alone)'),
+    (r'but got "rgb\(\d+\.\d+, ', 'owner: src/css animation sampling (an interpolated sRGB color is written with fractional components; both browsers round to 8 bits)'),
+    (r'expected "example-counter \d+" but got "example-counter \d+"', 'owner: src/css animation type of counter-increment (a list of name and integer pairs is interpolated by the integer; both browsers are discrete at the midpoint)'),
     (r'unsupported, needs (condition|container\.computed_style|sibling_index|sibling_count)', 'owner: src/css/css_markup.c, the element interface the Markup adapter provides (the callback the computed layer asks for is missing)'),
 ]
 

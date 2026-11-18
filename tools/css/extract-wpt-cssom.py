@@ -1217,8 +1217,12 @@ def interpret_page(wpt, rel, text, unextracted):
     import importlib.util
     census = _census()
     calls, marks, helpers = census.features(wpt, rel, False)
-    blocked = {'timing', 'input-driver', 'frame-or-popup', 'typed-om', 'register-property', 'view-transition', 'custom-element', 'fonts'}
-    if blocked & set(marks) or [h for h in helpers if os.path.basename(h) not in EVAL.MODELED_HELPERS]:
+    # a page that waits (promise_test, requestAnimationFrame, setTimeout, a transition's events) is the evaluator's to read now: its event loop is a virtual one (tools/css/cssom_eval.py, Loop); what
+    # needs the Web Animations model (an Animation object, the animations of an element, the events of CSS animations) is not, and is counted under its own reason
+    blocked = {'animation-model', 'input-driver', 'frame-or-popup', 'typed-om', 'register-property', 'view-transition', 'custom-element', 'fonts'}
+    if 'timing' in marks and not EVAL.reads_timing(wpt, rel, text, helpers):
+        return
+    if blocked & set(marks) or [h for h in helpers if not EVAL.is_modeled_helper(wpt, rel, h)]:
         return
     res = EVAL.evaluate_page(rel, text, wpt)
     if res is None or not res.tests:
@@ -1312,6 +1316,13 @@ def main():
             pages += 1
     if rules:
         rule_vector_programs(rules, programs)
+    # The pages that need the Web Animations model say so under one reserved reason (REASON_CODES, `animation-model`), whatever else they could not be read for: the work that waits for the model
+    # is one count. A page that is a reference test, has no assertion or is scored by another gate keeps that reason.
+    census = _census()
+    animated = {}
+    for rel in {r for r, _, _ in unextracted}:
+        animated[rel] = 'animation-model' in census.features(wpt, rel, False)[1]
+    unextracted[:] = [(rel, n, 'animation-model' if animated[rel] and (reason == 'timing' or reason.startswith(('unmodeled:', 'helper:'))) else reason) for rel, n, reason in unextracted]
     # The partition: one line for a page and a reason, with the number of tests.
     counts = {}
     for rel, n, reason in unextracted:

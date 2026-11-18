@@ -595,8 +595,7 @@ class Parser:
             return ('un', t.text, self.unary())
         if t.kind == 'ident' and t.text == 'await':
             self.i += 1
-            self.unary()
-            return ('unsup', 'js-await')
+            return ('await', self.unary())
         if t.kind == 'punct' and t.text in ('++', '--'):
             self.i += 1
             return ('upd', t.text, True, self.to_pattern(self.unary()))

@@ -782,3 +782,227 @@ outcome 1 unmodeled:host-attachShadow-argument
 test(() => { document.getElementById("host").getElementById("x"); }, "an element has no getElementById");
 test(() => { document.getElementById("host").attachShadow({mode: "open", clonable: true}); }, "clonable changes cloneNode");
 </script>
+=== promise-test-awaits-a-resolved-promise
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+promise_test(async t => { const v = await Promise.resolve(3); assert_equals(v, 3); }, "a");
+</script>
+=== promise-test-runs-after-the-script-and-a-sync-test-before-it
+tests 2
+name 0 a
+name 1 b
+seq test|1|b;test|0|a
+---
+<!DOCTYPE html><title>t</title><script>
+promise_test(async t => { assert_equals(1, 1); }, "a");
+test(() => { assert_equals(2, 2); }, "b");
+</script>
+=== microtasks-run-in-the-order-the-specification-gives
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+promise_test(async t => {
+  const log = [];
+  Promise.resolve().then(() => log.push("a"));
+  (async () => { log.push("b"); await null; log.push("c"); })();
+  log.push("d");
+  await Promise.resolve();
+  await Promise.resolve();
+  assert_array_equals(log, ["b", "d", "a", "c"]);
+}, "order");
+</script>
+=== an-assertion-that-fails-after-an-await-fails-the-test
+tests 2
+outcome 0 fail
+---
+<!DOCTYPE html><title>t</title><script>
+promise_test(async t => { await null; assert_equals(1, 2, "after"); }, "a");
+promise_test(async t => { await null; assert_equals(1, 1); }, "b");
+</script>
+=== then-catch-finally-all-and-race
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+promise_test(t => {
+  const log = [];
+  return Promise.reject(1).catch(v => { log.push("c" + v); return 2; }).finally(() => { log.push("f"); }).then(v => {
+    assert_equals(v, 2);
+    return Promise.all([Promise.resolve(1), 2, new Promise(r => r(3))]);
+  }).then(all => {
+    assert_array_equals(all, [1, 2, 3]);
+    return Promise.race([new Promise(() => {}), Promise.resolve("r")]);
+  }).then(r => { assert_equals(r, "r"); assert_array_equals(log, ["c1", "f"]); });
+}, "chain");
+</script>
+=== a-timer-is-a-wait-the-runner-lets-pass
+tests 1
+has advance|50$
+seq ptest;advance|50
+---
+<!DOCTYPE html><title>t</title><script>
+promise_test(async t => {
+  let fired = false;
+  await new Promise(r => setTimeout(() => { fired = true; r(); }, 50));
+  assert_true(fired);
+}, "timer");
+</script>
+=== a-frame-is-a-wait-the-runner-lets-pass-and-its-time-is-a-register
+tests 1
+has frame|r
+---
+<!DOCTYPE html><title>t</title><script>
+promise_test(async t => {
+  const ts = await new Promise(r => requestAnimationFrame(r));
+  assert_greater_than(ts, 0);
+}, "frame");
+</script>
+=== two-waits-at-once-are-not-modeled
+tests 1
+outcome 0 unmodeled:concurrent-waits
+---
+<!DOCTYPE html><title>t</title><script>
+promise_test(async t => {
+  await Promise.all([new Promise(r => requestAnimationFrame(r)), new Promise(r => setTimeout(r, 10))]);
+}, "both");
+</script>
+=== an-event-watcher-waits-for-the-event-the-runner-dispatches
+tests 1
+has lw|w
+has ewait|w
+---
+<!DOCTYPE html><title>t</title><div id=d style="transition: width 1s"></div><script>
+promise_test(async t => {
+  const w = new EventWatcher(t, document.getElementById("d"), ["transitionend"]);
+  const e = await w.wait_for("transitionend");
+  assert_equals(e.type, "transitionend");
+}, "watch");
+</script>
+=== a-listener-that-only-fails-is-a-forbidden-event
+tests 1
+has lf|e
+---
+<!DOCTYPE html><title>t</title><div id=d></div><script>
+promise_test(async t => {
+  document.getElementById("d").addEventListener("transitionrun", t.step_func(() => { assert_unreached("no run"); }));
+}, "forbid");
+</script>
+=== a-listener-that-does-anything-else-is-not-modeled
+tests 1
+outcome 0 unmodeled:host-addEventListener-handler
+---
+<!DOCTYPE html><title>t</title><div id=d></div><script>
+promise_test(async t => {
+  let n = 0;
+  document.getElementById("d").addEventListener("transitionrun", () => { n++; });
+  await null;
+}, "other");
+</script>
+=== the-events-of-css-animations-are-the-model-of-web-animations
+tests 1
+outcome 0 unmodeled:animation-event-animationend
+---
+<!DOCTYPE html><title>t</title><div id=d></div><script>
+promise_test(async t => {
+  const w = new EventWatcher(t, document.getElementById("d"), ["animationend"]);
+}, "animation");
+</script>
+=== a-read-whose-value-is-dropped-is-a-flush-and-needs-no-layout
+tests 1
+has sattr|r1|s2|paddingLeft|flush$
+---
+<!DOCTYPE html><title>t</title><div id=d></div><script>
+test(() => { getComputedStyle(document.getElementById("d")).paddingLeft; assert_true(true); }, "flush");
+</script>
+=== an-event-and-a-frame-at-once-are-not-modeled
+tests 1
+outcome 0 unmodeled:concurrent-waits
+---
+<!DOCTYPE html><title>t</title><div id=d></div><script>
+promise_test(async t => {
+  const w = new EventWatcher(t, document.getElementById("d"), ["transitionend"]);
+  await Promise.all([w.wait_for("transitionend"), new Promise(r => requestAnimationFrame(r))]);
+}, "both");
+</script>
+=== a-listener-that-calls-another-function-is-not-modeled
+tests 1
+outcome 0 unmodeled:host-addEventListener-handler
+---
+<!DOCTYPE html><title>t</title><div id=d></div><script>
+promise_test(async t => {
+  document.getElementById("d").addEventListener("transitionrun", () => assert_true("x"));
+  await null;
+}, "calls");
+</script>
+=== a-second-wait-for-while-one-is-outstanding-is-a-rejection
+tests 1
+outcome 0 unmodeled:js-exception
+---
+<!DOCTYPE html><title>t</title><div id=d></div><script>
+promise_test(async t => {
+  const w = new EventWatcher(t, document.getElementById("d"), ["transitionend"]);
+  const p = w.wait_for("transitionend");
+  await w.wait_for("transitionend");
+}, "twice");
+</script>
+=== finally-adds-the-jobs-the-specification-gives-it
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+promise_test(async t => {
+  const log = [];
+  let n = 0;
+  const tick = () => { n++; log.push(n); if (n < 6) Promise.resolve().then(tick); };
+  Promise.resolve().then(tick);
+  Promise.resolve().finally(() => log.push("f")).then(() => log.push("after"));
+  for (let i = 0; i < 12; i++) { await null; }
+  assert_array_equals(log, [1, "f", 2, 3, 4, "after", 5, 6]);
+  const log2 = [];
+  let m = 0;
+  const tick2 = () => { m++; log2.push(m); if (m < 6) Promise.resolve().then(tick2); };
+  Promise.resolve().then(tick2);
+  Promise.reject(1).finally(() => {}).catch(() => log2.push("caught"));
+  for (let i = 0; i < 12; i++) { await null; }
+  assert_array_equals(log2, [1, 2, 3, 4, "caught", 5, 6]);
+}, "finally");
+</script>
+=== a-promise-resolved-with-a-pending-one-cannot-be-rejected
+tests 1
+---
+<!DOCTYPE html><title>t</title><script>
+promise_test(async t => {
+  let state = "pending";
+  const p = new Promise((res, rej) => { res(new Promise(() => {})); rej(5); });
+  p.then(() => { state = "ok"; }, () => { state = "rejected"; });
+  await null; await null; await null; await null;
+  assert_equals(state, "pending");
+}, "locked");
+</script>
+=== a-callback-a-sync-test-leaves-behind-is-not-modeled
+tests 1
+outcome 0 unmodeled:wait-pending-at-end
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { setTimeout(() => { assert_true(false); }, 10); }, "t");
+</script>
+=== an-await-inside-a-try-is-not-modeled
+tests 1
+outcome 0 unmodeled:await-in-guarded-region
+---
+<!DOCTYPE html><title>t</title><script>
+promise_test(async t => { try { await null; } catch (e) { } }, "try");
+</script>
+=== a-delay-that-is-not-a-number-is-not-modeled
+tests 1
+outcome 0 unmodeled:host-setTimeout-delay
+---
+<!DOCTYPE html><title>t</title><script>
+promise_test(async t => { await new Promise(r => setTimeout(r, "10")); }, "delay");
+</script>
+=== the-window-is-assigned-by-a-helper-only
+tests 1
+outcome 0 unmodeled:host-window-assign
+---
+<!DOCTYPE html><title>t</title><script>
+test(() => { window.innerWidth = 3; assert_true(true); }, "assign");
+</script>

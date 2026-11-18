@@ -30,15 +30,25 @@ tests after it are listed too when it could have changed the document (``unmodel
 (``evaluate_page`` returns None and the page keeps the reasons of tools/css/extract-wpt-cssom.py), because then the set of tests is not known. A step limit makes a runaway
 loop a construct too (``step-limit``). Nothing is guessed and nothing is dropped.
 
+**Promises and time.** A `promise_test` is run, after the script that made it, over a virtual event loop (``Loop``): promises, ``then``/``catch``/``finally``, ``Promise.all``/``race``, ``async`` functions
+and ``await`` follow the specification's job order (an async function's body runs in a thread of its own that is handed control at each ``await``, so only one thing runs at a time). What the loop
+cannot know is whether time passing makes something happen, since that is a fact of the library: a *wait* (a frame, a timer, an EventWatcher's ``wait_for``, a once listener) is a promise that only the
+runner can end, and when the microtasks are done one *turn* ends it by writing the op that lets time pass (``frame``, ``advance``, ``ewait``, ``ewaito``); what the page does next is the ops that follow, and a
+wait that does not end in time fails the test at run time. Two waits that could end in either order (an event and a frame, two timers) would need the program to branch on a fact of the library, so they are
+``Unmodeled('concurrent-waits')``. An event listener is modeled in the two forms that need no branch: an EventWatcher, and a handler that only calls ``assert_unreached``. The runner owns the document timeline
+(frames of 16 ms) and the events the transition tracker owes; the events of CSS animations are the Web Animations model's and are refused by name (``animation-event-*``, reason ``animation-model``).
+
 Test counts: a page's tests are the `test()` calls its script makes, counted as it runs (so a loop is unrolled and a function called twice is two tests). ``PageResult.static_calls``
 is the count of `test(` call sites in the source, the second method of the census; the two differ only for a page that makes tests in a loop or a function, and the page record of the
 browsers (tools/oracle/css_page_record.py) is the third: the gate requires all of the names the evaluator gives to be the names the harness reported.
 """
+import collections
 import html.parser
 import math
 import os
 import re
 import sys
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cssom_js as J   # noqa: E402
@@ -267,7 +277,7 @@ def typeof(v):
         return 'number'
     if isinstance(v, str):
         return 'string'
-    if isinstance(v, (Func, Native)):
+    if isinstance(v, (Func, Native, BoundMethod, StepFunc)):
         return 'function'
     if isinstance(v, Rt):
         raise Unmodeled('computed-value-expression')
@@ -625,6 +635,11 @@ class Interp:
         self.title = None
         self.default_names = 0
         self.tainted = set()       # page variables a test the evaluator could not run assigns: their value is not known
+        self.loop = Loop(self)     # the microtasks and the waits of a promise_test
+        self.queued = []           # the promise_tests the script that is running has made
+        self.guard_depth = 0       # `if` statements on a value of the library that are being written as ops (an await inside one would let other ops land in it)
+        self.in_helper = False     # a modeled helper script is running (it may assign to the window)
+        self.shadow_page = False   # the page has a shadow tree (the runner's style update does not reach one)
         self.install_globals()
 
     # ---- ops ----
@@ -677,7 +692,10 @@ class Interp:
         g['CSS'] = HostCSS('CSS')
         g['console'] = JObj(log=Native(lambda i, t, a: UNDEF, 'log'), warn=Native(lambda i, t, a: UNDEF), error=Native(lambda i, t, a: UNDEF), info=Native(lambda i, t, a: UNDEF))
         g['matchMedia'] = Native(self.n_matchMedia, 'matchMedia')
-        for name in ('test', 'setup', 'assert_equals', 'assert_not_equals', 'assert_true', 'assert_false', 'assert_array_equals', 'assert_approx_equals', 'assert_greater_than',
+        g['Promise'] = Native(lambda i, t, a: (_ for _ in ()).throw(JSThrow("Promise constructor cannot be invoked without 'new'", 'TypeError')), 'Promise')
+        g['requestAnimationFrame'] = Native(self.n_requestAnimationFrame, 'requestAnimationFrame')
+        g['setTimeout'] = Native(self.n_setTimeout, 'setTimeout')
+        for name in ('test', 'promise_test', 'setup', 'assert_equals', 'assert_not_equals', 'assert_true', 'assert_false', 'assert_array_equals', 'assert_approx_equals', 'assert_greater_than',
                      'assert_less_than', 'assert_greater_than_equal', 'assert_less_than_equal', 'assert_in_array', 'assert_unreached', 'assert_regexp_match', 'assert_class_string',
                      'add_completion_callback', 'done', 'getComputedStyle', 'parseInt', 'parseFloat', 'isNaN', 'String', 'Number', 'Boolean', 'Array', 'Object', 'JSON', 'isFinite',
                      'assert_throws_dom', 'assert_throws_js', 'assert_throws_exactly', 'assert_implements', 'assert_implements_optional'):
@@ -712,9 +730,36 @@ class Interp:
         return Rt(r, 'b')
 
     def override_helpers(self, scope):
-        """After a modeled helper's declarations are hoisted: the functions of MODELED_HELPER_NATIVES are the runner's."""
+        """After a modeled helper's declarations are hoisted and again after it has run (a helper that fills the window does so when it runs): the functions the evaluator cannot fold (a loop on
+        a read, a sort of values only the library has, a comparison of two times) are the runner's."""
         if 'query_is_css_parseable' in scope.vars and isinstance(scope.vars['query_is_css_parseable'], Func):
             scope.vars['query_is_css_parseable'] = Native(self.n_query_is_css_parseable, 'query_is_css_parseable')
+        for name, native in (('waitForAnimationFrames', self.n_waitForAnimationFrames), ('assert_end_event_batch_equal', self.n_assert_end_event_batch_equal)):
+            if isinstance(scope.vars.get(name), Func):
+                scope.vars[name] = Native(native, name)
+
+    def n_assert_end_event_batch_equal(self, interp, this, a):
+        """helper.js `assert_end_event_batch_equal(evts, propertyNames, elapsedTimes, pseudoElement = '')`: the events and the expectations are sorted by property name and compared one by one. The sort of the
+        events is a sort of values only the library has, so the runner does it (``ebatch``); the checks of the helper's own arguments are its first two assertions, made here."""
+        self.need_test()
+        if len(a) < 3 or not isinstance(a[0], JArr) or not isinstance(a[1], JArr) or not all(isinstance(e, HostEvent) for e in a[0]) or not all(isinstance(p, str) for p in a[1]):
+            raise Unmodeled('helper-assert_end_event_batch_equal-arguments')
+        evts, names, times = a[0], a[1], a[2]
+        pseudo = a[3] if len(a) > 3 and a[3] is not UNDEF else ''
+        if not isinstance(pseudo, str):
+            raise Unmodeled('helper-assert_end_event_batch_equal-arguments')
+        self.n_assert_equals(self, UNDEF, [float(len(evts)), float(len(names)), 'Test harness error: should have waited for the correct number of events'])
+        if isinstance(times, float):
+            times = JArr([times] * len(names))
+        elif not (isinstance(times, JArr) and len(times) == len(names)):
+            self.n_assert_true(self, UNDEF, [False, 'Test harness error: elapsedTimes must either be a number or an array of numbers with the same length as propertyNames'])
+        elif not all(isinstance(x, float) for x in times):
+            raise Unmodeled('helper-assert_end_event_batch_equal-arguments')
+        regs = [ev.fields[n].reg for ev in evts for n, _ in EVENT_FIELDS]
+        self.emit('ebatch', 's:' + pseudo, len(evts), *names, *[fmt_ms(t) for t in times], *regs)
+        for ev in evts:
+            ev.poisoned = True
+        return UNDEF
 
     def n_unsupported(self, name):
         def f(interp, this, args):
@@ -735,6 +780,25 @@ class Interp:
         return UNDEF
 
     def n_test(self, interp, this, args):
+        rec = self.test_record(args)
+        self.run_test(rec, args[0], False)
+        return UNDEF
+
+    def n_promise_test(self, interp, this, args):
+        """`promise_test(body, name)`: the test is made now (the harness names it in order) and run after the script that made it, one at a time, each when the one before it is done."""
+        if self.cur is not None:
+            raise Unmodeled('harness-nested-test')
+        rec = self.test_record(args)
+        self.queued.append((rec, args[0]))
+        return UNDEF
+
+    def run_queued(self):
+        """The promise_tests a script made, after it: each runs until its promise settles."""
+        while self.queued:
+            rec, fn = self.queued.pop(0)
+            self.run_test(rec, fn, True)
+
+    def test_record(self, args):
         if not args or not isinstance(args[0], Func):
             raise Unmodeled('harness-test-argument')
         if self.cur is not None:
@@ -752,14 +816,35 @@ class Interp:
             self.default_names += 1
         rec = TestRecord(idx, name)
         self.tests.append(rec)
+        return rec
+
+    def run_test(self, rec, body, is_promise):
+        idx, name = rec.index, rec.name
         was_poisoned = self.poisoned
         checkpoint = len(self.ops)
         reg_checkpoint = self.regs
         self.cur = TestState(idx, name)
+        self.loop.reset()
         self.emit('test', idx, name)
+        if is_promise:
+            self.emit('ptest')
         try:
             try:
-                self.call(args[0], HostTest('t'), [HostTest('t')])
+                result = self.call(body, HostTest('t'), [HostTest('t')])
+                if not is_promise and self.loop.outstanding():
+                    raise Unmodeled('wait-pending-at-end')   # a callback or job the test started would run after it
+                if is_promise and (self.shadow_page or any(o[0] == 'attach' for o in self.ops)):
+                    raise Unmodeled('shadow-tree-in-a-promise-test')   # the runner's style update does not reach a shadow tree
+                if is_promise:
+                    if not isinstance(result, JPromise):
+                        raise Unmodeled('harness-promise-test-body')
+                    self.loop.drive(result)
+                    if result.state == 'rejected':
+                        if isinstance(result.value, AssertFail):
+                            raise result.value
+                        raise Unmodeled('js-exception')
+                    if self.loop.outstanding():
+                        raise Unmodeled('wait-pending-at-end')   # a callback of the page that has not run would run after the test
             except AssertFail as a:
                 self.emit('fail', a.value)
             except JSThrow as t:
@@ -781,14 +866,134 @@ class Interp:
             del self.ops[checkpoint:]
             self.regs = reg_checkpoint
             rec.reason = u.construct
-            if func_may_change_world(args[0].node, self.funcs):
+            if func_may_change_world(body.node, self.funcs):
                 self.poisoned = True
             declared = set()
-            declared_names(args[0].node, declared)
-            outer_writes(args[0].node[2], declared, self.tainted)
+            declared_names(body.node, declared)
+            outer_writes(body.node[2], declared, self.tainted)
         finally:
             self.cur = None
-        return UNDEF
+            self.loop.reset()
+
+    # ---- events, frames and timers ----
+    def n_Array(self, interp, this, args):
+        """`Array(n)` and `Array(a, b)`, as `new Array(...)`."""
+        if len(args) == 1 and isinstance(args[0], float) and not (args[0] == int(args[0]) and 0 <= args[0] < 4294967296):
+            raise Unmodeled('js-Array-length')   # a RangeError of the page
+        n = int(to_num(args[0])) if len(args) == 1 and isinstance(args[0], float) else None
+        return JArr([UNDEF] * n) if n is not None else JArr(args)
+
+    def n_requestAnimationFrame(self, interp, this, args):
+        if not args or not isinstance(args[0], (Func, StepFunc, Native)):
+            raise Unmodeled('host-requestAnimationFrame-argument')
+        self.loop.ids += 1
+        self.loop.add_wait(HostWait('raf', callback=args[0]))
+        return float(self.loop.ids)
+
+    def n_setTimeout(self, interp, this, args):
+        if not args or not isinstance(args[0], (Func, StepFunc, Native)):
+            raise Unmodeled('host-setTimeout-argument')
+        if len(args) > 1 and not isinstance(args[1], float):
+            raise Unmodeled('host-setTimeout-delay')   # a string or a value of the library is a delay the evaluator does not read
+        ms = args[1] if len(args) > 1 else 0.0
+        if len(args) > 2 or not (ms == ms) or ms < 0:
+            raise Unmodeled('host-setTimeout-arguments')
+        self.loop.ids += 1
+        self.loop.add_wait(HostWait('timer', callback=args[0], ms=ms))
+        return float(self.loop.ids)
+
+    def n_waitForAnimationFrames(self, interp, this, args):
+        """helper.js `waitForAnimationFrames(count, onFrame)`: a promise that resolves after that many frames, each of which runs onFrame. (The helper compares the timeline's time with its time at the
+        start, which is a comparison of a fact of the library with another; every frame the runner runs moves the time, so it is `count` frames.)"""
+        n = args[0] if args and isinstance(args[0], float) else None
+        on_frame = args[1] if len(args) > 1 and isinstance(args[1], (Func, StepFunc)) else None
+        if n is None or n != int(n) or n < 1 or (len(args) > 1 and args[1] is not UNDEF and on_frame is None):
+            raise Unmodeled('host-waitForAnimationFrames-argument')
+        return self.loop.wait_promise('frames', count=int(n), on_frame=on_frame)
+
+    def new_event_watcher(self, args):
+        """`new EventWatcher(t, node, types, timeoutPromise)`: listeners on the element for the types (the runner dispatches the events of a frame to them, and a failed assertion of the harness's
+        handler is a failed test)."""
+        if len(args) < 3 or not isinstance(args[0], HostTest) or not isinstance(args[1], HostElem):
+            raise Unmodeled('host-EventWatcher-arguments')
+        types = [args[2]] if isinstance(args[2], str) else list(args[2]) if isinstance(args[2], JArr) else None
+        if not types or not all(isinstance(x, str) for x in types):
+            raise Unmodeled('host-EventWatcher-types')
+        self.need_event_types(types)
+        timeout = args[3] if len(args) > 3 and args[3] is not UNDEF else None
+        if timeout is not None and not isinstance(timeout, Func):
+            raise Unmodeled('host-EventWatcher-timeout')
+        name = self.new_node('w')
+        self.emit('lw', name, args[1].name, *types)
+        return HostWatcher(name, args[1].name, types, timeout)
+
+    def need_event_types(self, types):
+        """The events the library reports are those of CSS Transitions; the events of CSS animations are the Web Animations model's (the next stage), so a page that waits for one has no events here."""
+        for t in types:
+            if t not in TRANSITION_EVENTS:
+                raise Unmodeled('animation-event-' + t)
+
+    def watcher_get(self, w, key, for_call):
+        if key == 'wait_for':
+            def wait_for(i, a):
+                if w.waiting:
+                    p = JPromise()
+                    self.loop.reject(p, JSThrow('Already waiting for an event or events'))
+                    return p
+                types = [a[0]] if a and isinstance(a[0], str) else list(a[0]) if a and isinstance(a[0], JArr) else None
+                if not types or not all(isinstance(x, str) for x in types):
+                    raise Unmodeled('host-wait_for-types')
+                self.need_event_types(types)
+                record_all = False
+                if len(a) > 1 and a[1] is not UNDEF:
+                    if not isinstance(a[1], JObj) or any(k != 'record' for k in a[1]):
+                        raise Unmodeled('host-wait_for-options')
+                    record_all = a[1].get('record') == 'all'
+                budget = 0
+                if w.timeout is not None:
+                    # the timeout is the promise of waitForAnimationFrames(n): n frames; the harness gives up when they are over
+                    saved = self.loop.capture
+                    self.loop.capture = []
+                    try:
+                        tp = self.call(w.timeout, UNDEF, [])
+                        got = self.loop.capture
+                    finally:
+                        self.loop.capture = saved
+                    if not (isinstance(tp, JPromise) and tp.wait is not None and got == [tp.wait] and tp.wait.kind == 'frames' and tp.wait.on_frame is None):
+                        raise Unmodeled('host-EventWatcher-timeout')
+                    budget = tp.wait.count
+                if w.budget is not None and w.budget != budget:
+                    raise Unmodeled('host-EventWatcher-timeout')
+                w.budget = budget
+                w.waiting = True
+                return self.loop.wait_promise('event', watcher=w, types=types, record_all=record_all, budget=budget)
+            return BoundMethod(wait_for)
+        if key == 'stop_watching':
+            def stop(i, a):
+                self.emit('lstop', w.name)
+                return UNDEF
+            return BoundMethod(stop)
+        raise Unmodeled('harness-EventWatcher-' + key)
+
+    def add_event_listener(self, el, a):
+        if len(a) < 2 or not isinstance(a[0], str):
+            raise Unmodeled('host-addEventListener-arguments')
+        etype, handler = a[0], a[1]
+        self.need_event_types([etype])
+        opts = a[2] if len(a) > 2 else UNDEF
+        once = False
+        if isinstance(opts, JObj) and set(opts) <= {'once'}:
+            once = truthy(opts.get('once'))
+        elif opts is not UNDEF and opts is not False:
+            raise Unmodeled('host-addEventListener-options')
+        if isinstance(handler, ResolveFn) and not handler.reject and once:
+            handler.promise.wait = self.loop.add_wait(HostWait('eventonce', element=el.name, type=etype, promise=handler.promise))
+            return UNDEF
+        message = forbidden_message(handler)
+        if message is not None and not once:
+            self.emit('lf', el.name, etype, message)
+            return UNDEF
+        raise Unmodeled('host-addEventListener-handler')
 
     def need_test(self):
         if self.cur is None:
@@ -999,16 +1204,20 @@ class Interp:
             raise Unmodeled('step-limit')
 
     # ---- calling ----
-    def call(self, fn, this, args):
+    def call(self, fn, this, args, sync=False):
         if isinstance(fn, Native):
             return fn.fn(self, this, args)
+        if isinstance(fn, StepFunc):
+            if fn.unreached is not None:
+                raise AssertFail(fn.unreached)
+            return self.call(fn.fn, this, args)
         if not isinstance(fn, Func):
             if isinstance(fn, Rt):
                 raise Unmodeled('computed-value-expression')
             raise Unmodeled('js-call-non-function')
         node = fn.node
-        if node[4]:
-            raise Unmodeled('js-async-function')
+        if node[4] and not sync:
+            return self.loop.start_async(fn, this, args)
         scope = Scope(fn.scope, True)
         if not node[3]:
             scope.vars['this'] = this
@@ -1089,7 +1298,10 @@ class Interp:
         self.tick()
         k = st[0]
         if k == 'expr':
-            self.eval(st[1], scope)
+            v = self.eval(st[1], scope)
+            if isinstance(v, Rt) and self.ops and self.ops[-1][0] == 'sattr' and self.ops[-1][1] == v.reg and len(self.ops[-1]) == 4:
+                # a read of a style whose value the statement drops: it brings the style up to date (a style change event) and asserts nothing, so it needs no layout
+                self.ops[-1] = self.ops[-1] + ('flush',)
         elif k == 'var':
             for target, init in st[2]:
                 if init is None:
@@ -1249,10 +1461,14 @@ class Interp:
         if not self.guard_safe([st[2]] + ([st[3]] if st[3] is not None else []), declared):
             raise Unmodeled('host-node-may-be-null' if isinstance(v, (HostElem, HostObj)) else 'computed-value-expression')
         self.emit('iffalse' if negate else 'iftrue', operand(v))
-        self.exec(st[2], scope)
-        if st[3] is not None:
-            self.emit('else')
-            self.exec(st[3], scope)
+        self.guard_depth += 1
+        try:
+            self.exec(st[2], scope)
+            if st[3] is not None:
+                self.emit('else')
+                self.exec(st[3], scope)
+        finally:
+            self.guard_depth -= 1
         self.emit('endif')
 
     def exec_try(self, st, scope):
@@ -1339,6 +1555,9 @@ class Interp:
 
     def e_unsup(self, e, scope):
         raise Unmodeled(e[1])
+
+    def e_await(self, e, scope):
+        return self.loop.await_value(self.eval(e[1], scope))
 
     def e_regex(self, e, scope):
         return Regex(e[1])
@@ -1680,6 +1899,10 @@ class Interp:
             n = self.new_node('o')
             self.emit('newsheet', n, media, disabled)
             return HostObj(n, 'sheet', False)
+        if name == 'Promise':
+            return self.loop.new_promise(args[0] if args else UNDEF)
+        if name == 'EventWatcher':
+            return self.new_event_watcher(args)
         if name == 'Set' and (not args or isinstance(args[0], JArr)):
             raise Unmodeled('js-set')
         if name == 'Map':
@@ -1753,6 +1976,8 @@ class Interp:
             if key == 'bind':
                 raise Unmodeled('js-bind')
             return UNDEF
+        if isinstance(obj, JPromise):
+            return self.loop.promise_member(obj, key)
         if isinstance(obj, Regex):
             if key == 'test':
                 return BoundMethod(lambda i, args, r=obj: bool(r.re.search(to_str(args[0]))))
@@ -1768,6 +1993,8 @@ class Interp:
                 return number_static(self, key)
             if obj.name == 'String':
                 return string_static(self, key)
+            if obj.name == 'Promise':
+                return self.loop.promise_static(key)
             return UNDEF
         raise Unmodeled('js-member')
 
@@ -2190,6 +2417,8 @@ def doc_get(interp, d, key, for_call):
         return BoundMethod(lambda i, a: query_all(i, 'doc', a))
     if key == 'defaultView':
         return interp.glob.vars['window']
+    if key == 'timeline':
+        return HostTimeline('timeline')
     if key == 'styleSheets':
         interp.need_dom()
         return HostSheetList('doc')
@@ -2308,7 +2537,10 @@ def window_get(interp, w, key, for_call):
 
 
 def window_set(interp, w, key, value):
-    raise Unmodeled('host-window-assign')
+    """`window.name = value`: a property of the global object is a global variable (a helper script defines its functions this way). The handlers (`onload`) are listeners and are not modeled."""
+    if not interp.in_helper or key.startswith('on') or key in ('location', 'document', 'window', 'self', 'top', 'parent', 'name', 'status'):
+        raise Unmodeled('host-window-assign')   # only a helper script fills the window; a page's own assignment may replace something the browser owns
+    interp.glob.vars[key] = value
 
 
 def test_get(interp, t, key, for_call):
@@ -2325,6 +2557,21 @@ def test_get(interp, t, key, for_call):
                 raise Unmodeled('harness-step')
             return i.call(a[0], t, a[1:])
         return BoundMethod(st)
+    if key == 'step_func':
+        def sf(i, a):
+            if not a or not isinstance(a[0], Func):
+                raise Unmodeled('harness-step_func')
+            return StepFunc(a[0])
+        return BoundMethod(sf)
+    if key == 'unreached_func':
+        def uf(i, a):
+            msg = to_str(a[0]) if a and isinstance(a[0], str) else ''
+            return StepFunc(None, 'assert_unreached: %sReached unreachable code' % (msg + ' ' if msg else ''))
+        return BoundMethod(uf)
+    if key == 'step_timeout':
+        def stt(i, a):
+            return i.n_setTimeout(i, UNDEF, a)
+        return BoundMethod(stt)
     if key == 'name':
         return interp.cur.name
     raise Unmodeled('harness-test-' + key)
@@ -2514,6 +2761,8 @@ def elem_get(interp, el, key, for_call):
         return BoundMethod(m_get_element_by_id(el))
     if key == 'setHTMLUnsafe':
         return BoundMethod(m_set_html_unsafe(el))
+    if key == 'addEventListener':
+        return BoundMethod(lambda i, a: i.add_event_listener(el, a))
     if key == 'attachShadow':
         return BoundMethod(m_attach_shadow(el))
     if key == 'styleSheets':
@@ -2994,7 +3243,538 @@ def doc_set(interp, d, key, value):
 
 
 HOST_GET = {HostObj: obj_get, HostRuleList: rulelist_get, HostSheetList: sheetlist_get, HostDoc: doc_get, HostWindow: window_get, HostElem: elem_get, HostStyle: style_get, HostClassList: classlist_get, HostList: list_get, HostTest: test_get, HostMath: math_get, HostCSS: css_get}
+def event_get(interp, ev, key, for_call):
+    if ev.poisoned:
+        raise Unmodeled('event-after-sort')
+    if key in ev.fields:
+        return ev.fields[key]
+    raise Unmodeled('dom-event-' + key)
+
+
+def timeline_get(interp, tl, key, for_call):
+    if key == 'currentTime':
+        r = interp.new_reg()
+        interp.emit('tlnow', r)
+        return Rt(r, 'n')
+    raise Unmodeled('dom-timeline-' + key)
+
+
 HOST_SET = {HostObj: obj_set, HostDoc: doc_set, HostWindow: window_set, HostElem: elem_set, HostStyle: style_set}
+
+
+# ---- promises, async functions and the event loop of a promise_test ----------------------------------------------------------------------------
+
+class JPromise:
+    """A promise of the page's script. ``wait`` is set on the promise of a host wait (an event, a frame, a timer): only the runner can end that one, by the op the turn of the loop writes."""
+    __slots__ = ('state', 'value', 'reactions', 'locked', 'wait')
+
+    def __init__(self):
+        self.state = 'pending'    # pending | fulfilled | rejected
+        self.value = UNDEF        # the value, or for a rejection the JSThrow that rejected it
+        self.reactions = []       # (on_ok, on_err): Python callables taking the value or the JSThrow, queued as jobs when the promise settles
+        self.locked = False       # a resolve function has run: a later one does nothing (a promise resolved with a thenable is locked and still pending)
+        self.wait = None
+
+
+class ResolveFn(Native):
+    """The resolve or reject function an executor is given; ``promise`` is the promise it settles."""
+
+    def __init__(self, loop, promise, reject):
+        Native.__init__(self, self.call_it, 'reject' if reject else 'resolve')
+        self.loop = loop
+        self.promise = promise
+        self.reject = reject
+
+    def call_it(self, interp, this, args):
+        v = args[0] if args else UNDEF
+        if self.reject:
+            self.loop.reject(self.promise, JSThrow(v))
+        else:
+            self.loop.resolve(self.promise, v)
+        return UNDEF
+
+
+class RawFn:
+    """A handler of the evaluator's own that takes the value, or for a rejection the JSThrow that rejected (so that an assertion failure keeps its identity through a `finally`)."""
+
+    def __init__(self, fn):
+        self.fn = fn
+
+
+class StepFunc:
+    """`t.step_func(f)` and `t.unreached_func(message)`: a function that runs f (or fails the test) with the test as `this`."""
+
+    def __init__(self, fn, unreached=None):
+        self.fn = fn
+        self.unreached = unreached
+
+
+class HostWait:
+    """What the page waits for that happens when time passes. kind: ``raf`` (a requestAnimationFrame callback), ``frames`` (waitForAnimationFrames), ``timer`` (setTimeout), ``event`` (an EventWatcher's
+    wait_for), ``eventonce`` (a once listener that resolves a promise)."""
+
+    def __init__(self, kind, **kw):
+        self.kind = kind
+        self.pending = True
+        self.__dict__.update(kw)
+
+
+class HostEvent(Host):
+    """An event the runner dispatched: the registers its fields were read into."""
+
+    def __init__(self, name, fields):
+        Host.__init__(self, name)
+        self.fields = fields
+        self.poisoned = False   # the helper that sorts an array of events sorts it in place: the page's array is no longer in the order the evaluator has
+
+
+class HostWatcher(Host):
+    """An EventWatcher: the element, and whether a wait_for is outstanding."""
+
+    def __init__(self, name, element, types, timeout):
+        Host.__init__(self, name)
+        self.element = element
+        self.types = types
+        self.timeout = timeout
+        self.waiting = False
+        self.budget = None   # the frames of its timeout, which are the same for each wait_for (the replay gives the watcher one)
+
+
+class HostTimeline(Host):
+    pass
+
+
+HOST_GET.update({HostWatcher: lambda i, h, k, c: i.watcher_get(h, k, c), HostEvent: event_get, HostTimeline: timeline_get})
+TRANSITION_EVENTS = ('transitionrun', 'transitionstart', 'transitionend', 'transitioncancel')
+EVENT_FIELDS = (('type', 's'), ('propertyName', 's'), ('elapsedTime', 'n'), ('pseudoElement', 's'))
+FRAME_CAP = 625   # frames of 16 ms: the ten seconds after which the harness gives up on a test
+
+
+def exc_value(x):
+    """The JavaScript value of what a rejection holds: an assertion failure as the error the page sees, a thrown value as it was thrown."""
+    if isinstance(x, AssertFail):
+        return JObj(message=x.value, name='AssertionError')
+    if isinstance(x, JSThrow):
+        return x.value
+    return x
+
+
+class Coro:
+    """An async function in the middle of its body: the body runs in a thread of its own that is handed control, and hands it back, at each ``await`` (one thread runs at any time, so the
+    evaluator needs no locks)."""
+
+    sized = False   # the stack size of the threads has been set
+
+    def __init__(self, loop, call, promise):
+        self.loop = loop
+        self.call = call
+        self.promise = promise
+        self.to_co = threading.Semaphore(0)
+        self.to_main = threading.Semaphore(0)
+        self.done = False
+        self.result = None
+        self.sent = None
+        self.depth = 0
+        self.try_depth = 0
+        self.guard_depth = 0
+        self.outer = None
+
+    def enter(self):
+        it = self.loop.it
+        self.outer = (it.depth, it.try_depth, it.guard_depth, self.loop.current)
+        it.depth, it.try_depth, it.guard_depth, self.loop.current = self.depth, self.try_depth, self.guard_depth, self
+
+    def leave(self):
+        it = self.loop.it
+        self.depth, self.try_depth, self.guard_depth = it.depth, it.try_depth, it.guard_depth
+        it.depth, it.try_depth, it.guard_depth, self.loop.current = self.outer
+
+    def body(self):
+        try:
+            self.result = ('ok', self.call())
+        except BaseException as e:   # an Unmodeled or a throw: the main thread decides which
+            self.result = ('exc', e)
+        self.done = True
+        self.to_main.release()
+
+    def start(self):
+        if not Coro.sized:
+            threading.stack_size(64 * 1024 * 1024)
+            Coro.sized = True
+        self.loop.live += 1
+        t = threading.Thread(target=self.body, daemon=True)
+        self.enter()
+        t.start()
+        self.to_main.acquire()
+        self.leave()
+        self.finish()
+
+    def resume(self, kind, value):
+        self.sent = (kind, value)
+        self.enter()
+        self.to_co.release()
+        self.to_main.acquire()
+        self.leave()
+        self.finish()
+
+    def suspend(self):
+        """Called in the body's thread: give control back; return what resume() sent."""
+        self.to_main.release()
+        self.to_co.acquire()
+        return self.sent
+
+    def finish(self):
+        if not self.done:
+            return
+        kind, v = self.result
+        self.loop.live -= 1
+        self.done = False   # finish runs once
+        self.result = None
+        if kind == 'ok':
+            self.loop.resolve(self.promise, v)
+        elif isinstance(v, JSThrow):
+            self.loop.reject(self.promise, v)
+        else:
+            raise v
+
+
+class Loop:
+    """The event loop of the scoring interpreter: microtasks (promise jobs) in order, and the waits of the page that only passing time ends. A promise_test runs until its promise settles:
+    the microtasks run, and when none is left, one *turn* ends a wait by writing the op that makes the runner let that time pass; what the page does next is what follows that op in the program.
+
+    A turn ends one wait, or all the frame callbacks of one frame. When the runner has to decide which of two waits ends first (an event and a frame, two timers), the program would have to
+    branch on a fact only the library knows, so that is ``Unmodeled('concurrent-waits')``; the runner never sees it."""
+
+    def __init__(self, it):
+        self.it = it
+        self.micro = collections.deque()
+        self.waits = []
+        self.capture = None
+        self.current = None
+        self.ids = 0
+        self.live = 0   # async functions that have started and not finished (suspended at an await)
+
+    def reset(self):
+        self.micro.clear()
+        self.waits = []
+        self.capture = None
+        self.current = None
+        self.live = 0
+
+    def outstanding(self):
+        """Whether something the page started would still run after the code that is ending (a callback, a promise job, a suspended async function): the evaluator would drop it, and a page that has
+        one is not read."""
+        return bool(self.micro) or self.live > 0 or any(w.pending for w in self.waits)
+
+    # ---- promises ----
+    def settle(self, p, state, value):
+        if p.state != 'pending':
+            return
+        p.state = state
+        p.value = value
+        reactions, p.reactions = p.reactions, []
+        for r in reactions:
+            self.schedule(r, p)
+
+    def schedule(self, reaction, p):
+        on_ok, on_err = reaction
+        if p.state == 'fulfilled':
+            self.micro.append(lambda: on_ok(p.value))
+        else:
+            self.micro.append(lambda: on_err(p.value))
+
+    def reject(self, p, exc):
+        if p.locked:   # a resolve function has run (the already-resolved flag): a later reject does nothing, even while a promise it was resolved with is pending
+            return
+        p.locked = True
+        self.settle(p, 'rejected', exc)
+
+    def resolve(self, p, v):
+        if p.locked:
+            return
+        p.locked = True
+        self.resolve_locked(p, v)
+
+    def resolve_locked(self, p, v):
+        if v is p:
+            self.settle(p, 'rejected', JSThrow('Chaining cycle detected for promise', 'TypeError'))
+        elif isinstance(v, JPromise):
+            self.micro.append(lambda: self.on_settled(v, lambda x: self.resolve_locked(p, x), lambda r: self.settle(p, 'rejected', r)))
+        elif isinstance(v, JObj) and isinstance(v.get('then'), (Func, Native)):
+            raise Unmodeled('js-thenable')
+        else:
+            self.settle(p, 'fulfilled', v)
+
+    def on_settled(self, p, on_ok, on_err):
+        """PerformPromiseThen with Python callables: they run as a job once p has settled."""
+        if p.state == 'pending':
+            p.reactions.append((on_ok, on_err))
+        else:
+            self.schedule((on_ok, on_err), p)
+
+    def then(self, p, on_ok, on_err):
+        """``p.then(on_ok, on_err)`` with JavaScript functions (or anything else, which passes the outcome on)."""
+        d = JPromise()
+
+        def run(handler, arg, passes):
+            if isinstance(handler, RawFn):
+                try:
+                    self.resolve_locked(d, handler.fn(arg))
+                except JSThrow as t:
+                    self.settle(d, 'rejected', t)
+            elif isinstance(handler, (Func, Native, StepFunc)):
+                try:
+                    self.resolve_locked(d, self.it.call(handler, UNDEF, [arg]))
+                except JSThrow as t:
+                    self.settle(d, 'rejected', t)
+            elif passes:
+                self.resolve_locked(d, arg)
+            else:
+                self.settle(d, 'rejected', arg)
+        d.locked = True
+        self.on_settled(p, lambda v: run(on_ok, v, True), lambda r: run(on_err, r if isinstance(on_err, RawFn) else exc_value(r), False) if isinstance(on_err, (Func, Native, StepFunc, RawFn)) else run(None, r, False))
+        return d
+
+    def promise_resolve(self, v):
+        if isinstance(v, JPromise):
+            return v
+        p = JPromise()
+        self.resolve(p, v)
+        return p
+
+    def new_promise(self, executor):
+        p = JPromise()
+        if not isinstance(executor, (Func, Native)):
+            raise JSThrow('Promise resolver is not a function', 'TypeError')
+        try:
+            self.it.call(executor, UNDEF, [ResolveFn(self, p, False), ResolveFn(self, p, True)])
+        except JSThrow as t:
+            self.reject(p, t)
+        return p
+
+    def combinator(self, kind, items):
+        if not isinstance(items, JArr):
+            raise Unmodeled('js-Promise-' + kind + '-iterable')
+        result = JPromise()
+        ps = [self.promise_resolve(x) for x in items]
+        if kind == 'race':
+            for p in ps:
+                self.on_settled(p, lambda v: self.resolve(result, v), lambda r: self.reject(result, r))
+            return result
+        values = [UNDEF] * len(ps)
+        left = [len(ps)]
+        if not ps:
+            self.resolve(result, JArr())
+            return result
+
+        def ok(i):
+            def f(v):
+                values[i] = v
+                left[0] -= 1
+                if left[0] == 0:
+                    self.resolve(result, JArr(values))
+            return f
+        for i, p in enumerate(ps):
+            self.on_settled(p, ok(i), lambda r: self.reject(result, r))
+        return result
+
+    def promise_member(self, p, key):
+        if key == 'then':
+            return BoundMethod(lambda i, a: self.then(p, a[0] if a else UNDEF, a[1] if len(a) > 1 else UNDEF))
+        if key == 'catch':
+            return BoundMethod(lambda i, a: self.then(p, UNDEF, a[0] if a else UNDEF))
+        if key == 'finally':
+            def fin(i, a):
+                f = a[0] if a else UNDEF
+                if not isinstance(f, (Func, Native, StepFunc)):
+                    return self.then(p, f, f)
+
+                def value_thunk(v):
+                    return RawFn(lambda _: v)
+
+                def thrower(raw):
+                    def throw(_):
+                        raise raw
+                    return RawFn(throw)
+
+                # Promise.prototype.finally: p.then(thenFinally, catchFinally), where each calls f, resolves what it returns and answers promise.then(valueThunk | thrower): the jobs this adds
+                # to the chain are part of the order a page can see
+                def then_finally(v):
+                    rp = self.promise_resolve(i.call(f, UNDEF, []))
+                    return self.then(rp, value_thunk(v), UNDEF)
+
+                def catch_finally(raw):
+                    rp = self.promise_resolve(i.call(f, UNDEF, []))
+                    return self.then(rp, thrower(raw), UNDEF)
+                return self.then(p, RawFn(then_finally), RawFn(catch_finally))
+            return BoundMethod(fin)
+        raise Unmodeled('js-Promise-' + key)
+
+    def promise_static(self, key):
+        if key == 'resolve':
+            return BoundMethod(lambda i, a: self.promise_resolve(a[0] if a else UNDEF))
+        if key == 'reject':
+            def rej(i, a):
+                p = JPromise()
+                self.reject(p, JSThrow(a[0] if a else UNDEF))
+                return p
+            return BoundMethod(rej)
+        if key in ('all', 'race'):
+            return BoundMethod(lambda i, a: self.combinator(key, a[0] if a else UNDEF))
+        raise Unmodeled('js-Promise-' + key)
+
+    # ---- async functions ----
+    def start_async(self, fn, this, args):
+        p = JPromise()
+        co = Coro(self, lambda: self.it.call(fn, this, args, True), p)
+        co.start()
+        return p
+
+    def await_value(self, v):
+        co = self.current
+        if co is None:
+            raise Unmodeled('js-await-outside-async')
+        if self.it.try_depth > 0 or self.it.guard_depth > 0:
+            raise Unmodeled('await-in-guarded-region')   # the ops of whatever runs while this function waits would land inside the region the runner runs or skips
+        p = self.promise_resolve(v)
+        self.on_settled(p, lambda x: co.resume('ok', x), lambda r: co.resume('err', r))
+        kind, value = co.suspend()
+        if kind == 'err':
+            raise value
+        return value
+
+    # ---- the loop ----
+    def drain(self):
+        while self.micro:
+            self.it.tick()
+            self.micro.popleft()()
+
+    def drive(self, p):
+        """Run until the promise settles."""
+        while True:
+            self.drain()
+            if p.state != 'pending':
+                return
+            self.turn()
+
+    def add_wait(self, w):
+        if self.capture is not None:
+            self.capture.append(w)
+        else:
+            self.waits.append(w)
+        return w
+
+    def wait_promise(self, kind, **kw):
+        p = JPromise()
+        p.wait = self.add_wait(HostWait(kind, promise=p, **kw))
+        return p
+
+    def turn(self):
+        waits = [w for w in self.waits if w.pending]
+        if not waits:
+            raise Unmodeled('promise-never-settles')
+        events = [w for w in waits if w.kind in ('event', 'eventonce')]
+        frames = [w for w in waits if w.kind in ('raf', 'frames')]
+        timers = [w for w in waits if w.kind == 'timer']
+        if events:
+            if len(waits) != 1:
+                raise Unmodeled('concurrent-waits')
+            self.run_event_wait(events[0])
+        elif timers:
+            if frames or len(timers) != 1:
+                raise Unmodeled('concurrent-waits')
+            self.run_timer(timers[0])
+        else:
+            self.run_frame(frames)
+        self.waits = [w for w in self.waits if w.pending]
+
+    def run_task(self, fn, *args):
+        """A task: a callback of the page, then the microtask checkpoint."""
+        try:
+            self.it.call(fn, UNDEF, list(args))
+        except AssertFail as a:
+            self.it.emit('fail', a.value)
+            raise Unmodeled('uncaught-in-callback')
+        except JSThrow:
+            raise Unmodeled('uncaught-in-callback')
+        self.drain()
+
+    def run_frame(self, frames):
+        it = self.it
+        r = it.new_reg()
+        it.emit('frame', r)
+        ts = Rt(r, 'n')
+        for w in frames:
+            if w.kind == 'raf':
+                w.pending = False
+                self.run_task(w.callback, ts)
+            else:
+                if w.on_frame is not None:
+                    self.run_task(w.on_frame)
+                w.count -= 1
+                if w.count <= 0:
+                    w.pending = False
+                    self.resolve(w.promise, UNDEF)
+                    self.drain()
+                else:
+                    # the helper asks for the next frame after its callback has run: behind any callback that one registered
+                    self.waits.remove(w)
+                    self.waits.append(w)
+
+    def run_timer(self, w):
+        it = self.it
+        w.pending = False
+        it.emit('advance', fmt_ms(w.ms))
+        self.run_task(w.callback)
+
+    def run_event_wait(self, w):
+        it = self.it
+        if w.kind == 'eventonce':
+            regs = [it.new_reg() for _ in EVENT_FIELDS]
+            it.emit('ewaito', w.element, w.type, *regs)
+            w.pending = False
+            self.resolve(w.promise, HostEvent(it.new_node('v'), {n: Rt(r, k) for (n, k), r in zip(EVENT_FIELDS, regs)}))
+            self.drain()
+            return
+        n = len(w.types)
+        groups = [[it.new_reg() for _ in EVENT_FIELDS] for _ in range(n)]
+        it.emit('ewait', w.watcher.name, w.budget, 'all' if w.record_all else 'first', n, *w.types, *[r for g in groups for r in g])
+        w.pending = False
+        w.watcher.waiting = False
+        evs = [HostEvent(it.new_node('v'), {fn: Rt(r, k) for (fn, k), r in zip(EVENT_FIELDS, g)}) for g in groups]
+        self.resolve(w.promise, JArr(evs) if w.record_all else evs[-1])
+        self.drain()
+
+
+def fmt_ms(ms):
+    return repr(float(ms)) if ms != int(ms) else str(int(ms))
+
+
+def forbidden_message(handler):
+    """The message of a handler that only calls ``assert_unreached(message)``, else None: the one shape of an event listener the evaluator can write as an op (the runner fails the test if the event
+    is dispatched at the element, as the handler's assertion would), since a handler that does anything else is a branch on a fact only the library knows."""
+    if isinstance(handler, StepFunc):
+        if handler.unreached is not None:
+            return handler.unreached
+        handler = handler.fn
+    if not isinstance(handler, Func):
+        return None
+    node = handler.node
+    body = node[2]
+    if len(body) != 1:
+        return None
+    st = body[0]
+    call = None
+    if st[0] in ('expr', 'ret') and isinstance(st[1], tuple) and st[1][0] == 'call':
+        call = st[1]
+    if call is None or call[1] != ('id', 'assert_unreached') or len(call[2]) > 1:
+        return None
+    if not call[2]:
+        return 'assert_unreached: Reached unreachable code'
+    if call[2][0][0] != 'str':
+        return None
+    msg = call[2][0][1]
+    return 'assert_unreached: %sReached unreachable code' % (msg + ' ' if msg else '')
 
 
 # ---- the page ------------------------------------------------------------------------------------------------------------------------
@@ -3097,7 +3877,20 @@ HARNESS_SRC = ('testharness.js', 'testharnessreport.js')
 
 # The helper scripts of the pinned pages that the evaluator runs as part of the page, by base name: their source is read from the pin next to the page, and what a helper function does that the
 # evaluator cannot fold (a loop on a read, a try with a finally) is a native of MODELED_HELPER_NATIVES, which the helper's own declaration does not replace.
-MODELED_HELPERS = ('matchmedia-utils.js',)
+MODELED_HELPER_FILES = ('css/mediaqueries/resources/matchmedia-utils.js', 'css/css-transitions/support/helper.js')
+MODELED_HELPERS = tuple(os.path.basename(f) for f in MODELED_HELPER_FILES)
+
+
+def reads_timing(wpt, rel, text, helpers):
+    """Whether a page that waits (promise_test, a frame, a timer, an event) is one the evaluator reads: the page loads the helper of the transition pages (css/css-transitions/support/helper.js,
+    whose `waitForFrame`, `addDiv` and event assertions the page's tests are written with). A page that waits in another way stays with the reason it has; this is the set the event loop of Loop
+    was built for, and it grows with the model (each page added is recorded in the browsers and replayed there)."""
+    return any((helper_path(wpt, rel, h) or '').endswith('css-transitions/support/helper.js') for h in helpers if wpt is not None)
+
+
+def is_modeled_helper(wpt, rel, src):
+    """Whether ``src``, as the page ``rel`` loads it, is one of the helper files the evaluator runs (a base name is not enough: another `helper.js` is another script)."""
+    return wpt is not None and helper_path(wpt, rel, src) is not None
 
 
 LAST_UNREAD = None
@@ -3115,8 +3908,7 @@ def helper_path(wpt, rel, src):
     (`/css/mediaqueries/resources/matchmedia-utils.js`); None when that is not the file the evaluator models (the same base name from another directory is another script)."""
     src = src.split('?')[0]
     path = os.path.normpath(os.path.join(wpt, src.lstrip('/')) if src.startswith('/') else os.path.join(wpt, os.path.dirname(rel), src))
-    expected = os.path.normpath(os.path.join(wpt, 'css', 'mediaqueries', 'resources', 'matchmedia-utils.js'))
-    return path if path == expected and os.path.exists(path) else None
+    return path if any(path == os.path.normpath(os.path.join(wpt, f)) for f in MODELED_HELPER_FILES) and os.path.exists(path) else None
 
 
 def evaluate_page(rel, text, wpt=None):
@@ -3138,7 +3930,7 @@ def evaluate_page(rel, text, wpt=None):
     for a, t, mark in scan.scripts:
         if a.get('src') and os.path.basename(a['src'].split('?')[0]) not in ('testharness.js', 'testharnessreport.js') + MODELED_HELPERS:
             return unread('helper-script:' + a['src'])
-        if a.get('src') and os.path.basename(a['src'].split('?')[0]) in MODELED_HELPERS and (wpt is None or helper_path(wpt, rel, a['src']) is None):
+        if a.get('src') and os.path.basename(a['src'].split('?')[0]) in MODELED_HELPERS and not is_modeled_helper(wpt, rel, a['src']):
             return unread('helper-script:' + a['src'])
         if a.get('type') and a['type'].lower() not in ('text/javascript', 'application/javascript', 'text/ecmascript', ''):
             return unread('script-type')
@@ -3150,6 +3942,7 @@ def evaluate_page(rel, text, wpt=None):
     res.quirks = not scan.doctype
     res.static_calls = sum(len(CALL_SITE.findall(t)) for _, t, _ in inline)
     it = Interp([])
+    it.shadow_page = 'shadowroot' in text.lower()
     it.title = scan.title if scan.title else os.path.basename(rel).split('.')[0]   # testharness.js get_title(): the title's first text node, else the file's name up to its first dot
     for (attrs, source, mark), end in [(sc, e) for sc, e in zip(scan.scripts, scan.script_ends) if not sc[0].get('src') or os.path.basename(sc[0]['src'].split('?')[0]) in MODELED_HELPERS]:
         from_helper = bool(attrs.get('src'))
@@ -3166,11 +3959,20 @@ def evaluate_page(rel, text, wpt=None):
             return unread('script-parse')
         scope = it.glob
         try:
+            it.in_helper = from_helper
             it.hoist(prog, scope)
             if from_helper:
                 it.override_helpers(scope)
             for st in prog:
                 it.exec(st, scope)
+            it.in_helper = False
+            if from_helper:
+                it.override_helpers(scope)
+            if it.loop.outstanding():
+                return unread('top-level:wait-pending')   # a callback or job the script started would run after it
+            if it.queued and any(e2 > end for (a2, _, _), e2 in zip(scan.scripts, scan.script_ends) if not a2.get('src')):
+                return unread('top-level:promise-test-before-later-script')   # a test that waits would be running while the next script runs
+            it.run_queued()
         except (Unmodeled, JSThrow, BreakSignal, ContinueSignal, ReturnSignal, RecursionError) as e:
             return unread('top-level:%s' % (getattr(e, 'construct', None) or type(e).__name__))   # a top-level statement the evaluator cannot run: the set of tests is not known
     res.ops = it.ops
@@ -3199,6 +4001,12 @@ def render_program(rel, res):
 GEOMETRY = re.compile(r'offset(?:Width|Height|Left|Top|Parent)|client(?:Width|Height|Left|Top)|scroll(?:Width|Height|Top|Left)|getBoundingClientRect|getClientRects|focus|hover', re.I)
 
 
+# What needs the Web Animations model (an Animation object, an effect, the animations of an element or a document, the events of CSS animations): the reserved code of REASON_CODES, so that the
+# work that waits for the model is a count and not a part of the other reasons.
+ANIMATION_MODEL = re.compile(r'getAnimations|animate\b|Animation(?!Frame)|KeyframeEffect|CSSTransition|CSSAnimation|timeline|playState|animation-event|getComputedTiming|getKeyframes|setKeyframes|commitStyles|'
+                             r'-effect$|dom-element-effect|\.effect', re.I)
+
+
 def reason_code(construct):
     """The code of REASON_CODES for a test the evaluator could not turn into ops: a residue code where the construct is one of those (geometry), else ``unmodeled:<construct>``."""
     if construct == 'shared-state':
@@ -3207,4 +4015,6 @@ def reason_code(construct):
         return 'unmodeled:incremental-document'
     if GEOMETRY.search(construct):
         return 'layout-geometry'
+    if ANIMATION_MODEL.search(construct):
+        return 'animation-model'
     return 'unmodeled:' + construct

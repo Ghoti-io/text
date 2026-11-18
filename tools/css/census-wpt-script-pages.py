@@ -30,7 +30,7 @@ are all in it), with
 * ``calls``: the number of test calls of the page's source, counted here without the extractor's code (``test(``, ``promise_test(``, ``async_test(``, a call of a
   ``test_<name>(`` helper that the page does not define, 1 for a reference test or a page with no harness call). Where the two numbers differ the page is listed in the file's
   header count, so that the difference is a number that is pinned and not a surprise; the extractor's number is the one the registries partition;
-* ``markers``: what the page's own markup and inline scripts mention (a screen, not a classification; the helper scripts a page loads are not read): ``timing``,
+* ``markers``: what the page's own markup and inline scripts mention (a screen, not a classification; the helper scripts a page loads are not read): ``animation-model``, ``timing``,
   ``layout-geometry``, ``input-driver``, ``frame-or-popup``, ``typed-om``, ``register-property``, ``view-transition``, ``custom-element``, ``fonts``, ``computed``,
   ``sheets``, ``media``, ``shadow``, ``loop``, ``function``, ``reftest``, ``crash``, ``manual`` and ``rule-vectors``;
 * ``helpers``: the scripts the page loads other than the harness.
@@ -47,6 +47,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 HARNESS = ('testharness.js', 'testharnessreport.js', 'testdriver.js', 'testdriver-vendor.js')
 
 MARKERS = [
+    ('animation-model', r'getAnimations\(|\.animate\(|KeyframeEffect|\bCSSTransition\b|\bCSSAnimation\b|AnimationEffect|getComputedTiming|\.getKeyframes\(|\.setKeyframes\(|\.playState|document\.timeline|\.commitStyles|'
+                        r'animation(?:start|end|iteration|cancel)\b|\.updatePlaybackRate|\.persist\(|new Animation|ScrollTimeline|ViewTimeline'),
     ('timing', r'\bpromise_test\b|\basync_test\b|requestAnimationFrame|setTimeout|\bawait\b|transition(?:run|start|end|cancel)|animation(?:start|end|iteration|cancel)|getAnimations|\.animate\(|document\.fonts'),
     ('layout-geometry', r'getBoundingClientRect|getClientRects|offset(?:Width|Height|Left|Top|Parent)|client(?:Width|Height|Left|Top)|scroll(?:Width|Height|Top|Left)\b|:hover|:focus|\.focus\(\)'),
     ('input-driver', r'test_driver|testdriver'),
@@ -64,6 +66,8 @@ MARKERS = [
     ('function', r'\bfunction\b|=>'),
 ]
 MARKER_RE = [(n, re.compile(p)) for n, p in MARKERS]
+ANIMATION_PRESENT = re.compile(r'getAnimations\(|\.animate\(|\bnew Animation\b|KeyframeEffect|\banimation\.|\banim\.')
+ANIMATION_MEMBER = re.compile(r'\.(?:startTime|currentTime|finished|ready|replaceState|effect|playbackRate|timeline|pending)\b')
 SCRIPT_RE = re.compile(r'<script\b([^>]*)>(.*?)</script\s*>', re.S | re.I)
 SRC_RE = re.compile(r'\bsrc\s*=\s*["\']?([^"\'\s>]+)', re.I)
 CALL_RE = re.compile(r'(?<![\w.$])(?:test|promise_test|async_test)\s*\(')
@@ -138,6 +142,9 @@ def features(wpt, rel, rulevec):
     markup = SCRIPT_RE.sub('', text) if not rel.endswith('.js') else ''
     where = own + '\n' + markup
     marks = [n for n, rx in MARKER_RE if rx.search(where)]
+    # what only an Animation has, but other things have too (a media element's currentTime, a view transition's `finished`): it counts on a page that has an animation at all
+    if 'animation-model' not in marks and ANIMATION_PRESENT.search(where) and ANIMATION_MEMBER.search(where):
+        marks.append('animation-model')
     if 'input-driver' not in marks and any('testdriver' in src for src in SRC_RE.findall(text)):
         marks.append('input-driver')
     reftest = bool(REFTEST_RE.search(text))

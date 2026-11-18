@@ -70,9 +70,43 @@ PLANTS = [
      "            out.append(chr(int(body[i + 2:j], 16)))",
      "            out.append(chr(int(body[i + 2:j][:4], 16)))"),
     ('unmodeled-test-does-not-poison', 'cssom_eval.py',
-     "            if func_may_change_world(args[0].node, self.funcs):",
+     "            if func_may_change_world(body.node, self.funcs):",
      "            if False:"),
     ('step-limit-off', 'cssom_eval.py', "STEP_LIMIT = 400000", "STEP_LIMIT = 10 ** 15"),
+    ('a-reject-after-a-resolve-is-a-rejection', 'cssom_eval.py',
+     "        if p.locked:   # a resolve function has run (the already-resolved flag): a later reject does nothing, even while a promise it was resolved with is pending\n            return",
+     "        if p.locked and p.state != 'pending':\n            return"),
+    ('finally-runs-one-job-early', 'cssom_eval.py',
+     "                    return self.then(rp, value_thunk(v), UNDEF)", "                    return v"),
+    ('a-callback-left-by-a-sync-test-is-dropped', 'cssom_eval.py',
+     "                if not is_promise and self.loop.outstanding():", "                if not is_promise and False:"),
+    ('an-await-in-a-guarded-region-is-allowed', 'cssom_eval.py',
+     "        if self.it.try_depth > 0 or self.it.guard_depth > 0:", "        if False:"),
+    ('a-delay-that-is-a-string-is-zero', 'cssom_eval.py',
+     "        if len(args) > 1 and not isinstance(args[1], float):\n            raise Unmodeled('host-setTimeout-delay')", "        if len(args) > 1 and not isinstance(args[1], float):\n            args = list(args[:1])"),
+    ('the-window-is-assigned-by-any-script', 'cssom_eval.py',
+     "    if not interp.in_helper or key.startswith('on')", "    if key.startswith('on')"),
+    ('microtasks-run-last-in-first-out', 'cssom_eval.py', "            self.micro.popleft()()", "            self.micro.pop()()"),
+    ('promise-test-runs-where-it-is-called', 'cssom_eval.py',
+     "        rec = self.test_record(args)\n        self.queued.append((rec, args[0]))\n        return UNDEF",
+     "        rec = self.test_record(args)\n        self.run_test(rec, args[0], True)\n        return UNDEF"),
+    ('a-timer-lets-no-time-pass', 'cssom_eval.py', "        it.emit('advance', fmt_ms(w.ms))\n", "        pass\n"),
+    ('two-waits-at-once-are-ordered-by-the-evaluator', 'cssom_eval.py',
+     "        if events:\n            if len(waits) != 1:\n                raise Unmodeled('concurrent-waits')",
+     "        if events:\n            if len(waits) != 1 and False:\n                raise Unmodeled('concurrent-waits')"),
+    ('a-timer-and-a-frame-at-once-are-ordered-by-the-evaluator', 'cssom_eval.py',
+     "            if frames or len(timers) != 1:\n                raise Unmodeled('concurrent-waits')",
+     "            if False:\n                raise Unmodeled('concurrent-waits')"),
+    ('the-events-of-css-animations-are-events-of-the-library', 'cssom_eval.py',
+     "            if t not in TRANSITION_EVENTS:",
+     "            if t not in TRANSITION_EVENTS and not t.startswith('animation'):"),
+    ('a-listener-that-calls-anything-is-a-forbidden-event', 'cssom_eval.py',
+     "    if call is None or call[1] != ('id', 'assert_unreached') or len(call[2]) > 1:\n        return None",
+     "    if call is None or (call[1] != ('id', 'assert_unreached') and call[1] != ('id', 'assert_true')) or len(call[2]) > 1:\n        return None"),
+    ('a-dropped-read-is-an-asserted-one', 'cssom_eval.py',
+     "                self.ops[-1] = self.ops[-1] + ('flush',)\n", "                pass\n"),
+    ('a-wait-for-without-an-outstanding-one-is-not-a-rejection', 'cssom_eval.py',
+     "                if w.waiting:\n                    p = JPromise()", "                if w.waiting and False:\n                    p = JPromise()"),
     ('default-name-counter-not-advanced', 'cssom_eval.py',
      "            self.default_names += 1\n",
      "            self.default_names += 0\n"),
@@ -274,18 +308,20 @@ global.assert_array_equals = (a, b) => { if (a.length !== b.length || !a.every((
 global.assert_approx_equals = (a, b, e) => { if (Math.abs(a - b) > e) fail('assert_approx_equals'); };
 global.assert_greater_than = (a, b) => { if (!(a > b)) fail('gt'); };
 global.assert_less_than = (a, b) => { if (!(a < b)) fail('lt'); };
-global.test = (fn, name) => { const t = { add_cleanup(f) { this.c.push(f); }, c: [] }; let ok = true; try { fn.call(t, t); } catch (e) { if (!e.assertion) throw e; ok = false; } for (const f of t.c.reverse()) { try { f(); } catch (e) {} } results.push(ok); };
+global.test = (fn, name) => { const k = results.length; results.push(null); const t = { add_cleanup(f) { this.c.push(f); }, c: [] }; let ok = true; try { fn.call(t, t); } catch (e) { if (!e.assertion) throw e; ok = false; } for (const f of t.c.reverse()) { try { f(); } catch (e) {} } results[k] = ok; };
+global.__chain = Promise.resolve();
+global.promise_test = (fn, name) => { const k = results.length; results.push(null); global.__chain = global.__chain.then(async () => { const t = { add_cleanup(f) { this.c.push(f); }, c: [] }; let ok = true; try { await fn.call(t, t); } catch (e) { if (!e.assertion) throw e; ok = false; } for (const f of t.c.reverse()) { try { f(); } catch (e) {} } results[k] = ok; }); };
 global.document = { body: { setAttribute() {}, removeAttribute() {} }, getElementById() { return {}; } };
 global.getComputedStyle = () => ({});
 """
     problems = []
     for c in cases:
-        uses = re.search(r'getComputedStyle|CSS\.|CSS[A-Z]\w*|document\.|assert_throws|class A|undefinedName|while \(true\) \{ \}', c['page'])
-        if c['unread'] or uses and 'cleanup' not in c['name']:
-            continue
+        uses = re.search(r'getComputedStyle|CSS\.|CSS[A-Z]\w*|document\.|assert_throws|class A|undefinedName|while \(true\) \{ \}|requestAnimationFrame|EventWatcher|setTimeout|window\.', c['page'])
+        if c['unread'] or uses and 'cleanup' not in c['name'] or any(v.startswith('unmodeled:') for v in c['outcome'].values()):
+            continue   # (a case whose outcome is a refusal says nothing a JavaScript engine can check)
         scripts = re.findall(r'<script>(.*?)</script>', c['page'], re.S)
         with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False) as f:
-            f.write(shim + '\n' + '\n'.join(scripts) + '\nconsole.log(JSON.stringify(results));\n')
+            f.write(shim + '\n' + '\n'.join(scripts) + '\nglobal.__chain.then(() => console.log(JSON.stringify(results)));\n')
             path = f.name
         p = subprocess.run([node, path], capture_output=True, text=True, timeout=60)
         os.unlink(path)

@@ -362,6 +362,52 @@ def translate(op):
         return '%s = !%s;' % (Rg(a[0]), lit(a[1]))
     if n == 'fail':
         return 'assert_unreached(%s);' % jstr(a[0] if a else 'failed')
+    if n == 'ptest':
+        return ''   # the test is a promise_test (translate_script)
+    if n == 'tlnow':
+        return '%s = document.timeline.currentTime;' % Rg(a[0])
+    if n == 'frame':
+        return '%s = await new Promise(function (resolve) { requestAnimationFrame(resolve); });' % Rg(a[0])
+    if n == 'advance':
+        return 'await new Promise(function (resolve) { setTimeout(resolve, %s); });' % a[0]
+    if n == 'lw':
+        # an EventWatcher of testharness.js, with the timeout the page gave it (the frames of its first wait with one), which is how the page makes one
+        budget = WATCH_BUDGET.get(a[0], 0)
+        return 'R.w[%s] = new EventWatcher(t, %s, [%s]%s);' % (jstr(a[0]), E(a[1]), ', '.join(jstr(x) for x in a[2:]), ', () => waitForAnimationFrames(%d)' % budget if budget else '')
+    if n == 'lstop':
+        return 'R.w[%s].stop_watching();' % jstr(a[0])
+    if n == 'lf':
+        desc = a[2]
+        if desc.startswith('assert_unreached: '):
+            desc = desc[len('assert_unreached: '):]
+        if desc.endswith('Reached unreachable code'):
+            desc = desc[:-len('Reached unreachable code')].rstrip(' ')
+        return '%s.addEventListener(%s, t.step_func(() => { assert_unreached(%s); }));' % (E(a[0]), jstr(a[1]), jstr(desc))
+    if n in ('ewait', 'ewaito'):
+        if n == 'ewaito':
+            regs = a[2:6]
+            groups = [regs]
+            call = 'await new Promise(function (resolve) { %s.addEventListener(%s, resolve, {once: true}); })' % (E(a[0]), jstr(a[1]))
+            return 'ev = [%s]; ' % call + ' '.join(('%s = ev[0].%s;' % (Rg(r), f)) for r, f in zip(regs, ('type', 'propertyName', 'elapsedTime', 'pseudoElement')))
+        count = int(a[3])
+        types = a[4:4 + count]
+        regs = a[4 + count:]
+        record = a[2] == 'all'
+        call = 'await R.w[%s].wait_for([%s], %s)' % (jstr(a[0]), ', '.join(jstr(x) for x in types), '{record: "all"}' if record else '{}')
+        out = ['ev = %s;' % call]
+        if not record:
+            out.append('ev = [ev];')
+        for i in range(count):
+            for r, f in zip(regs[4 * i:4 * i + 4], ('type', 'propertyName', 'elapsedTime', 'pseudoElement')):
+                out.append('%s = ev[%d].%s;' % (Rg(r), i if record else 0, f))
+        return ' '.join(out)
+    if n == 'ebatch':
+        count = int(a[1])
+        names = a[2:2 + count]
+        times = a[2 + count:2 + 2 * count]
+        regs = a[2 + 2 * count:]
+        evts = ', '.join('{type: %s, propertyName: %s, elapsedTime: %s, pseudoElement: %s}' % tuple(Rg(r) for r in regs[4 * i:4 * i + 4]) for i in range(count))
+        return 'assert_end_event_batch_equal([%s], [%s], [%s], %s);' % (evts, ', '.join(jstr(x) for x in names), ', '.join(times), jstr(a[0][2:]))
     if n == 'assert_in_array':
         return 'assert_in_array(%s, [%s], %s);' % (lit(a[0]), ', '.join(lit(x) for x in a[1:-1]), jstr(a[-1]))
     if n.startswith('assert_'):
@@ -414,15 +460,25 @@ def script_bodies(ops):
     return scripts
 
 
+WATCH_BUDGET = {}
+
+
 def translate_script(ops):
     """The JavaScript of one script's ops."""
-    lines = ['var R = window.__R || (window.__R = {e: Object.create(null), s: Object.create(null), r: Object.create(null), l: Object.create(null), o: Object.create(null)});']
+    lines = ['var R = window.__R || (window.__R = {e: Object.create(null), s: Object.create(null), r: Object.create(null), l: Object.create(null), o: Object.create(null), w: Object.create(null)});']
+    WATCH_BUDGET.clear()
+    for op in ops:
+        if op[0] == 'ewait' and int(op[2]) and op[1] not in WATCH_BUDGET:
+            WATCH_BUDGET[op[1]] = int(op[2])
     cur = None
     for op in ops:
         if op[0] == 'doc':
             continue
         if op[0] == 'test':
-            cur = {'idx': op[1], 'name': op[2] if len(op) > 2 else '', 'body': [], 'cleanup': [], 'in_cleanup': False}
+            cur = {'idx': op[1], 'name': op[2] if len(op) > 2 else '', 'body': [], 'cleanup': [], 'in_cleanup': False, 'promise': False}
+            continue
+        if op[0] == 'ptest':
+            cur['promise'] = True
             continue
         if op[0] == 'cleanup':
             cur['in_cleanup'] = True
@@ -431,7 +487,11 @@ def translate_script(ops):
             body = ['  ' + x for x in cur['body']]
             if cur['cleanup']:
                 body.insert(0, '  t.add_cleanup(function () {\n' + '\n'.join('    ' + x for x in cur['cleanup']) + '\n  });')
-            lines.append('test(function (t) {\n' + '\n'.join(body) + '\n}, %s);' % jstr('%s|%s' % (cur['idx'], cur['name'])))
+            if cur['promise']:
+                body.insert(0, '  var ev;')
+                lines.append('promise_test(async function (t) {\n' + '\n'.join(body) + '\n}, %s);' % jstr('%s|%s' % (cur['idx'], cur['name'])))
+            else:
+                lines.append('test(function (t) {\n' + '\n'.join(body) + '\n}, %s);' % jstr('%s|%s' % (cur['idx'], cur['name'])))
             cur = None
             continue
         stmt = translate(op)

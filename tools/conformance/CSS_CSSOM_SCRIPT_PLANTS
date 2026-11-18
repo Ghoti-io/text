@@ -56,3 +56,8 @@ part-names-not-forwarded-by-exportparts	runner:	  while (sh && sh->host != host)
 style-element-of-a-shadow-tree-has-no-sheet	runner:	      put_found(w, o->f[1], OBJ_SHEET, gtext_cssom_markup_sheet_of(home ? home->binding : w->binding, e->node), ST_NULL);	      put_found(w, o->f[1], OBJ_SHEET, gtext_cssom_markup_sheet_of(w->binding, e->node), ST_NULL);	fail
 media-query-list-matches-read-inverted	runner:	      put_bool(w, o->f[1], matches);\n    }\n    return 1;\n  }\n  if (strcmp(name, "mqcss") == 0) {	      put_bool(w, o->f[1], !matches);\n    }\n    return 1;\n  }\n  if (strcmp(name, "mqcss") == 0) {	fail
 host-featureless-pseudo-class-in-its-own-argument	css_match.c	ctx->tree_scope && !ctx->host_arg && ctx->iface.shadow_scope(ctx->iface.user, e) == ctx->tree_scope; // in the argument	ctx->tree_scope && ctx->iface.shadow_scope(ctx->iface.user, e) == ctx->tree_scope; // in the argument	fail
+tracker-element-not-in-the-document-has-an-after-change-style	cssom_computed.c	    if (st != GTEXT_CSS_OK || !rendered) {	    if (st != GTEXT_CSS_OK) {	fail
+runner-forgets-nothing-when-an-element-is-moved-or-removed	runner:	    forget_plan(w, o, &forgotten);	    (void)forgotten;	fail
+runner-frame-runs-no-style-recalc	runner:	  char * failure = style_recalc(w);\n  if (failure) {\n    return failure;\n  }\n  w->now_ms += FRAME_MS;	  char * failure = NULL;\n  w->now_ms += FRAME_MS;	fail
+runner-frame-does-not-move-the-time	runner:	  w->now_ms += FRAME_MS;\n  w->test_frames++;	  w->now_ms += 0;\n  w->test_frames++;	fail
+runner-batch-of-events-not-sorted-by-property	runner:	    while (k > 0 && strcmp(prop[ev[k - 1]], prop[x]) > 0) {	    while (0 && k > 0 && strcmp(prop[ev[k - 1]], prop[x]) > 0) {	fail

@@ -45,6 +45,16 @@
  * data|isConnected|hasChildNodes|childElementCount; contains R A B; matches R E SEL; closest E2 E SEL; child E PARENT elements|nodes INDEX; nchildren R PARENT elements|nodes; qlen R ROOT SEL;
  * the nav of elem also takes firstChild|lastChild|nextSibling|previousSibling|parentNode. After a change of the tree the Markup binding is synced, so a style element made by the script has
  * its sheet.
+ * Time and events (a promise_test; tools/css/cssom_eval.py, Loop, writes them where the page waits): ptest (the test is a promise_test: a read of a computed style is a style update of the whole document, as
+ * in a browser); frame R (one frame of 16 ms: the style recalc that starts and stops transitions, the time moves on, the events the transition tracker owes are dispatched; R is the time, as the
+ * timestamp of a requestAnimationFrame callback is; the ops after it are that callback); advance MS (frames until MS have passed: a timer); lw W E TYPE... (an EventWatcher W on the element, listening for the
+ * types); lstop W; lf E TYPE MSG (a handler of the page that only calls assert_unreached: the event, at the element or below it, fails the test with MSG); ewait W BUDGET first|all N TYPE... REG... (wait_for():
+ * frames pass, and the events are dispatched to the listeners, until the N types have come in that order; BUDGET is the frames of the watcher's timeout, 0 for none; REG is, for each type, the registers
+ * of the event's type, propertyName, elapsedTime and pseudoElement); ewaito E TYPE REG REG REG REG (a once listener that resolves a promise: until the event comes); ebatch s:PSEUDO N NAME... TIME... REG... (the
+ * events and the expectations sorted by property name and compared, as helper.js assert_end_event_batch_equal does); tlnow R (document.timeline.currentTime). The time is the document timeline's: 0 at
+ * the start of a page, and it only moves in these ops. An event that no listener is waiting for fails the test of the EventWatcher it reaches, as testharness.js's handler does, and a test that waits more
+ * than 625 frames (the ten seconds the harness gives it) fails.
+ * `sattr R S NAME flush` is a read whose value the page drops (it needs no layout, whatever the property is). `elem R nav E ...` on an element whose creation the runner skipped because the test had failed is null.
  * fail MSG; test INDEX NAME; cleanup (the ops after it run whether or not the test failed); end. An op on an element that is null (a lookup that found nothing) fails the test, as
  * the TypeError of the page does.
  */
@@ -202,6 +212,40 @@ typedef struct {
   GTEXT_CSSOM_Markup_Binding * binding;
 } shadow;
 
+/* ---- time, frames and events: the document timeline and the events the transition tracker reports (the ops `frame`, `advance`, `ewait`, `ewaito`, `lw`, `lf`, `lstop`, `ebatch`, `tlnow`) ---- */
+
+/* An event of a frame, waiting to be dispatched to the listeners. */
+typedef struct {
+  GTEXT_Markup_Node * target;
+  const char * type;      /* transitionrun, transitionstart, transitionend, transitioncancel */
+  char * property;
+  char * pseudo;
+  double elapsed;
+} qevent;
+
+/* A listener of the page. kind 0 is an EventWatcher's (testharness.js: its handler asserts that it is waiting for the event's type, and records it), kind 1 is a handler that only calls
+   assert_unreached (the event fails the test with its message). A listener is for the events at its node and at the nodes below it: transition events bubble. */
+typedef struct {
+  int kind;
+  GTEXT_Markup_Node * node;
+  char * type;
+  size_t watcher;
+  char * message;
+} listener;
+
+#define EVENT_RECORD 64
+
+typedef struct {
+  char * name;
+  int active;       /* stop_watching() has not been called */
+  int waiting;      /* a wait_for() is outstanding */
+  int finished;     /* the outstanding wait_for() has had all its events */
+  char ** wait_types;
+  size_t nwait, pos;
+  qevent rec[EVENT_RECORD];
+  size_t nrec;
+} watcher;
+
 typedef struct {
   GTEXT_CSS_Registry * registry;
   GTEXT_CSS_Conditions * conditions;
@@ -228,6 +272,23 @@ typedef struct {
   size_t nshadows, capshadows;
   uint64_t epoch;   /* what changed the flat tree without changing the Markup document: a shadow root attached */
   GTEXT_CSS_Element_Interface iface;   /* the adapter's, with the shadow trees */
+  double now_ms;               /* the document timeline: the time of the last frame (0 before the first); a transition begun by the page starts at it */
+  long test_frames;            /* frames run since the test began (the harness gives up on a test after ten seconds) */
+  int async;                   /* a promise_test has run in this world: a read of a computed style is an update of the style of the whole document, as it is in a browser (a style change event for every element) */
+  int recalc_done;             /* the style of every element has been brought up to date at these generations of the Markup and CSSOM documents */
+  uint64_t recalc_markup, recalc_cssom;
+  GTEXT_Markup_Node ** tracked;   /* the elements of the document as of the last style recalc, in tree order: the elements the tracker knows */
+  size_t ntracked, captracked;
+  GTEXT_Markup_Node ** known;     /* every element the tracker has been told of, for the target of an event of an element that has left the document since */
+  size_t nknown, capknown;
+  char ** skipped;                /* the names of the elements an op made that the runner skipped because the test had failed: the cleanup that asks for one finds none, as a page's would */
+  size_t nskipped, capskipped;
+  listener * listeners;
+  size_t nlisteners, caplisteners;
+  watcher * watchers;
+  size_t nwatchers, capwatchers;
+  qevent * queue;              /* the events of the frames that have not been dispatched */
+  size_t nqueue, capqueue, headqueue;
 } world;
 
 /* The user agent's style sheet is the part of the HTML rendering section that the display and the body's margin need; the library has no user agent sheet of its own. */
@@ -876,7 +937,10 @@ static int world_open(world * w, const char * html, size_t html_len) {
 
 static void obj_release(object * o);
 
+static void events_free(world * w);
+
 static void world_close(world * w) {
+  events_free(w);
   for (size_t i = 0; i < w->nobjs; i++) {
     obj_release(&w->objs[i]);
     free(w->objs[i].name);
@@ -2943,6 +3007,711 @@ static int sheet_op(world * w, const op * o, int * program_error, char ** failur
 /* ---- running one op --------------------------------------------------------------------------------------------------------------------- */
 
 /// Returns NULL, or the message of a failure of the test (an assertion, or the exception the page's script would have thrown).
+/* ---- time, frames and events ---------------------------------------------------------------------------------------------------------------------- */
+
+/* The document timeline advances by frames of 16 ms, and only when an op says time passes (`frame`, `advance`, `ewait`, `ewaito`): what the page does in between is instantaneous, as script
+   is. One frame is the steps of "update the rendering" that matter here, in the order they have: a style recalc for the changes the page made since the last (which begins the transitions
+   at the time of the last frame, so that a transition the page begins is a frame old at the first frame that reports it), the time moves on, and the events the transition tracker owes at
+   the new time are queued, to be dispatched to the listeners (and a requestAnimationFrame callback, which is the ops after `frame`, runs after them). */
+#define FRAME_MS 16.0
+#define FRAME_CAP 625   /* ten seconds of frames: the time the harness gives a test */
+
+static void qevent_free(qevent * e) {
+  free(e->property);
+  free(e->pseudo);
+  e->property = e->pseudo = NULL;
+}
+
+static void queue_clear(world * w) {
+  for (size_t i = w->headqueue; i < w->nqueue; i++) {
+    qevent_free(&w->queue[i]);
+  }
+  w->nqueue = w->headqueue = 0;
+}
+
+static void listeners_clear(world * w) {
+  for (size_t i = 0; i < w->nlisteners; i++) {
+    free(w->listeners[i].type);
+    free(w->listeners[i].message);
+  }
+  w->nlisteners = 0;
+  for (size_t i = 0; i < w->nwatchers; i++) {
+    free(w->watchers[i].name);
+    for (size_t k = 0; k < w->watchers[i].nwait; k++) {
+      free(w->watchers[i].wait_types[k]);
+    }
+    free(w->watchers[i].wait_types);
+    for (size_t k = 0; k < w->watchers[i].nrec; k++) {
+      qevent_free(&w->watchers[i].rec[k]);
+    }
+  }
+  w->nwatchers = 0;
+}
+
+static void events_free(world * w) {
+  for (size_t i = 0; i < w->nskipped; i++) {
+    free(w->skipped[i]);
+  }
+  free(w->skipped);
+  w->skipped = NULL;
+  w->nskipped = 0;
+  queue_clear(w);
+  free(w->queue);
+  listeners_clear(w);
+  free(w->listeners);
+  free(w->watchers);
+  free(w->tracked);
+  free(w->known);
+  w->known = NULL;
+  w->queue = NULL;
+  w->listeners = NULL;
+  w->watchers = NULL;
+  w->tracked = NULL;
+}
+
+/* A test begins: the listeners and the events of the one before are not its. The timeline goes on. */
+static void events_test_begin(world * w) {
+  for (size_t i = 0; i < w->nskipped; i++) {
+    free(w->skipped[i]);
+  }
+  w->nskipped = 0;
+  queue_clear(w);
+  listeners_clear(w);
+  w->test_frames = 0;
+}
+
+static void collect_elements(GTEXT_Markup_Node * n, GTEXT_Markup_Node *** list, size_t * count, size_t * cap) {
+  for (GTEXT_Markup_Node * c = gtext_markup_node_first_child(n); c; c = gtext_markup_node_next_sibling(c)) {
+    if (!is_element(c)) {
+      continue;
+    }
+    if (*count == *cap) {
+      *cap = *cap ? *cap * 2 : 32;
+      *list = realloc(*list, *cap * sizeof **list);
+      if (!*list) {
+        abort();
+      }
+    }
+    (*list)[(*count)++] = c;
+    collect_elements(c, list, count, cap);
+  }
+}
+
+/* "Update the rendering", for the part that starts and stops transitions: a style change event for every element and pseudo-element of the document (when the page has made changes since the
+   last; otherwise nothing needs doing), and the elements that left the document are forgotten ("If an element is no longer in the document, implementations must cancel any running transitions
+   on it"). */
+static char * style_recalc(world * w) {
+  if (!w->tracker) {
+    return NULL;
+  }
+  const uint64_t mg = gtext_markup_document_generation(w->markup);
+  const uint64_t cg = gtext_cssom_document_generation(w->doc);
+  if (w->recalc_done && mg == w->recalc_markup && cg == w->recalc_cssom) {
+    return NULL;
+  }
+  sync_world(w);
+  GTEXT_Markup_Node ** list = NULL;
+  size_t count = 0, cap = 0;
+  collect_elements((GTEXT_Markup_Node *)gtext_markup_document_root(w->markup), &list, &count, &cap);
+  for (size_t i = 0; i < w->ntracked; i++) {
+    int still = 0;
+    for (size_t k = 0; k < count && !still; k++) {
+      still = list[k] == w->tracked[i];
+    }
+    if (!still) {
+      size_t gone = 0;
+      const GTEXT_CSS_Status st = gtext_cssom_transition_tracker_forget(w->tracker, gtext_css_markup_handle(w->tracked[i]), &gone);
+      if (st != GTEXT_CSS_OK) {
+        free(list);
+        return status_failure("forgetting an element", st);
+      }
+    }
+  }
+  static const char * const pseudos[] = {NULL, "::before", "::after", "::marker"};
+  for (size_t i = 0; i < count; i++) {
+    for (size_t k = 0; k < sizeof pseudos / sizeof *pseudos; k++) {
+      const GTEXT_CSS_Status st = gtext_cssom_transition_tracker_flush(w->tracker, gtext_css_markup_handle(list[i]), pseudos[k], pseudos[k] ? strlen(pseudos[k]) : 0);
+      if (st != GTEXT_CSS_OK) {
+        free(list);
+        return status_failure("style change event", st);
+      }
+    }
+  }
+  for (size_t i = 0; i < count; i++) {
+    int seen = 0;
+    for (size_t k = 0; k < w->nknown && !seen; k++) {
+      seen = w->known[k] == list[i];
+    }
+    if (!seen) {
+      if (w->nknown == w->capknown) {
+        w->capknown = w->capknown ? w->capknown * 2 : 32;
+        w->known = realloc(w->known, w->capknown * sizeof *w->known);
+        if (!w->known) {
+          abort();
+        }
+      }
+      w->known[w->nknown++] = list[i];
+    }
+  }
+  free(w->tracked);
+  w->tracked = list;
+  w->ntracked = count;
+  w->captracked = cap;
+  w->recalc_done = 1;
+  w->recalc_markup = gtext_markup_document_generation(w->markup);
+  w->recalc_cssom = gtext_cssom_document_generation(w->doc);
+  return NULL;
+}
+
+static size_t tracked_index(const world * w, const GTEXT_Markup_Node * n) {
+  for (size_t i = 0; i < w->ntracked; i++) {
+    if (w->tracked[i] == n) {
+      return i;
+    }
+  }
+  return (size_t)-1;
+}
+
+static void queue_push(world * w, qevent e) {
+  if (w->nqueue == w->capqueue) {
+    w->capqueue = w->capqueue ? w->capqueue * 2 : 32;
+    w->queue = realloc(w->queue, w->capqueue * sizeof *w->queue);
+    if (!w->queue) {
+      abort();
+    }
+  }
+  w->queue[w->nqueue++] = e;
+}
+
+/* One frame: the style recalc, the time, and the events of the tracker queued in tree order of their targets (the tracker's order is the order it first saw the elements). */
+static char * run_frame(world * w) {
+  char * failure = style_recalc(w);
+  if (failure) {
+    return failure;
+  }
+  w->now_ms += FRAME_MS;
+  w->test_frames++;
+  if (!w->tracker) {
+    return NULL;
+  }
+  gtext_cssom_transition_tracker_set_time(w->tracker, w->now_ms);
+  if (w->headqueue == w->nqueue) {   /* everything queued has been dispatched: start again from the front, so that the events of this frame are the ones from `first` on */
+    w->headqueue = w->nqueue = 0;
+  }
+  GTEXT_CSSOM_Transition_Events * events = NULL;
+  const GTEXT_CSS_Status st = gtext_cssom_transition_tracker_events(w->tracker, &events);
+  if (st != GTEXT_CSS_OK) {
+    return status_failure("the events of a frame", st);
+  }
+  static const char * const types[] = {"transitionrun", "transitionstart", "transitionend", "transitioncancel"};
+  const size_t n = gtext_cssom_transition_events_count(events);
+  const size_t first = w->nqueue;
+  for (size_t i = 0; i < n; i++) {
+    GTEXT_CSSOM_Transition_Event e;
+    if (!gtext_cssom_transition_events_at(events, i, &e)) {
+      break;
+    }
+    qevent q;
+    memset(&q, 0, sizeof q);
+    for (size_t k = 0; k < w->nknown; k++) {
+      if (gtext_css_markup_handle(w->known[k]) == e.element) {
+        q.target = w->known[k];
+      }
+    }
+    q.type = types[e.event.type];
+    q.property = dupn(e.event.property_name.data ? e.event.property_name.data : "", e.event.property_name.length);
+    q.pseudo = dupn(e.pseudo_element.data ? e.pseudo_element.data : "", e.pseudo_element.length);
+    q.elapsed = e.event.elapsed_time;
+    queue_push(w, q);
+  }
+  gtext_cssom_transition_events_free(events);
+  /* tree order of the targets (a stable insertion sort of this frame's events: the order within an element is the composite order) */
+  for (size_t i = first + 1; i < w->nqueue; i++) {
+    qevent x = w->queue[i];
+    const size_t key = x.target ? tracked_index(w, x.target) : (size_t)-1;
+    size_t k = i;
+    while (k > first) {
+      const qevent * prev = &w->queue[k - 1];
+      const size_t pk = prev->target ? tracked_index(w, prev->target) : (size_t)-1;
+      if (pk <= key) {
+        break;
+      }
+      w->queue[k] = w->queue[k - 1];
+      k--;
+    }
+    w->queue[k] = x;
+  }
+  return NULL;
+}
+
+static watcher * find_watcher(world * w, const char * name) {
+  for (size_t i = 0; i < w->nwatchers; i++) {
+    if (strcmp(w->watchers[i].name, name) == 0) {
+      return &w->watchers[i];
+    }
+  }
+  return NULL;
+}
+
+static void add_listener(world * w, listener l) {
+  if (w->nlisteners == w->caplisteners) {
+    w->caplisteners = w->caplisteners ? w->caplisteners * 2 : 16;
+    w->listeners = realloc(w->listeners, w->caplisteners * sizeof *w->listeners);
+    if (!w->listeners) {
+      abort();
+    }
+  }
+  w->listeners[w->nlisteners++] = l;
+}
+
+/* The event reaches the listeners at its target and above it, in the order they were added. A forbidden event fails the test with the message its handler's assertion has; an EventWatcher's
+   handler is testharness.js's: it asserts that a wait_for() is outstanding and that the event is the next type it waits for, and when the last type has come the wait is finished. */
+static char * dispatch_event(world * w, const qevent * e) {
+  for (size_t i = 0; i < w->nlisteners; i++) {
+    const listener * l = &w->listeners[i];
+    if (strcmp(l->type, e->type) != 0 || !e->target || !node_is_inclusive_ancestor(l->node, e->target)) {
+      continue;
+    }
+    if (l->kind == 1) {
+      return dups(l->message);
+    }
+    watcher * wt = &w->watchers[l->watcher];
+    if (!wt->active) {
+      continue;
+    }
+    if (!wt->waiting) {
+      return fmt("assert_true: Not expecting event, but got %s event expected true got false", e->type);
+    }
+    const char * want = wt->wait_types[wt->pos];
+    if (strcmp(want, e->type) != 0) {
+      return fmt("assert_equals: Expected %s event, but got %s event instead expected \"%s\" but got \"%s\"", want, e->type, want, e->type);
+    }
+    if (wt->nrec == EVENT_RECORD) {
+      return dups("the runner records at most 64 events of one wait_for()");
+    }
+    qevent * r = &wt->rec[wt->nrec++];
+    *r = *e;
+    r->property = dups(e->property);
+    r->pseudo = dups(e->pseudo);
+    if (++wt->pos == wt->nwait) {
+      wt->waiting = 0;
+      wt->finished = 1;
+    }
+  }
+  return NULL;
+}
+
+/* The events that are queued, dispatched (a failure stops at the event that caused it). */
+static char * dispatch_queue(world * w) {
+  while (w->headqueue < w->nqueue) {
+    qevent * e = &w->queue[w->headqueue++];
+    char * failure = dispatch_event(w, e);
+    qevent_free(e);
+    if (failure) {
+      return failure;
+    }
+  }
+  return NULL;
+}
+
+static void put_event_regs(world * w, const char * const * names, const qevent * e) {
+  char num[64];
+  put_reg(w, names[0], val('s', e->type, strlen(e->type)));
+  put_reg(w, names[1], val('s', e->property ? e->property : "", e->property ? strlen(e->property) : 0));
+  snprintf(num, sizeof num, "%.17g", e->elapsed);
+  put_reg(w, names[2], val('n', num, strlen(num)));
+  put_reg(w, names[3], val('s', e->pseudo ? e->pseudo : "", e->pseudo ? strlen(e->pseudo) : 0));
+}
+
+/* ewait/ewaito: let time pass until the events a wait_for() waits for have come (or the one event a once listener waits for), dispatching what is queued first. */
+static char * events_wait(world * w, const op * o, int * program_error) {
+  const int once = strcmp(o->f[0], "ewaito") == 0;
+  watcher * wt = NULL;
+  GTEXT_Markup_Node * once_node = NULL;
+  const char * once_type = NULL;
+  size_t budget = 0, n = 1, first_reg = 0;
+  if (once) {
+    if (o->n != 7) {
+      *program_error = 1;
+      return dups("ewaito has the wrong number of fields");
+    }
+    elem * e = find_elem(w, o->f[1]);
+    if (!e || !e->node) {
+      *program_error = 1;
+      return dups("ewaito names an element the program did not make");
+    }
+    once_node = e->node;
+    once_type = o->f[2];
+    first_reg = 3;
+  }
+  else {
+    if (o->n < 5) {
+      *program_error = 1;
+      return dups("ewait has too few fields");
+    }
+    wt = find_watcher(w, o->f[1]);
+    budget = (size_t)strtoull(o->f[2], NULL, 10);
+    n = (size_t)strtoull(o->f[4], NULL, 10);
+    if (!wt || n == 0 || o->n != 5 + n + 4 * n) {
+      *program_error = 1;
+      return dups("ewait names a watcher the program did not make, or has the wrong number of fields");
+    }
+    for (size_t i = 0; i < wt->nwait; i++) {
+      free(wt->wait_types[i]);
+    }
+    free(wt->wait_types);
+    wt->wait_types = calloc(n, sizeof *wt->wait_types);
+    if (!wt->wait_types) {
+      abort();
+    }
+    for (size_t i = 0; i < n; i++) {
+      wt->wait_types[i] = dups(o->f[5 + i]);
+    }
+    wt->nwait = n;
+    wt->pos = 0;
+    wt->waiting = 1;
+    wt->finished = 0;
+    for (size_t k = 0; k < wt->nrec; k++) {
+      qevent_free(&wt->rec[k]);
+    }
+    wt->nrec = 0;
+    first_reg = 5 + n;
+  }
+  size_t frames_used = 0;
+  qevent got;
+  memset(&got, 0, sizeof got);
+  char * failure = NULL;
+  for (;;) {
+    int done = 0;
+    while (!failure && w->headqueue < w->nqueue) {
+      qevent * e = &w->queue[w->headqueue++];
+      failure = dispatch_event(w, e);
+      if (!failure && once && strcmp(e->type, once_type) == 0 && e->target && node_is_inclusive_ancestor(once_node, e->target)) {
+        done = 1;
+        got = *e;
+        got.property = dups(e->property);
+        got.pseudo = dups(e->pseudo);
+      }
+      qevent_free(e);
+      if (failure || done || (wt && wt->finished)) {
+        break;
+      }
+    }
+    if (failure || done || (wt && wt->finished)) {
+      break;
+    }
+    if (budget && frames_used >= budget) {
+      char left[256] = "";
+      size_t used = 0;
+      for (size_t i = wt->pos; i < wt->nwait && used + 1 < sizeof left; i++) {
+        const int put = snprintf(left + used, sizeof left - used, "%s%s", i > wt->pos ? ", " : "", wt->wait_types[i]);
+        if (put < 0 || (size_t)put >= sizeof left - used) {
+          break;
+        }
+        used += (size_t)put;
+      }
+      failure = fmt("assert_true: Timed out waiting for %s expected true got false", left);
+      break;
+    }
+    if (w->test_frames >= FRAME_CAP) {
+      failure = dups("the test timed out: the page waited for an event that did not come");
+      break;
+    }
+    failure = run_frame(w);
+    frames_used++;
+    if (failure) {
+      break;
+    }
+  }
+  if (wt) {
+    wt->waiting = 0;
+  }
+  if (!failure) {
+    if (once) {
+      put_event_regs(w, (const char * const *)&o->f[first_reg], &got);
+    }
+    else {
+      for (size_t i = 0; i < n; i++) {
+        put_event_regs(w, (const char * const *)&o->f[first_reg + 4 * i], &wt->rec[i < wt->nrec ? i : wt->nrec - 1]);
+      }
+    }
+  }
+  if (once) {
+    qevent_free(&got);
+  }
+  return failure;
+}
+
+/* ebatch s:PSEUDO N NAMES(N) TIMES(N) REGS(4N): the events (type, propertyName, elapsedTime, pseudoElement of each) and the expectations are each sorted by property name and compared. */
+static char * events_batch(world * w, const op * o, int * program_error) {
+  if (o->n < 3) {
+    *program_error = 1;
+    return dups("ebatch has too few fields");
+  }
+  const size_t n = (size_t)strtoull(o->f[2], NULL, 10);
+  if (n == 0 || n > 64 || o->n != 3 + 2 * n + 4 * n || o->l[1] < 2) {
+    *program_error = 1;
+    return dups("ebatch has the wrong number of fields");
+  }
+  const char * pseudo = o->f[1] + 2;
+  size_t ev[64], ex[64];
+  const char * prop[64];
+  for (size_t i = 0; i < n; i++) {
+    const reg * r = find_reg(w, o->f[3 + 2 * n + 4 * i + 1]);
+    if (!r) {
+      *program_error = 1;
+      return dups("ebatch names a register the program did not make");
+    }
+    prop[i] = r->v.s;
+    ev[i] = i;
+    ex[i] = i;
+  }
+  for (size_t i = 1; i < n; i++) {   /* stable insertion sorts */
+    size_t x = ev[i], k = i;
+    while (k > 0 && strcmp(prop[ev[k - 1]], prop[x]) > 0) {
+      ev[k] = ev[k - 1];
+      k--;
+    }
+    ev[k] = x;
+    x = ex[i];
+    k = i;
+    while (k > 0 && strcmp(o->f[3 + ex[k - 1]], o->f[3 + x]) > 0) {
+      ex[k] = ex[k - 1];
+      k--;
+    }
+    ex[k] = x;
+  }
+  for (size_t i = 0; i < n; i++) {
+    const size_t base = 3 + 2 * n + 4 * ev[i];
+    const reg * rp = find_reg(w, o->f[base + 1]);
+    const reg * re = find_reg(w, o->f[base + 2]);
+    const reg * rs = find_reg(w, o->f[base + 3]);
+    if (!rp || !re || !rs) {
+      *program_error = 1;
+      return dups("ebatch names a register the program did not make");
+    }
+    value expected = val('s', o->f[3 + ex[i]], o->l[3 + ex[i]]);
+    if (!same_as(&rp->v, &expected, 1)) {
+      char * m = mismatch("assert_equals", "", &expected, &rp->v);
+      value_free(&expected);
+      return m;
+    }
+    value_free(&expected);
+    const double want = strtod(o->f[3 + n + ex[i]], NULL), got = strtod(re->v.s, NULL);
+    if (!(fabs(got - want) <= 0.0005)) {
+      return fmt("assert_approx_equals: %s differs from %s by more than 0.0005", re->v.s, o->f[3 + n + ex[i]]);
+    }
+    value p = val('s', pseudo, strlen(pseudo));
+    if (!same_as(&rs->v, &p, 1)) {
+      char * m = mismatch("assert_equals", "", &p, &rs->v);
+      value_free(&p);
+      return m;
+    }
+    value_free(&p);
+  }
+  return NULL;
+}
+
+/* "If an element is no longer in the document, implementations must cancel any running transitions on it": the DOM removes a node from its parent before it inserts it somewhere else, so an
+   element that is moved or removed is forgotten by the op (the tracker reports its transitioncancel at the next frame), and one that is put back has no before-change style. The elements are
+   collected before the op (it may take the children away) and forgotten after it, and only if it did not throw (an insertion that is refused moves nothing). */
+typedef struct {
+  GTEXT_Markup_Node ** nodes;
+  size_t n, cap;
+} forgetlist;
+
+static void forget_collect(GTEXT_Markup_Node * n, forgetlist * l) {
+  if (!n || !is_element(n)) {
+    return;
+  }
+  if (l->n == l->cap) {
+    l->cap = l->cap ? l->cap * 2 : 16;
+    l->nodes = realloc(l->nodes, l->cap * sizeof *l->nodes);
+    if (!l->nodes) {
+      abort();
+    }
+  }
+  l->nodes[l->n++] = n;
+  for (GTEXT_Markup_Node * c = gtext_markup_node_first_child(n); c; c = gtext_markup_node_next_sibling(c)) {
+    forget_collect(c, l);
+  }
+}
+
+static void forget_named(world * w, const char * name, int children_only, forgetlist * l) {
+  if (name[0] == 'e' && name[1] == ':') {
+    name += 2;
+  }
+  elem * e = find_elem(w, name);
+  if (!e || !e->node) {
+    return;
+  }
+  if (children_only) {
+    for (GTEXT_Markup_Node * c = gtext_markup_node_first_child(e->node); c; c = gtext_markup_node_next_sibling(c)) {
+      forget_collect(c, l);
+    }
+  }
+  else {
+    forget_collect(e->node, l);
+  }
+}
+
+static void forget_plan(world * w, const op * o, forgetlist * l) {
+  const char * n = o->f[0];
+  if (!w->tracker || !w->async || o->n < 2) {
+    return;
+  }
+  if (strcmp(n, "remove") == 0) {
+    forget_named(w, o->f[1], 0, l);
+  }
+  else if (strcmp(n, "removechild") == 0 || strcmp(n, "appendchild") == 0 || strcmp(n, "insertbefore") == 0) {
+    if (o->n > 2) {
+      forget_named(w, o->f[2], 0, l);
+    }
+  }
+  else if (strcmp(n, "replacechild") == 0) {
+    for (size_t i = 2; i < o->n && i < 4; i++) {
+      forget_named(w, o->f[i], 0, l);
+    }
+  }
+  else if (strcmp(n, "append") == 0 || strcmp(n, "prepend") == 0 || strcmp(n, "before") == 0 || strcmp(n, "after") == 0 || strcmp(n, "replacewith") == 0 || strcmp(n, "replacechildren") == 0) {
+    for (size_t i = 2; i < o->n; i++) {
+      if (o->f[i][0] == 'e' && o->f[i][1] == ':') {
+        forget_named(w, o->f[i], 0, l);
+      }
+    }
+    if (strcmp(n, "replacewith") == 0) {
+      forget_named(w, o->f[1], 0, l);
+    }
+    if (strcmp(n, "replacechildren") == 0) {
+      forget_named(w, o->f[1], 1, l);
+    }
+  }
+  else if (strcmp(n, "ihset") == 0 || strcmp(n, "ihsetu") == 0 || strcmp(n, "tcset") == 0 || strcmp(n, "dset") == 0) {
+    forget_named(w, o->f[1], 1, l);
+  }
+}
+
+static void forget_apply(world * w, forgetlist * l, int did) {
+  for (size_t i = 0; did && i < l->n; i++) {
+    size_t gone = 0;
+    (void)gtext_cssom_transition_tracker_forget(w->tracker, gtext_css_markup_handle(l->nodes[i]), &gone);
+  }
+  free(l->nodes);
+  l->nodes = NULL;
+  l->n = l->cap = 0;
+}
+
+static char * events_op(world * w, const op * o, int * program_error) {
+  const char * name = o->f[0];
+  char num[64];
+  if (strcmp(name, "ptest") == 0) {
+    w->async = 1;
+    return NULL;
+  }
+  if (strcmp(name, "tlnow") == 0) {
+    if (o->n != 2) {
+      *program_error = 1;
+      return dups("tlnow has the wrong number of fields");
+    }
+    snprintf(num, sizeof num, "%.17g", w->now_ms);
+    put_reg(w, o->f[1], val('n', num, strlen(num)));
+    return NULL;
+  }
+  if (strcmp(name, "frame") == 0 || strcmp(name, "advance") == 0) {
+    if (o->n != 2) {
+      *program_error = 1;
+      return dups("frame has the wrong number of fields");
+    }
+    const int advance = strcmp(name, "advance") == 0;
+    const double until = advance ? w->now_ms + strtod(o->f[1], NULL) : 0;
+    char * failure = dispatch_queue(w);
+    if (failure) {
+      return failure;
+    }
+    while (!advance || w->now_ms + 1e-9 < until) {   /* a frame is one step of time; a timer of 0 ms is a task between frames and lets none pass */
+      if (w->test_frames >= FRAME_CAP) {
+        return dups("the test timed out: the page waited for more time than the harness gives a test");
+      }
+      failure = run_frame(w);
+      if (!failure) {
+        failure = dispatch_queue(w);
+      }
+      if (failure) {
+        return failure;
+      }
+      if (!advance) {
+        break;
+      }
+    }
+    if (!advance) {
+      snprintf(num, sizeof num, "%.17g", w->now_ms);
+      put_reg(w, o->f[1], val('n', num, strlen(num)));
+    }
+    return NULL;
+  }
+  if (strcmp(name, "lw") == 0 || strcmp(name, "lf") == 0) {
+    const int watch = strcmp(name, "lw") == 0;
+    if (o->n < (watch ? 4u : 4u)) {
+      *program_error = 1;
+      return dups("the listener op has too few fields");
+    }
+    elem * e = find_elem(w, o->f[watch ? 2 : 1]);
+    if (!e || !e->node) {
+      *program_error = 1;
+      return fmt("the op %s names an element the program did not make", name);
+    }
+    if (watch) {
+      if (w->nwatchers == w->capwatchers) {
+        w->capwatchers = w->capwatchers ? w->capwatchers * 2 : 8;
+        w->watchers = realloc(w->watchers, w->capwatchers * sizeof *w->watchers);
+        if (!w->watchers) {
+          abort();
+        }
+      }
+      const size_t wi = w->nwatchers++;
+      memset(&w->watchers[wi], 0, sizeof w->watchers[wi]);
+      w->watchers[wi].name = dups(o->f[1]);
+      w->watchers[wi].active = 1;
+      for (size_t i = 3; i < o->n; i++) {
+        listener l = {0, e->node, dups(o->f[i]), wi, NULL};
+        add_listener(w, l);
+      }
+    }
+    else {
+      listener l = {1, e->node, dups(o->f[2]), 0, dups(o->f[3])};
+      add_listener(w, l);
+    }
+    return NULL;
+  }
+  if (strcmp(name, "lstop") == 0) {
+    watcher * wt = o->n == 2 ? find_watcher(w, o->f[1]) : NULL;
+    if (!wt) {
+      *program_error = 1;
+      return dups("lstop names a watcher the program did not make");
+    }
+    wt->active = 0;
+    return NULL;
+  }
+  if (strcmp(name, "ewait") == 0 || strcmp(name, "ewaito") == 0) {
+    return events_wait(w, o, program_error);
+  }
+  if (strcmp(name, "ebatch") == 0) {
+    return events_batch(w, o, program_error);
+  }
+  *program_error = 1;
+  return fmt("the op %s is not one the runner knows", name);
+}
+
+static int is_events_op(const char * name) {
+  static const char * const names[] = {"ptest", "frame", "advance", "ewait", "ewaito", "lw", "lf", "lstop", "ebatch", "tlnow"};
+  for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
+    if (strcmp(name, names[i]) == 0) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 static char * run_op(world * w, const op * o, testrun * t, int * program_error) {
   const char * name = o->f[0];
   *program_error = 0;
@@ -2952,13 +3721,17 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
   if (!var->node) { return dups("TypeError: the element is null"); } \
   if (!is_element(var->node)) { return dups("TypeError: the node is not an element"); }
 #define STYLE(var, fld) style * var = find_style(w, o->f[fld]); if (!var) { *program_error = 1; return fmt("the op %s names the style %s, which the program did not make", name, o->f[fld]); } \
-  if (var->computed && w->tracker) { sync_world(w); const GTEXT_CSS_Status flushed = gtext_cssom_transition_tracker_flush(w->tracker, gtext_css_markup_handle(var->node), var->pseudo, strlen(var->pseudo)); if (flushed != GTEXT_CSS_OK) { return status_failure("style change event", flushed); } }
+  if (var->computed && w->tracker) { sync_world(w); if (w->async) { char * recalc_failure = style_recalc(w); if (recalc_failure) { return recalc_failure; } } const GTEXT_CSS_Status flushed = gtext_cssom_transition_tracker_flush(w->tracker, gtext_css_markup_handle(var->node), var->pseudo, strlen(var->pseudo)); if (flushed != GTEXT_CSS_OK) { return status_failure("style change event", flushed); } }
 
   {
     char * failure = NULL;
+    forgetlist forgotten = {NULL, 0, 0};
+    forget_plan(w, o, &forgotten);
     if (dom_op(w, o, program_error, &failure) || sheet_op(w, o, program_error, &failure)) {
+      forget_apply(w, &forgotten, failure == NULL && !*program_error);
       return failure;
     }
+    forget_apply(w, &forgotten, 0);
   }
   if (strcmp(name, "elem") == 0) {
     if (o->n < 4) {
@@ -3050,6 +3823,12 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
     else if (strcmp(how, "nav") == 0) {
       elem * from = find_elem(w, o->f[3]);
       if (!from) {
+        for (size_t k = 0; w->async && k < w->nskipped; k++) {
+          if (strcmp(w->skipped[k], o->f[3]) == 0) {
+            put_elem(w, o->f[1], NULL);   /* the element was never made (the test failed before): there is none to go from, as for a page */
+            return NULL;
+          }
+        }
         *program_error = 1;
         return fmt("the op elem names the element %s, which the program did not make", o->f[3]);
       }
@@ -3146,7 +3925,12 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
     return NULL;
   }
   if (strcmp(name, "sget") == 0 || strcmp(name, "sprio") == 0 || strcmp(name, "sattr") == 0 || strcmp(name, "sremove") == 0) {
-    NEED(4);
+    /* `sattr R S NAME flush` is a read whose value the page drops (`getComputedStyle(e).paddingLeft;`, to bring the style up to date): it is a style change event and nothing is asserted on it, so it needs
+       no layout whatever the property is */
+    const int flush_only = strcmp(name, "sattr") == 0 && o->n == 5 && strcmp(o->f[4], "flush") == 0;
+    if (!flush_only) {
+      NEED(4);
+    }
     STYLE(s, 2);
     GTEXT_CSS_Status st;
     if (strcmp(name, "sget") == 0) {
@@ -3189,7 +3973,9 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
       }
       put_reg(w, o->f[1], take_string(w, out, n));
       char * css = idl_to_css(o->f[3], o->l[3]);
-      note_layout(w, t, s, css, o->f[1]);
+      if (!flush_only) {
+        note_layout(w, t, s, css, o->f[1]);
+      }
       free(css);
     }
     return NULL;
@@ -3460,6 +4246,9 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
   }
   if (strcmp(name, "fail") == 0) {
     return dups(o->n > 1 ? o->f[1] : "failed");
+  }
+  if (is_events_op(name)) {
+    return events_op(w, o, program_error);
   }
   if (strncmp(name, "assert_", 7) == 0) {
     value vals[MAX_FIELDS];
@@ -3816,6 +4605,9 @@ int main(void) {
         end_test(&p);
         p.in_test = 1;
         p.index = atoi(o.f[1]);
+        if (p.open) {
+          events_test_begin(&p.w);
+        }
         continue;
       }
       if (strcmp(o.f[0], "cleanup") == 0 && o.n == 1) {
@@ -3905,6 +4697,16 @@ int main(void) {
         continue;
       }
       if (!p.open || (p.in_test && p.t.failed && !p.in_cleanup)) {
+        if (p.open && p.w.async && o.n > 1 && (strcmp(o.f[0], "create") == 0 || strcmp(o.f[0], "cfrag") == 0 || strcmp(o.f[0], "clone") == 0 || strcmp(o.f[0], "elem") == 0)) {
+          if (p.w.nskipped == p.w.capskipped) {
+            p.w.capskipped = p.w.capskipped ? p.w.capskipped * 2 : 8;
+            p.w.skipped = realloc(p.w.skipped, p.w.capskipped * sizeof *p.w.skipped);
+            if (!p.w.skipped) {
+              abort();
+            }
+          }
+          p.w.skipped[p.w.nskipped++] = dups(o.f[1]);
+        }
         if (p.open && (strcmp(o.f[0], "elem") == 0 || strcmp(o.f[0], "gcs") == 0 || strcmp(o.f[0], "sget") == 0 || strcmp(o.f[0], "sattr") == 0)) {
           /* the exception of a failed assertion ended the test body; the reads after it are still looked at, for the one thing a read tells whatever the assertion did: that it needs a layout */
           int ignored = 0;

@@ -2698,8 +2698,8 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=0
 # scored is listed (UNSCORED_COMPUTED), and the gate is made to fail (--controls). tools/conformance/run-css-computed.sh --regenerate writes the lists.
 CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4532 CSS_COMPUTED_MAX_DEFECTS=0
 CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=240
-CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX_DEFECTS=0 CSS_CSSOM_MIN_FRACTION=2395 \
-	CSS_CSSOM_SCRIPT_MIN_SCORED=5611 CSS_CSSOM_SCRIPT_MIN_PAGES=670 CSS_CSSOM_SCRIPT_MAX_DEFECTS=8 CSS_CSSOM_SCRIPT_MAX_LAYOUT=668 CSS_CSSOM_SCRIPT_MAX_TIMELINE=0 CSS_CSSOM_SCRIPT_MAX_UA=4
+CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX_DEFECTS=0 CSS_CSSOM_MIN_FRACTION=2418 \
+	CSS_CSSOM_SCRIPT_MIN_SCORED=5676 CSS_CSSOM_SCRIPT_MIN_PAGES=682 CSS_CSSOM_SCRIPT_MAX_DEFECTS=18 CSS_CSSOM_SCRIPT_MAX_LAYOUT=678 CSS_CSSOM_SCRIPT_MAX_TIMELINE=0 CSS_CSSOM_SCRIPT_MAX_UA=4
 # What moved with the pin of web-platform-tests of 2026-11-10 (CSS-PLAN.md C5e21): the scored counts and pages go up with the new pages that are read (a floor that goes up); the share of the touched
 # tests that is scored goes from 2196 to 2190 in ten thousand because 1,300 of the 1,500 added tests are reftests and layout tests, which no gate here scores (a floor that goes down, with its
 # reason); 27 pages need a layout that did not (the ceiling of layout tests goes from 631 to 658); and ONE defect is above the old ceiling of 0 (highlight-cascade-currentcolor-color-mix.html#0:
@@ -2707,6 +2707,10 @@ CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX
 # What moved with the reading of shadow trees and matchMedia pages: 525 more tests of 63 more pages are scored (5,611 of 670), the scored share goes from 2190 to 2395 in ten thousand, ten more
 # tests need a layout (658 to 668), one more is a user-agent default (3 to 4), and EIGHT tests are defects (the ceiling goes from 0 to 8: six of @scope with :host in a shadow tree's sheet, the
 # @keyframes of a shadow tree's sheet, and sibling-index() through ::part; each is a line of CSS_CSSOM_SCRIPT_EXCEPTIONS with its owner).
+# What moved with the scoring interpreter's event loop (the transition pages that wait: promise_test, frames, timers, EventWatcher): 65 more tests of 12 more pages are
+# scored (5,676 of 682), the scored share goes from 2395 to 2418 in ten thousand, ten more tests need a layout (668 to 678: a read of `width` after a transition), and TEN more tests are defects (the
+# ceiling goes from 8 to 18: an interpolated background-position-x/y that keeps its origin keyword, an interpolated sRGB color that is not rounded, the integer of counter-increment interpolated where the
+# browsers are discrete, and `@starting-style` not applied to the first style of an element; each is a line of CSS_CSSOM_SCRIPT_EXCEPTIONS with its owner).
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
 conformance-css-computed: $(CONFORMANCE_LIB)
