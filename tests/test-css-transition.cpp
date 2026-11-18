@@ -949,6 +949,17 @@ std::string frame_times(GTEXT_CSS_Transition_Set * set, double t) {
   return out;
 }
 
+/* Between events of equal scheduled time the composite order decides, and it puts the transition of the earlier style change event first whatever the name. The `start` events of the first
+   generation (the delay of 20ms ends at 20) and the `run` and `start` of the second (made at 20) are all scheduled at 20: `--z` and `opacity` of the first come before `color` of the second, where the
+   names alone would put `color` between them. */
+TEST(CssTransitionEvents, EventsOfEqualTimeAreInTheOrderOfTheGenerationBeforeTheNameOfTheProperty) {
+  Tx t;
+  const std::string tr = "transition: opacity 1s linear 20ms, --z 1s linear 20ms, color 1s linear; transition-behavior: allow-discrete; ";
+  ASSERT_EQ(t.event("opacity: 0; --z: a; color: red", tr + "opacity: 1; --z: b; color: red", 0), GTEXT_CSS_OK);
+  ASSERT_EQ(t.event(tr + "opacity: 1; --z: b; color: red", tr + "opacity: 1; --z: b; color: blue", 20), GTEXT_CSS_OK);
+  EXPECT_EQ(frame_times(t.set, 20), "run:--z@0 run:opacity@0 start:--z@20 start:opacity@20 run:color@20 start:color@20");
+}
+
 /* Web Animations 1, "Update animations and send events": "Perform a stable sort of the animation events ... Sort the events by their scheduled event time such that events that were scheduled to
    occur earlier sort before events scheduled to occur later ... Within events with equal scheduled event times, sort by their composite order." One frame that spans the whole life of two
    transitions of one element: the composite order puts `color` first, but `opacity` ends first. */

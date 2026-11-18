@@ -579,3 +579,4 @@ tracker-forget-keeps-the-animations	cssom_computed.c	      st = gtext_anim_css_s
 tracker-retired-entry-is-released-with-the-transitions	cssom_computed.c	    if (na) {\n      tracker->retired[kept++] = tracker->retired[i];	    if (0) {\n      tracker->retired[kept++] = tracker->retired[i];	animworld
 tracker-animation-time-ignores-the-place-in-the-list	cssom_computed.c	gtext_anim_css_set_current_time(e->anims, &effect->name, effect->index, tracker->time_ms, &ms)	gtext_anim_css_set_current_time(e->anims, &effect->name, 0, tracker->time_ms, &ms)	animworld
 markup-adapter-compare-order-says-first-seen	css_markup.c	  i->compare_order = cb_compare_order;		animworld
+if-condition-taint-ignored	css_substitute.c	f->res[1].rope && f->cond_tainted ?	f->res[1].rope && 0 && f->cond_tainted ?	custom
