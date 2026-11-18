@@ -573,3 +573,9 @@ starting-style-pseudo-element-is-computed-without-the-rules	cssom_computed.c	   
 rule-index-does-not-see-a-starting-rule	css_rule_index.c	    if (c->kind == SCK_STARTING_STYLE) {\n      x->has_starting = true;	    if (c->kind == SCK_STARTING_STYLE) {\n      x->has_starting = false;	transition
 tracker-events-not-sorted-by-scheduled-time	cssom_computed.c	    css_transition_events_sort_by_time(ev->list, from, scratch);	    for (size_t k = 0; k < gtext_css_transition_events_count(ev->list); k++) {\n      from[k] = k;\n    }	transition
 tracker-events-sort-leaves-the-elements-behind	cssom_computed.c	      element2[k] = ev->element[from[k]];	      element2[k] = ev->element[k];	transition
+tracker-step-does-not-update-the-animations	cssom_computed.c	      st = gtext_anim_css_set_update(e->anims, list, core->keyframes, t->time_ms, NULL);	      st = GTEXT_CSS_OK;	animworld
+tracker-unrender-keeps-the-animations	cssom_computed.c	      st = gtext_anim_css_set_cancel_all(e->anims, t->time_ms);	      st = GTEXT_CSS_OK;	animworld
+tracker-forget-keeps-the-animations	cssom_computed.c	      st = gtext_anim_css_set_cancel_all(tracker->entries[i].anims, tracker->time_ms);	      st = GTEXT_CSS_OK;	animworld
+tracker-retired-entry-is-released-with-the-transitions	cssom_computed.c	    if (na) {\n      tracker->retired[kept++] = tracker->retired[i];	    if (0) {\n      tracker->retired[kept++] = tracker->retired[i];	animworld
+tracker-animation-time-ignores-the-place-in-the-list	cssom_computed.c	gtext_anim_css_set_current_time(e->anims, &effect->name, effect->index, tracker->time_ms, &ms)	gtext_anim_css_set_current_time(e->anims, &effect->name, 0, tracker->time_ms, &ms)	animworld
+markup-adapter-compare-order-says-first-seen	css_markup.c	  i->compare_order = cb_compare_order;		animworld

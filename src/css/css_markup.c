@@ -324,6 +324,50 @@ static size_t cb_sibling_index(void * user, GTEXT_CSS_Element_Handle h) {
   return index;
 }
 
+/// The document order of two elements of one tree: -1 when `ha` comes first, 1 when `hb` does, 0 for one element or two that are not in one tree. The deeper one is lifted to the depth of the other (an ancestor
+/// comes before what is inside it), then both are lifted to a common parent, and the two siblings under it are told apart by walking from the first.
+static int cb_compare_order(void * user, GTEXT_CSS_Element_Handle ha, GTEXT_CSS_Element_Handle hb) {
+  (void)user;
+  if (ha == hb) {
+    return 0;
+  }
+  size_t da = 0, db = 0;
+  for (Node * n = ha; n; n = gtext_markup_node_parent(n)) {
+    da++;
+  }
+  for (Node * n = hb; n; n = gtext_markup_node_parent(n)) {
+    db++;
+  }
+  Node * a = ha, * b = hb;
+  while (da > db) {
+    a = gtext_markup_node_parent(a);
+    da--;
+    if (a == b) {
+      return 1;   /* `hb` is an ancestor of `ha` */
+    }
+  }
+  while (db > da) {
+    b = gtext_markup_node_parent(b);
+    db--;
+    if (a == b) {
+      return -1;
+    }
+  }
+  while (gtext_markup_node_parent(a) != gtext_markup_node_parent(b)) {
+    a = gtext_markup_node_parent(a);
+    b = gtext_markup_node_parent(b);
+    if (!a || !b) {
+      return 0;
+    }
+  }
+  for (Node * n = gtext_markup_node_next_sibling(a); n; n = gtext_markup_node_next_sibling(n)) {
+    if (n == b) {
+      return -1;
+    }
+  }
+  return a == b ? 0 : 1;
+}
+
 /// How many element children the parent has, the element itself included: counted once for each parent in a run of questions about its children. A node with no parent is alone.
 static size_t cb_sibling_count(void * user, GTEXT_CSS_Element_Handle h) {
   struct GTEXT_CSS_Markup_Adapter * a = user;
@@ -886,6 +930,7 @@ GTEXT_CSS_Status gtext_css_markup_adapter_new(const GTEXT_Markup_Document * docu
   i->next_sibling = cb_next_sibling;
   i->sibling_index = cb_sibling_index;
   i->sibling_count = cb_sibling_count;
+  i->compare_order = cb_compare_order;
   i->state = cb_state;
   i->lang = cb_lang;
   i->direction = cb_direction;

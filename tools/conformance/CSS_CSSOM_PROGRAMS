@@ -21,3 +21,5 @@ private	test-cssom-private.cpp
 mixineval	test-cssom-mixin-eval.cpp
 sheetmixin	test-css-sheet-mixin.cpp
 mixinscope	test-cssom-mixin-scope.cpp
+animworld	test-anim-world.cpp
+animcss	test-anim-css.cpp

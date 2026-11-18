@@ -37,6 +37,7 @@
 #include <string.h>
 
 #include <ghoti.io/text/css/css_container.h>
+#include <ghoti.io/text/animation/css_animations.h>
 #include "css_anim_internal.h"
 #include "css_compute_internal.h"
 #include "css_match_internal.h"
@@ -1319,6 +1320,7 @@ typedef struct {
   char * key;                        ///< The pseudo-element's canonical name, "" for the element.
   size_t key_length;
   GTEXT_CSS_Transition_Set * set;
+  GTEXT_Anim_Css_Set * anims;        ///< The CSS animations of the element or pseudo-element (animation/css_animations.h).
   GTEXT_CSS_Computed_Style * before; ///< The after-change style of the previous style change event, or NULL before the first.
   char * display;                    ///< `TransitionEvent.pseudoElement`: the pseudo-element's name with its two colons as first flushed, "" for the element.
   size_t display_length;
@@ -1356,6 +1358,7 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_new(GTEXT_CSSOM_Document * docum
 
 static void entry_release(GTEXT_CSSOM_Transition_Tracker * t, tracker_entry * e) {
   gtext_css_transition_set_free(e->set);
+  gtext_anim_css_set_free(e->anims);
   gtext_css_computed_free(e->before);
   gtext_allocator_free(&t->alloc, e->key);
   gtext_allocator_free(&t->alloc, e->display);
@@ -1457,8 +1460,13 @@ static GTEXT_CSS_Status entry_get(GTEXT_CSSOM_Transition_Tracker * t, const void
   GTEXT_CSS_Status st = fresh.display ? gtext_css_transition_set_new(&t->alloc, &fresh.set) : GTEXT_CSS_E_OOM;
   if (st == GTEXT_CSS_OK) {
     gtext_css_transition_set_start_ids_after(fresh.set, t->id_high);
+    st = gtext_anim_css_set_new(&t->alloc, &fresh.anims);
+  }
+  if (st == GTEXT_CSS_OK) {
+    gtext_anim_css_set_start_ids_after(fresh.anims, t->id_high);
   }
   if (st != GTEXT_CSS_OK) {
+    gtext_css_transition_set_free(fresh.set);
     gtext_allocator_free(&t->alloc, fresh.key);
     gtext_allocator_free(&t->alloc, fresh.display);
     return st;
@@ -1468,8 +1476,12 @@ static GTEXT_CSS_Status entry_get(GTEXT_CSSOM_Transition_Tracker * t, const void
   return GTEXT_CSS_OK;
 }
 
-static void note_ids(GTEXT_CSSOM_Transition_Tracker * t, const GTEXT_CSS_Transition_Set * set) {
-  const uint64_t last = gtext_css_transition_set_last_id(set);
+static void note_ids(GTEXT_CSSOM_Transition_Tracker * t, const tracker_entry * e) {
+  uint64_t last = gtext_css_transition_set_last_id(e->set);
+  const uint64_t anim_last = gtext_anim_css_set_last_id(e->anims);
+  if (anim_last > last) {
+    last = anim_last;
+  }
   if (last > t->id_high) {
     t->id_high = last;
   }
@@ -1477,9 +1489,10 @@ static void note_ids(GTEXT_CSSOM_Transition_Tracker * t, const GTEXT_CSS_Transit
 
 /// Move an entry whose transitions were cancelled to the retired ones when the next frame owes events for them, else release it.
 static GTEXT_CSS_Status retire_or_release(GTEXT_CSSOM_Transition_Tracker * t, tracker_entry * e) {
-  size_t ne, nb;
+  size_t ne, nb, na, nab;
   gtext_css_transition_set_frame_bound(e->set, &ne, &nb);
-  if (!ne) {
+  gtext_anim_css_set_frame_bound(e->anims, &na, &nab);
+  if (!ne && !na) {
     entry_release(t, e);
     return GTEXT_CSS_OK;
   }
@@ -1534,10 +1547,13 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_forget(GTEXT_CSSOM_Transition_Tr
       continue;
     }
     st = gtext_css_transition_set_cancel_all(tracker->entries[i].set, tracker->time_ms);
+    if (st == GTEXT_CSS_OK) {
+      st = gtext_anim_css_set_cancel_all(tracker->entries[i].anims, tracker->time_ms);
+    }
     if (st != GTEXT_CSS_OK) {
       break;
     }
-    note_ids(tracker, tracker->entries[i].set);
+    note_ids(tracker, &tracker->entries[i]);
     (void)retire_or_release(tracker, &tracker->entries[i]);   /* the room is reserved */
     memmove(&tracker->entries[i], &tracker->entries[i + 1], (tracker->count - i - 1) * sizeof *tracker->entries);
     tracker->count--;
@@ -1642,12 +1658,16 @@ static GTEXT_CSS_Status tracker_unrender(GTEXT_CSSOM_Transition_Tracker * t, con
     if (e->element != element || (key && !(e->key_length == key_length && (key_length == 0 || memcmp(e->key, key, key_length) == 0)))) {
       continue;
     }
-    const uint64_t was = gtext_css_transition_set_version(e->set);
+    const uint64_t was = gtext_css_transition_set_version(e->set), was_anims = gtext_anim_css_set_version(e->anims);
     GTEXT_CSS_Status st = gtext_css_transition_set_cancel_all(e->set, t->time_ms);
+    if (st == GTEXT_CSS_OK) {
+      /* "terminate running animations with this owning element" when its display is none */
+      st = gtext_anim_css_set_cancel_all(e->anims, t->time_ms);
+    }
     if (st != GTEXT_CSS_OK) {
       return st;
     }
-    if (gtext_css_transition_set_version(e->set) != was) {
+    if (gtext_css_transition_set_version(e->set) != was || gtext_anim_css_set_version(e->anims) != was_anims) {
       t->version++;
     }
     gtext_css_computed_free(e->before);
@@ -1691,7 +1711,30 @@ static GTEXT_CSS_Status tracker_step(GTEXT_CSSOM_Transition_Tracker * t, const v
   if (gtext_css_transition_set_version(e->set) != was) {
     t->version++;
   }
-  note_ids(t, e->set);
+  /* the CSS animations of the element, from the `animation-*` properties of the after-change style: made, updated and cancelled by the same event (CSS Animations 2, "Animations") */
+  {
+    css_core * core = css_document_core(t->document);
+    const uint64_t was_anims = gtext_anim_css_set_version(e->anims);
+    GTEXT_CSS_Anim_List * list = NULL;
+    if (core->keyframes) {
+      st = gtext_css_anim_list_from_style(after, &t->alloc, &list);
+      if (st == GTEXT_CSS_E_UNSUPPORTED) {
+        st = GTEXT_CSS_OK;   /* a registry with no `animation-name`: no animations */
+        list = NULL;
+      }
+    }
+    if (st == GTEXT_CSS_OK) {
+      st = gtext_anim_css_set_update(e->anims, list, core->keyframes, t->time_ms, NULL);
+    }
+    gtext_css_anim_list_free(list);
+    if (st != GTEXT_CSS_OK) {
+      return st;
+    }
+    if (gtext_anim_css_set_version(e->anims) != was_anims) {
+      t->version++;
+    }
+  }
+  note_ids(t, e);
   gtext_css_computed_free(e->before);
   e->before = gtext_css_computed_retain(after);
   return GTEXT_CSS_OK;
@@ -1981,12 +2024,156 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_events(GTEXT_CSSOM_Transition_Tr
   }
   ev->n = gtext_css_transition_events_count(ev->list);
   ev->cap = need_events;
-  /* a retired entry has told everything it owed */
+  /* a retired entry has told everything its transitions owed; one whose CSS animations still owe stays until they have told (css_tracker_animation_events()) */
+  size_t kept = 0;
   for (size_t i = 0; i < tracker->nretired; i++) {
-    entry_release(tracker, &tracker->retired[i]);
+    size_t na, nab;
+    gtext_anim_css_set_frame_bound(tracker->retired[i].anims, &na, &nab);
+    if (na) {
+      tracker->retired[kept++] = tracker->retired[i];
+    }
+    else {
+      entry_release(tracker, &tracker->retired[i]);
+    }
   }
-  tracker->nretired = 0;
+  tracker->nretired = kept;
   *out = ev;
+  return GTEXT_CSS_OK;
+}
+
+/* ---- the animations of the tracker --------------------------------------------------------------------------------------------------------------- */
+
+size_t css_tracker_entry_count(const GTEXT_CSSOM_Transition_Tracker * tracker) {
+  return tracker ? tracker->count : 0;
+}
+
+bool css_tracker_entry_at(const GTEXT_CSSOM_Transition_Tracker * tracker, size_t index, css_tracker_entry_view * out) {
+  if (!tracker || !out || index >= tracker->count) {
+    return false;
+  }
+  const tracker_entry * e = &tracker->entries[index];
+  out->element = e->element;
+  out->pseudo = e->display;
+  out->pseudo_length = e->display_length;
+  out->pseudo_rank = pseudo_rank(e);
+  out->element_seq = e->element_seq;
+  out->transitions = e->set;
+  out->animations = e->anims;
+  return true;
+}
+
+double css_tracker_time(const GTEXT_CSSOM_Transition_Tracker * tracker) {
+  return tracker ? tracker->time_ms : 0.0;
+}
+
+GTEXT_CSS_Status css_tracker_context(GTEXT_CSSOM_Transition_Tracker * tracker, const GTEXT_CSS_Compute_Context ** ctx) {
+  if (!tracker || !ctx) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  css_core * core = css_document_core(tracker->document);
+  css_cmps * cs = css_cmps_get(core);
+  if (!cs) {
+    return GTEXT_CSS_E_OOM;
+  }
+  const GTEXT_CSS_Status st = ensure_context(core, cs);
+  *ctx = st == GTEXT_CSS_OK ? cs->ctx : NULL;
+  return st;
+}
+
+GTEXT_CSS_Status css_tracker_animation_events(GTEXT_CSSOM_Transition_Tracker * tracker, GTEXT_Anim_Events ** out) {
+  if (!tracker || !out) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  *out = NULL;
+  /* the entries that have something to report, in the order of the transitions' events: by element (the order the tracker first saw it in), then the pseudo-element's place */
+  const size_t total = tracker->count + tracker->nretired;
+  const tracker_entry ** order = gtext_allocator_calloc(&tracker->alloc, total ? total : 1, sizeof *order);
+  if (!order) {
+    return GTEXT_CSS_E_OOM;
+  }
+  size_t m = 0, need_events = 0, need_names = 0, widest = 0, widest_names = 0;
+  for (size_t i = 0; i < total; i++) {
+    const tracker_entry * e = i < tracker->count ? &tracker->entries[i] : &tracker->retired[i - tracker->count];
+    size_t ne, nb;
+    gtext_anim_css_set_frame_bound(e->anims, &ne, &nb);
+    if (ne) {
+      size_t j = m++;
+      while (j > 0 && entry_after(order[j - 1], e)) {
+        order[j] = order[j - 1];
+        j--;
+      }
+      order[j] = e;
+      need_events += ne;
+      need_names += nb + ne * e->display_length;
+      widest = ne > widest ? ne : widest;
+      widest_names = nb > widest_names ? nb : widest_names;
+    }
+  }
+  GTEXT_Anim_Events * ev = NULL;
+  GTEXT_Anim_Events * tmp = NULL;
+  GTEXT_CSS_Status st = gtext_anim_events_new(&tracker->alloc, &ev) == GTEXT_ANIM_OK ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  if (st == GTEXT_CSS_OK) {
+    st = gtext_anim_events_new(&tracker->alloc, &tmp) == GTEXT_ANIM_OK ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = gtext_anim_events_reserve(ev, need_events, need_names) == GTEXT_ANIM_OK && gtext_anim_events_reserve(tmp, widest, widest_names) == GTEXT_ANIM_OK ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  }
+  /* everything is reserved: no frame below can fail, so the sets move on together or not at all */
+  for (size_t i = 0; i < m && st == GTEXT_CSS_OK; i++) {
+    tracker_entry * e = (tracker_entry *)order[i];
+    gtext_anim_events_clear(tmp);
+    st = gtext_anim_css_set_frame(e->anims, tracker->time_ms, tmp);
+    for (size_t k = 0; st == GTEXT_CSS_OK && k < gtext_anim_events_count(tmp); k++) {
+      GTEXT_Anim_Event event;
+      (void)gtext_anim_events_at(tmp, k, &event);
+      event.element = e->element;
+      event.pseudo_element = (GTEXT_CSS_String){e->display, e->display_length};
+      (void)gtext_anim_events_append(ev, &event);
+    }
+  }
+  gtext_allocator_free(&tracker->alloc, (void *)order);
+  gtext_anim_events_free(tmp);
+  if (st != GTEXT_CSS_OK) {
+    gtext_anim_events_free(ev);
+    return st;
+  }
+  /* a retired entry whose transitions have told everything, and whose animations now have, is released */
+  size_t kept = 0;
+  for (size_t i = 0; i < tracker->nretired; i++) {
+    size_t ne, nb;
+    gtext_css_transition_set_frame_bound(tracker->retired[i].set, &ne, &nb);
+    if (ne) {
+      tracker->retired[kept++] = tracker->retired[i];
+    }
+    else {
+      entry_release(tracker, &tracker->retired[i]);
+    }
+  }
+  tracker->nretired = kept;
+  if (m) {
+    tracker->version++;
+  }
+  *out = ev;
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_cssom_transition_tracker_animation_time(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element, const GTEXT_CSS_Selector_List * pseudo,
+    const GTEXT_CSS_Anim_Effect * effect, double * time_ms, bool * known) {
+  if (!tracker || !effect || !time_ms || !known) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  *known = false;
+  const char * key;
+  size_t kl;
+  char buf[32];
+  const GTEXT_CSS_Flow flow = pseudo ? origin_flow(tracker, element) : (GTEXT_CSS_Flow){GTEXT_CSS_WRITING_MODE_HORIZONTAL_TB, GTEXT_CSS_DIRECTION_LTR, GTEXT_CSS_TEXT_ORIENTATION_MIXED};
+  pseudo_key(pseudo, &flow, buf, sizeof buf, &key, &kl);
+  const tracker_entry * e = entry_find(tracker, element, key, kl);
+  double ms = 0;
+  if (e && gtext_anim_css_set_current_time(e->anims, &effect->name, effect->index, tracker->time_ms, &ms)) {
+    *time_ms = ms;
+    *known = true;
+  }
   return GTEXT_CSS_OK;
 }
 

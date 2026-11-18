@@ -167,6 +167,32 @@ void css_computed_teardown_soon(css_core * core);
 /// a caller's compute context keeps its own registrations and functions.
 void css_computed_properties_changed(css_core * core, GTEXT_CSS_At_Property_Set * props, GTEXT_CSS_Function_Set * fns);
 
+struct GTEXT_CSSOM_Transition_Tracker;
+struct GTEXT_CSS_Transition_Set;
+struct GTEXT_Anim_Css_Set;
+struct GTEXT_Anim_Events;
+
+/// The CSS animations and transitions of a tracker's entries, for the world (animation/world.h): one entry for each element and pseudo-element that has been through a style change event.
+typedef struct {
+  const void * element;
+  const char * pseudo;                          ///< The pseudo-element's name with two colons, or "".
+  size_t pseudo_length;
+  int pseudo_rank;                              ///< Its place among the pseudo-elements of one element (Transitions 2, "Animation composite order").
+  uint64_t element_seq;                         ///< The order the tracker first saw the element in.
+  const struct GTEXT_CSS_Transition_Set * transitions;
+  const struct GTEXT_Anim_Css_Set * animations;
+} css_tracker_entry_view;
+
+size_t css_tracker_entry_count(const struct GTEXT_CSSOM_Transition_Tracker * tracker);
+bool css_tracker_entry_at(const struct GTEXT_CSSOM_Transition_Tracker * tracker, size_t index, css_tracker_entry_view * out);
+/// The tracker's time.
+double css_tracker_time(const struct GTEXT_CSSOM_Transition_Tracker * tracker);
+/// The compute context the tracker's document computes styles in.
+GTEXT_CSS_Status css_tracker_context(struct GTEXT_CSSOM_Transition_Tracker * tracker, const GTEXT_CSS_Compute_Context ** ctx);
+/// One animation frame of the CSS animations of the tracker at its time: the events of every element and pseudo-element, in the order of the entries (the order of the transitions' events), each with its element and
+/// pseudo-element. All or nothing. The release of a retired entry waits for both this and gtext_cssom_transition_tracker_events().
+GTEXT_CSS_Status css_tracker_animation_events(struct GTEXT_CSSOM_Transition_Tracker * tracker, struct GTEXT_Anim_Events ** out);
+
 /// The session's memory (at the last release of the core).
 void css_computed_free(css_core * core);
 

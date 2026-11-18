@@ -48,3 +48,25 @@ anim-timing-easing-parse-takes-a-list	timing.c	    one = root->child_count == 1 
 anim-timing-validate-allows-negative-iteration-start	timing.c	  if (t->iteration_start < 0.0 || t->iterations < 0.0 || is_nan(t->iterations)) {	  if (t->iterations < 0.0 || is_nan(t->iterations)) {	animtiming
 anim-timing-before-flag-never-set	timing.c	  out->before_flag = (out->phase == GTEXT_ANIM_PHASE_BEFORE && forwards) || (out->phase == GTEXT_ANIM_PHASE_AFTER && !forwards);	  out->before_flag = false;	animtiming
 anim-timing-end-of-iteration-not-held	timing.c	    simple = 1.0;\n  }\n  out->simple_progress = simple;	    simple = 0.0;\n  }\n  out->simple_progress = simple;	animtiming
+anim-css-pause-does-not-hold-the-time	css_animations.c	            p->c.hold_valid = true;\n            p->c.hold_time = cur.ms;	            p->c.hold_valid = false;\n            p->c.hold_time = cur.ms;	animcss
+anim-css-resume-start-ignores-the-time-held	css_animations.c	      c->start_time = c->event_time - (c->hold_valid ? c->hold_time : 0.0);	      c->start_time = c->event_time;	animcss
+anim-css-cancel-reports-nothing	css_animations.c	  return c->phase != GTEXT_ANIM_PHASE_IDLE && c->phase != GTEXT_ANIM_PHASE_AFTER;	  return false;	animcss
+anim-css-cancel-of-a-finished-animation-reports	css_animations.c	  return c->phase != GTEXT_ANIM_PHASE_IDLE && c->phase != GTEXT_ANIM_PHASE_AFTER;	  return c->phase != GTEXT_ANIM_PHASE_IDLE;	animcss
+anim-css-iteration-elapsed-ignores-the-duration	css_animations.c	          const double elapsed = (boundary - c->timing.iteration_start) * ct.timing.duration;	          const double elapsed = (boundary - c->timing.iteration_start);	animcss
+anim-css-timing-follows-css-over-update-timing	css_animations.c	      p->c.timing = timing_from(&e, &old->timing, old->locked);	      p->c.timing = timing_from(&e, &old->timing, 0);	animcss
+anim-css-place-in-the-list-not-recorded	css_animations.c	      p->c.order = e.index;\n      if (e.paused != old->css_paused) {	      if (e.paused != old->css_paused) {	animcss
+anim-css-same-name-always-the-first	css_animations.c	        if (seen == occurrence) {	        if (1) {	animcss
+anim-css-no-keyframes-is-an-animation	css_animations.c	    if (!keyframes || !gtext_css_atrule_set_keyframes(keyframes, e.name.data, e.name.length)) {\n      continue;	    if (0) {\n      continue;	animcss
+anim-css-before-phase-is-not-relevant	css_animations.c	  out->relevant = out->computed.in_effect || out->computed.phase == GTEXT_ANIM_PHASE_BEFORE ||	  out->relevant = out->computed.in_effect ||	animcss
+anim-css-play-state-change-ignored	css_animations.c	      if (e.paused != old->css_paused) {	      if (0 && e.paused != old->css_paused) {	animcss
+anim-css-pause-then-play-keeps-the-pause	css_animations.c	        else if (old->pending == PENDING_PAUSE && old->start_valid) {	        else if (0) {	animcss
+anim-css-update-timing-forgets-the-lock	css_animations.c	  c->locked |= input->present;	  c->locked |= 0;	animcss
+anim-css-failed-reserve-drops-before-growing	css_animations.c	  const size_t want = s->ngone + more > MAX_OWED ? MAX_OWED : s->ngone + more;	  const size_t want = 0;	animcss
+anim-events-sort-is-not-stable	events.c	  return a->resolved && a->scheduled_ms > b->scheduled_ms;	  return a->resolved && a->scheduled_ms >= b->scheduled_ms;	animcss
+anim-events-unresolved-sorts-last	events.c	  if (a->resolved != b->resolved) {\n    return a->resolved;	  if (a->resolved != b->resolved) {\n    return !a->resolved;	animcss
+anim-world-transitions-after-animations	world.c	    return a->info.kind > b->info.kind;	    return a->info.kind < b->info.kind;	animworld
+anim-world-tree-order-is-the-order-first-seen	world.c	    if (c->iface && gtext_css_element_compare_order(c->iface, a->info.element, b->info.element, &cmp, &er) == GTEXT_CSS_OK && cmp != 0) {	    if (0 && c->iface && gtext_css_element_compare_order(c->iface, a->info.element, b->info.element, &cmp, &er) == GTEXT_CSS_OK && cmp != 0) {	animworld
+anim-world-subtree-has-no-descendants	world.c	      const bool below = subtree && want_length == 0 && iface && v.element != element && inside(iface, v.element, element);	      const bool below = false;	animworld
+anim-world-irrelevant-animations-are-listed	world.c	      if (relevant_only && !ai.relevant) {	      if (0 && relevant_only && !ai.relevant) {	animworld
+anim-world-frame-takes-the-transitions-again	world.c	  if (!world->stash) {	  if (1) {	animworld
+anim-world-transition-events-are-not-sorted-with-the-animations	world.c	  gtext_anim_events_sort(all);	  (void)gtext_anim_events_sort;	animworld

@@ -200,6 +200,13 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_transition_tracker_events(GTEXT_CSSOM_Tra
 GTEXT_API GTEXT_CSS_Status gtext_cssom_transition_tracker_lookup(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element, const GTEXT_CSS_Selector_List * pseudo,
     const GTEXT_CSS_Transition_Set ** set, double * time_ms);
 
+/**
+ * @brief For GTEXT_CSSOM_Layout_Interface::animation_time: the current time of a CSS animation of the tracker (animation/css_animations.h): the animation of `element` (or of its pseudo-element) that has the name and the place in the
+ * `animation-name` list of `effect`, at the tracker's time. `*known` is false for an animation the tracker has not seen (no style change event of its element has made it): the layout then answers as it would without a tracker.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_transition_tracker_animation_time(GTEXT_CSSOM_Transition_Tracker * tracker, const void * element, const GTEXT_CSS_Selector_List * pseudo,
+    const GTEXT_CSS_Anim_Effect * effect, double * time_ms, bool * known);
+
 /** @brief For GTEXT_CSSOM_Layout_Interface::transition_version. */
 GTEXT_API uint64_t gtext_cssom_transition_tracker_version(const GTEXT_CSSOM_Transition_Tracker * tracker);
 

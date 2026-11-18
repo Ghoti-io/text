@@ -1169,6 +1169,9 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_anim_sample.c \
 	src/css/css_transition.c \
 	src/animation/timing.c \
+	src/animation/events.c \
+	src/animation/css_animations.c \
+	src/animation/world.c \
 	src/css/css_atrule_set.c \
 	src/css/css_at_property.c \
 	src/css/css_custom_function.c \
@@ -2712,14 +2715,14 @@ CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX
 # scored (5,676 of 682), the scored share goes from 2395 to 2418 in ten thousand, ten more tests need a layout (668 to 678: a read of `width` after a transition), and TEN more tests are defects (the
 # ceiling goes from 8 to 18: an interpolated background-position-x/y that keeps its origin keyword, an interpolated sRGB color that is not rounded, the integer of counter-increment interpolated where the
 # browsers are discrete, and `@starting-style` not applied to the first style of an element; each is a line of CSS_CSSOM_SCRIPT_EXCEPTIONS with its owner).
-
-conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
-conformance-css-computed: $(CONFORMANCE_LIB)
 # What moved with the fixes of the recorded defects: the ceiling of defects goes DOWN from 18 to 11. `@starting-style` for the first style (six tests) and the rounding of an interpolated
 # sRGB color (one) are fixed; the integer of counter-increment (one) is `served-text` (Web Animations 1: the components of a computed value type are combined, and the identifiers are equal); the two
 # background-position tests stay defects, with a reason that says why (the text keeps the origin keyword, as every static read of the library does, and css-backgrounds-4 is not pinned among the drafts); and
 # TWO tests of css-values/attr-security-transition-interpolated.html are `served-text` (a transition is at its start time at the first style update: Transitions 1, "at or before the start time") and ONE
 # test of attr-security-transition.html is a new defect (the attr() taint of a custom property value does not survive a transition: not built), found because `@starting-style` now starts the transition.
+
+conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
+conformance-css-computed: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/support,tools/css/fetch.sh)
 	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/css-grid/parsing,tools/css/fetch.sh)
 	@$(CONFORMANCE_ENV) $(CSS_COMPUTED_FLOOR) tools/conformance/run-css-computed.sh && \

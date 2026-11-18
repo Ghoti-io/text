@@ -66,5 +66,5 @@ that needs a layout.
 
 # What is not here
 
-Running animations, the `animationstart` family of events, transitions (\ref format_css_transitions "css-transitions.md" has them), and scroll- or view-driven timelines: an effect whose `animation-timeline` is not
-`auto` is not sampled. A property whose animation type is not by computed value (a transform list that does not match, the individual transform properties when one is `none`, a basic shape, a grid track list, a filter list) is combined by the generic rules above where its values have one shape, and is discrete where they do not.
+Scroll- or view-driven timelines: an effect whose `animation-timeline` is not `auto` is not sampled and is not an animation of the document timeline. Transitions are in \ref format_css_transitions "css-transitions.md",
+and the animations a document runs (the `CSSAnimation` objects, their events, `getAnimations()`) in \ref format_web_animations "web-animations.md". A property whose animation type is not by computed value (a transform list that does not match, the individual transform properties when one is `none`, a basic shape, a grid track list, a filter list) is combined by the generic rules above where its values have one shape, and is discrete where they do not.

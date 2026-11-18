@@ -1,2 +1,4 @@
 # extra test programs for the planted defects of CSS_ANIMATION_PLANTS: key, source
 animtiming	test-anim-timing.cpp
+animcss	test-anim-css.cpp
+animworld	test-anim-world.cpp
