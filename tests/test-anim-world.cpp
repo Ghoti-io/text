@@ -276,6 +276,35 @@ TEST(AnimWorld, AFrameIsOneListOfTheTransitionsAndTheAnimationsEventsInTheOrderO
   EXPECT_EQ(w.frame(), "") << "the same time again";
 }
 
+/* "Sort ... by their scheduled event time ... Within events with equal scheduled event times, sort by their composite order": an event with no scheduled time (an animation with no start time) comes before every
+   one that has one, and equal times keep the order they were appended in. */
+TEST(AnimEventList, SortsByScheduledTimeUnresolvedFirstAndStably) {
+  GTEXT_Anim_Events * ev = nullptr;
+  ASSERT_EQ(gtext_anim_events_new(nullptr, &ev), GTEXT_ANIM_OK);
+  struct In {
+    uint64_t id;
+    bool resolved;
+    double ms;
+  };
+  const In in[] = {{1, true, 50}, {2, true, 10}, {3, false, 0}, {4, true, 10}, {5, true, 50}, {6, false, 0}, {7, true, 0}};
+  for (const In & i : in) {
+    GTEXT_Anim_Event e{};
+    e.type = GTEXT_ANIM_EVENT_ANIMATIONSTART;
+    e.animation = i.id;
+    e.scheduled_time = GTEXT_Anim_Time{i.resolved, i.ms};
+    ASSERT_EQ(gtext_anim_events_append(ev, &e), GTEXT_ANIM_OK);
+  }
+  gtext_anim_events_sort(ev);
+  std::string order;
+  for (size_t k = 0; k < gtext_anim_events_count(ev); k++) {
+    GTEXT_Anim_Event e{};
+    ASSERT_TRUE(gtext_anim_events_at(ev, k, &e));
+    order += std::to_string(e.animation) + " ";
+  }
+  EXPECT_EQ(order, "3 6 7 2 4 1 5 ");
+  gtext_anim_events_free(ev);
+}
+
 /* "terminate running animations with this owning element": a class that removes the animation cancels it, with the active time of the moment, and the event is the element's. */
 TEST(AnimWorld, RemovingAnAnimationCancelsItAndReportsItAtTheElement) {
   Wd w(page(std::string(kKeys) + "#t { animation: a 1s linear } #t.off { animation: none }", "<div id=t></div>"));

@@ -46,6 +46,8 @@ anim-timing-alternate-reverse-parity	timing.c	      if (t->direction == GTEXT_AN
 anim-timing-update-assigns-before-it-checks	timing.c	  if (st != GTEXT_ANIM_OK) {\n    return st;\n  }\n  *timing = next;\n  return GTEXT_ANIM_OK;	  *timing = next;\n  if (st != GTEXT_ANIM_OK) {\n    return st;\n  }\n  return GTEXT_ANIM_OK;	animtiming
 anim-timing-easing-parse-takes-a-list	timing.c	    one = root->child_count == 1 ? &root->children[0] : NULL;	    one = &root->children[0];	animtiming
 anim-timing-validate-allows-negative-iteration-start	timing.c	  if (t->iteration_start < 0.0 || t->iterations < 0.0 || is_nan(t->iterations)) {	  if (t->iterations < 0.0 || is_nan(t->iterations)) {	animtiming
+anim-timing-validate-allows-negative-duration	timing.c	(t->duration < 0.0 || is_nan(t->duration))	(is_nan(t->duration))	animtiming
+anim-timing-validate-allows-nan-duration	timing.c	(t->duration < 0.0 || is_nan(t->duration))	(t->duration < 0.0)	animtiming
 anim-timing-before-flag-never-set	timing.c	  out->before_flag = (out->phase == GTEXT_ANIM_PHASE_BEFORE && forwards) || (out->phase == GTEXT_ANIM_PHASE_AFTER && !forwards);	  out->before_flag = false;	animtiming
 anim-timing-end-of-iteration-not-held	timing.c	    simple = 1.0;\n  }\n  out->simple_progress = simple;	    simple = 0.0;\n  }\n  out->simple_progress = simple;	animtiming
 anim-css-pause-does-not-hold-the-time	css_animations.c	            p->c.hold_valid = true;\n            p->c.hold_time = cur.ms;	            p->c.hold_valid = false;\n            p->c.hold_time = cur.ms;	animcss
@@ -61,9 +63,9 @@ anim-css-before-phase-is-not-relevant	css_animations.c	  out->relevant = out->co
 anim-css-play-state-change-ignored	css_animations.c	      if (e.paused != old->css_paused) {	      if (0 && e.paused != old->css_paused) {	animcss
 anim-css-pause-then-play-keeps-the-pause	css_animations.c	        else if (old->pending == PENDING_PAUSE && old->start_valid) {	        else if (0) {	animcss
 anim-css-update-timing-forgets-the-lock	css_animations.c	  c->locked |= input->present;	  c->locked |= 0;	animcss
-anim-css-failed-reserve-drops-before-growing	css_animations.c	  const size_t want = s->ngone + more > MAX_OWED ? MAX_OWED : s->ngone + more;	  const size_t want = 0;	animcss
-anim-events-sort-is-not-stable	events.c	  return a->resolved && a->scheduled_ms > b->scheduled_ms;	  return a->resolved && a->scheduled_ms >= b->scheduled_ms;	animcss
-anim-events-unresolved-sorts-last	events.c	  if (a->resolved != b->resolved) {\n    return a->resolved;	  if (a->resolved != b->resolved) {\n    return !a->resolved;	animcss
+anim-css-reserve-makes-no-room	css_animations.c	  const size_t want = s->ngone + more > MAX_OWED ? MAX_OWED : s->ngone + more;	  const size_t want = 0;	animcss
+anim-events-sort-is-not-stable	events.c	  return a->resolved && a->scheduled_ms > b->scheduled_ms;	  return a->resolved && a->scheduled_ms >= b->scheduled_ms;	animworld
+anim-events-unresolved-sorts-last	events.c	  if (a->resolved != b->resolved) {\n    return a->resolved;	  if (a->resolved != b->resolved) {\n    return !a->resolved;	animworld
 anim-world-transitions-after-animations	world.c	    return a->info.kind > b->info.kind;	    return a->info.kind < b->info.kind;	animworld
 anim-world-tree-order-is-the-order-first-seen	world.c	    if (c->iface && gtext_css_element_compare_order(c->iface, a->info.element, b->info.element, &cmp, &er) == GTEXT_CSS_OK && cmp != 0) {	    if (0 && c->iface && gtext_css_element_compare_order(c->iface, a->info.element, b->info.element, &cmp, &er) == GTEXT_CSS_OK && cmp != 0) {	animworld
 anim-world-subtree-has-no-descendants	world.c	      const bool below = subtree && want_length == 0 && iface && v.element != element && inside(iface, v.element, element);	      const bool below = false;	animworld

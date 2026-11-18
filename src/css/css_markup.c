@@ -365,7 +365,13 @@ static int cb_compare_order(void * user, GTEXT_CSS_Element_Handle ha, GTEXT_CSS_
       return -1;
     }
   }
-  return a == b ? 0 : 1;
+  /* `a` follows `b` among their siblings, or the two are in trees that do not meet (no order: 0) */
+  for (Node * n = gtext_markup_node_next_sibling(b); n; n = gtext_markup_node_next_sibling(n)) {
+    if (n == a) {
+      return 1;
+    }
+  }
+  return 0;
 }
 
 /// How many element children the parent has, the element itself included: counted once for each parent in a run of questions about its children. A node with no parent is alone.

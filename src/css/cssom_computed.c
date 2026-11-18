@@ -1711,7 +1711,8 @@ static GTEXT_CSS_Status tracker_step(GTEXT_CSSOM_Transition_Tracker * t, const v
   if (gtext_css_transition_set_version(e->set) != was) {
     t->version++;
   }
-  /* the CSS animations of the element, from the `animation-*` properties of the after-change style: made, updated and cancelled by the same event (CSS Animations 2, "Animations") */
+  /* the CSS animations of the element, from the `animation-*` properties of the after-change style: made, updated and cancelled by the same event (CSS Animations 2, "Animations").
+     A failure here leaves the transitions updated and `before` unchanged: a retry runs the same update again, which a transition already running to the same end value takes as no change. */
   {
     css_core * core = css_document_core(t->document);
     const uint64_t was_anims = gtext_anim_css_set_version(e->anims);

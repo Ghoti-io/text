@@ -85,8 +85,9 @@ bool gtext_anim_events_at(const GTEXT_Anim_Events * events, size_t index, GTEXT_
   out->type = e->type;
   out->animation = e->animation;
   out->element = e->element;
-  out->pseudo_element = (GTEXT_CSS_String){events->pool + e->pseudo_off, e->pseudo_len};
-  out->name = (GTEXT_CSS_String){events->pool + e->name_off, e->name_len};
+  /* a list whose strings are all empty never made its pool: no pointer is made from NULL */
+  out->pseudo_element = (GTEXT_CSS_String){e->pseudo_len ? events->pool + e->pseudo_off : NULL, e->pseudo_len};
+  out->name = (GTEXT_CSS_String){e->name_len ? events->pool + e->name_off : NULL, e->name_len};
   out->elapsed_time = e->elapsed;
   out->scheduled_time = (GTEXT_Anim_Time){e->resolved, e->resolved ? e->scheduled_ms : 0.0};
   return true;

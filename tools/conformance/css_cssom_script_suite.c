@@ -3887,10 +3887,14 @@ static char * anim_op(world * w, const op * o, int * program_error) {
     if (recalc_failure) {
       return recalc_failure;
     }
+    if (!w->anim) {
+      /* no world to ask: an empty list here would let a test that asserts the absence of animations pass with nothing behind it */
+      return dups("getAnimations() was asked in a run with no animation world");
+    }
     animlist l;
     memset(&l, 0, sizeof l);
     l.name = dups(o->f[1]);
-    if (w->anim) {
+    {
       GTEXT_Anim_List * list = NULL;
       const GTEXT_Anim_Status st = gtext_anim_world_get_animations(w->anim, node ? gtext_css_markup_handle(node) : NULL, o->f[3], o->l[3], strcmp(o->f[4], "true") == 0, &list);
       if (st != GTEXT_ANIM_OK) {
@@ -4011,7 +4015,10 @@ static char * anim_op(world * w, const op * o, int * program_error) {
   GTEXT_Anim_Info info;
   memset(&info, 0, sizeof info);
   bool found = false;
-  if (w->anim && gtext_anim_world_find(w->anim, h->kind, h->id, &found, &info) != GTEXT_ANIM_OK) {
+  if (!w->anim) {
+    return dups("an animation was read in a run with no animation world");
+  }
+  if (gtext_anim_world_find(w->anim, h->kind, h->id, &found, &info) != GTEXT_ANIM_OK) {
     return dups("the animation could not be read");
   }
   const char * member;

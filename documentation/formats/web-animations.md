@@ -17,7 +17,7 @@ starts), `KeyframeEffect` and the effect stack, `Element.animate()` and scroll a
 directed progress, the before flag, the transformed progress). `gtext_anim_computed_timing()` is the whole of "Timing model" at a local time, a playback rate (which decides the *animation direction* of the phase)
 and the endpoint-inclusive flag. `gtext_anim_timing_validate()` and `gtext_anim_timing_update()` are the checks and the delta update of "Updating the timing of an AnimationEffect" (a `TypeError` for a negative
 `iterationStart`, a negative or NaN `iterations` or `duration`, an easing that is not one `<easing-function>`; all or nothing), and `gtext_anim_easing_parse()` reads the easing member. The older
-`gtext_css_anim_timing()` (a playback rate of 1, an iteration start of 0) is the sampler's fast path, and a test holds the two to the same answer on a grid of 28,000 inputs.
+`gtext_css_anim_timing()` (a playback rate of 1, an iteration start of 0) is the sampler's fast path, and a test holds the two to the same answer on a grid of more than 20,000 inputs.
 
 # The CSS animations of an element (`animation/css_animations.h`)
 

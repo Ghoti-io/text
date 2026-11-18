@@ -54,10 +54,10 @@ typedef enum {
   GTEXT_ANIM_EVENT_TRANSITIONCANCEL
 } GTEXT_Anim_Event_Type;
 
-/** @struct GTEXT_Anim_Event @brief One event to dispatch. Strings are valid until the list is freed. */
+/** @struct GTEXT_Anim_Event @brief One event to dispatch. Strings are valid until the next call that changes the list (append, reserve, clear, sort) or frees it. */
 typedef struct {
   GTEXT_Anim_Event_Type type;
-  uint64_t animation;                   ///< The id of the animation (`CSSAnimation` or `CSSTransition`) the event is of.
+  uint64_t animation;                   ///< The id of the animation (`CSSAnimation` or `CSSTransition`) the event is of: unique among the animations of one kind, so the kind (`type`) and the id name it.
   const void * element;                 ///< "The target for [the] event is the [animation's] owning element" (the tree's own handle); NULL in a list a set made before an owner was known.
   GTEXT_CSS_String pseudo_element;      ///< `pseudoElement`: the name with two colons, or empty for the element.
   GTEXT_CSS_String name;                ///< `animationName`, or `propertyName` of a transition.
