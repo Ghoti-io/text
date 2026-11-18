@@ -37,7 +37,7 @@ completion-no-frame-saw-reports-nothing	css_transition.c	GTEXT_CSS_TRANSITION_PH
 events-not-in-composite-order	css_transition.c	  ev_sort(events, first);	  (void)ev_sort;	transition
 events-ordered-by-name-before-generation	css_transition.c	  if (a->generation != b->generation) {\n    return a->generation > b->generation;\n  }	  if (0) {\n    return a->generation > b->generation;\n  }	transition
 generation-not-incremented-by-an-update	css_transition.c	  w->generation++;	  (void)w->generation;	transition
-frame-does-not-move-the-phase-on	css_transition.c	    t->phase = to;\n    t->ready = true;	    t->ready = true;	transition
+frame-does-not-move-the-phase-on	css_transition.c	    t->phase = to;\n    t->ready = true;	    t->ready = true;	animworld
 frame-does-not-make-the-transition-ready	css_transition.c	    t->phase = to;\n    t->ready = true;	    t->phase = to;	transition
 cancel-all-keeps-the-completed-transitions	css_transition.c	  while (set->ndone) {\n    done_remove(set, set->ndone - 1);	  while (0 && set->ndone) {\n    done_remove(set, set->ndone - 1);	transition
 snapshot-has-a-progress-after-the-effect	css_transition.c	  if (out->phase != GTEXT_CSS_TRANSITION_PHASE_AFTER) {\n    double input = 0;	  if (1) {\n    double input = 0;	transition
@@ -51,3 +51,6 @@ scheduled-start-is-not-the-end-of-the-delay	css_transition.c	  const double at_s
 scheduled-end-ignores-the-delay	css_transition.c	  const double at_end = delay + duration > 0 ? delay + duration : 0.0;	  const double at_end = duration;	transition
 scheduled-cancel-is-the-end-of-the-effect	css_transition.c	    g->left_at = time_ms;	    g->left_at = t->end_time;	transition
 scheduled-time-is-always-the-frames	css_transition.c	    e->scheduled_ms = ideal[i] >= 0 ? event_time + ideal[i] : frame_time;	    e->scheduled_ms = frame_time;	transition
+transition-pending-frame-starts-the-transition	css_transition.c	(t->phase == GTEXT_CSS_TRANSITION_PHASE_IDLE ? GTEXT_CSS_TRANSITION_PHASE_BEFORE : t->phase);	(t->phase == GTEXT_CSS_TRANSITION_PHASE_IDLE ? phase_at(t->start_time, t->end_time, time_ms) : t->phase);	transition
+transition-pending-frame-moves-a-seen-transition-back	css_transition.c	(t->phase == GTEXT_CSS_TRANSITION_PHASE_IDLE ? GTEXT_CSS_TRANSITION_PHASE_BEFORE : t->phase);	GTEXT_CSS_TRANSITION_PHASE_BEFORE;	transition
+transition-pending-frame-makes-it-ready	css_transition.c	    t->ready = t->ready || ready;	    t->ready = true;	animworld

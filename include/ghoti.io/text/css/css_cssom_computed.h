@@ -141,6 +141,13 @@ GTEXT_API void gtext_cssom_transition_tracker_free(GTEXT_CSSOM_Transition_Tracke
 GTEXT_API void gtext_cssom_transition_tracker_set_time(GTEXT_CSSOM_Transition_Tracker * tracker, double time_ms);
 
 /**
+ * @brief Whether the frames the tracker takes next are ones at which the transitions are *pending* (gtext_css_transition_set_frame_pending()): a transition that no frame has seen reports its
+ * `transitionrun` and stays pending until a frame taken with this off, which reports its start. Off at first. The CSS animations of the tracker are not affected (their pending state
+ * ends at the first frame, as before).
+ */
+GTEXT_API void gtext_cssom_transition_tracker_set_frame_pending(GTEXT_CSSOM_Transition_Tracker * tracker, bool pending);
+
+/**
  * @brief A style change event for an element and its pseudo-element.
  *
  * The elements from the root down to `element` are brought up to date first (the after-change style of an element inherits from its parent's, and a transition of an inherited property on

@@ -1460,7 +1460,11 @@ void css_transition_events_sort_by_time(GTEXT_CSS_Transition_Events * l, size_t 
   }
 }
 
-GTEXT_CSS_Status gtext_css_transition_set_frame(GTEXT_CSS_Transition_Set * set, double time_ms, GTEXT_CSS_Transition_Events * events) {
+/// One frame. `ready` false is a frame at which the animations are not yet ready to play (their pending play tasks have not run: the first frame that renders them has not completed, or the timeline is
+/// inactive): a transition no frame has seen is made *pending*, which "Animation events" and the table of Transitions 2, "Event dispatch", treat as the phase before the effect (idle to pending or
+/// before is `transitionrun`, and pending or before to active or after is `transitionstart`), so only the run is reported and the start waits for the first frame that is ready. A transition a ready
+/// frame has already seen is not moved by one that is not.
+static GTEXT_CSS_Status set_frame(GTEXT_CSS_Transition_Set * set, double time_ms, bool ready, GTEXT_CSS_Transition_Events * events) {
   if (!set || !events || time_ms != time_ms) {
     return GTEXT_CSS_E_INVALID;
   }
@@ -1493,14 +1497,22 @@ GTEXT_CSS_Status gtext_css_transition_set_frame(GTEXT_CSS_Transition_Set * set, 
   set->ngone = 0;
   for (size_t i = 0; i < set->nrun; i++) {
     tr_t * t = &set->run[i];
-    const GTEXT_CSS_Transition_Phase to = phase_at(t->start_time, t->end_time, time_ms);
+    const GTEXT_CSS_Transition_Phase to = ready ? phase_at(t->start_time, t->end_time, time_ms) : (t->phase == GTEXT_CSS_TRANSITION_PHASE_IDLE ? GTEXT_CSS_TRANSITION_PHASE_BEFORE : t->phase);
     const size_t n = phase_events(t->phase, to, t->delay, t->end_time - t->start_time, type, elapsed, ideal);
     events_add(events, t->id, t->generation, t->prop, t->pname, t->lpn, n, type, elapsed, ideal, t->start_time - t->delay, time_ms);
     t->phase = to;
-    t->ready = true;
+    t->ready = t->ready || ready;
   }
   ev_sort(events, first);
   return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_css_transition_set_frame(GTEXT_CSS_Transition_Set * set, double time_ms, GTEXT_CSS_Transition_Events * events) {
+  return set_frame(set, time_ms, true, events);
+}
+
+GTEXT_CSS_Status gtext_css_transition_set_frame_pending(GTEXT_CSS_Transition_Set * set, double time_ms, GTEXT_CSS_Transition_Events * events) {
+  return set_frame(set, time_ms, false, events);
 }
 
 GTEXT_CSS_Status gtext_css_transition_set_cancel_all(GTEXT_CSS_Transition_Set * set, double time_ms) {

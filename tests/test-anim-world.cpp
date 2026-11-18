@@ -435,6 +435,28 @@ TEST(AnimWorld, TheTimingOfATransitionIsTheGeneralModelOverItsEffect) {
   EXPECT_EQ(w.list("#t"), "") << "after its end the effect is neither current nor in effect";
 }
 
+/* The pending phase of a transition (Transitions 2, "Event dispatch"; Web Animations 1, "Waiting for the associated effect"): a frame at which the transitions are not ready reports the run, the next
+   frame the start. The snapshot says pending until a ready frame has seen it, and a CSS animation made at the same event is not pending-phased (its events are the table's, as before). */
+TEST(AnimWorld, AFrameThatIsNotReadyLeavesANewTransitionPendingAndReportsTheRunOnly) {
+  Wd w(page(std::string(kKeys) + "#t { width: 10px; transition: width 100ms linear } #t.on { width: 20px }"));
+  w.at(0);
+  w.flush("#t");
+  w.set_class("#t", "on");
+  w.flush("#t");
+  gtext_cssom_transition_tracker_set_frame_pending(w.tracker, true);
+  w.at(0);
+  EXPECT_EQ(w.frame(), "transitionrun:width:0@0");
+  EXPECT_TRUE(w.first("#t").pending);
+  w.at(16);
+  EXPECT_EQ(w.frame(), "") << "a second frame that is not ready adds nothing";
+  gtext_cssom_transition_tracker_set_frame_pending(w.tracker, false);
+  w.at(32);
+  EXPECT_EQ(w.frame(), "transitionstart:width:0@0");
+  EXPECT_FALSE(w.first("#t").pending);
+  w.at(100);
+  EXPECT_EQ(w.frame(), "transitionend:width:0.1@100");
+}
+
 /* All or nothing: a frame whose list cannot be made reports its events at the next call, whole. */
 TEST(AnimWorldOom, AFrameThatCannotBeMadeIsMadeWholeByTheNextCall) {
   FaultAllocator fa;

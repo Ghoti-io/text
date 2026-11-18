@@ -798,6 +798,21 @@ std::string frame(GTEXT_CSS_Transition_Set * set, double t, GTEXT_CSS_Status * s
   return out;
 }
 
+/// The same, for a frame at which the transitions are not ready (a pending frame).
+std::string frame_pending(GTEXT_CSS_Transition_Set * set, double t) {
+  GTEXT_CSS_Transition_Events * ev = nullptr;
+  EXPECT_EQ(gtext_css_transition_events_new(nullptr, &ev), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_transition_set_frame_pending(set, t, ev), GTEXT_CSS_OK);
+  std::string out;
+  for (size_t i = 0; i < gtext_css_transition_events_count(ev); i++) {
+    GTEXT_CSS_Transition_Event e{};
+    EXPECT_TRUE(gtext_css_transition_events_at(ev, i, &e));
+    out += std::string(i ? " " : "") + type_name(e.type) + ":" + std::string(e.property_name.data, e.property_name.length) + ":" + num(e.elapsed_time);
+  }
+  gtext_css_transition_events_free(ev);
+  return out;
+}
+
 const std::string kFade = "transition: opacity 1s linear; ";
 
 /* "The transitionrun event occurs when a transition is created", "The transitionstart event occurs when a transition's delay phase ends", "The transitionend event occurs at the completion of the
@@ -813,6 +828,33 @@ TEST(CssTransitionEvents, RegularPlaybackIsRunStartEnd) {
   ASSERT_EQ(t.event(kFade + "opacity: 1", kFade + "opacity: 1", 1000), GTEXT_CSS_OK);
   EXPECT_EQ(t.up.completed, 1u);
   EXPECT_EQ(frame(t.set, 1100), "") << "a transition that had already reported its end reports nothing when the style change event moves it to the completed ones";
+}
+
+/* The first frame of a transition that has not been rendered yet: its pending play task has not run, so it is *pending*, the phase before the effect ("idle -> pending or before: transitionrun"), and
+   the start waits for the frame that is ready ("pending or before -> active or after: transitionstart"). The snapshot (the world's test) says pending until then. */
+TEST(CssTransitionEvents, APendingFrameReportsTheRunAndTheNextReadyFrameTheStart) {
+  Tx t;
+  ASSERT_EQ(t.event("opacity: 0", kFade + "opacity: 1", 0), GTEXT_CSS_OK);
+  EXPECT_EQ(frame_pending(t.set, 0), "run:opacity:0");
+  EXPECT_EQ(frame_pending(t.set, 16), "") << "another frame that is not ready reports nothing more";
+  EXPECT_EQ(frame(t.set, 32), "start:opacity:0");
+  EXPECT_EQ(frame(t.set, 500), "");
+  EXPECT_EQ(frame(t.set, 1000), "end:opacity:1");
+}
+
+TEST(CssTransitionEvents, APendingFrameDoesNotMoveATransitionAReadyFrameHasSeen) {
+  Tx t;
+  ASSERT_EQ(t.event("opacity: 0", kFade + "opacity: 1", 0), GTEXT_CSS_OK);
+  EXPECT_EQ(frame(t.set, 0), "run:opacity:0 start:opacity:0");
+  EXPECT_EQ(frame_pending(t.set, 500), "");
+  EXPECT_EQ(frame(t.set, 1000), "end:opacity:1");
+}
+
+TEST(CssTransitionEvents, AReadyFrameThatFollowsAPendingOneAtTheEndReportsTheStartAndTheEnd) {
+  Tx t;
+  ASSERT_EQ(t.event("opacity: 0", kFade + "opacity: 1", 0), GTEXT_CSS_OK);
+  EXPECT_EQ(frame_pending(t.set, 0), "run:opacity:0");
+  EXPECT_EQ(frame(t.set, 1200), "start:opacity:0 end:opacity:1");
 }
 
 /* "idle -> pending or before: transitionrun" and "pending or before -> active: transitionstart" with the "interval start" (0 for a positive delay); "active -> after: transitionend". */

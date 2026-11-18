@@ -253,6 +253,19 @@ GTEXT_API GTEXT_CSS_Status gtext_css_transition_events_reserve(GTEXT_CSS_Transit
 GTEXT_API GTEXT_CSS_Status gtext_css_transition_set_frame(GTEXT_CSS_Transition_Set * set, double time_ms, GTEXT_CSS_Transition_Events * events);
 
 /**
+ * @brief A frame at which the transitions are not ready: "the first frame of a transition" in a browser that has not yet rendered one (or a timeline that is inactive). A transition that no frame has
+ * seen is made *pending*: its phase is the one before the effect, so the frame reports `transitionrun` only (the table of Transitions 2, "Event dispatch": idle to pending or before) and
+ * the next frame given to gtext_css_transition_set_frame() reports the `transitionstart` (pending or before to active or after) and, when the time has passed it, the `transitionend`. A transition that
+ * an earlier ready frame has seen is not moved by this one, and a transition that left the set owes what it owed. The snapshot says `pending` until a ready frame has seen the transition.
+ *
+ * Which frame is the first that is ready is the host's: the text says only "as soon as" the user agent has completed the setup (Web Animations 1, "Waiting for the associated effect"), and the
+ * two browsers differ on a fresh page (Firefox reports the run and the start in different frames, Chromium together) while agreeing for every frame of a page that has already rendered.
+ * @param set The set. @param time_ms The time of the frame, as for gtext_css_transition_set_frame(). @param events The list to append to. Not NULL.
+ * @return GTEXT_CSS_OK; GTEXT_CSS_E_INVALID; GTEXT_CSS_E_OOM.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_transition_set_frame_pending(GTEXT_CSS_Transition_Set * set, double time_ms, GTEXT_CSS_Transition_Events * events);
+
+/**
  * @brief Cancel every running transition and remove every completed one at a time ("implementations must also cancel any running transitions on elements that are no longer being rendered and remove
  * transitions on them from the set of completed transitions", Transitions 2, "Starting of transitions"; and for an element that is no longer in the document, Transitions 1). Each cancelled transition that a
  * frame had seen is reported by the next frame as a transitioncancel; gtext_css_transition_set_clear() is the same without the events (the set of a thing that is gone and has nothing to tell).

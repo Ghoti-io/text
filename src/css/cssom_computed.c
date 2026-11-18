@@ -1337,6 +1337,7 @@ struct GTEXT_CSSOM_Transition_Tracker {
   uint64_t seq;
   uint64_t id_high;                  ///< The greatest transition id any of the tracker's sets gave: a set made later starts after it, so an id is never given twice for one tracker.
   double time_ms;
+  bool frame_pending;                ///< The next frame is one at which the transitions are not ready (gtext_cssom_transition_tracker_set_frame_pending()).
   uint64_t version;
 };
 
@@ -1385,6 +1386,12 @@ void gtext_cssom_transition_tracker_set_time(GTEXT_CSSOM_Transition_Tracker * tr
   if (tracker && time_ms == time_ms && tracker->time_ms != time_ms) {   /* a time that is not a number is not a time */
     tracker->time_ms = time_ms;
     tracker->version++;
+  }
+}
+
+void gtext_cssom_transition_tracker_set_frame_pending(GTEXT_CSSOM_Transition_Tracker * tracker, bool pending) {
+  if (tracker) {
+    tracker->frame_pending = pending;
   }
 }
 
@@ -1996,7 +2003,7 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_events(GTEXT_CSSOM_Transition_Tr
   for (size_t i = 0; i < m && st == GTEXT_CSS_OK; i++) {
     const size_t before = gtext_css_transition_events_count(ev->list);
     tracker_entry * e = (tracker_entry *)order[i];
-    st = gtext_css_transition_set_frame(e->set, tracker->time_ms, ev->list);
+    st = tracker->frame_pending ? gtext_css_transition_set_frame_pending(e->set, tracker->time_ms, ev->list) : gtext_css_transition_set_frame(e->set, tracker->time_ms, ev->list);
     for (size_t k = before; st == GTEXT_CSS_OK && k < gtext_css_transition_events_count(ev->list); k++) {
       ev->element[k] = e->element;
       ev->owner[k] = i;

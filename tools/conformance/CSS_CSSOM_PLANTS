@@ -580,3 +580,4 @@ tracker-retired-entry-is-released-with-the-transitions	cssom_computed.c	    if (
 tracker-animation-time-ignores-the-place-in-the-list	cssom_computed.c	gtext_anim_css_set_current_time(e->anims, &effect->name, effect->index, tracker->time_ms, &ms)	gtext_anim_css_set_current_time(e->anims, &effect->name, 0, tracker->time_ms, &ms)	animworld
 markup-adapter-compare-order-says-first-seen	css_markup.c	  i->compare_order = cb_compare_order;		animworld
 if-condition-taint-ignored	css_substitute.c	f->res[1].rope && f->cond_tainted ?	f->res[1].rope && 0 && f->cond_tainted ?	custom
+tracker-ignores-the-pending-frame-flag	cssom_computed.c	    st = tracker->frame_pending ? gtext_css_transition_set_frame_pending(e->set, tracker->time_ms, ev->list) : gtext_css_transition_set_frame(e->set, tracker->time_ms, ev->list);	    st = gtext_css_transition_set_frame(e->set, tracker->time_ms, ev->list);	animworld
