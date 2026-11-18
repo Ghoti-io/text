@@ -132,23 +132,30 @@ GTEXT_API GTEXT_Anim_Status gtext_anim_world_find(GTEXT_Anim_World * world, GTEX
 GTEXT_API GTEXT_Anim_Status gtext_anim_world_update(GTEXT_Anim_World * world, GTEXT_Anim_Events ** out);
 
 /**
- * @brief The Animation of a CSS animation, for script that calls its methods or reads its promises: the first call for an animation makes an Animation (animation.h) with the effect's timing and the state
- * the CSS animation had, and from then on the Animation holds the animation's timing state: its current time is what the style samples and what the events of CSS Animations 2 compare, a style change
- * event does to it what CSS Animations 2 says (`animation-play-state` pauses it or plays it again, a changed timing is the effect's new timing, a name that leaves the list cancels it), the frame
- * runs its pending task and asks whether it finished, and its `finish`, `cancel` and `remove` events are in the frame's list (gtext_anim_world_update()). The world owns the Animation; it
- * is valid until the world is freed and the same pointer is returned for the same id, even after the animation was cancelled.
+ * @brief The Animation of a CSS animation or a CSS transition, for script that calls its methods or reads its promises: the first call for an animation makes an Animation (animation.h) with the effect's
+ * timing and the state the CSS animation or transition had, and from then on the Animation holds the animation's timing state: its current time is what the style samples and what the events of CSS
+ * Animations 2 and CSS Transitions 2 compare, a style change event does to it what the two specifications say (for a CSS animation `animation-play-state` pauses it or plays it again, a changed timing is the
+ * effect's new timing, a name that leaves the list cancels it; a transition the style cancels, replaces or reverses is cancelled, and one that completes lets go of it), the frame runs its pending task and
+ * asks whether it finished, and its `finish`, `cancel` and `remove` events are in the frame's list (gtext_anim_world_update()). The world owns the Animation; it is valid until the world is freed and the same
+ * pointer is returned for the same kind and id, even after the animation was cancelled or the transition completed.
  *
- * Every call that changes it takes the tracker's time: pass gtext_anim_world_time() as `now`.
- * @return GTEXT_ANIM_OK; GTEXT_ANIM_NOT_SUPPORTED (a CSS transition: its record keeps absolute start and end times of its own, and it is not yet held by an Animation); GTEXT_ANIM_INVALID (no such animation);
- * GTEXT_ANIM_OOM.
+ * Every call that changes it takes the tracker's time: pass gtext_anim_world_time() as `now`, and call gtext_anim_world_touch() after it, so that a style computed before is not served after.
+ * @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID (no such animation: a transition is held while it is running, and an id of a transition that left the set is not found); GTEXT_ANIM_OOM.
  */
 GTEXT_API GTEXT_Anim_Status gtext_anim_world_control(GTEXT_Anim_World * world, GTEXT_Anim_Kind kind, uint64_t id, GTEXT_Anim_Animation ** out);
 
 /** @brief How many Animations the world holds (the CSS animations script has touched), in the order they were first asked for. NULL is 0. */
 GTEXT_API size_t gtext_anim_world_control_count(const GTEXT_Anim_World * world);
 
-/** @brief Control `index`: the id of its CSS animation and its Animation (so that the host drains the notes of each: gtext_anim_animation_note_at()). @return false past the end. */
-GTEXT_API bool gtext_anim_world_control_at(const GTEXT_Anim_World * world, size_t index, uint64_t * id, GTEXT_Anim_Animation ** animation);
+/** @brief Control `index`: the kind and id of its CSS animation or transition (`kind` may be NULL) and its Animation (so that the host drains the notes of each: gtext_anim_animation_note_at()). @return false past the end. */
+GTEXT_API bool gtext_anim_world_control_at(const GTEXT_Anim_World * world, size_t index, GTEXT_Anim_Kind * kind, uint64_t * id, GTEXT_Anim_Animation ** animation);
+
+/**
+ * @brief Something an Animation the world holds does reaches a style without the tracker being told (the Animation was played, paused, seeked, finished, reversed, its rate changed): the version that
+ * GTEXT_CSSOM_Layout_Interface::transition_version reads moves on, so that a style computed before the call is computed again. Call it after any call that changes an Animation of gtext_anim_world_control().
+ * @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID.
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_world_touch(GTEXT_Anim_World * world);
 
 /** @brief A microtask checkpoint for every Animation the world holds, at the tracker's time (gtext_anim_animation_checkpoint()). */
 GTEXT_API GTEXT_Anim_Status gtext_anim_world_checkpoint(GTEXT_Anim_World * world);

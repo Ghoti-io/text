@@ -27,6 +27,7 @@
  */
 
 #include <cstdio>
+#include <set>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -46,7 +47,7 @@ struct Wd {
   GTEXT_CSSOM_Transition_Tracker * tracker = nullptr;
   GTEXT_Anim_World * world = nullptr;
   Cs m;
-  explicit Wd(const std::string & html, const GTEXT_Allocator * world_alloc = nullptr)
+  explicit Wd(const std::string & html, const GTEXT_Allocator * world_alloc = nullptr, const GTEXT_Allocator * tracker_alloc = nullptr)
       : m(html, [this](GTEXT_CSSOM_Config & c) {
           iface.size = sizeof iface;
           iface.user = this;
@@ -56,7 +57,7 @@ struct Wd {
           iface.timeline_version = &Wd::ver;
           c.layout = &iface;
         }) {
-    EXPECT_EQ(gtext_cssom_transition_tracker_new(m.doc->d, nullptr, &tracker), GTEXT_CSS_OK);
+    EXPECT_EQ(gtext_cssom_transition_tracker_new(m.doc->d, tracker_alloc, &tracker), GTEXT_CSS_OK);
     EXPECT_EQ(gtext_anim_world_new(m.doc->d, tracker, world_alloc, &world), GTEXT_ANIM_OK);
   }
   Wd(const Wd &) = delete;
@@ -91,6 +92,13 @@ struct Wd {
   }
   void at(double ms) {
     gtext_cssom_transition_tracker_set_time(tracker, ms);
+  }
+  /// How many transitions the tracker holds as running for an element (idle ones included: they are still in the set).
+  size_t running(const char * selector) {
+    const GTEXT_CSS_Transition_Set * set = nullptr;
+    double ms = 0;
+    EXPECT_EQ(gtext_cssom_transition_tracker_lookup(tracker, m.handle(selector), nullptr, &set, &ms), GTEXT_CSS_OK);
+    return gtext_css_transition_set_running_count(set);
   }
   void set_class(const char * selector, const std::string & value) {
     GTEXT_Markup_Node * e = m.el(selector);
@@ -468,8 +476,8 @@ bool has_event(const std::string & frame, const std::string & type) {
 struct Ctl {
   Wd & w;
   GTEXT_Anim_Animation * a = nullptr;
-  explicit Ctl(Wd & wd, const char * selector = "#t") : w(wd) {
-    EXPECT_EQ(gtext_anim_world_control(w.world, GTEXT_ANIM_KIND_CSS_ANIMATION, w.first(selector).id, &a), GTEXT_ANIM_OK);
+  explicit Ctl(Wd & wd, const char * selector = "#t", GTEXT_Anim_Kind kind = GTEXT_ANIM_KIND_CSS_ANIMATION) : w(wd) {
+    EXPECT_EQ(gtext_anim_world_control(w.world, kind, w.first(selector).id, &a), GTEXT_ANIM_OK);
   }
   GTEXT_Anim_Time now() const {
     return GTEXT_Anim_Time{true, gtext_anim_world_time(w.world)};
@@ -687,15 +695,601 @@ TEST(AnimWorldControl, TheScheduledTimeOfAnEventFollowsThePlaybackRate) {
   EXPECT_EQ(w.frame(), "animationend:a:1@500");
 }
 
-TEST(AnimWorldControl, ACssTransitionIsNotYetHeldByAnAnimation) {
-  Wd w(page(std::string(kKeys) + "#t { width: 10px; transition: width 100ms linear } #t.on { width: 20px }"));
+/* ---- an Animation holds the timing state of a CSS transition script has touched ------------------------------------------------------------------- */
+
+/* A page with a transition of the width from 10px to 20px, over 100 ms (a delay when given), started by the class `on`. */
+std::string tpage(const char * transition = "width 100ms linear", const char * extra = "") {
+  return page(std::string("#t { width: 10px; transition: ") + transition + " } #t.on { width: 20px } #t.back { width: 10px } #t.off { transition-property: none } #t.auto { width: auto } " + extra);
+}
+
+/// Start the transition of `#t` at time 0 (the style change event) and make an Animation of it.
+void start(Wd & w) {
   w.at(0);
   w.flush("#t");
   w.set_class("#t", "on");
   w.flush("#t");
-  GTEXT_Anim_Animation * a = nullptr;
-  EXPECT_EQ(gtext_anim_world_control(w.world, GTEXT_ANIM_KIND_CSS_TRANSITION, w.first("#t").id, &a), GTEXT_ANIM_NOT_SUPPORTED);
-  EXPECT_EQ(gtext_anim_world_control(w.world, GTEXT_ANIM_KIND_CSS_ANIMATION, 12345, &a), GTEXT_ANIM_INVALID);
+}
+
+struct TCtl : Ctl {
+  explicit TCtl(Wd & wd, const char * selector = "#t") : Ctl(wd, selector, GTEXT_ANIM_KIND_CSS_TRANSITION) {}
+};
+
+TEST(AnimWorldTransitionControl, TheSameAnimationIsGivenForTheSameTransitionAndAnIdIsKeptApartByItsKind) {
+  /* one style change event makes both, and each set of the element numbers its animations from the same place: the transition and the animation have the same id */
+  Wd w(page("@keyframes a { from { opacity: 0 } to { opacity: 1 } } #t { width: 10px; transition: width 100ms linear } #t.on { width: 20px; animation: a 1s linear }"));
+  start(w);
+  GTEXT_Anim_Info t = w.first("#t");
+  ASSERT_EQ(t.kind, GTEXT_ANIM_KIND_CSS_TRANSITION);
+  GTEXT_Anim_Animation *a1 = nullptr, *a2 = nullptr, *an = nullptr;
+  ASSERT_EQ(gtext_anim_world_control(w.world, GTEXT_ANIM_KIND_CSS_TRANSITION, t.id, &a1), GTEXT_ANIM_OK);
+  ASSERT_EQ(gtext_anim_world_control(w.world, GTEXT_ANIM_KIND_CSS_TRANSITION, t.id, &a2), GTEXT_ANIM_OK);
+  EXPECT_EQ(a1, a2);
+  EXPECT_EQ(gtext_anim_world_control_count(w.world), 1u);
+  /* the CSS animation of the same element has an id of its own kind, whatever it is: it is another Animation */
+  GTEXT_Anim_List * l = nullptr;
+  ASSERT_EQ(gtext_anim_world_get_animations(w.world, w.m.handle("#t"), nullptr, 0, false, &l), GTEXT_ANIM_OK);
+  GTEXT_Anim_Info ai{};
+  ASSERT_EQ(gtext_anim_list_count(l), 2u);
+  ASSERT_TRUE(gtext_anim_list_at(l, 1, &ai));
+  gtext_anim_list_free(l);
+  ASSERT_EQ(ai.kind, GTEXT_ANIM_KIND_CSS_ANIMATION);
+  ASSERT_EQ(ai.id, t.id) << "the ids of the two kinds coincide, which is why the world keys an Animation by the kind as well";
+  ASSERT_EQ(gtext_anim_world_control(w.world, GTEXT_ANIM_KIND_CSS_ANIMATION, ai.id, &an), GTEXT_ANIM_OK);
+  EXPECT_NE(an, a1);
+  EXPECT_EQ(gtext_anim_world_control_count(w.world), 2u);
+  GTEXT_Anim_Kind kind = GTEXT_ANIM_KIND_CSS_ANIMATION;
+  uint64_t id = 0;
+  GTEXT_Anim_Animation * at = nullptr;
+  ASSERT_TRUE(gtext_anim_world_control_at(w.world, 0, &kind, &id, &at));
+  EXPECT_EQ(kind, GTEXT_ANIM_KIND_CSS_TRANSITION);
+  EXPECT_EQ(id, t.id);
+  EXPECT_EQ(at, a1);
+  GTEXT_Anim_Animation * none = nullptr;
+  EXPECT_EQ(gtext_anim_world_control(w.world, GTEXT_ANIM_KIND_CSS_TRANSITION, 12345, &none), GTEXT_ANIM_INVALID);
+  EXPECT_EQ(gtext_anim_world_control(w.world, static_cast<GTEXT_Anim_Kind>(99), t.id, &none), GTEXT_ANIM_INVALID);
+}
+
+TEST(AnimWorldTransitionControl, TwoElementsThatEachHaveATransitionHaveTransitionsOfDifferentIds) {
+  /* the ids a tracker gives are for one tracker, not for one element: an Animation is found by its id */
+  Wd w(page("div { width: 10px; transition: width 100ms linear } div.on { width: 20px }", "<div id=a></div><div id=b></div><div id=c></div>"));
+  w.at(0);
+  for (const char * id : {"#a", "#b", "#c"}) {
+    w.flush(id);
+  }
+  for (const char * id : {"#a", "#b"}) {
+    w.set_class(id, "on");
+    w.flush(id);
+  }
+  w.set_class("#a", "");
+  w.flush("#a");
+  w.set_class("#a", "on");
+  w.flush("#a");
+  w.set_class("#c", "on");
+  w.flush("#c");
+  GTEXT_Anim_List * l = nullptr;
+  ASSERT_EQ(gtext_anim_world_get_animations(w.world, nullptr, nullptr, 0, false, &l), GTEXT_ANIM_OK);
+  std::set<uint64_t> ids;
+  for (size_t i = 0; i < gtext_anim_list_count(l); i++) {
+    GTEXT_Anim_Info a{};
+    ASSERT_TRUE(gtext_anim_list_at(l, i, &a));
+    ids.insert(a.id);
+  }
+  EXPECT_EQ(ids.size(), gtext_anim_list_count(l));
+  EXPECT_EQ(ids.size(), 3u);
+  gtext_anim_list_free(l);
+}
+
+TEST(AnimWorldTransitionControl, ANewTransitionIsPendingUntilTheFrameAndThenStartsAtTheStyleChangeEvent) {
+  Wd w(page("#t { width: 10px; transition: width 100ms linear } #t.on { width: 20px }"));
+  start(w);
+  TCtl c(w);
+  auto s = c.st();
+  EXPECT_TRUE(s.pending_play) << "a transition is pending until the first frame (Web Animations 1, \"Playing an animation\"), with its current time held at 0";
+  EXPECT_EQ(s.play_state, GTEXT_ANIM_PLAY_RUNNING);
+  EXPECT_EQ(s.current_time.ms, 0);
+  EXPECT_FALSE(s.start_time.resolved);
+  EXPECT_EQ(s.ready, GTEXT_ANIM_PROMISE_PENDING);
+  EXPECT_TRUE(w.first("#t").pending);
+  w.at(16);
+  EXPECT_EQ(w.frame(), "transitionrun:width:0@0 transitionstart:width:0@0");
+  s = c.st();
+  EXPECT_FALSE(s.pending);
+  EXPECT_EQ(s.start_time.ms, 0) << "ready at the time of the style change event, as for a record that holds its own state";
+  EXPECT_EQ(c.notes(), "RR2");
+  EXPECT_EQ(w.m.value("#t", "width"), "11.6px");
+}
+
+TEST(AnimWorldTransitionControl, PauseHoldsTheValueAndPlayResumesIt) {
+  Wd w(page("#t { width: 10px; transition: width 100ms linear } #t.on { width: 20px }"));
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  w.at(50);
+  EXPECT_EQ(w.m.value("#t", "width"), "15px");
+  ASSERT_EQ(gtext_anim_animation_pause(c.a, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  w.at(66);
+  w.frame();
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_PAUSED);
+  EXPECT_EQ(w.first("#t").play_state, GTEXT_ANIM_PLAY_PAUSED);
+  w.at(90);
+  EXPECT_EQ(w.m.value("#t", "width"), "16.6px") << "held at the time the pause task ran";
+  ASSERT_EQ(gtext_anim_animation_play(c.a, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  w.at(106);
+  w.frame();
+  w.at(126);
+  EXPECT_EQ(w.m.value("#t", "width"), "18.6px") << "it runs again from where it was held (66 ms of 100, and 20 ms since)";
+}
+
+TEST(AnimWorldTransitionControl, FinishEndsTheTransitionAtOnceWithItsEventsAndAFinishEventAndItCompletesAtTheNextStyleChangeEvent) {
+  Wd w(page("#t { width: 10px; transition: width 100ms linear } #t.on { width: 20px }"));
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  c.notes();
+  w.at(30);
+  EXPECT_EQ(w.m.value("#t", "width"), "13px");
+  ASSERT_EQ(gtext_anim_animation_finish(c.a, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(c.notes(), "FR1");
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_FINISHED);
+  EXPECT_EQ(w.m.value("#t", "width"), "20px");
+  w.at(46);
+  const std::string f = w.frame();
+  EXPECT_NE(f.find("transitionend:width:0.1@"), std::string::npos) << f;
+  EXPECT_TRUE(has_event(f, "finish")) << f;
+  EXPECT_EQ(w.list("#t"), "") << "finished with no forwards fill: not relevant";
+  /* "Running transitions complete at a time that is equal to or after their end time, but prior to the first style change event whose time is equal to or after their end time": at the next event */
+  w.set_class("#t", "on x");
+  w.flush("#t");
+  EXPECT_EQ(w.running("#t"), 0u) << "it completed: moved to the completed transitions";
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_FINISHED) << "its Animation keeps its state: the effect is gone from the element";
+  EXPECT_EQ(w.frame(), "");
+}
+
+TEST(AnimWorldTransitionControl, CancelByScriptLeavesTheTransitionInTheSetWithNoEffectAndNoStyleChangeBringsItBack) {
+  Wd w(page("#t { width: 10px; transition: width 100ms linear } #t.on { width: 20px } #t.slow { transition-duration: 200ms }"));
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  w.at(30);
+  w.frame();
+  c.notes();
+  ASSERT_EQ(gtext_anim_animation_cancel(c.a, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(c.notes(), "FJ1");
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_IDLE);
+  EXPECT_EQ(w.m.value("#t", "width"), "20px") << "no effect: the property has the value the style says";
+  EXPECT_EQ(w.list("#t"), "") << "an idle animation is not relevant";
+  w.at(46);
+  const std::string f = w.frame();
+  EXPECT_NE(f.find("transitioncancel:width:0.03@"), std::string::npos) << f << " (the active time the last frame saw)";
+  EXPECT_TRUE(has_event(f, "cancel")) << f;
+  /* "Note that calling the cancel() method on the CSSTransition object representing a running transition does not cause the transition to be disassociated from its owning element": a change of the
+     transition properties does not start another transition or make it live again */
+  w.set_class("#t", "on slow");
+  w.flush("#t");
+  EXPECT_EQ(w.m.value("#t", "width"), "20px");
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_IDLE);
+  EXPECT_EQ(w.running("#t"), 1u) << "still in the set of running transitions";
+}
+
+TEST(AnimWorldTransitionControl, ACancelledTransitionCanBePlayedAgainAndAnimatesFromItsStartValueAtOnce) {
+  /* CSSTransition-canceling: "After canceling a transition, it can still be re-used" */
+  Wd w(tpage());
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  w.at(40);
+  ASSERT_EQ(gtext_anim_animation_cancel(c.a, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(w.m.value("#t", "width"), "20px");
+  ASSERT_EQ(gtext_anim_animation_play(c.a, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(w.m.value("#t", "width"), "10px") << "play() of an idle animation: current time 0 at once, a pending task";
+  EXPECT_TRUE(c.st().pending_play);
+  w.at(56);
+  /* the table compares the phase of one frame with the phase of the one before: no frame saw the transition idle, so it was active and is active, and nothing is dispatched but the playback event */
+  EXPECT_EQ(w.frame(), "cancel::0@40");
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_RUNNING);
+  EXPECT_FALSE(c.st().pending);
+  w.at(106);
+  EXPECT_EQ(w.m.value("#t", "width"), "15px") << "ready at the frame (56): 50 ms of it have gone";
+}
+
+TEST(AnimWorldTransitionControl, ATransitionAFrameSawIdleRunsAgainWhenItIsPlayedAgain) {
+  /* "idle -> pending or before: transitionrun", and after it "pending or before -> active: transitionstart" */
+  Wd w(tpage());
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  w.at(40);
+  ASSERT_EQ(gtext_anim_animation_cancel(c.a, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(w.frame(), "transitioncancel:width:0@40 cancel::0@40");
+  ASSERT_EQ(gtext_anim_animation_play(c.a, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  w.at(56);
+  EXPECT_EQ(w.frame(), "transitionrun:width:0@56 transitionstart:width:0@56") << "ready at this frame, with no delay: idle to active";
+}
+
+TEST(AnimWorldTransitionControl, ACancelledFinishedTransitionCanBePlayedAgain) {
+  Wd w(tpage());
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  w.at(20);
+  ASSERT_EQ(gtext_anim_animation_finish(c.a, c.now()), GTEXT_ANIM_OK);
+  ASSERT_EQ(gtext_anim_animation_cancel(c.a, c.now()), GTEXT_ANIM_OK);
+  ASSERT_EQ(gtext_anim_animation_play(c.a, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(w.m.value("#t", "width"), "10px");
+  w.at(36);
+  w.frame();
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_RUNNING);
+}
+
+TEST(AnimWorldTransitionControl, ReplayingAFinishedTransitionRewindsPlayback) {
+  /* CSSTransition-finished: "Restarting a finished transition rewinds playback" */
+  Wd w(tpage());
+  start(w);
+  TCtl c(w);
+  ASSERT_EQ(gtext_anim_animation_finish(c.a, c.now()), GTEXT_ANIM_OK);
+  EXPECT_EQ(c.notes(), "RR2 FR1") << "finish() of an animation that is pending resolves its ready promise";
+  ASSERT_EQ(gtext_anim_animation_play(c.a, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(w.m.value("#t", "width"), "10px");
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_RUNNING);
+  /* the task play() made is script's, ready at the frame (16), and not the style change event's (0) that the first task, which finish() cancelled before any frame ran it, was */
+  w.at(16);
+  w.frame();
+  w.at(66);
+  EXPECT_EQ(w.m.value("#t", "width"), "15px");
+}
+
+TEST(AnimWorldTransitionControl, ATransitionTheStyleReversesIsCancelledAndItsPromisesSettle) {
+  /* "Reversing a running transition cancels the original transition" */
+  Wd w(tpage());
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  w.at(30);
+  w.frame();
+  c.notes();
+  w.set_class("#t", "back");
+  w.flush("#t");
+  EXPECT_EQ(c.notes(), "FJ1");
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_IDLE);
+  const std::string f = w.frame();
+  EXPECT_NE(f.find("transitioncancel:width:0.03@"), std::string::npos) << f;
+  EXPECT_TRUE(has_event(f, "cancel")) << f;
+  EXPECT_EQ(w.list("#t"), "T:width") << "the reversed transition is a transition of its own";
+}
+
+TEST(AnimWorldTransitionControl, ATransitionCancelledByTheStyleBeforeItIsReadyRejectsItsReadyPromise) {
+  /* CSSTransition-ready: "ready promise is rejected when a transition is canceled by updating transition-property" */
+  Wd w(tpage());
+  start(w);
+  TCtl c(w);
+  EXPECT_TRUE(c.st().pending_play);
+  w.set_class("#t", "on off");
+  w.flush("#t");
+  EXPECT_EQ(c.notes(), "RJ2 FJ1") << "the pending ready promise is rejected with an AbortError, and the finished promise too";
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_IDLE);
+  EXPECT_EQ(w.frame(), "cancel::0@0") << "no frame saw the transition: \"idle -> idle\" owes no transitioncancel, and the animation's own cancel event is owed";
+}
+
+TEST(AnimWorldTransitionControl, ATransitionWhoseTargetCannotBeInterpolatedAnyMoreIsCancelled) {
+  Wd w(tpage());
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  w.at(10);
+  c.notes();
+  w.set_class("#t", "on auto");
+  w.flush("#t");
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_IDLE);
+  EXPECT_EQ(w.list("#t"), "");
+}
+
+TEST(AnimWorldTransitionControl, CurrentTimeSeeksATransitionAndASeekPastTheEndFinishesIt) {
+  /* CSSTransition-currentTime: "currentTime can be used to seek a CSS transition", "Skipping forwards through transition" */
+  Wd w(tpage("width 100ms linear 100ms"));
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  EXPECT_EQ(w.first("#t").current_time.ms, 0);
+  ASSERT_EQ(gtext_anim_animation_set_current_time(c.a, {true, 150}, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(w.first("#t").current_time.ms, 150);
+  EXPECT_EQ(w.m.value("#t", "width"), "15px");
+  ASSERT_EQ(gtext_anim_animation_set_current_time(c.a, {true, 100}, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(w.m.value("#t", "width"), "10px");
+  ASSERT_EQ(gtext_anim_animation_set_current_time(c.a, {true, 200}, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_FINISHED);
+  const std::string f = w.frame();
+  EXPECT_NE(f.find("transitionend:width:0.1@"), std::string::npos) << f;
+  EXPECT_EQ(w.m.value("#t", "width"), "20px");
+  /* a null current time is a TypeError and changes nothing */
+  EXPECT_EQ(gtext_anim_animation_set_current_time(c.a, {false, 0}, c.now()), GTEXT_ANIM_TYPE_ERROR);
+}
+
+TEST(AnimWorldTransitionControl, TheTransitionAStyleReversesStartsFromTheCurrentPositionOfASeekedTransition) {
+  /* CSSTransition-currentTime: "Transition reversing behavior respects currentTime and uses the transition's current position" */
+  Wd w(tpage("width 100ms ease-in"));
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  ASSERT_EQ(gtext_anim_animation_set_current_time(c.a, {true, 50}, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  const double portion = w.first("#t").computed.progress;
+  EXPECT_GT(portion, 0.0);
+  EXPECT_LT(portion, 0.5);
+  w.set_class("#t", "back");
+  w.flush("#t");
+  ASSERT_EQ(w.list("#t"), "T:width") << "the reversed transition is produced: its start and end values are not both 10px";
+  const GTEXT_Anim_Info r = w.first("#t");
+  EXPECT_NEAR(r.computed.active_duration, 100 * portion, 1.0) << "the reversing shortening factor is the progress of the seeked transition";
+  EXPECT_EQ(std::string(r.start_value.data, r.start_value.length).substr(0, 4), "13.1") << "from the value at the seeked position (ease-in at 0.5 is about 0.316): " << std::string(r.start_value.data, r.start_value.length);
+}
+
+TEST(AnimWorldTransitionControl, TheStartTimeSeeksATransitionAndMovesItsPhaseThroughTheEvents) {
+  /* CSSTransition-startTime: "The start time can be set to seek a transition", "Seeking a transition using start time dispatches transition events" */
+  Wd w(tpage("width 100ms linear 100ms"));
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  EXPECT_EQ(w.frame(), "transitionrun:width:0@0");
+  w.at(16);
+  const double now = 16;
+  ASSERT_EQ(gtext_anim_animation_set_start_time(c.a, {true, now - 100}, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(w.m.value("#t", "width"), "10px");
+  ASSERT_EQ(gtext_anim_animation_set_start_time(c.a, {true, now - 150}, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(w.m.value("#t", "width"), "15px");
+  const std::string f = w.frame();
+  EXPECT_NE(f.find("transitionstart:width:0@"), std::string::npos) << f;
+  ASSERT_EQ(gtext_anim_animation_set_start_time(c.a, {true, now - 200}, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  const std::string g = w.frame();
+  EXPECT_NE(g.find("transitionend:width:0.1@"), std::string::npos) << g;
+}
+
+TEST(AnimWorldTransitionControl, AReversedTransitionRunsBackwardsAndAFasterRateEndsItSooner) {
+  Wd w(tpage());
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  w.at(60);
+  ASSERT_EQ(gtext_anim_animation_reverse(c.a, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  EXPECT_EQ(c.st().effective_rate, -1.0);
+  w.at(76);
+  w.frame();
+  w.at(96);
+  EXPECT_EQ(w.m.value("#t", "width"), "15.6px") << "the task is ready at the frame (76), when the transition had run 76 ms, and from there it goes back for 20 ms";
+}
+
+TEST(AnimWorldTransitionControl, ThePlaybackRateScalesTheTransitionAndTheScheduledTimeOfItsEnd) {
+  Wd w(tpage());
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  ASSERT_EQ(gtext_anim_animation_set_playback_rate(c.a, 2, c.now()), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  w.at(25);
+  EXPECT_EQ(w.m.value("#t", "width"), "15px");
+  w.at(50);
+  const std::string f = w.frame();
+  EXPECT_NE(f.find("transitionend:width:0.1@50"), std::string::npos) << f << " (animation time to timeline time: time x (1 / playback rate) + start time)";
+}
+
+TEST(AnimWorldTransitionControl, ADisplayNoneElementCancelsTheAnimationOfItsTransition) {
+  Wd w(page("#t { width: 10px; transition: width 100ms linear } #t.on { width: 20px } #t.none { display: none }"));
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  w.at(10);
+  c.notes();
+  w.set_class("#t", "on none");
+  w.flush("#t");
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_IDLE);
+  EXPECT_EQ(c.notes(), "FJ1");
+  const std::string f = w.frame();
+  EXPECT_NE(f.find("transitioncancel:width:0.01@10"), std::string::npos) << f << " (the active time at the moment: 10 ms)";
+  EXPECT_TRUE(has_event(f, "cancel")) << f;
+}
+
+TEST(AnimWorldTransitionControl, ATransitionHeldBeforeAReadyFrameIsReadyAtTheTimeOfTheStyleChangeEventAndOneScriptStartsAtTheFrame) {
+  Wd w(tpage());
+  start(w);
+  gtext_cssom_transition_tracker_set_frame_pending(w.tracker, true);
+  TCtl c(w);
+  w.at(8);
+  EXPECT_EQ(w.frame(), "transitionrun:width:0@0");
+  EXPECT_TRUE(c.st().pending_play) << "a frame that is not ready does not run the task";
+  gtext_cssom_transition_tracker_set_frame_pending(w.tracker, false);
+  w.at(24);
+  EXPECT_EQ(w.frame(), "transitionstart:width:0@0");
+  EXPECT_FALSE(c.st().pending);
+  EXPECT_EQ(c.st().start_time.ms, 0) << "ready at the time of the style change event";
+}
+
+TEST(AnimWorldTransitionControl, ATransitionAWorldLetsGoOfIsWhereItsAnimationWasAndKeepsRunning) {
+  Wd w(tpage());
+  start(w);
+  {
+    TCtl c(w);
+    w.at(0);
+    w.frame();
+    w.at(20);
+    ASSERT_EQ(gtext_anim_animation_pause(c.a, c.now()), GTEXT_ANIM_OK);
+    w.at(36);
+    w.frame();
+    EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_PAUSED);
+    w.at(76);
+  }
+  gtext_anim_world_free(w.world);
+  w.world = nullptr;
+  EXPECT_EQ(w.m.value("#t", "width"), "13.6px") << "held at 36 ms of 100 when the world let go of it (76)";
+  w.at(96);
+  EXPECT_EQ(w.m.value("#t", "width"), "15.6px") << "a record that holds its own timing runs on at the rate of 1 from there";
+  GTEXT_CSSOM_Transition_Events * ev = nullptr;
+  ASSERT_EQ(gtext_cssom_transition_tracker_events(w.tracker, &ev), GTEXT_CSS_OK);
+  gtext_cssom_transition_events_free(ev);
+}
+
+
+/* All or nothing: a style change event that cancels the transition an Animation holds either does it whole (the transition is replaced, the Animation is cancelled and its promises settle) or not at all (the set is as it was and
+   the Animation runs on), whichever allocation fails: the tracker's (the working copy of the set, the room of the Animations to cancel) or the Animation's (the room for what a cancel makes). */
+/// The id of the first running transition of `#t` (0 for none).
+uint64_t running_id(Wd & w) {
+  const GTEXT_CSS_Transition_Set * set = nullptr;
+  double ms = 0;
+  EXPECT_EQ(gtext_cssom_transition_tracker_lookup(w.tracker, w.m.handle("#t"), nullptr, &set, &ms), GTEXT_CSS_OK);
+  GTEXT_CSS_Transition_Info info{};
+  return gtext_css_transition_set_running_at(set, 0, &info) ? info.id : 0;
+}
+
+void style_cancel_sweep(bool fail_tracker, bool drained) {
+  size_t failures = 0;
+  /* The number of pause and play cycles the host leaves undrained before a `cancel()`: the room an Animation has for notes is a power of two, and some number of notes leaves it with less than a
+     cancel needs. The Animation is idle then (the transition is still in the set, as the page of CSSTransition-canceling needs), and a style change event that replaces the transition asks it to cancel. */
+  for (size_t variant = 0; variant < (drained ? 1u : 24u); variant++) {
+    for (size_t n = 1; n < 400; n++) {
+      FaultAllocator fa;
+      Wd w(tpage(), fail_tracker ? nullptr : &fa.alloc, fail_tracker ? &fa.alloc : nullptr);
+      start(w);
+      TCtl c(w);
+      double t = 0;
+      w.at(t);
+      w.frame();
+      for (size_t i = 0; !drained && i < variant / 2; i++) {
+        ASSERT_EQ(gtext_anim_animation_pause(c.a, c.now()), GTEXT_ANIM_OK);
+        w.at(t += 1);
+        w.frame();
+        ASSERT_EQ(gtext_anim_animation_play(c.a, c.now()), GTEXT_ANIM_OK);
+        w.at(t += 1);
+        w.frame();
+      }
+      if (!drained && variant % 2) {
+        ASSERT_EQ(gtext_anim_animation_pause(c.a, c.now()), GTEXT_ANIM_OK);   /* one note more or less */
+        w.at(t += 1);
+        w.frame();
+      }
+      ASSERT_EQ(gtext_anim_animation_cancel(c.a, c.now()), GTEXT_ANIM_OK);   /* the last call of the host adds notes and nothing makes room after it */
+      if (drained) {
+        c.notes();
+      }
+      const size_t before = gtext_anim_animation_note_count(c.a);
+      const uint64_t was = running_id(w);
+      ASSERT_NE(was, 0u);
+      w.set_class("#t", "back");
+      fa.arm(n);
+      const GTEXT_CSS_Status st = gtext_cssom_transition_tracker_flush(w.tracker, w.m.handle("#t"), nullptr, 0);
+      const bool failed = fa.failed;
+      fa.disarm();
+      if (st == GTEXT_CSS_OK) {
+        EXPECT_NE(running_id(w), was) << n << ": the transition was replaced";
+        if (!failed) {
+          break;
+        }
+        continue;
+      }
+      failures++;
+      EXPECT_EQ(st, GTEXT_CSS_E_OOM) << n;
+      EXPECT_EQ(running_id(w), was) << variant << "/" << n << ": a failed event leaves the set as it was";
+      EXPECT_EQ(gtext_anim_animation_note_count(c.a), before) << n;
+      EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_IDLE) << n;
+      ASSERT_EQ(gtext_cssom_transition_tracker_flush(w.tracker, w.m.handle("#t"), nullptr, 0), GTEXT_CSS_OK) << n << ": the same event again goes through";
+      EXPECT_NE(running_id(w), was) << n;
+    }
+  }
+  EXPECT_GT(failures, 0u);
+}
+
+TEST(AnimWorldTransitionOom, AStyleChangeEventThatCancelsAHeldTransitionIsWholeWhenTheTrackerCannotAllocate) {
+  style_cancel_sweep(true, true);
+}
+
+TEST(AnimWorldTransitionOom, AStyleChangeEventThatCancelsAHeldTransitionIsWholeWhenTheAnimationCannotMakeRoom) {
+  style_cancel_sweep(false, false);
+}
+
+TEST(AnimWorldTransitionOom, AFrameThatCannotBeMadeWhileATransitionIsHeldIsReportedWholeByTheNextCall) {
+  size_t failures = 0;
+  for (size_t n = 1; n < 400; n++) {
+    FaultAllocator fa;
+    Wd w(tpage(), &fa.alloc);
+    start(w);
+    TCtl c(w);
+    w.at(16);
+    fa.arm(n);
+    GTEXT_Anim_Events * ev = nullptr;
+    const GTEXT_Anim_Status st = gtext_anim_world_update(w.world, &ev);
+    const bool failed = fa.failed;
+    fa.disarm();
+    if (st == GTEXT_ANIM_OK) {
+      EXPECT_EQ(w.events_text(ev, false), "transitionrun:width:0@0 transitionstart:width:0@0") << n;
+      if (!failed) {
+        break;
+      }
+      continue;
+    }
+    failures++;
+    EXPECT_EQ(st, GTEXT_ANIM_OOM) << n;
+    EXPECT_EQ(w.frame(), "transitionrun:width:0@0 transitionstart:width:0@0") << n << ": the next frame reports it whole (the events of the transitions wait in the world)";
+    EXPECT_FALSE(c.st().pending) << n;
+  }
+  EXPECT_GT(failures, 0u);
+}
+
+TEST(AnimWorldTransitionControl, ADisplayNoneCancelWithAHeldTransitionIsWholeOrNothing) {
+  /* gtext_css_transition_set_cancel_all(): the element is no longer being rendered */
+  size_t failures = 0;
+  for (size_t n = 1; n < 400; n++) {
+    FaultAllocator fa;
+    Wd w(page("#t { width: 10px; transition: width 100ms linear } #t.on { width: 20px } #t.none { display: none }"), nullptr, &fa.alloc);
+    start(w);
+    TCtl c(w);
+    w.at(0);
+    w.frame();
+    c.notes();
+    w.set_class("#t", "on none");
+    fa.arm(n);
+    const GTEXT_CSS_Status st = gtext_cssom_transition_tracker_flush(w.tracker, w.m.handle("#t"), nullptr, 0);
+    const bool failed = fa.failed;
+    fa.disarm();
+    if (st == GTEXT_CSS_OK) {
+      EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_IDLE) << n;
+      if (!failed) {
+        break;
+      }
+      continue;
+    }
+    failures++;
+    EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_RUNNING) << n;
+    ASSERT_EQ(gtext_cssom_transition_tracker_flush(w.tracker, w.m.handle("#t"), nullptr, 0), GTEXT_CSS_OK) << n;
+    EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_IDLE) << n;
+  }
+  EXPECT_GT(failures, 0u);
 }
 
 /* All or nothing: a frame whose list cannot be made reports its events at the next call, whole. */

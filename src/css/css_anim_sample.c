@@ -1239,7 +1239,8 @@ GTEXT_CSS_Status css_transition_sample(const GTEXT_CSS_Compute_Context * cc, con
     /* "When a property on an element is undergoing a transition (that is, when or after the transition has started and before the end time of the transition) the transition adds a style
        called the current value to the cascade", and "if and only if that property is not currently undergoing a CSS Animation on the same element" */
     const bool custom = t.property == 0;
-    if (tr->time_ms >= t.end_time_ms || (!custom && !animatable(&s, t.property))) {
+    /* "before the end time of the transition": at the time of its own Animation when one holds it, and not at all when that Animation is idle (script cancelled it: it has no effect) */
+    if (!gtext_css_transition_set_in_effect_at(tr->set, i, tr->time_ms) || (!custom && !animatable(&s, t.property))) {
       continue;
     }
     bool animated_here = false;

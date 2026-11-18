@@ -55,16 +55,25 @@ place in `animation-name`). The tree order is the element interface's `compare_o
 `gtext_anim_world_update()` is "update animations and send events": the events of every transition and animation, in one list, by a stable sort on the scheduled event time, with transitions before animations between
 equal times (an animation with no start time has an unresolved scheduled time, which sorts first). It is all or nothing: a frame that cannot be made whole is made, whole, by the next call.
 
-# The Animation of a CSS animation (`gtext_anim_world_control()`)
+# The Animation of a CSS animation or transition (`gtext_anim_world_control()`)
 
-A `CSSAnimation` that script calls a method on, or whose `ready` or `finished` it reads, is held by an `GTEXT_Anim_Animation`: `gtext_anim_world_control(world, GTEXT_ANIM_KIND_CSS_ANIMATION, id, &animation)` makes
+A `CSSAnimation` or `CSSTransition` that script calls a method on, or whose `ready` or `finished` it reads, is held by an `GTEXT_Anim_Animation`: `gtext_anim_world_control(world, kind, id, &animation)` (the kind and the id name the animation: an id of one kind is not one of the other) makes
 it the first time (the effect's timing and the state the record had: start and hold time, a pending task), returns the same pointer afterwards, and the world owns it. From then on the Animation holds the
 animation's timing state: the current time the style samples and the events of CSS Animations 2 compare is the Animation's (a paused, seeked, finished, reversed or cancelled animation is what the model says), the
 frame runs its pending task (ready at the time of the style change event for a task a style change made, at the frame for a task script made) and asks whether it finished, a style change does to it what CSS
 Animations 2 says (`animation-play-state` pauses it or plays it again, a changed timing is the effect's new timing, a name that leaves the list cancels it, which settles its promises and owes the `cancel` event),
 and `gtext_anim_world_update()` adds its `finish`, `cancel` and `remove` events to the frame. An `animationcancel` is also owed when script cancels an animation a frame had seen begin. The host calls
-`gtext_anim_world_checkpoint()` where a microtask checkpoint is, and drains the notes of each Animation (`gtext_anim_world_control_at()`, `gtext_anim_animation_note_at()`) to settle its promises. A CSS
-transition is not yet held by an Animation (`GTEXT_ANIM_NOT_SUPPORTED`): its record keeps absolute start and end times, a ready flag and a reversing shortening factor of its own, which the same join has to replace.
+`gtext_anim_world_checkpoint()` where a microtask checkpoint is, and drains the notes of each Animation (`gtext_anim_world_control_at()`, `gtext_anim_animation_note_at()`) to settle its promises. After a
+call that changes an Animation the host calls `gtext_anim_world_touch()`, so that a style computed before is computed again.
+
+**A transition is held the same way** (`gtext_css_transition_set_bind()`), and what its record reads from the Animation is the current time: the time the record's own arithmetic uses is the time of the style change event
+that made the transition plus the Animation's current time, so the sampled value, the phase the events of Transitions 2 compare (a `transitioncancel` for an Animation that script made idle, from the active time the last
+frame saw), the completion at a style change event ("Running transitions complete at a time that is equal to or after their end time") and the reversing shortening factor of a transition the style reverses
+(the output of the timing function at the Animation's own time) are all the Animation's: `pause()`, `play()`, `finish()`, `reverse()`, `cancel()`, `currentTime`, `startTime` and `playbackRate` act on a `CSSTransition`.
+"Calling the cancel() method on the CSSTransition object representing a running transition does not cause the transition to be disassociated from its owning element": the transition stays in the set with an idle
+Animation, no effect, and no style change brings it back; one that the style cancels, replaces or reverses has its Animation cancelled (its promises settle, its `cancel` event is owed) after the whole update has
+succeeded, and one that completes at a style change event lets go of its Animation, which keeps its state while the effect is gone from the element. A transition that no ready frame has seen is pending, with its
+current time held at 0, until a frame runs the task. When the world is freed a transition is where its Animation was, running on at the rate of 1.
 
 # Checks
 

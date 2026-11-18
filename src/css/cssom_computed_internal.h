@@ -200,6 +200,15 @@ GTEXT_CSS_Status css_tracker_bind_animation(struct GTEXT_CSSOM_Transition_Tracke
 /// Every record of the tracker lets go of the Animation of CSS animation `id` (the owner is about to free it).
 void css_tracker_detach_animation(struct GTEXT_CSSOM_Transition_Tracker * tracker, uint64_t id);
 
+/// The same for a CSS transition: bind `animation` to the running transition `id` of the tracker's sets, or with NULL only find it (its owning element and pseudo-element); a failed bind changes nothing.
+GTEXT_CSS_Status css_tracker_bind_transition(struct GTEXT_CSSOM_Transition_Tracker * tracker, uint64_t id, struct GTEXT_Anim_Animation * animation, const void ** element, const char ** pseudo, size_t * pseudo_length);
+
+/// Something a style is sampled from changed without the tracker being told (an Animation that holds a transition or a CSS animation was played, paused, seeked ...): the version a layout reads moves on.
+void css_tracker_touch(struct GTEXT_CSSOM_Transition_Tracker * tracker);
+
+/// A transition lets go of its Animation (the world is about to free it).
+void css_tracker_detach_transition(struct GTEXT_CSSOM_Transition_Tracker * tracker, uint64_t id);
+
 /// The session's memory (at the last release of the core).
 void css_computed_free(css_core * core);
 

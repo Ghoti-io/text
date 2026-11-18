@@ -34,6 +34,7 @@
 /// An Animation script has touched: the Animation (owned by the world), what it is the animation of, and its id.
 typedef struct {
   GTEXT_Anim_Animation * animation;
+  GTEXT_Anim_Kind kind;
   uint64_t id;
   const void * element;
   char * pseudo;
@@ -104,7 +105,12 @@ void gtext_anim_world_free(GTEXT_Anim_World * world) {
   gtext_anim_events_free(world->stash_animations);
   GTEXT_Allocator a = world->alloc;
   for (size_t i = 0; i < world->ncontrols; i++) {
-    css_tracker_detach_animation(world->tracker, world->controls[i].id);
+    if (world->controls[i].kind == GTEXT_ANIM_KIND_CSS_TRANSITION) {
+      css_tracker_detach_transition(world->tracker, world->controls[i].id);
+    }
+    else {
+      css_tracker_detach_animation(world->tracker, world->controls[i].id);
+    }
     gtext_anim_animation_free(world->controls[i].animation);
     gtext_allocator_free(&a, world->controls[i].pseudo);
   }
@@ -292,8 +298,8 @@ static GTEXT_Anim_Status collect(GTEXT_Anim_World * world, const void * element,
         break;
       }
       t.easing = easing;
-      const GTEXT_Anim_Time current = {true, ta.current_time_ms};
-      (void)gtext_anim_computed_timing(&t, current, 1.0, false, &r->info.computed);
+      const GTEXT_Anim_Time current = {ta.current_time_resolved, ta.current_time_resolved ? ta.current_time_ms : 0.0};
+      (void)gtext_anim_computed_timing(&t, current, ta.adopted ? ta.animation.playback_rate : 1.0, false, &r->info.computed);
       t.easing = NULL;
       gtext_css_easing_free(easing);
       r->info.kind = GTEXT_ANIM_KIND_CSS_TRANSITION;
@@ -308,11 +314,13 @@ static GTEXT_Anim_Status collect(GTEXT_Anim_World * world, const void * element,
       r->info.easing = ta.easing;
       r->info.start_value = ta.start_value;
       r->info.end_value = ta.end_value;
-      r->info.play_state = ta.pending || ta.current_time_ms < r->info.computed.end_time ? GTEXT_ANIM_PLAY_RUNNING : GTEXT_ANIM_PLAY_FINISHED;
+      r->info.play_state = ta.adopted ? ta.animation.play_state : (ta.pending || ta.current_time_ms < r->info.computed.end_time ? GTEXT_ANIM_PLAY_RUNNING : GTEXT_ANIM_PLAY_FINISHED);
       r->generation = ta.generation;
       r->seq = v.element_seq;
       r->pseudo_rank = v.pseudo_rank;
-      const bool relevant = r->info.computed.in_effect || r->info.computed.phase == GTEXT_ANIM_PHASE_BEFORE;
+      /* "An animation effect is current if ... in the before phase ... or in play", or in effect */
+      const bool relevant = r->info.computed.in_effect || r->info.computed.phase == GTEXT_ANIM_PHASE_BEFORE ||
+          (r->info.computed.phase == GTEXT_ANIM_PHASE_ACTIVE && r->info.play_state != GTEXT_ANIM_PLAY_FINISHED);
       if (relevant || !relevant_only) {
         n++;
       }
@@ -512,6 +520,9 @@ GTEXT_Anim_Status gtext_anim_world_update(GTEXT_Anim_World * world, GTEXT_Anim_E
   }
   gtext_anim_events_free(playback);
   gtext_anim_events_sort(all);
+  if (world->ncontrols) {
+    css_tracker_touch(world->tracker);   /* the frame ran the tasks of the Animations and asked them whether they finished */
+  }
   gtext_anim_events_free(world->stash_animations);
   world->stash_animations = NULL;
   gtext_cssom_transition_events_free(world->stash);
@@ -525,11 +536,11 @@ GTEXT_Anim_Status gtext_anim_world_control(GTEXT_Anim_World * world, GTEXT_Anim_
     return GTEXT_ANIM_INVALID;
   }
   *out = NULL;
-  if (kind != GTEXT_ANIM_KIND_CSS_ANIMATION) {
-    return GTEXT_ANIM_NOT_SUPPORTED;
+  if (kind != GTEXT_ANIM_KIND_CSS_ANIMATION && kind != GTEXT_ANIM_KIND_CSS_TRANSITION) {
+    return GTEXT_ANIM_INVALID;
   }
   for (size_t i = 0; i < world->ncontrols; i++) {
-    if (world->controls[i].id == id) {
+    if (world->controls[i].id == id && world->controls[i].kind == kind) {
       *out = world->controls[i].animation;
       return GTEXT_ANIM_OK;
     }
@@ -552,7 +563,8 @@ GTEXT_Anim_Status gtext_anim_world_control(GTEXT_Anim_World * world, GTEXT_Anim_
   if (st != GTEXT_ANIM_OK) {
     return st;
   }
-  const GTEXT_CSS_Status fs = css_tracker_bind_animation(world->tracker, id, NULL, &element, &pseudo, &plen);
+  const bool transition = kind == GTEXT_ANIM_KIND_CSS_TRANSITION;
+  const GTEXT_CSS_Status fs = transition ? css_tracker_bind_transition(world->tracker, id, NULL, &element, &pseudo, &plen) : css_tracker_bind_animation(world->tracker, id, NULL, &element, &pseudo, &plen);
   if (fs != GTEXT_CSS_OK) {
     gtext_anim_animation_free(a);
     return GTEXT_ANIM_INVALID;
@@ -566,7 +578,7 @@ GTEXT_Anim_Status gtext_anim_world_control(GTEXT_Anim_World * world, GTEXT_Anim_
     memcpy(copy, pseudo, plen);
   }
   copy[plen] = '\0';
-  const GTEXT_CSS_Status bs = css_tracker_bind_animation(world->tracker, id, a, &element, &pseudo, &plen);
+  const GTEXT_CSS_Status bs = transition ? css_tracker_bind_transition(world->tracker, id, a, &element, &pseudo, &plen) : css_tracker_bind_animation(world->tracker, id, a, &element, &pseudo, &plen);
   if (bs != GTEXT_CSS_OK) {
     gtext_allocator_free(&world->alloc, copy);
     gtext_anim_animation_free(a);
@@ -574,6 +586,7 @@ GTEXT_Anim_Status gtext_anim_world_control(GTEXT_Anim_World * world, GTEXT_Anim_
   }
   control_t * c = &world->controls[world->ncontrols++];
   c->animation = a;
+  c->kind = kind;
   c->id = id;
   c->element = element;
   c->pseudo = copy;
@@ -586,13 +599,24 @@ size_t gtext_anim_world_control_count(const GTEXT_Anim_World * world) {
   return world ? world->ncontrols : 0;
 }
 
-bool gtext_anim_world_control_at(const GTEXT_Anim_World * world, size_t index, uint64_t * id, GTEXT_Anim_Animation ** animation) {
+bool gtext_anim_world_control_at(const GTEXT_Anim_World * world, size_t index, GTEXT_Anim_Kind * kind, uint64_t * id, GTEXT_Anim_Animation ** animation) {
   if (!world || index >= world->ncontrols || !id || !animation) {
     return false;
   }
   *id = world->controls[index].id;
   *animation = world->controls[index].animation;
+  if (kind) {
+    *kind = world->controls[index].kind;
+  }
   return true;
+}
+
+GTEXT_Anim_Status gtext_anim_world_touch(GTEXT_Anim_World * world) {
+  if (!world) {
+    return GTEXT_ANIM_INVALID;
+  }
+  css_tracker_touch(world->tracker);
+  return GTEXT_ANIM_OK;
 }
 
 GTEXT_Anim_Status gtext_anim_world_checkpoint(GTEXT_Anim_World * world) {
@@ -604,6 +628,9 @@ GTEXT_Anim_Status gtext_anim_world_checkpoint(GTEXT_Anim_World * world) {
   for (size_t i = 0; i < world->ncontrols; i++) {
     const GTEXT_Anim_Status st = gtext_anim_animation_checkpoint(world->controls[i].animation, now);
     result = result == GTEXT_ANIM_OK ? st : result;
+  }
+  if (world->ncontrols) {
+    css_tracker_touch(world->tracker);
   }
   return result;
 }

@@ -81,8 +81,8 @@ A **pending frame** (`gtext_css_transition_set_frame_pending()`, and `gtext_csso
 (unresolved until the first frame after the transition was made) and `currentTime`, and the effect as `getTiming()` and `getComputedTiming()` read it (the delay, an `endDelay` of 0, the duration, the
 easing, a fill of `backwards`, one iteration, and the `progress` that the timing function gives, null after the effect), with the start and the end value of the two keyframes. The library keeps no objects, so
 the caller that has one holds it by the transition's `id`, which the events carry too (the `animation` of a `TransitionEvent`), and learns from the events that it finished (a `transitionend`) or was
-cancelled (a `transitioncancel`). The methods of `Animation` that change a transition (`pause()`, `finish()`, `reverse()`, setting `currentTime`, `timeline = null`, the `ready` and `finished` promises)
-belong to the Web Animations model, which the library does not implement.
+cancelled (a `transitioncancel`). The methods of `Animation` that change a transition (`pause()`, `finish()`, `reverse()`, setting `currentTime`, the `ready` and `finished` promises) are the Animation's (`animation/animation.h`): gtext_css_transition_set_bind() gives the record an Animation that holds its
+timing from then on, and the arithmetic of the record (the sampled value, the phase of the events, the completion, the reversing shortening factor) reads the Animation's current time (`web-animations.md`).
 
 The tracker (css-cssom.md) is the document's consumer of both: `gtext_cssom_transition_tracker_events()` is the frame of every element and pseudo-element at the tracker's time, with each event's element and
 `pseudoElement`, and a flush of an element that is not being rendered (its after-change style has `display: none`, or that of an ancestor in the flushed chain, unless a running transition of `display` holds it) and `forget()` of an element that is no longer in the document cancel its transitions, as Transitions 2 says ("must also cancel any running

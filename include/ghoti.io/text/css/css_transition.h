@@ -64,16 +64,21 @@
  * `CSSTransition` is gtext_css_transition_set_animation_at(): a snapshot of a running transition as the Web Animations interface reads it at a time (`transitionProperty`, `playState`, `startTime`,
  * `currentTime`, `pending`, and the timing of its effect, `getTiming()` and `getComputedTiming()`, with the start and the end value that `getKeyframes()` gives). It is a value, because the library keeps
  * no objects: the caller that exposes an object holds it by the transition's `id`, which is the same in the snapshot and in the events, and knows the object finished (a transitionend) or was cancelled
- * (a transitioncancel) from the events, since a transition that left the set is not described by it any more. **Not here:** the methods of `Animation` that change a transition (`pause()`, `finish()`,
- * `reverse()`, `currentTime = ...`, `timeline = null`, the `ready` and `finished` promises): they are the Web Animations model, which the library does not implement; the events for a transition
- * that script has seeked are the same table, and a caller that has the model gives a frame the times it wants through gtext_css_transition_set_frame(). Shorthands are not transitioned (their
- * longhands are, one transition each).
+ * (a transitioncancel) from the events, since a transition that left the set is not described by it any more. Shorthands are not transitioned (their longhands are, one transition each).
+ *
+ * **The Animation of a transition.** A transition is held by an Animation (animation/animation.h) once script touches it, as a CSS animation is (animation/css_animations.h): gtext_css_transition_set_bind()
+ * gives the record an Animation that holds its timing state from then on, so `pause()`, `play()`, `finish()`, `reverse()`, `cancel()`, `currentTime = ...`, `startTime = ...`, `playbackRate` and the `ready`
+ * and `finished` promises act on a `CSSTransition`. What the record then reads is the Animation's current time: the sampled value, the phase the events of Transitions 2 compare, the completion at a style
+ * change event, the reversing shortening factor. A transition whose Animation is idle (script called `cancel()`) has no effect and stays in the set ("calling the cancel() method on the CSSTransition object
+ * representing a running transition does not cause the transition to be disassociated from its owning element"); one that the style cancels, replaces or reverses has its Animation cancelled, and one
+ * that completes at a style change event keeps its Animation as it is (the effect is gone from the element and changes to the Animation no longer reach it).
  */
 
 #ifndef GHOTI_IO_GTEXT_CSS_CSS_TRANSITION_H
 #define GHOTI_IO_GTEXT_CSS_CSS_TRANSITION_H
 
 #include <ghoti.io/text/allocator.h>
+#include <ghoti.io/text/animation/animation.h>
 #include <ghoti.io/text/css/css_computed.h>
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_function.h>
@@ -285,7 +290,8 @@ GTEXT_API GTEXT_CSS_Status gtext_css_transition_set_cancel_all(GTEXT_CSS_Transit
 typedef enum {
   GTEXT_CSS_TRANSITION_PLAY_IDLE = 0,
   GTEXT_CSS_TRANSITION_PLAY_RUNNING,
-  GTEXT_CSS_TRANSITION_PLAY_FINISHED
+  GTEXT_CSS_TRANSITION_PLAY_FINISHED,
+  GTEXT_CSS_TRANSITION_PLAY_PAUSED          ///< Only a transition that an Animation holds can be paused.
 } GTEXT_CSS_Transition_Play_State;
 
 /**
@@ -302,7 +308,7 @@ typedef struct {
   uint64_t generation;
   GTEXT_CSS_String transition_property;     ///< `transitionProperty`: the expanded transition property name.
   GTEXT_CSS_Transition_Play_State play_state;
-  GTEXT_CSS_Transition_Phase phase;         ///< The phase of the effect at its local time (`before`, `active` or `after`; never idle).
+  GTEXT_CSS_Transition_Phase phase;         ///< The phase of the effect at its local time (`before`, `active` or `after`; `idle` only for a transition whose Animation is idle).
   bool pending;
   bool start_time_resolved;
   double start_time_ms;
@@ -318,6 +324,9 @@ typedef struct {
   double progress;                          ///< The transformed progress, when `has_progress`.
   GTEXT_CSS_String start_value;             ///< The offset 0 keyframe's value (serialized computed value).
   GTEXT_CSS_String end_value;               ///< The offset 1 keyframe's value.
+  bool current_time_resolved;               ///< `current_time_ms` and `local_time_ms` are a number: false for a transition whose Animation is idle (`currentTime` is null, `phase` is `idle` and `has_progress` false).
+  bool adopted;                             ///< An Animation holds the transition (gtext_css_transition_set_bind()): the fields above are its, and `animation` is its state.
+  GTEXT_Anim_Animation_State animation;     ///< The state of the Animation when `adopted`: the playback rate, the replace state, the generations and states of `ready` and `finished`.
 } GTEXT_CSS_Transition_Animation;
 
 /**
@@ -327,6 +336,33 @@ typedef struct {
  */
 GTEXT_API GTEXT_CSS_Status gtext_css_transition_set_animation_at(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Transition_Set * set, size_t index, double time_ms,
     GTEXT_CSS_Transition_Animation * out);
+
+/**
+ * @brief Give transition `id` an Animation to hold its timing state from now on (the first time script touches it). The Animation gets the effect of the transition (its start delay, its duration, a fill of
+ * backwards, one iteration) and the state the record had (started at the time of the style change event that made it, or pending a play task until a frame is ready), and the record reads the current
+ * time from it. The Animation is borrowed: the owner keeps it until gtext_css_transition_set_detach() (a transition that is cancelled by the style, or completes, lets go of it by itself).
+ * @param set The set. @param id The transition's `id`. @param animation A new Animation on a document timeline (gtext_anim_animation_new()). @param time_ms The time now.
+ * @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID (no running transition of that id, or it has an Animation); GTEXT_ANIM_OOM (nothing changed).
+ */
+GTEXT_API GTEXT_Anim_Status gtext_css_transition_set_bind(GTEXT_CSS_Transition_Set * set, uint64_t id, GTEXT_Anim_Animation * animation, double time_ms);
+
+/**
+ * @brief The record of transition `id` lets go of its Animation (the owner is about to free it): the record holds its timing state again, as the Animation had it at `time_ms` (a transition whose Animation
+ * was paused or ran at another rate runs on at the rate of 1 from there; one whose Animation was idle is over). A no-op for a transition that has none.
+ */
+GTEXT_API void gtext_css_transition_set_detach(GTEXT_CSS_Transition_Set * set, uint64_t id, double time_ms);
+
+/**
+ * @brief Make room, in every Animation that holds a transition of the set, for the notes and events a frame of the set makes, so that a caller that takes the frames of many sets reserves first and then no
+ * frame can fail. @return GTEXT_CSS_OK; GTEXT_CSS_E_OOM (nothing changed that a frame would notice).
+ */
+GTEXT_API GTEXT_CSS_Status gtext_css_transition_set_frame_reserve(const GTEXT_CSS_Transition_Set * set);
+
+/**
+ * @brief Whether running transition `index` applies a value to its property at a time: it has a current time (its Animation is not idle) and the time is before its end ("when or after the transition has
+ * started and before the end time of the transition"; the delay phase has a fill of backwards, so it applies there too). @return false for an index that is not running.
+ */
+GTEXT_API bool gtext_css_transition_set_in_effect_at(const GTEXT_CSS_Transition_Set * set, size_t index, double time_ms);
 
 /**
  * @brief Whether a CSS Animation of the element is applying the property in this style (the style was computed with animations sampled, and the property was one of the values they gave).
