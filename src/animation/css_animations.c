@@ -853,8 +853,8 @@ GTEXT_CSS_Status gtext_anim_css_set_frame(GTEXT_Anim_Css_Set * s, double time_ms
     return rs == GTEXT_ANIM_OOM ? GTEXT_CSS_E_OOM : GTEXT_CSS_E_INVALID;
   }
   for (size_t i = 0; i < s->n; i++) {
-    if (s->a[i].m && gtext_anim_animation_reserve(s->a[i].m) != GTEXT_ANIM_OK) {
-      return GTEXT_CSS_E_OOM;   /* the Animations' notes and events are made below, which cannot fail */
+    if (s->a[i].m && gtext_anim_animation_reserve_calls(s->a[i].m, 2) != GTEXT_ANIM_OK) {
+      return GTEXT_CSS_E_OOM;   /* the Animations' notes and events are made below (a pending task, then the finished state), which cannot fail */
     }
   }
   /* nothing below can fail, so the set only moves on with a frame that is reported whole */

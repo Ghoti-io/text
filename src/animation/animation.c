@@ -156,9 +156,10 @@ static GTEXT_Anim_Status push_event(GTEXT_Anim_Animation * a, GTEXT_Anim_Event_T
 
 /* The model keeps its notes and events in memory it has to grow. A failure to grow is reported by the call that made the note, after the state moved: the specification has no step that can
  * fail here, so the model reserves room for the largest number of notes and events one call can make (four) before it changes anything. */
-static GTEXT_Anim_Status reserve_room(GTEXT_Anim_Animation * a) {
-  while (a->cap_notes - a->n_notes < 4 || a->cap_events - a->n_events < 2) {
-    if (a->cap_notes - a->n_notes < 4) {
+static GTEXT_Anim_Status reserve_room_for(GTEXT_Anim_Animation * a, size_t calls) {
+  const size_t need_notes = 4 * calls, need_events = 2 * calls;
+  while (a->cap_notes - a->n_notes < need_notes || a->cap_events - a->n_events < need_events) {
+    if (a->cap_notes - a->n_notes < need_notes) {
       const size_t cap = a->cap_notes ? a->cap_notes * 2 : 8;
       GTEXT_Anim_Note * bigger = gtext_allocator_realloc(&a->alloc, a->notes, cap * sizeof *bigger);
       if (!bigger) {
@@ -167,7 +168,7 @@ static GTEXT_Anim_Status reserve_room(GTEXT_Anim_Animation * a) {
       a->notes = bigger;
       a->cap_notes = cap;
     }
-    if (a->cap_events - a->n_events < 2) {
+    if (a->cap_events - a->n_events < need_events) {
       const size_t cap = a->cap_events ? a->cap_events * 2 : 4;
       owed_event * bigger = gtext_allocator_realloc(&a->alloc, a->events, cap * sizeof *bigger);
       if (!bigger) {
@@ -178,6 +179,10 @@ static GTEXT_Anim_Status reserve_room(GTEXT_Anim_Animation * a) {
     }
   }
   return GTEXT_ANIM_OK;
+}
+
+static GTEXT_Anim_Status reserve_room(GTEXT_Anim_Animation * a) {
+  return reserve_room_for(a, 1);
 }
 
 /* "Resolve a Promise" on the current ready promise: a settled promise does not change. */
@@ -521,6 +526,13 @@ GTEXT_Anim_Status gtext_anim_animation_css_pause(GTEXT_Anim_Animation * a, GTEXT
 GTEXT_Anim_Status gtext_anim_animation_reserve(GTEXT_Anim_Animation * a) {
   ENTER(a);
   return GTEXT_ANIM_OK;
+}
+
+GTEXT_Anim_Status gtext_anim_animation_reserve_calls(GTEXT_Anim_Animation * a, size_t calls) {
+  if (!a || calls == 0 || calls > 1024) {
+    return GTEXT_ANIM_INVALID;
+  }
+  return reserve_room_for(a, calls) == GTEXT_ANIM_OK ? GTEXT_ANIM_OK : GTEXT_ANIM_OOM;
 }
 
 GTEXT_Anim_Status gtext_anim_animation_new(const GTEXT_Allocator * allocator, GTEXT_Anim_Timeline_Kind timeline, GTEXT_Anim_Animation ** out) {

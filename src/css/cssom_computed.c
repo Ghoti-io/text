@@ -1786,6 +1786,7 @@ static GTEXT_CSS_Status tracker_step(GTEXT_CSSOM_Transition_Tracker * t, const v
   if (st != GTEXT_CSS_OK) {
     return st;
   }
+  note_ids(t, e);   /* the ids the update gave are taken, whether or not what follows it in this event succeeds */
   if (gtext_css_transition_set_version(e->set) != was) {
     t->version++;
   }

@@ -116,3 +116,4 @@ filter-lists-of-different-lengths-are-discrete	css_anim_sample.c	!filter_items(r
 filter-padding-ignores-the-common-prefix	css_anim_sample.c	    if (!same_function_name(&shorter_items[i], &longer[i])) {	    if (0) {	sample
 identity-of-brightness-is-zero	css_anim_sample.c	{"brightness", "brightness(1)"}	{"brightness", "brightness(0)"}	sample
 none-is-not-the-empty-filter-list	css_anim_sample.c	    *items = NULL;\n    *n = 0;\n    return true;	    *items = NULL;\n    *n = 0;\n    return false;	sample
+reserve-calls-reserves-for-one	animation.c	  const size_t need_notes = 4 * calls, need_events = 2 * calls;	  const size_t need_notes = 4, need_events = 2;	animanim

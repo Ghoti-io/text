@@ -56,15 +56,15 @@ transition-pending-frame-moves-a-seen-transition-back	css_transition.c	(t->phase
 transition-pending-frame-makes-it-ready	css_transition.c	    t->ready = t->ready || ready;	    t->ready = true;	animworld
 join-transition-time-is-the-timelines	css_transition.c	  *time = tr_event_time(t) + s.current_time.ms;	  *time = now;	animworld
 join-idle-transition-is-in-time	css_transition.c	    *time = t->end_time;\n    return false;	    *time = t->end_time;\n    return true;	animworld
-join-style-cancel-leaves-the-animation-running	css_transition.c	    s->pc[s->npc++] = t->m;	    (void)t;	animworld
-join-update-makes-no-room-for-the-cancels	css_transition.c	for (size_t i = 0; st == GTEXT_CSS_OK && i < w->npc; i++) {\n    const GTEXT_Anim_Status as	for (size_t i = 0; st == GTEXT_CSS_OK && i < 0; i++) {\n    const GTEXT_Anim_Status as	animworld
+join-style-cancel-leaves-the-animation-running	css_transition.c	    after->items[after->n++] = t->m;	    (void)after;	animworld
+join-update-makes-no-room-for-the-cancels	css_transition.c	for (size_t i = 0; st == GTEXT_CSS_OK && i < w->pc.n; i++) {\n    const GTEXT_Anim_Status as	for (size_t i = 0; st == GTEXT_CSS_OK && i < 0; i++) {\n    const GTEXT_Anim_Status as	animworld
 join-frame-readies-a-script-task-at-the-style-events-time	css_transition.c	t->css_task && ms.ready_generation == t->css_task_gen ? tr_event_time(t) : time_ms	t->css_task ? tr_event_time(t) : time_ms	animworld
 join-frame-readies-a-style-task-at-the-frame	css_transition.c	t->css_task && ms.ready_generation == t->css_task_gen ? tr_event_time(t) : time_ms	time_ms	animworld
 join-script-cancel-owes-no-transitioncancel	css_transition.c	        n = from != GTEXT_CSS_TRANSITION_PHASE_IDLE && from != GTEXT_CSS_TRANSITION_PHASE_AFTER ? 1 : 0;	        n = 0;	animworld
 join-snapshot-ignores-the-animations-current-time	css_transition.c	    out->current_time_ms = out->animation.current_time.resolved ? out->animation.current_time.ms : 0.0;	    out->current_time_ms = time_ms - event_time;	animworld
 join-reversal-ignores-the-seek	css_transition.c	const bool old_live = tr_time(&old, time_ms, &old_time);	const bool old_live = (old_time = time_ms, true);	animworld
 join-completion-ignores-the-animations-time	css_transition.c	tr_time(&w->run[i], time_ms, &over_at) && w->run[i].end_time <= over_at	w->run[i].end_time <= time_ms	animworld
-join-scheduled-time-ignores-the-rate	css_transition.c	ms.playback_rate != 0.0 ? 1.0 / ms.playback_rate : 0.0, ms.start_time.resolved	1.0, ms.start_time.resolved	animworld
+join-scheduled-time-ignores-the-rate	css_transition.c	  *inv = ms->playback_rate != 0.0 ? 1.0 / ms->playback_rate : 0.0;	  *inv = 1.0;	animworld
 join-detach-forgets-the-held-time	css_transition.c	const double moved = (time_ms - ms.current_time.ms) - tr_event_time(t);	const double moved = 0.0;	animworld
 join-bind-forgets-the-pending-task	css_transition.c	    r.pending_play = true;	    r.pending_play = false;	animworld
 join-control-ignores-the-kind	world.c	if (world->controls[i].id == id && world->controls[i].kind == kind) {	if (world->controls[i].id == id) {	animworld
@@ -73,3 +73,7 @@ join-touch-does-not-move-the-version	cssom_computed.c	void css_tracker_touch(GTE
 join-cancelled-transition-keeps-its-phase	css_transition.c	        to = GTEXT_CSS_TRANSITION_PHASE_IDLE;\n      }\n      else if (!ready) {	        to = t->phase;\n      }\n      else if (!ready) {	animworld
 pseudo-element-without-content-is-rendered	cssom_computed.c	      st = pseudo_not_generated(tracker, core, element, after, pseudo, pseudo_length, &none);	      st = GTEXT_CSS_OK;	animworld
 marker-is-generated-for-any-element	cssom_computed.c	      *not_generated = owner && !display_is_list_item(core, owner);	      *not_generated = false;	animworld
+join-completed-transition-is-not-asked-whether-it-finished	css_transition.c	    (void)gtext_anim_animation_update_finished(w->pf.items[i], (GTEXT_Anim_Time){true, time_ms});	    (void)w->pf.items[i];	animworld
+join-gone-event-ignores-the-animations-rate	css_transition.c	      sched_fill(n, ideal, g->sbase, g->sinv, g->svalid, g->cancelled ? g->left_at : time_ms, sched);	      sched_fill(n, ideal, g->start_time - g->delay, 1.0, true, g->cancelled ? g->left_at : time_ms, sched);	animworld
+join-detach-keeps-a-pending-transition-as-it-was	css_transition.c	    else {\n      /* it runs on at the rate of 1 from where the Animation was (a pending task is run	    else if (!ms.pending) {\n      /* it runs on at the rate of 1 from where the Animation was (a pending task is run	animworld
+join-phase-of-a-held-transition-ignores-the-animation-time	css_transition.c	        to = ct.phase == GTEXT_ANIM_PHASE_BEFORE ? GTEXT_CSS_TRANSITION_PHASE_BEFORE : ct.phase == GTEXT_ANIM_PHASE_ACTIVE ? GTEXT_CSS_TRANSITION_PHASE_ACTIVE : GTEXT_CSS_TRANSITION_PHASE_AFTER;	        to = GTEXT_CSS_TRANSITION_PHASE_ACTIVE;	animworld

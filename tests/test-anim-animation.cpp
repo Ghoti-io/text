@@ -843,4 +843,28 @@ TEST(AnimAnimationOom, ACallThatCannotReserveRoomChangesNothingAndTheNextOneSucc
   gtext_anim_events_free(ev);
 }
 
+TEST(AnimAnimationOom, TheRoomReservedForSeveralCallsIsEnoughForAllOfThemAndAFailedReserveChangesNothing) {
+  FaultAllocator fa;
+  A x(GTEXT_ANIM_TIMELINE_DOCUMENT, 1000, &fa.alloc);
+  EXPECT_EQ(gtext_anim_animation_reserve_calls(x.a, 0), GTEXT_ANIM_INVALID);
+  EXPECT_EQ(gtext_anim_animation_reserve_calls(x.a, 1025), GTEXT_ANIM_INVALID);
+  EXPECT_EQ(gtext_anim_animation_reserve_calls(nullptr, 1), GTEXT_ANIM_INVALID);
+  fa.arm(1);
+  EXPECT_EQ(gtext_anim_animation_reserve_calls(x.a, 64), GTEXT_ANIM_OOM) << "a reserve that cannot be made is a status";
+  fa.disarm();
+  ASSERT_EQ(gtext_anim_animation_reserve_calls(x.a, 8), GTEXT_ANIM_OK);
+  fa.arm(1000000);   /* counts the allocations from here: none may be made by the calls below */
+  ASSERT_EQ(gtext_anim_animation_play(x.a, T(0)), GTEXT_ANIM_OK);
+  ASSERT_EQ(gtext_anim_animation_run_pending(x.a, T(1)), GTEXT_ANIM_OK);
+  ASSERT_EQ(gtext_anim_animation_finish(x.a, T(2)), GTEXT_ANIM_OK);
+  ASSERT_EQ(gtext_anim_animation_play(x.a, T(3)), GTEXT_ANIM_OK);
+  ASSERT_EQ(gtext_anim_animation_cancel(x.a, T(4)), GTEXT_ANIM_OK);
+  ASSERT_EQ(gtext_anim_animation_play(x.a, T(5)), GTEXT_ANIM_OK);
+  ASSERT_EQ(gtext_anim_animation_finish(x.a, T(6)), GTEXT_ANIM_OK);
+  ASSERT_EQ(gtext_anim_animation_cancel(x.a, T(7)), GTEXT_ANIM_OK);
+  EXPECT_EQ(fa.calls, 0u) << "eight calls that make notes, with the room made for eight, allocate nothing";
+  EXPECT_GT(gtext_anim_animation_note_count(x.a), 4u);
+  fa.disarm();
+}
+
 }  // namespace

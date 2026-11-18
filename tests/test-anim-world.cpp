@@ -1069,7 +1069,7 @@ TEST(AnimWorldTransitionControl, TheStartTimeSeeksATransitionAndMovesItsPhaseThr
   EXPECT_NE(g.find("transitionend:width:0.1@"), std::string::npos) << g;
 }
 
-TEST(AnimWorldTransitionControl, AReversedTransitionRunsBackwardsAndAFasterRateEndsItSooner) {
+TEST(AnimWorldTransitionControl, AReversedTransitionRunsBackwards) {
   Wd w(tpage());
   start(w);
   TCtl c(w);
@@ -1170,9 +1170,9 @@ uint64_t running_id(Wd & w) {
 
 void style_cancel_sweep(bool fail_tracker, bool drained) {
   size_t failures = 0;
-  /* The number of pause and play cycles the host leaves undrained before a `cancel()`: the room an Animation has for notes is a power of two, and some number of notes leaves it with less than a
+  /* The number of finish and play calls the host makes, with no frame between them, before a `cancel()`: the room an Animation has for notes is a power of two, and some number of notes leaves it with less than a
      cancel needs. The Animation is idle then (the transition is still in the set, as the page of CSSTransition-canceling needs), and a style change event that replaces the transition asks it to cancel. */
-  for (size_t variant = 0; variant < (drained ? 1u : 24u); variant++) {
+  for (size_t variant = 0; variant < (drained ? 1u : 96u); variant++) {
     for (size_t n = 1; n < 400; n++) {
       FaultAllocator fa;
       Wd w(tpage(), fail_tracker ? nullptr : &fa.alloc, fail_tracker ? &fa.alloc : nullptr);
@@ -1182,17 +1182,14 @@ void style_cancel_sweep(bool fail_tracker, bool drained) {
       w.at(t);
       w.frame();
       for (size_t i = 0; !drained && i < variant / 2; i++) {
-        ASSERT_EQ(gtext_anim_animation_pause(c.a, c.now()), GTEXT_ANIM_OK);
-        w.at(t += 1);
-        w.frame();
+        /* calls of the host that make notes and are not followed by a frame, which makes room for eight */
+        ASSERT_EQ(gtext_anim_animation_finish(c.a, c.now()), GTEXT_ANIM_OK);
         ASSERT_EQ(gtext_anim_animation_play(c.a, c.now()), GTEXT_ANIM_OK);
-        w.at(t += 1);
-        w.frame();
       }
       if (!drained && variant % 2) {
-        ASSERT_EQ(gtext_anim_animation_pause(c.a, c.now()), GTEXT_ANIM_OK);   /* one note more or less */
-        w.at(t += 1);
-        w.frame();
+        ASSERT_EQ(gtext_anim_animation_finish(c.a, c.now()), GTEXT_ANIM_OK);   /* one note more or less */
+        ASSERT_EQ(gtext_anim_animation_play(c.a, c.now()), GTEXT_ANIM_OK);
+        ASSERT_EQ(gtext_anim_animation_pause(c.a, c.now()), GTEXT_ANIM_OK);
       }
       ASSERT_EQ(gtext_anim_animation_cancel(c.a, c.now()), GTEXT_ANIM_OK);   /* the last call of the host adds notes and nothing makes room after it */
       if (drained) {
@@ -1290,6 +1287,59 @@ TEST(AnimWorldTransitionControl, ADisplayNoneCancelWithAHeldTransitionIsWholeOrN
     EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_IDLE) << n;
   }
   EXPECT_GT(failures, 0u);
+}
+
+TEST(AnimWorldTransitionControl, ATransitionThatCompletesAtAStyleChangeEventBeforeAnyFrameIsAskedWhetherItFinished) {
+  /* the record leaves the set at the event, so no later frame asks its Animation: "update animations and send events" has to be done for it there */
+  Wd w(tpage());
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  c.notes();
+  w.at(150);
+  w.set_class("#t", "on x");
+  w.flush("#t");
+  EXPECT_EQ(w.running("#t"), 0u);
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_FINISHED);
+  ASSERT_EQ(gtext_anim_world_checkpoint(w.world), GTEXT_ANIM_OK);
+  EXPECT_EQ(c.notes(), "FR1") << "the finished promise is resolved by the notification of the microtask";
+  const std::string f = w.frame();
+  EXPECT_TRUE(has_event(f, "finish")) << f;
+  EXPECT_NE(f.find("transitionend:width:0.1@100"), std::string::npos) << f;
+}
+
+TEST(AnimWorldTransitionControl, TheEventsOfATransitionThatCompletedAtAStyleChangeEventAreAtTheTimesOfItsAnimation) {
+  Wd w(tpage());
+  start(w);
+  TCtl c(w);
+  w.at(0);
+  w.frame();
+  ASSERT_EQ(gtext_anim_animation_set_playback_rate(c.a, 2, c.now()), GTEXT_ANIM_OK);
+  w.at(60);
+  w.set_class("#t", "on x");
+  w.flush("#t");
+  EXPECT_EQ(w.running("#t"), 0u) << "60 ms at a rate of 2 is 120 ms of 100";
+  EXPECT_EQ(w.frame(), "transitionend:width:0.1@50") << "animation time to timeline time: 100 x (1 / 2) + 0";
+}
+
+TEST(AnimWorldTransitionControl, ATransitionAWorldLetsGoOfWhileAPlayTaskIsPendingRunsOnFromTheTimeItHolds) {
+  Wd w(tpage());
+  start(w);
+  {
+    TCtl c(w);
+    w.at(0);
+    w.frame();
+    ASSERT_EQ(gtext_anim_animation_finish(c.a, c.now()), GTEXT_ANIM_OK);
+    ASSERT_EQ(gtext_anim_animation_play(c.a, c.now()), GTEXT_ANIM_OK) << "rewinds: current time 0, a play task pending";
+    EXPECT_TRUE(c.st().pending_play);
+    w.at(16);
+  }
+  gtext_anim_world_free(w.world);
+  w.world = nullptr;
+  EXPECT_EQ(w.m.value("#t", "width"), "10px");
+  w.at(66);
+  EXPECT_EQ(w.m.value("#t", "width"), "15px") << "from 0 at the time the world let go of it (16)";
 }
 
 /* All or nothing: a frame whose list cannot be made reports its events at the next call, whole. */

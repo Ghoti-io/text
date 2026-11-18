@@ -1671,6 +1671,7 @@
 #define gtext_anim_animation_restore GHOTIIO_TEXT(gtext_anim_animation_restore)
 #define gtext_anim_animation_css_pause GHOTIIO_TEXT(gtext_anim_animation_css_pause)
 #define gtext_anim_animation_reserve GHOTIIO_TEXT(gtext_anim_animation_reserve)
+#define gtext_anim_animation_reserve_calls GHOTIIO_TEXT(gtext_anim_animation_reserve_calls)
 #define gtext_anim_animation_pause GHOTIIO_TEXT(gtext_anim_animation_pause)
 #define gtext_anim_animation_finish GHOTIIO_TEXT(gtext_anim_animation_finish)
 #define gtext_anim_animation_cancel GHOTIIO_TEXT(gtext_anim_animation_cancel)

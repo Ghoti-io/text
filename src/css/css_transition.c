@@ -74,6 +74,9 @@ typedef struct {
   double left_at;             ///< the time it left the running set (a cancellation's scheduled event time)
   GTEXT_CSS_Transition_Phase phase;   ///< the phase the last frame saw it in
   bool cancelled;
+  bool held;                  ///< an Animation held it: the scheduled times of its events are the Animation's (tr_sched_basis(), as it was when the transition left)
+  double sbase, sinv;
+  bool svalid;
 } gone_t;
 
 typedef struct {
@@ -81,6 +84,12 @@ typedef struct {
   char * cname; size_t lcn;
   char * end; size_t le;
 } done_t;
+
+/// A list of Animations the owner of a set will call when an update has succeeded.
+typedef struct {
+  GTEXT_Anim_Animation ** items;
+  size_t n, cap;
+} alist;
 
 struct GTEXT_CSS_Transition_Set {
   GTEXT_Allocator alloc;
@@ -94,8 +103,8 @@ struct GTEXT_CSS_Transition_Set {
   uint64_t next_id;       ///< the last transition id given
   uint64_t lost;          ///< owed events dropped past MAX_OWED
   uint64_t generation;    ///< the "current transition generation" of this element: one for each style change event that changed the set
-  GTEXT_Anim_Animation ** pc;   ///< the Animations a running update (or gtext_css_transition_set_cancel_all()) cancels when it is done: a cancel that is made late cannot be undone, so it waits for the update to succeed
-  size_t npc, cappc;
+  alist pc;               ///< the Animations a running update (or gtext_css_transition_set_cancel_all()) cancels when it is done: a cancel that is made late cannot be undone, so it waits for the update to succeed
+  alist pf;               ///< the Animations of the transitions that completed: "update an animation's finished state" is run for each when the update is done
 };
 
 static char * dupn(const GTEXT_Allocator * a, const char * s, size_t n) {
@@ -171,7 +180,8 @@ void gtext_css_transition_set_free(GTEXT_CSS_Transition_Set * set) {
   }
   contents_free(set);
   GTEXT_Allocator a = set->alloc;
-  gtext_allocator_free(&a, set->pc);
+  gtext_allocator_free(&a, set->pc.items);
+  gtext_allocator_free(&a, set->pf.items);
   gtext_allocator_free(&a, set);
 }
 
@@ -493,22 +503,37 @@ static GTEXT_CSS_Status gone_reserve(GTEXT_CSS_Transition_Set * s, size_t more) 
   return GTEXT_CSS_OK;
 }
 
-/// Room for `more` Animations that the update in progress cancels when it is done.
-static GTEXT_CSS_Status pc_reserve(GTEXT_CSS_Transition_Set * s, size_t more) {
-  if (s->npc + more <= s->cappc) {
+/// Room for `more` Animations that the update in progress calls when it is done.
+static GTEXT_CSS_Status alist_reserve(const GTEXT_Allocator * alloc, alist * l, size_t more) {
+  if (l->n + more <= l->cap) {
     return GTEXT_CSS_OK;
   }
-  size_t cap = s->cappc ? s->cappc : 4;
-  while (cap < s->npc + more) {
+  size_t cap = l->cap ? l->cap : 4;
+  while (cap < l->n + more) {
     cap *= 2;
   }
-  GTEXT_Anim_Animation ** bigger = gtext_allocator_realloc(&s->alloc, s->pc, cap * sizeof *bigger);
+  GTEXT_Anim_Animation ** bigger = gtext_allocator_realloc((GTEXT_Allocator *)alloc, l->items, cap * sizeof *bigger);
   if (!bigger) {
     return GTEXT_CSS_E_OOM;
   }
-  s->pc = bigger;
-  s->cappc = cap;
+  l->items = bigger;
+  l->cap = cap;
   return GTEXT_CSS_OK;
+}
+
+/// How the ideal times of the events of a held transition are put on the timeline: "animation time to timeline time" is `base + time x inv`, with the start time of the Animation and 1 over its playback
+/// rate. A task the style change event made and the frame has not run starts the transition at the time of that event (its start time is not resolved yet, as for a record that holds its own state). With
+/// no start time, or a rate of 0, there is no ideal time: `valid` is false and the event has the time of the frame.
+static void tr_sched_basis(const tr_t * t, const GTEXT_Anim_Animation_State * ms, double * base, double * inv, bool * valid) {
+  if (ms->pending && t->css_task && ms->ready_generation == t->css_task_gen) {
+    *base = tr_event_time(t);
+    *inv = 1.0;
+    *valid = true;
+    return;
+  }
+  *base = ms->start_time.ms;
+  *inv = ms->playback_rate != 0.0 ? 1.0 / ms->playback_rate : 0.0;
+  *valid = ms->start_time.resolved && ms->playback_rate != 0.0;
 }
 
 /// Running transition `i` leaves the set at a time, cancelled or completed, and is removed. If a frame has seen it in a phase that owes an event (Transitions 2, "Event dispatch": a cancelled
@@ -516,10 +541,11 @@ static GTEXT_CSS_Status pc_reserve(GTEXT_CSS_Transition_Set * s, size_t more) {
 /// that is not yet after owes the events up to transitionend) the entry moves to the list of what the next frame reports. Needs room in `gone` for one more (gone_reserve()) when it can fail.
 static GTEXT_CSS_Status run_leave(GTEXT_CSS_Transition_Set * s, size_t i, double time_ms, bool cancelled) {
   tr_t * t = &s->run[i];
-  /* "run the procedure to cancel an animation on the transition": the Animation that holds it is cancelled by the caller when the whole of what it does has succeeded (the room is made here) */
-  const bool cancel_m = cancelled && t->m;
-  if (cancel_m) {
-    const GTEXT_CSS_Status ps = pc_reserve(s, 1);
+  /* "run the procedure to cancel an animation on the transition": the Animation that holds it is cancelled by the caller when the whole of what it does has succeeded, and one whose transition completed
+     is asked whether it has finished (the room for the two is made here) */
+  alist * const after = cancelled ? &s->pc : &s->pf;
+  if (t->m) {
+    const GTEXT_CSS_Status ps = alist_reserve(&s->alloc, after, 1);
     if (ps != GTEXT_CSS_OK) {
       return ps;
     }
@@ -542,11 +568,16 @@ static GTEXT_CSS_Status run_leave(GTEXT_CSS_Transition_Set * s, size_t i, double
     g->delay = t->delay;
     g->phase = t->phase;
     g->cancelled = cancelled;
+    g->held = t->m != NULL;
+    if (g->held) {
+      const GTEXT_Anim_Animation_State ms = m_state(t, time_ms);
+      tr_sched_basis(t, &ms, &g->sbase, &g->sinv, &g->svalid);
+    }
     g->left_at = time_ms;
     g->elapsed = tr_elapsed_at(t, time_ms);
   }
-  if (cancel_m) {
-    s->pc[s->npc++] = t->m;
+  if (t->m) {
+    after->items[after->n++] = t->m;
   }
   run_remove(s, i);
   return GTEXT_CSS_OK;
@@ -1335,8 +1366,12 @@ GTEXT_CSS_Status gtext_css_transitions_update(const GTEXT_CSS_Compute_Context * 
   gtext_allocator_free((GTEXT_Allocator *)al, lens);
   /* the Animations of the transitions this event cancelled get the room for what the cancel makes (the promises that settle, the event it owes) before the set is replaced, so that the cancels
      made after it cannot fail: an update is whole or not at all, and a cancel that was made is not undone */
-  for (size_t i = 0; st == GTEXT_CSS_OK && i < w->npc; i++) {
-    const GTEXT_Anim_Status as = gtext_anim_animation_reserve(w->pc[i]);
+  for (size_t i = 0; st == GTEXT_CSS_OK && i < w->pc.n; i++) {
+    const GTEXT_Anim_Status as = gtext_anim_animation_reserve(w->pc.items[i]);
+    st = as == GTEXT_ANIM_OK ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
+  }
+  for (size_t i = 0; st == GTEXT_CSS_OK && i < w->pf.n; i++) {
+    const GTEXT_Anim_Status as = gtext_anim_animation_reserve(w->pf.items[i]);
     st = as == GTEXT_ANIM_OK ? GTEXT_CSS_OK : GTEXT_CSS_E_OOM;
   }
   if (st != GTEXT_CSS_OK) {
@@ -1347,8 +1382,12 @@ GTEXT_CSS_Status gtext_css_transitions_update(const GTEXT_CSS_Compute_Context * 
     set_take(set, w);
     set->version++;
   }
-  for (size_t i = 0; i < w->npc; i++) {
-    (void)gtext_anim_animation_cancel(w->pc[i], (GTEXT_Anim_Time){true, time_ms});   /* the room is reserved */
+  for (size_t i = 0; i < w->pc.n; i++) {
+    (void)gtext_anim_animation_cancel(w->pc.items[i], (GTEXT_Anim_Time){true, time_ms});   /* the room is reserved */
+  }
+  for (size_t i = 0; i < w->pf.n; i++) {
+    /* a transition that completed at a style change event has no record for a frame to ask its Animation whether it finished: it is asked here ("update animations and send events") */
+    (void)gtext_anim_animation_update_finished(w->pf.items[i], (GTEXT_Anim_Time){true, time_ms});   /* the room is reserved */
   }
   gtext_css_transition_set_free(w);
   return GTEXT_CSS_OK;
@@ -1667,7 +1706,12 @@ static GTEXT_CSS_Status set_frame(GTEXT_CSS_Transition_Set * set, double time_ms
       n = phase_events(g->phase, GTEXT_CSS_TRANSITION_PHASE_AFTER, g->delay, duration, type, elapsed, ideal);
     }
     double sched[3];
-    sched_fill(n, ideal, g->start_time - g->delay, 1.0, true, g->cancelled ? g->left_at : time_ms, sched);
+    if (g->held) {
+      sched_fill(n, ideal, g->sbase, g->sinv, g->svalid, g->cancelled ? g->left_at : time_ms, sched);
+    }
+    else {
+      sched_fill(n, ideal, g->start_time - g->delay, 1.0, true, g->cancelled ? g->left_at : time_ms, sched);
+    }
     events_add(events, g->id, g->generation, g->prop, g->pname, g->lpn, n, type, elapsed, sched);
     gone_free(&set->alloc, g);
   }
@@ -1700,9 +1744,12 @@ static GTEXT_CSS_Status set_frame(GTEXT_CSS_Transition_Set * set, double time_ms
         to = GTEXT_CSS_TRANSITION_PHASE_BEFORE;
       }
       else {
-        double e = 0;
-        (void)tr_time(t, time_ms, &e);
-        to = phase_at(t->start_time, t->end_time, e);
+        /* the phase of the effect at the Animation's current time and rate (Web Animations 1, "Animation effect phases and states": the boundaries of the active interval are the other phase's when the
+           animation plays backwards), by the timing model, as the snapshot says it */
+        GTEXT_Anim_Effect_Timing tm = tr_timing(t);
+        GTEXT_Anim_Computed_Timing ct;
+        (void)gtext_anim_computed_timing(&tm, ms.current_time, ms.playback_rate, false, &ct);
+        to = ct.phase == GTEXT_ANIM_PHASE_BEFORE ? GTEXT_CSS_TRANSITION_PHASE_BEFORE : ct.phase == GTEXT_ANIM_PHASE_ACTIVE ? GTEXT_CSS_TRANSITION_PHASE_ACTIVE : GTEXT_CSS_TRANSITION_PHASE_AFTER;
       }
       const GTEXT_CSS_Transition_Phase from = t->phase;
       size_t n;
@@ -1717,14 +1764,10 @@ static GTEXT_CSS_Status set_frame(GTEXT_CSS_Transition_Set * set, double time_ms
         n = phase_events(from, to, t->delay, t->end_time - t->start_time, type, elapsed, ideal);
         t->active_both = tr_active_both(t, ms.current_time, ms.playback_rate);
       }
-      /* a task the style change event made and the frame has not run: the transition starts at the time of that event, as for a record that holds its own state (its start time is not resolved yet) */
-      const bool style_pending = ms.pending && t->css_task && ms.ready_generation == t->css_task_gen;
-      if (style_pending) {
-        sched_fill(n, ideal, tr_event_time(t), 1.0, true, time_ms, sched);
-      }
-      else {
-        sched_fill(n, ideal, ms.start_time.ms, ms.playback_rate != 0.0 ? 1.0 / ms.playback_rate : 0.0, ms.start_time.resolved && ms.playback_rate != 0.0, time_ms, sched);
-      }
+      double base, inv;
+      bool valid;
+      tr_sched_basis(t, &ms, &base, &inv, &valid);
+      sched_fill(n, ideal, base, inv, valid, time_ms, sched);
       events_add(events, t->id, t->generation, t->prop, t->pname, t->lpn, n, type, elapsed, sched);
       t->pending_phase = to == GTEXT_CSS_TRANSITION_PHASE_BEFORE && ms.pending && (!ready || from == GTEXT_CSS_TRANSITION_PHASE_IDLE || t->pending_phase);
       t->phase = to;
@@ -1759,7 +1802,10 @@ GTEXT_CSS_Status gtext_css_transition_set_cancel_all(GTEXT_CSS_Transition_Set * 
   }
   GTEXT_CSS_Status st = gone_reserve(set, set->nrun);
   if (st == GTEXT_CSS_OK) {
-    st = pc_reserve(set, set->nrun);
+    st = alist_reserve(&set->alloc, &set->pc, set->nrun);
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = alist_reserve(&set->alloc, &set->pf, set->nrun);
   }
   for (size_t i = 0; st == GTEXT_CSS_OK && i < set->nrun; i++) {
     if (set->run[i].m && gtext_anim_animation_reserve(set->run[i].m) != GTEXT_ANIM_OK) {
@@ -1782,10 +1828,14 @@ GTEXT_CSS_Status gtext_css_transition_set_cancel_all(GTEXT_CSS_Transition_Set * 
   while (set->ndone) {
     done_remove(set, set->ndone - 1);
   }
-  for (size_t i = 0; i < set->npc; i++) {
-    (void)gtext_anim_animation_cancel(set->pc[i], (GTEXT_Anim_Time){true, time_ms});   /* the room is reserved */
+  for (size_t i = 0; i < set->pc.n; i++) {
+    (void)gtext_anim_animation_cancel(set->pc.items[i], (GTEXT_Anim_Time){true, time_ms});   /* the room is reserved */
   }
-  set->npc = 0;
+  for (size_t i = 0; i < set->pf.n; i++) {
+    (void)gtext_anim_animation_update_finished(set->pf.items[i], (GTEXT_Anim_Time){true, time_ms});   /* the room is reserved */
+  }
+  set->pc.n = 0;
+  set->pf.n = 0;
   set->version++;
   return GTEXT_CSS_OK;
 }
@@ -1934,8 +1984,9 @@ void gtext_css_transition_set_detach(GTEXT_CSS_Transition_Set * set, uint64_t id
       t->phase = GTEXT_CSS_TRANSITION_PHASE_AFTER;
       t->ready = true;
     }
-    else if (!ms.pending) {
-      /* it runs on at the rate of 1 from where the Animation was: the record's times move so that its current time at `time_ms` is the Animation's */
+    else {
+      /* it runs on at the rate of 1 from where the Animation was (a pending task is run: it is ready, with the current time it holds): the record's times move so that its current time at `time_ms` is the
+         Animation's */
       const double moved = (time_ms - ms.current_time.ms) - tr_event_time(t);
       t->start_time += moved;
       t->end_time += moved;
@@ -1949,7 +2000,8 @@ void gtext_css_transition_set_detach(GTEXT_CSS_Transition_Set * set, uint64_t id
 
 GTEXT_CSS_Status gtext_css_transition_set_frame_reserve(const GTEXT_CSS_Transition_Set * set) {
   for (size_t i = 0; set && i < set->nrun; i++) {
-    if (set->run[i].m && gtext_anim_animation_reserve(set->run[i].m) != GTEXT_ANIM_OK) {
+    /* a frame runs the pending task and then asks whether the Animation finished: two calls, whose room is made first */
+    if (set->run[i].m && gtext_anim_animation_reserve_calls(set->run[i].m, 2) != GTEXT_ANIM_OK) {
       return GTEXT_CSS_E_OOM;
     }
   }

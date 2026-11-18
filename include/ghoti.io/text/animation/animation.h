@@ -188,6 +188,13 @@ GTEXT_API GTEXT_Anim_Status gtext_anim_animation_css_pause(GTEXT_Anim_Animation 
  */
 GTEXT_API GTEXT_Anim_Status gtext_anim_animation_reserve(GTEXT_Anim_Animation * animation);
 
+/**
+ * @brief Reserve the room for the notes and events of `calls` calls that follow one another (each call reserves the room for its own, and an owner that makes two calls and must not fail at the second
+ * reserves for both: a frame runs a pending task and then asks whether the animation finished).
+ * @param calls How many calls, at most 1,024. @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID; GTEXT_ANIM_OOM.
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_animation_reserve_calls(GTEXT_Anim_Animation * animation, size_t calls);
+
 /** @brief `pause()` ("pause an animation"). @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID_STATE (an unresolved current time, a negative rate and an infinite effect end; nothing changed). */
 GTEXT_API GTEXT_Anim_Status gtext_anim_animation_pause(GTEXT_Anim_Animation * animation, GTEXT_Anim_Time now);
 
