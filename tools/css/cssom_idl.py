@@ -89,7 +89,10 @@ def member(s, dictionary=False):
         if s.startswith(word):
             return word.replace(' ', '-'), word.replace(' ', '-'), s
     if '(' in s:
-        head = s.split('(')[0].split()
+        # the name is the identifier before the first argument list; a return type may itself be a parenthesized union, "(A or B) name(...)"
+        named = next((x for x in re.finditer(r'([A-Za-z_][A-Za-z0-9_]*)\s*\(', s)
+                      if x.group(1) not in ('getter', 'setter', 'deleter', 'static', 'stringifier', 'legacycaller', 'inherit', 'readonly')), None)
+        head = (s[:named.start()].split() + [named.group(1)]) if named else s.split('(')[0].split()
         special = None
         while head and head[0] in ('getter', 'setter', 'deleter', 'static', 'stringifier', 'legacycaller', 'inherit', 'readonly'):
             if head[0] in ('getter', 'setter', 'deleter'):

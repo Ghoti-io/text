@@ -50,6 +50,9 @@ LEDGER = os.path.join(HERE, "cssom_ledger.tsv")
 MANIFEST = os.path.join(HERE, "WEBREF_IDL_SHA256")
 IDL_DIR = os.path.join(ROOT, "third_party", "css", "webref-idl")
 SCOPE = re.compile(r'^(CSS[A-Za-z]*|MediaList|StyleSheet|StyleSheetList|LinkStyle|DocumentOrShadowRoot|ElementCSSInlineStyle|MediaQueryList|MediaQueryListEvent|MediaQueryListEventInit|PropertyDefinition|Window)$')
+# Pinned beside the CSSOM family (the same webref commit, the same manifest) for the stages that own them, and not covered by this ledger: Typed OM (css-typed-om: pinned only,
+# nothing built) and the Animation family (web-animations, web-animations-2, scroll-animations, css-animations-2), whose members belong to the stages of the Web Animations model.
+OTHER_FAMILIES = ("css-typed-om", "web-animations", "web-animations-2", "scroll-animations", "css-animations-2")
 WINDOW_MEMBERS = ("getComputedStyle", "matchMedia")
 STATUSES = ("implemented", "binding", "out", "ahead")
 
@@ -67,7 +70,8 @@ def idl_members(idl_dir):
             continue
         if hashlib.sha256(open(path, "rb").read()).hexdigest() != sha:
             problems.append("%s does not hash as pinned" % name)
-        files.append(path)
+        if os.path.basename(path)[:-4] not in OTHER_FAMILIES:
+            files.append(path)
     members = {}
     for path in files:
         defs, _, _ = cssom_idl.read(open(path, encoding="utf-8").read())

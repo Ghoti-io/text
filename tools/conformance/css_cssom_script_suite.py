@@ -155,7 +155,6 @@ def answer(msg):
 
 
 MESSAGE_OWNERS = [
-    (r'but got "(left|top|right|bottom) \d+(\.\d+)?px"$', 'owner: src/css animation sampling (an interpolated background-position component keeps its origin keyword, as the computed value of the longhand does in every static read of the library, which lists the same difference as served-text in CSS_COMPUTED_EXCEPTIONS: Backgrounds 4, 2.6; both browsers drop it; css-backgrounds-4 is not among the pinned drafts, so this gate cannot take it as served-text until it is)'),
     (r'expected "none" but got "image-set\(url', 'owner: src/css transition values (a custom property value that came from attr() is attr-tainted, and the value a transition declares is made from the text of the start and the end value, which carries no taint: css-values-5, "attr() security limitations"; written as a spec, not built)'),
     (r'unsupported, needs (condition|container\.computed_style|sibling_index|sibling_count)', 'owner: src/css/css_markup.c, the element interface the Markup adapter provides (the callback the computed layer asks for is missing)'),
 ]
