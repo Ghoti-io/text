@@ -51,6 +51,7 @@ struct GTEXT_Anim_Animation {
   uint32_t finished_generation;
   GTEXT_Anim_Promise_State finished;
   bool finish_microtask;
+  bool play_state_override;           ///< Script has changed the play state (play, pause, or a reverse or start time that moved it to or from paused): CSS Animations 2 stops following `animation-play-state`.
   GTEXT_Anim_Note * notes;
   size_t n_notes, cap_notes;
   owed_event * events;
@@ -202,9 +203,13 @@ static void apply_pending_rate(GTEXT_Anim_Animation * a) {
 }
 
 /* The scheduled event time of the finish event: "animation time to origin-relative time" of the associated effect end. The document timeline's origin-relative time is its own time. */
-static GTEXT_Anim_Time finish_scheduled_time(const GTEXT_Anim_Animation * a) {
+static GTEXT_Anim_Time finish_scheduled_time(const GTEXT_Anim_Animation * a, GTEXT_Anim_Time now) {
   const double end = effect_end(a);
-  if (!a->start.resolved || a->rate == 0.0) {
+  if (a->timeline != GTEXT_ANIM_TIMELINE_DOCUMENT || !now.resolved) {
+    /* no timeline, an inactive one, or one that has no procedure to convert its times to origin-relative ones */
+    return UNRESOLVED;
+  }
+  if (is_infinite(end) || !a->start.resolved || a->rate == 0.0) {
     /* "If timeline time is unresolved, return time": the animation time itself */
     return at(end);
   }
@@ -221,7 +226,7 @@ static void finish_notification_steps(GTEXT_Anim_Animation * a, GTEXT_Anim_Time 
     (void)push_note(a, GTEXT_ANIM_NOTE_FINISHED_RESOLVE, a->finished_generation);
   }
   /* an animation with no timeline has no document for timing: the event is a task of its own, which has no scheduled time */
-  const GTEXT_Anim_Time sched = a->timeline != GTEXT_ANIM_TIMELINE_NONE ? finish_scheduled_time(a) : UNRESOLVED;
+  const GTEXT_Anim_Time sched = finish_scheduled_time(a, now);
   (void)push_event(a, GTEXT_ANIM_EVENT_FINISH, current_time(a, now, true), timeline_time(a, now), sched);
 }
 
@@ -488,9 +493,8 @@ static GTEXT_Anim_Status do_update_playback_rate(GTEXT_Anim_Animation * a, doubl
   }
   if (previous == GTEXT_ANIM_PLAY_FINISHED) {
     const GTEXT_Anim_Time unconstrained = current_time(a, now, false);
-    if (active(a, now) && unconstrained.resolved) {
-      a->start = a->pending_rate == 0.0 ? at(now.ms) : at(now.ms - unconstrained.ms / a->pending_rate);
-    }
+    /* "timeline time - (unconstrained current time / pending playback rate)": unresolved when either is */
+    a->start = (active(a, now) && unconstrained.resolved) ? (a->pending_rate == 0.0 ? at(now.ms) : at(now.ms - unconstrained.ms / a->pending_rate)) : UNRESOLVED;
     apply_pending_rate(a);
     update_finished(a, now, false, false);
     return GTEXT_ANIM_OK;
@@ -508,6 +512,16 @@ static GTEXT_Anim_Status do_update_playback_rate(GTEXT_Anim_Animation * a, doubl
       return GTEXT_ANIM_OOM; \
     } \
   } while (0)
+
+GTEXT_Anim_Status gtext_anim_animation_css_pause(GTEXT_Anim_Animation * a, GTEXT_Anim_Time now) {
+  ENTER(a);
+  return do_pause(a, now);
+}
+
+GTEXT_Anim_Status gtext_anim_animation_reserve(GTEXT_Anim_Animation * a) {
+  ENTER(a);
+  return GTEXT_ANIM_OK;
+}
 
 GTEXT_Anim_Status gtext_anim_animation_new(const GTEXT_Allocator * allocator, GTEXT_Anim_Timeline_Kind timeline, GTEXT_Anim_Animation ** out) {
   if (!out || (timeline != GTEXT_ANIM_TIMELINE_NONE && timeline != GTEXT_ANIM_TIMELINE_DOCUMENT && timeline != GTEXT_ANIM_TIMELINE_PROGRESS)) {
@@ -631,6 +645,7 @@ GTEXT_Anim_Status gtext_anim_animation_state(const GTEXT_Anim_Animation * a, GTE
   out->ready = a->ready;
   out->finished_generation = a->finished_generation;
   out->finished = a->finished;
+  out->play_state_override = a->play_state_override;
   return GTEXT_ANIM_OK;
 }
 
@@ -641,6 +656,7 @@ GTEXT_Anim_Status gtext_anim_animation_set_current_time(GTEXT_Anim_Animation * a
 
 GTEXT_Anim_Status gtext_anim_animation_set_start_time(GTEXT_Anim_Animation * a, GTEXT_Anim_Time start, GTEXT_Anim_Time now) {
   ENTER(a);
+  const bool was_paused = play_state(a, now) == GTEXT_ANIM_PLAY_PAUSED;
   /* "Set the start time" */
   if (!active(a, now) && start.resolved) {
     a->hold = UNRESOLVED;
@@ -661,17 +677,46 @@ GTEXT_Anim_Status gtext_anim_animation_set_start_time(GTEXT_Anim_Animation * a, 
     resolve_ready(a);
   }
   update_finished(a, now, true, false);
+  if (was_paused != (play_state(a, now) == GTEXT_ANIM_PLAY_PAUSED)) {
+    a->play_state_override = true;
+  }
   return GTEXT_ANIM_OK;
 }
 
 GTEXT_Anim_Status gtext_anim_animation_play(GTEXT_Anim_Animation * a, GTEXT_Anim_Time now) {
   ENTER(a);
-  return do_play(a, now, true);
+  const GTEXT_Anim_Status st = do_play(a, now, true);
+  a->play_state_override = a->play_state_override || st == GTEXT_ANIM_OK;
+  return st;
+}
+
+GTEXT_Anim_Status gtext_anim_animation_play_from(GTEXT_Anim_Animation * a, GTEXT_Anim_Time now) {
+  ENTER(a);
+  return do_play(a, now, false);
+}
+
+GTEXT_Anim_Status gtext_anim_animation_restore(GTEXT_Anim_Animation * a, const GTEXT_Anim_Restore * state, GTEXT_Anim_Time now) {
+  ENTER(a);
+  if (!state || (state->pending_play && state->pending_pause)) {
+    return GTEXT_ANIM_INVALID;
+  }
+  a->hold = state->hold_time;
+  a->start = state->start_time;
+  a->previous_current = UNRESOLVED;
+  if (state->pending_play || state->pending_pause) {
+    a->pending_play = state->pending_play;
+    a->pending_pause = state->pending_pause;
+    new_ready_promise(a, GTEXT_ANIM_PROMISE_PENDING);
+  }
+  update_finished(a, now, false, false);
+  return GTEXT_ANIM_OK;
 }
 
 GTEXT_Anim_Status gtext_anim_animation_pause(GTEXT_Anim_Animation * a, GTEXT_Anim_Time now) {
   ENTER(a);
-  return do_pause(a, now);
+  const GTEXT_Anim_Status st = do_pause(a, now);
+  a->play_state_override = a->play_state_override || st == GTEXT_ANIM_OK;
+  return st;
 }
 
 GTEXT_Anim_Status gtext_anim_animation_finish(GTEXT_Anim_Animation * a, GTEXT_Anim_Time now) {
@@ -696,10 +741,14 @@ GTEXT_Anim_Status gtext_anim_animation_reverse(GTEXT_Anim_Animation * a, GTEXT_A
   const double inverse = -effective_rate(a);
   a->has_pending_rate = true;
   a->pending_rate = inverse;
+  const bool was_paused = play_state(a, now) == GTEXT_ANIM_PLAY_PAUSED;
   GTEXT_Anim_Status st = do_play(a, now, true);
   if (st != GTEXT_ANIM_OK) {
     a->has_pending_rate = original_has;
     a->pending_rate = original;
+  }
+  else if (was_paused != (play_state(a, now) == GTEXT_ANIM_PLAY_PAUSED)) {
+    a->play_state_override = true;
   }
   return st;
 }

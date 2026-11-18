@@ -35,7 +35,7 @@
  * gtext_anim_animation_take_notes() say which generation settles when, so a binding keeps one promise for each generation. The events (`finish`, `cancel`, `remove`) are appended to the queue
  * gtext_anim_animation_take_events() drains, with their scheduled event time, in the form the events of the CSS animations have (events.h), so that one list holds a frame.
  *
- * **Not here.** The associated effect is its timing only (the keyframes and the effect stack are Stage W3); the timelines are "none", the document timeline and, for the branches of the
+ * **Not here.** The associated effect is its timing only (the keyframes and the effect stack are not here); the timelines are "none", the document timeline and, for the branches of the
  * procedures that depend on one that is not monotonically increasing, a progress-based timeline whose current time the host gives. Moving an animation from one kind of timeline to another
  * where one is progress-based is Web Animations 2's changed procedure ("Setting the timeline of an animation": auto-aligned start times) and is not supported here (GTEXT_ANIM_NOT_SUPPORTED).
  * An animation has no identity beyond its address; the binding keeps the identity of its object.
@@ -118,6 +118,7 @@ typedef struct {
   GTEXT_Anim_Promise_State ready;       ///< The state of the current ready promise.
   uint32_t finished_generation;         ///< The generation of the current finished promise.
   GTEXT_Anim_Promise_State finished;    ///< The state of the current finished promise.
+  bool play_state_override;             ///< Script has played or paused it (or reversed it, or set its start time, so that it moved to or from paused): the CSS animation it holds no longer follows `animation-play-state` (CSS Animations 2, "Animations").
 } GTEXT_Anim_Animation_State;
 
 /**
@@ -155,6 +156,37 @@ GTEXT_API GTEXT_Anim_Status gtext_anim_animation_set_start_time(GTEXT_Anim_Anima
 
 /** @brief `play()` ("play an animation" with auto-rewind). @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID_STATE (a negative rate and an infinite effect end; nothing changed). */
 GTEXT_API GTEXT_Anim_Status gtext_anim_animation_play(GTEXT_Anim_Animation * animation, GTEXT_Anim_Time now);
+
+/**
+ * @brief "Play an animation" with the auto-rewind flag false: what `animation-play-state: running` does to an animation that was paused by the property (CSS Animations 2, "Animations"), and what
+ * "seamlessly update the playback rate" does with an animation that runs. @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID_STATE (nothing changed).
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_animation_play_from(GTEXT_Anim_Animation * animation, GTEXT_Anim_Time now);
+
+/** @brief The state of an animation that something else held until now (gtext_anim_animation_restore()). */
+typedef struct {
+  GTEXT_Anim_Time hold_time;            ///< The hold time.
+  GTEXT_Anim_Time start_time;           ///< The start time.
+  bool pending_play;                    ///< A play task is waiting.
+  bool pending_pause;                   ///< A pause task is waiting (not with a play task).
+} GTEXT_Anim_Restore;
+
+/**
+ * @brief Put an animation in a state it has been in elsewhere: its hold time, start time and pending task are those given (the ready promise is pending, in a new generation, when a task is), then "update an
+ * animation's finished state" runs (did seek false, notify false). For an owner that kept its own timing state and gives it to the model (the CSS animations of a document when script first touches one).
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_animation_restore(GTEXT_Anim_Animation * animation, const GTEXT_Anim_Restore * state, GTEXT_Anim_Time now);
+
+/**
+ * @brief "Pause an animation" as `animation-play-state: paused` does it (CSS Animations 2, "The animation-play-state property"): the same procedure as gtext_anim_animation_pause(), which script's
+ * call is not distinguished from only by what it records (the call of script makes the animation ignore the property from then on, this one does not).
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_animation_css_pause(GTEXT_Anim_Animation * animation, GTEXT_Anim_Time now);
+
+/**
+ * @brief Reserve the room for the notes and events of the calls that follow, so that an owner that must not fail after a point can ask for it before. @return GTEXT_ANIM_OK; GTEXT_ANIM_OOM.
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_animation_reserve(GTEXT_Anim_Animation * animation);
 
 /** @brief `pause()` ("pause an animation"). @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID_STATE (an unresolved current time, a negative rate and an infinite effect end; nothing changed). */
 GTEXT_API GTEXT_Anim_Status gtext_anim_animation_pause(GTEXT_Anim_Animation * animation, GTEXT_Anim_Time now);

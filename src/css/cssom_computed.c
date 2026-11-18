@@ -2088,6 +2088,35 @@ GTEXT_CSS_Status css_tracker_context(GTEXT_CSSOM_Transition_Tracker * tracker, c
   return st;
 }
 
+GTEXT_CSS_Status css_tracker_bind_animation(GTEXT_CSSOM_Transition_Tracker * tracker, uint64_t id, GTEXT_Anim_Animation * animation, const void ** element, const char ** pseudo, size_t * pseudo_length) {
+  if (!tracker) {
+    return GTEXT_CSS_E_INVALID;
+  }
+  for (size_t i = 0; i < tracker->count; i++) {
+    tracker_entry * e = &tracker->entries[i];
+    for (size_t k = 0; k < gtext_anim_css_set_count(e->anims); k++) {
+      GTEXT_Anim_Css_Info info;
+      if (gtext_anim_css_set_info(e->anims, k, tracker->time_ms, &info) == GTEXT_CSS_OK && info.id == id) {
+        const GTEXT_Anim_Status st = animation ? gtext_anim_css_set_bind(e->anims, id, animation, tracker->time_ms) : GTEXT_ANIM_OK;
+        if (st != GTEXT_ANIM_OK) {
+          return st == GTEXT_ANIM_OOM ? GTEXT_CSS_E_OOM : GTEXT_CSS_E_INVALID;
+        }
+        *element = e->element;
+        *pseudo = e->display;
+        *pseudo_length = e->display_length;
+        return GTEXT_CSS_OK;
+      }
+    }
+  }
+  return GTEXT_CSS_E_INVALID;
+}
+
+void css_tracker_detach_animation(GTEXT_CSSOM_Transition_Tracker * tracker, uint64_t id) {
+  for (size_t i = 0; tracker && i < tracker->count; i++) {
+    gtext_anim_css_set_detach(tracker->entries[i].anims, id);
+  }
+}
+
 GTEXT_CSS_Status css_tracker_animation_events(GTEXT_CSSOM_Transition_Tracker * tracker, GTEXT_Anim_Events ** out) {
   if (!tracker || !out) {
     return GTEXT_CSS_E_INVALID;

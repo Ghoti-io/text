@@ -35,6 +35,7 @@
 #define GHOTI_IO_GTEXT_ANIMATION_WORLD_H
 
 #include <ghoti.io/text/allocator.h>
+#include <ghoti.io/text/animation/animation.h>
 #include <ghoti.io/text/animation/css_animations.h>
 #include <ghoti.io/text/animation/events.h>
 #include <ghoti.io/text/animation/timing.h>
@@ -129,6 +130,28 @@ GTEXT_API GTEXT_Anim_Status gtext_anim_world_find(GTEXT_Anim_World * world, GTEX
  * @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID; GTEXT_ANIM_OOM.
  */
 GTEXT_API GTEXT_Anim_Status gtext_anim_world_update(GTEXT_Anim_World * world, GTEXT_Anim_Events ** out);
+
+/**
+ * @brief The Animation of a CSS animation, for script that calls its methods or reads its promises: the first call for an animation makes an Animation (animation.h) with the effect's timing and the state
+ * the CSS animation had, and from then on the Animation holds the animation's timing state: its current time is what the style samples and what the events of CSS Animations 2 compare, a style change
+ * event does to it what CSS Animations 2 says (`animation-play-state` pauses it or plays it again, a changed timing is the effect's new timing, a name that leaves the list cancels it), the frame
+ * runs its pending task and asks whether it finished, and its `finish`, `cancel` and `remove` events are in the frame's list (gtext_anim_world_update()). The world owns the Animation; it
+ * is valid until the world is freed and the same pointer is returned for the same id, even after the animation was cancelled.
+ *
+ * Every call that changes it takes the tracker's time: pass gtext_anim_world_time() as `now`.
+ * @return GTEXT_ANIM_OK; GTEXT_ANIM_NOT_SUPPORTED (a CSS transition: its record keeps absolute start and end times of its own, and it is not yet held by an Animation); GTEXT_ANIM_INVALID (no such animation);
+ * GTEXT_ANIM_OOM.
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_world_control(GTEXT_Anim_World * world, GTEXT_Anim_Kind kind, uint64_t id, GTEXT_Anim_Animation ** out);
+
+/** @brief How many Animations the world holds (the CSS animations script has touched), in the order they were first asked for. NULL is 0. */
+GTEXT_API size_t gtext_anim_world_control_count(const GTEXT_Anim_World * world);
+
+/** @brief Control `index`: the id of its CSS animation and its Animation (so that the host drains the notes of each: gtext_anim_animation_note_at()). @return false past the end. */
+GTEXT_API bool gtext_anim_world_control_at(const GTEXT_Anim_World * world, size_t index, uint64_t * id, GTEXT_Anim_Animation ** animation);
+
+/** @brief A microtask checkpoint for every Animation the world holds, at the tracker's time (gtext_anim_animation_checkpoint()). */
+GTEXT_API GTEXT_Anim_Status gtext_anim_world_checkpoint(GTEXT_Anim_World * world);
 
 /** @brief The time the world reads: the tracker's. */
 GTEXT_API double gtext_anim_world_time(const GTEXT_Anim_World * world);

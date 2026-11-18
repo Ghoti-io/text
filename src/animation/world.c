@@ -31,8 +31,19 @@
 #include "../css/cssom_computed_internal.h"
 #include "../css/cssom_doc_internal.h"
 
+/// An Animation script has touched: the Animation (owned by the world), what it is the animation of, and its id.
+typedef struct {
+  GTEXT_Anim_Animation * animation;
+  uint64_t id;
+  const void * element;
+  char * pseudo;
+  size_t pseudo_length;
+} control_t;
+
 struct GTEXT_Anim_World {
   GTEXT_Allocator alloc;
+  control_t * controls;
+  size_t ncontrols, capcontrols;
   GTEXT_CSSOM_Document * doc;
   GTEXT_CSSOM_Transition_Tracker * tracker;
   GTEXT_CSSOM_Transition_Events * stash;   ///< The transition events of a frame that could not be completed: the next frame reports them, so that a frame is whole or not at all.
@@ -92,6 +103,12 @@ void gtext_anim_world_free(GTEXT_Anim_World * world) {
   gtext_cssom_transition_events_free(world->stash);
   gtext_anim_events_free(world->stash_animations);
   GTEXT_Allocator a = world->alloc;
+  for (size_t i = 0; i < world->ncontrols; i++) {
+    css_tracker_detach_animation(world->tracker, world->controls[i].id);
+    gtext_anim_animation_free(world->controls[i].animation);
+    gtext_allocator_free(&a, world->controls[i].pseudo);
+  }
+  gtext_allocator_free(&a, world->controls);
   gtext_allocator_free(&a, world);
 }
 
@@ -427,6 +444,8 @@ GTEXT_Anim_Status gtext_anim_world_update(GTEXT_Anim_World * world, GTEXT_Anim_E
   GTEXT_Anim_Events * all = NULL;
   GTEXT_Anim_Status st = gtext_anim_events_new(&world->alloc, &all);
   const size_t nt = gtext_cssom_transition_events_count(world->stash), na = gtext_anim_events_count(ae);
+  size_t np = 0;
+  GTEXT_Anim_Events * playback = NULL;
   if (st == GTEXT_ANIM_OK) {
     size_t bytes = 0;
     for (size_t i = 0; i < nt; i++) {
@@ -441,10 +460,23 @@ GTEXT_Anim_Status gtext_anim_world_update(GTEXT_Anim_World * world, GTEXT_Anim_E
         bytes += e.pseudo_element.length + e.name.length;
       }
     }
-    st = gtext_anim_events_reserve(all, nt + na, bytes);
+    /* the playback events of the animations script has touched (finish, cancel): reserved with the rest, so that nothing below can fail */
+    for (size_t i = 0; i < world->ncontrols; i++) {
+      const size_t k = gtext_anim_animation_event_count(world->controls[i].animation);
+      np += k;
+      bytes += k * world->controls[i].pseudo_length;
+    }
+    st = gtext_anim_events_reserve(all, nt + na + np, bytes);
+    if (st == GTEXT_ANIM_OK && np) {
+      st = gtext_anim_events_new(&world->alloc, &playback);
+      if (st == GTEXT_ANIM_OK) {
+        st = gtext_anim_events_reserve(playback, np, 0);
+      }
+    }
   }
   if (st != GTEXT_ANIM_OK) {
     gtext_anim_events_free(all);
+    gtext_anim_events_free(playback);
     return st;   /* both lists stay in the world: the next call reports them */
   }
   /* the transitions come first: "CSS Animations ... have a later composite order than CSS Transitions" */
@@ -467,6 +499,18 @@ GTEXT_Anim_Status gtext_anim_world_update(GTEXT_Anim_World * world, GTEXT_Anim_E
     (void)gtext_anim_events_at(ae, i, &ev);
     (void)gtext_anim_events_append(all, &ev);
   }
+  for (size_t i = 0; i < world->ncontrols; i++) {
+    gtext_anim_events_clear(playback);
+    (void)gtext_anim_animation_take_events(world->controls[i].animation, world->controls[i].id, playback);   /* the room is reserved */
+    for (size_t k = 0; k < gtext_anim_events_count(playback); k++) {
+      GTEXT_Anim_Event ev;
+      (void)gtext_anim_events_at(playback, k, &ev);
+      ev.element = world->controls[i].element;
+      ev.pseudo_element = (GTEXT_CSS_String){world->controls[i].pseudo, world->controls[i].pseudo_length};
+      (void)gtext_anim_events_append(all, &ev);
+    }
+  }
+  gtext_anim_events_free(playback);
   gtext_anim_events_sort(all);
   gtext_anim_events_free(world->stash_animations);
   world->stash_animations = NULL;
@@ -474,4 +518,92 @@ GTEXT_Anim_Status gtext_anim_world_update(GTEXT_Anim_World * world, GTEXT_Anim_E
   world->stash = NULL;
   *out = all;
   return GTEXT_ANIM_OK;
+}
+
+GTEXT_Anim_Status gtext_anim_world_control(GTEXT_Anim_World * world, GTEXT_Anim_Kind kind, uint64_t id, GTEXT_Anim_Animation ** out) {
+  if (!world || !out) {
+    return GTEXT_ANIM_INVALID;
+  }
+  *out = NULL;
+  if (kind != GTEXT_ANIM_KIND_CSS_ANIMATION) {
+    return GTEXT_ANIM_NOT_SUPPORTED;
+  }
+  for (size_t i = 0; i < world->ncontrols; i++) {
+    if (world->controls[i].id == id) {
+      *out = world->controls[i].animation;
+      return GTEXT_ANIM_OK;
+    }
+  }
+  if (world->ncontrols == world->capcontrols) {
+    const size_t cap = world->capcontrols ? world->capcontrols * 2 : 8;
+    control_t * bigger = gtext_allocator_realloc(&world->alloc, world->controls, cap * sizeof *bigger);
+    if (!bigger) {
+      return GTEXT_ANIM_OOM;
+    }
+    world->controls = bigger;
+    world->capcontrols = cap;
+  }
+  /* what the animation is the animation of is looked at and copied first, and the record is changed last, so that a failure leaves it as it was */
+  const void * element = NULL;
+  const char * pseudo = NULL;
+  size_t plen = 0;
+  GTEXT_Anim_Animation * a = NULL;
+  GTEXT_Anim_Status st = gtext_anim_animation_new(&world->alloc, GTEXT_ANIM_TIMELINE_DOCUMENT, &a);
+  if (st != GTEXT_ANIM_OK) {
+    return st;
+  }
+  const GTEXT_CSS_Status fs = css_tracker_bind_animation(world->tracker, id, NULL, &element, &pseudo, &plen);
+  if (fs != GTEXT_CSS_OK) {
+    gtext_anim_animation_free(a);
+    return GTEXT_ANIM_INVALID;
+  }
+  char * copy = gtext_allocator_malloc(&world->alloc, plen + 1);
+  if (!copy) {
+    gtext_anim_animation_free(a);
+    return GTEXT_ANIM_OOM;
+  }
+  if (plen) {
+    memcpy(copy, pseudo, plen);
+  }
+  copy[plen] = '\0';
+  const GTEXT_CSS_Status bs = css_tracker_bind_animation(world->tracker, id, a, &element, &pseudo, &plen);
+  if (bs != GTEXT_CSS_OK) {
+    gtext_allocator_free(&world->alloc, copy);
+    gtext_anim_animation_free(a);
+    return bs == GTEXT_CSS_E_OOM ? GTEXT_ANIM_OOM : GTEXT_ANIM_INVALID;
+  }
+  control_t * c = &world->controls[world->ncontrols++];
+  c->animation = a;
+  c->id = id;
+  c->element = element;
+  c->pseudo = copy;
+  c->pseudo_length = plen;
+  *out = a;
+  return GTEXT_ANIM_OK;
+}
+
+size_t gtext_anim_world_control_count(const GTEXT_Anim_World * world) {
+  return world ? world->ncontrols : 0;
+}
+
+bool gtext_anim_world_control_at(const GTEXT_Anim_World * world, size_t index, uint64_t * id, GTEXT_Anim_Animation ** animation) {
+  if (!world || index >= world->ncontrols || !id || !animation) {
+    return false;
+  }
+  *id = world->controls[index].id;
+  *animation = world->controls[index].animation;
+  return true;
+}
+
+GTEXT_Anim_Status gtext_anim_world_checkpoint(GTEXT_Anim_World * world) {
+  if (!world) {
+    return GTEXT_ANIM_INVALID;
+  }
+  const GTEXT_Anim_Time now = {true, css_tracker_time(world->tracker)};
+  GTEXT_Anim_Status result = GTEXT_ANIM_OK;
+  for (size_t i = 0; i < world->ncontrols; i++) {
+    const GTEXT_Anim_Status st = gtext_anim_animation_checkpoint(world->controls[i].animation, now);
+    result = result == GTEXT_ANIM_OK ? st : result;
+  }
+  return result;
 }

@@ -33,6 +33,7 @@
 
 #include "cssom_computed_test_support.h"
 
+#include <ghoti.io/text/animation/animation.h>
 #include <ghoti.io/text/animation/world.h>
 
 using namespace cc;
@@ -127,7 +128,7 @@ struct Wd {
     return events_text(ev, ids);
   }
   std::string events_text(GTEXT_Anim_Events * ev, bool ids) {
-    static const char * const names[] = {"animationstart", "animationiteration", "animationend", "animationcancel", "transitionrun", "transitionstart", "transitionend", "transitioncancel"};
+    static const char * const names[] = {"animationstart", "animationiteration", "animationend", "animationcancel", "transitionrun", "transitionstart", "transitionend", "transitioncancel", "finish", "cancel", "remove"};
     std::string out;
     for (size_t i = 0; i < gtext_anim_events_count(ev); i++) {
       GTEXT_Anim_Event e{};
@@ -455,6 +456,246 @@ TEST(AnimWorld, AFrameThatIsNotReadyLeavesANewTransitionPendingAndReportsTheRunO
   EXPECT_FALSE(w.first("#t").pending);
   w.at(100);
   EXPECT_EQ(w.frame(), "transitionend:width:0.1@100");
+}
+
+/* ---- an Animation holds the timing state of a CSS animation script has touched ---------------------------------------------------------------------- */
+
+/* whether a frame's text has an event of exactly this type (not a longer one that ends in it: `animationcancel` is not `cancel`) */
+bool has_event(const std::string & frame, const std::string & type) {
+  return (" " + frame).find(" " + type + ":") != std::string::npos;
+}
+
+struct Ctl {
+  Wd & w;
+  GTEXT_Anim_Animation * a = nullptr;
+  explicit Ctl(Wd & wd, const char * selector = "#t") : w(wd) {
+    EXPECT_EQ(gtext_anim_world_control(w.world, GTEXT_ANIM_KIND_CSS_ANIMATION, w.first(selector).id, &a), GTEXT_ANIM_OK);
+  }
+  GTEXT_Anim_Time now() const {
+    return GTEXT_Anim_Time{true, gtext_anim_world_time(w.world)};
+  }
+  GTEXT_Anim_Animation_State st() const {
+    GTEXT_Anim_Animation_State s;
+    EXPECT_EQ(gtext_anim_animation_state(a, now(), &s), GTEXT_ANIM_OK);
+    return s;
+  }
+  std::string notes() const {
+    std::string out;
+    for (size_t i = 0; i < gtext_anim_animation_note_count(a); i++) {
+      GTEXT_Anim_Note n;
+      gtext_anim_animation_note_at(a, i, &n);
+      static const char * k[] = {"RR", "RJ", "FR", "FJ"};
+      out += (out.empty() ? "" : " ") + std::string(k[n.kind]) + std::to_string(n.generation);
+    }
+    gtext_anim_animation_notes_clear(a);
+    return out;
+  }
+};
+
+TEST(AnimWorldControl, TheSameAnimationIsGivenForTheSameCssAnimationAndItsStateIsTheCssOnes) {
+  Wd w(page(std::string(kKeys) + "#t { animation: a 1s linear }"));
+  w.at(0);
+  w.flush("#t");
+  Ctl c(w);
+  GTEXT_Anim_Animation * again = nullptr;
+  ASSERT_EQ(gtext_anim_world_control(w.world, GTEXT_ANIM_KIND_CSS_ANIMATION, w.first("#t").id, &again), GTEXT_ANIM_OK);
+  EXPECT_EQ(again, c.a);
+  EXPECT_EQ(gtext_anim_world_control_count(w.world), 1u);
+  auto s = c.st();
+  EXPECT_TRUE(s.pending_play) << "the CSS animation is pending until the first frame";
+  EXPECT_EQ(s.play_state, GTEXT_ANIM_PLAY_RUNNING);
+  EXPECT_EQ(s.ready, GTEXT_ANIM_PROMISE_PENDING);
+  EXPECT_TRUE(w.first("#t").pending);
+  w.at(16);
+  EXPECT_EQ(w.frame(), "animationstart:a:0@0");
+  s = c.st();
+  EXPECT_FALSE(s.pending);
+  EXPECT_EQ(c.notes(), "RR2");
+  EXPECT_EQ(s.ready, GTEXT_ANIM_PROMISE_RESOLVED);
+  EXPECT_EQ(w.m.value("#t", "opacity"), "0.016") << "ready at the time of the style change event (0), as before the Animation held it: 16 ms of it have gone at the first frame";
+}
+
+TEST(AnimWorldControl, PauseHoldsTheStyleAndThePlayStateAndPlayResumesIt) {
+  Wd w(page(std::string(kKeys) + "#t { animation: a 1s linear }"));
+  w.at(0);
+  w.flush("#t");
+  Ctl c(w);
+  w.at(0);
+  w.frame();
+  w.at(500);
+  EXPECT_EQ(w.m.value("#t", "opacity"), "0.5");
+  ASSERT_EQ(gtext_anim_animation_pause(c.a, c.now()), GTEXT_ANIM_OK);
+  w.at(516);
+  w.frame();
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_PAUSED);
+  w.at(900);
+  EXPECT_EQ(w.m.value("#t", "opacity"), "0.516") << "held at the time the pause task ran";
+  EXPECT_EQ(w.first("#t").play_state, GTEXT_ANIM_PLAY_PAUSED);
+  ASSERT_EQ(gtext_anim_animation_play(c.a, c.now()), GTEXT_ANIM_OK);
+  w.at(916);
+  w.frame();
+  w.at(1016);
+  EXPECT_EQ(w.m.value("#t", "opacity"), "0.616");
+}
+
+TEST(AnimWorldControl, FinishEndsTheAnimationAtOnceWithItsEventsAndAFinishEvent) {
+  Wd w(page(std::string(kKeys) + "#t { animation: a 1s linear }"));
+  w.at(0);
+  w.flush("#t");
+  Ctl c(w);
+  w.at(0);
+  w.frame();
+  w.at(100);
+  ASSERT_EQ(gtext_anim_animation_finish(c.a, c.now()), GTEXT_ANIM_OK);
+  EXPECT_EQ(c.notes(), "RR2 FR1");
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_FINISHED);
+  w.at(116);
+  const std::string f = w.frame();
+  EXPECT_NE(f.find("animationend:a:1@"), std::string::npos) << f;
+  EXPECT_TRUE(has_event(f, "finish")) << f;
+}
+
+TEST(AnimWorldControl, CancelByScriptIsAnAnimationCancelAndACancelEventAndTheAnimationNoLongerApplies) {
+  Wd w(page(std::string(kKeys) + "#t { animation: a 1s linear }"));
+  w.at(0);
+  w.flush("#t");
+  Ctl c(w);
+  w.at(0);
+  w.frame();
+  w.at(300);
+  EXPECT_EQ(w.frame(), "");
+  ASSERT_EQ(gtext_anim_animation_cancel(c.a, c.now()), GTEXT_ANIM_OK);
+  EXPECT_EQ(c.notes(), "RR2 FJ1");
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_IDLE);
+  EXPECT_EQ(w.m.value("#t", "opacity"), "1") << "no effect: the property has its own value";
+  w.at(316);
+  const std::string f = w.frame();
+  EXPECT_NE(f.find("animationcancel:a:0.3@"), std::string::npos) << f;
+  EXPECT_TRUE(has_event(f, "cancel")) << f;
+  EXPECT_EQ(w.list("#t"), "") << "an idle animation is not relevant";
+}
+
+TEST(AnimWorldControl, ReverseRunsTheAnimationBackwardsFromItsEnd) {
+  Wd w(page(std::string(kKeys) + "#t { animation: a 1s linear }"));
+  w.at(0);
+  w.flush("#t");
+  Ctl c(w);
+  w.at(0);
+  w.frame();
+  ASSERT_EQ(gtext_anim_animation_finish(c.a, c.now()), GTEXT_ANIM_OK);
+  w.at(16);
+  w.frame();
+  ASSERT_EQ(gtext_anim_animation_reverse(c.a, c.now()), GTEXT_ANIM_OK);
+  w.at(32);
+  w.frame();
+  EXPECT_EQ(c.st().playback_rate, -1.0);
+  w.at(532);
+  EXPECT_EQ(w.m.value("#t", "opacity"), "0.5");
+}
+
+TEST(AnimWorldControl, AStyleChangeThatRemovesTheNameCancelsTheAnimationAndSettlesItsPromises) {
+  Wd w(page(std::string(kKeys) + "#t { animation: a 1s linear } #t.off { animation: none }"));
+  w.at(0);
+  w.flush("#t");
+  Ctl c(w);
+  w.at(0);
+  w.frame();
+  w.at(300);
+  w.set_class("#t", "off");
+  w.flush("#t");
+  EXPECT_EQ(c.notes(), "RR2 FJ1");
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_IDLE);
+  const std::string f = w.frame();
+  EXPECT_NE(f.find("animationcancel:a:0.3@"), std::string::npos) << f << " (the elapsed time is the active time of the animation script had run, read before it was cancelled)";
+  EXPECT_TRUE(has_event(f, "cancel")) << f;
+}
+
+TEST(AnimWorldControl, AStyleChangeOfThePlayStateOfAnAnimationScriptHasTouchedPausesItAndPlaysItAgain) {
+  Wd w(page(std::string(kKeys) + "#t { animation: a 1s linear } #t.p { animation-play-state: paused }"));
+  w.at(0);
+  w.flush("#t");
+  Ctl c(w);
+  w.at(0);
+  w.frame();
+  w.at(300);
+  w.set_class("#t", "p");
+  w.flush("#t");
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_PAUSED) << "a pause task is pending: paused whatever the start time";
+  w.at(316);
+  w.frame();
+  w.at(800);
+  EXPECT_EQ(w.m.value("#t", "opacity"), "0.3") << "held at the time of the style change event that paused it, as for a record that holds its own state";
+  w.set_class("#t", "");
+  w.flush("#t");
+  w.at(816);
+  w.frame();
+  w.at(916);
+  EXPECT_EQ(w.m.value("#t", "opacity"), "0.416") << "it runs again from the time it was held at";
+}
+
+TEST(AnimWorldControl, AScriptPauseIsNotUndoneByALaterChangeOfThePlayStateInTheStyle) {
+  /* "After a successful call to play() or pause() on a CSSAnimation, any subsequent change to the animation-play-state will no longer cause the CSSAnimation to be played or paused" */
+  Wd w(page(std::string(kKeys) + "#t { animation: a 1s linear } #t.p { animation-play-state: paused }"));
+  w.at(0);
+  w.flush("#t");
+  Ctl c(w);
+  w.at(0);
+  w.frame();
+  w.at(100);
+  ASSERT_EQ(gtext_anim_animation_pause(c.a, c.now()), GTEXT_ANIM_OK);
+  w.at(116);
+  w.frame();
+  w.set_class("#t", "p");
+  w.flush("#t");
+  w.set_class("#t", "");
+  w.flush("#t");
+  w.at(200);
+  w.frame();
+  EXPECT_EQ(c.st().play_state, GTEXT_ANIM_PLAY_PAUSED) << "the style said paused and then running again; the script's pause stands";
+  w.at(900);
+  EXPECT_EQ(w.m.value("#t", "opacity"), "0.116");
+}
+
+TEST(AnimWorldControl, ATaskScriptMakesIsReadyAtTheFrameEvenWhenAnEarlierStyleTaskWasFinishedByScript) {
+  Wd w(page(std::string(kKeys) + "#t { animation: a 1s linear } #t.p { animation-play-state: paused }"));
+  w.at(0);
+  w.flush("#t");
+  Ctl c(w);
+  w.at(0);
+  w.frame();
+  w.at(300);
+  w.set_class("#t", "p");
+  w.flush("#t");   /* a pause task, ready at the time of this style change event (300) */
+  ASSERT_EQ(gtext_anim_animation_finish(c.a, c.now()), GTEXT_ANIM_OK) << "script finishes it before the task ran";
+  ASSERT_EQ(gtext_anim_animation_play(c.a, c.now()), GTEXT_ANIM_OK) << "and plays it again: a new task, script's";
+  w.at(316);
+  w.frame();
+  w.at(416);
+  EXPECT_EQ(w.m.value("#t", "opacity"), "0.1") << "ready at the frame (316), so 100 ms of it have gone at 416; ready at the style change event (300) would be 116";
+}
+
+TEST(AnimWorldControl, TheScheduledTimeOfAnEventFollowsThePlaybackRate) {
+  /* "animation time to timeline time": time x (1 / playback rate) + start time */
+  Wd w(page(std::string(kKeys) + "#t { animation: a 1s linear }"));
+  w.at(0);
+  w.flush("#t");
+  Ctl c(w);
+  w.at(0);
+  w.frame();
+  ASSERT_EQ(gtext_anim_animation_set_playback_rate(c.a, 2, c.now()), GTEXT_ANIM_OK);
+  w.at(500);
+  EXPECT_EQ(w.frame(), "animationend:a:1@500");
+}
+
+TEST(AnimWorldControl, ACssTransitionIsNotYetHeldByAnAnimation) {
+  Wd w(page(std::string(kKeys) + "#t { width: 10px; transition: width 100ms linear } #t.on { width: 20px }"));
+  w.at(0);
+  w.flush("#t");
+  w.set_class("#t", "on");
+  w.flush("#t");
+  GTEXT_Anim_Animation * a = nullptr;
+  EXPECT_EQ(gtext_anim_world_control(w.world, GTEXT_ANIM_KIND_CSS_TRANSITION, w.first("#t").id, &a), GTEXT_ANIM_NOT_SUPPORTED);
+  EXPECT_EQ(gtext_anim_world_control(w.world, GTEXT_ANIM_KIND_CSS_ANIMATION, 12345, &a), GTEXT_ANIM_INVALID);
 }
 
 /* All or nothing: a frame whose list cannot be made reports its events at the next call, whole. */

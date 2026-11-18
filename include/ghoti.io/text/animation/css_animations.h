@@ -42,6 +42,7 @@
 #define GHOTI_IO_GTEXT_ANIMATION_CSS_ANIMATIONS_H
 
 #include <ghoti.io/text/allocator.h>
+#include <ghoti.io/text/animation/animation.h>
 #include <ghoti.io/text/animation/events.h>
 #include <ghoti.io/text/animation/timing.h>
 #include <ghoti.io/text/css/css_animation.h>
@@ -83,6 +84,8 @@ typedef struct {
   GTEXT_Anim_Time current_time;         ///< `currentTime`.
   bool relevant;                        ///< "Relevant animations": its effect is current or in effect (what `getAnimations()` returns).
   GTEXT_Anim_Computed_Timing computed;  ///< `effect.getComputedTiming()` at the time.
+  bool adopted;                         ///< Script has touched it (gtext_anim_css_set_bind()): the Animation holds its timing state, and `animation` is that state.
+  GTEXT_Anim_Animation_State animation; ///< The state of the Animation when `adopted`: the playback rate, the replace state, the generations and states of `ready` and `finished`.
 } GTEXT_Anim_Css_Info;
 
 /** @brief Make an empty set. @param allocator NULL for the default. @return GTEXT_CSS_OK, GTEXT_CSS_E_INVALID, GTEXT_CSS_E_OOM. */
@@ -151,6 +154,17 @@ GTEXT_API bool gtext_anim_css_set_current_time(const GTEXT_Anim_Css_Set * set, c
  */
 GTEXT_API GTEXT_Anim_Status gtext_anim_css_set_update_timing(GTEXT_Anim_Css_Set * set, const GTEXT_CSS_Registry * registry, uint64_t id, const GTEXT_Anim_Optional_Timing * input,
     const char * easing_text, size_t easing_length);
+
+/**
+ * @brief Give animation `id` an Animation to hold its timing state from now on (the first time script touches it): the Animation gets the effect's timing and the state the record had (start and
+ * hold time, a pending task), and the record reads the current time, the pending task and the finished state from it. A change the style makes later does what the specification says it does to
+ * an animation (`animation-play-state` pauses it or plays it again, a changed timing is the effect's new timing, a name that leaves the list cancels it). The Animation is borrowed: the owner keeps it
+ * until gtext_anim_css_set_detach(). @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID (no such animation, or it has one).
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_css_set_bind(GTEXT_Anim_Css_Set * set, uint64_t id, GTEXT_Anim_Animation * animation, double time_ms);
+
+/** @brief The record of animation `id` lets go of its Animation (the owner is about to free it); a no-op for an animation that has none. */
+GTEXT_API void gtext_anim_css_set_detach(GTEXT_Anim_Css_Set * set, uint64_t id);
 
 /**
  * @brief The most events (and name bytes) a frame of the set can add, so that a caller that takes the frames of many sets into one list reserves the sum first and no frame can fail.

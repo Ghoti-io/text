@@ -2725,7 +2725,7 @@ CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX
 # returns are read when they load the helper of the animation pages (css/css-animations/support/testcommon.js, modeled like the transition pages' helper) and have a test to score. 12 more pages are scored
 # (694), 24 more tests (5,700; all pass), seven more need a layout (678 to 685: tests of the new pages that read a used `width`), and the share of the touched tests that is scored goes from 2418 to
 # 2405 in ten thousand (a floor that goes down: 240 tests of the pages that are read now were counted as one test each while their helper was not modeled, and the 24 scored are not as many as the 240).
-# What moved with the pin of the drafts of 2026-11-18 (CSS-PLAN.md C5e29): css-backgrounds-4 is pinned, so the two interpolated background-position tests are `served-text` (Backgrounds 4: the computed value keeps an origin keyword) and the ceiling of defects goes DOWN from 11 to 9. The attr() taint of a transitioned custom property is built (css-values/attr-security-transition.html#0 passes), so the ceiling goes DOWN again, 9 to 8.
+# What moved with the pin of the drafts of 2026-11-18: css-backgrounds-4 is pinned, so the two interpolated background-position tests are `served-text` (Backgrounds 4: the computed value keeps an origin keyword) and the ceiling of defects goes DOWN from 11 to 9. The attr() taint of a transitioned custom property is built (css-values/attr-security-transition.html#0 passes), so the ceiling goes DOWN again, 9 to 8.
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
 conformance-css-computed: $(CONFORMANCE_LIB)

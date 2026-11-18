@@ -336,6 +336,34 @@ TEST(AnimAnimation, FinishNotifiesAtOnceAndTheFinishedPromiseIsReplacedWhenItLea
   EXPECT_EQ(x.st(T(40)).finished, GTEXT_ANIM_PROMISE_PENDING);
 }
 
+TEST(AnimAnimation, TheFinishEventOfAnAnimationWithNoActiveTimelineHasNoScheduledTime) {
+  /* "If animation is associated with an inactive timeline, return an unresolved time value" */
+  A x;
+  ASSERT_EQ(gtext_anim_animation_set_start_time(x.a, T(0), T(0)), GTEXT_ANIM_OK);
+  ASSERT_EQ(gtext_anim_animation_set_current_time(x.a, T(5000), T(0)), GTEXT_ANIM_OK);
+  ASSERT_EQ(gtext_anim_animation_checkpoint(x.a, kNone), GTEXT_ANIM_OK) << "the microtask runs when the timeline has become inactive";
+  EXPECT_EQ(x.events(), "finish(5000,null,null)");
+}
+
+TEST(AnimAnimation, PlayingOrPausingAnimationMakesItIgnoreTheCssPlayStateFromThenOn) {
+  A x;
+  EXPECT_FALSE(x.st(T(0)).play_state_override);
+  ASSERT_EQ(gtext_anim_animation_play_from(x.a, T(0)), GTEXT_ANIM_OK);
+  EXPECT_FALSE(x.st(T(0)).play_state_override) << "what the style does is not script's";
+  ASSERT_EQ(gtext_anim_animation_css_pause(x.a, T(0)), GTEXT_ANIM_OK);
+  EXPECT_FALSE(x.st(T(0)).play_state_override) << "nor is the pause of animation-play-state: paused";
+  ASSERT_EQ(gtext_anim_animation_pause(x.a, T(0)), GTEXT_ANIM_OK);
+  EXPECT_TRUE(x.st(T(0)).play_state_override);
+  A y;
+  ASSERT_EQ(gtext_anim_animation_play(y.a, T(0)), GTEXT_ANIM_OK);
+  EXPECT_TRUE(y.st(T(0)).play_state_override);
+  A z;
+  ASSERT_EQ(gtext_anim_animation_set_start_time(z.a, T(0), T(0)), GTEXT_ANIM_OK);
+  EXPECT_FALSE(z.st(T(0)).play_state_override) << "a start time that does not move the animation to or from paused";
+  ASSERT_EQ(gtext_anim_animation_set_start_time(z.a, kNone, T(10)), GTEXT_ANIM_OK);
+  EXPECT_TRUE(z.st(T(10)).play_state_override) << "running to paused";
+}
+
 TEST(AnimAnimation, FinishWithAnInfiniteEffectOrAZeroRateIsAnInvalidStateError) {
   A x(GTEXT_ANIM_TIMELINE_DOCUMENT, 10);
   GTEXT_Anim_Effect_Timing t = gtext_anim_timing_default();
@@ -379,7 +407,7 @@ TEST(AnimAnimation, PlayingAFinishedAnimationRewindsItAndGivesItANewFinishedProm
   EXPECT_EQ(x.st(T(10)).finished, GTEXT_ANIM_PROMISE_PENDING);
 }
 
-TEST(AnimAnimation, ANegativeRateFinishesAtZeroAndAZeroLengthEffectFinishesAtOnce) {
+TEST(AnimAnimation, AZeroLengthEffectIsFinishedAtOnceAndResolvesReadyBeforeFinished) {
   A x(GTEXT_ANIM_TIMELINE_DOCUMENT, 0);
   ASSERT_EQ(gtext_anim_animation_play(x.a, T(0)), GTEXT_ANIM_OK);
   ASSERT_EQ(gtext_anim_animation_run_pending(x.a, T(16)), GTEXT_ANIM_OK);
@@ -496,7 +524,7 @@ TEST(AnimAnimation, SeekingARunningAnimationMovesItsStartTimeAndSeekingPastTheEn
 
 /* ---- the start time ---- */
 
-TEST(AnimAnimation, SettingTheStartTimeOfAPausedAnimationResumesItAndCancelsPendingTasks) {
+TEST(AnimAnimation, SettingTheStartTimeOfAPlayPendingAnimationRunsItAndCancelsThePendingTask) {
   A x;
   ASSERT_EQ(gtext_anim_animation_play(x.a, T(0)), GTEXT_ANIM_OK);
   ASSERT_EQ(gtext_anim_animation_set_start_time(x.a, T(-100), T(50)), GTEXT_ANIM_OK);
@@ -615,7 +643,7 @@ TEST(AnimAnimation, SettingAnInvalidEffectIsATypeErrorAndChangesNothing) {
   EXPECT_EQ(x.st(T(0)).effect_end, 1000.0);
 }
 
-TEST(AnimAnimation, SettingTheTimelineMakesAResolvedStartTimeReEvaluateTheHoldTime) {
+TEST(AnimAnimation, SettingTheTimelineKeepsAHeldTimeAndRefusesAProgressBasedOne) {
   A x(GTEXT_ANIM_TIMELINE_NONE);
   ASSERT_EQ(gtext_anim_animation_set_current_time(x.a, T(200), kNone), GTEXT_ANIM_OK);
   ASSERT_EQ(gtext_anim_animation_set_timeline(x.a, GTEXT_ANIM_TIMELINE_DOCUMENT, T(0)), GTEXT_ANIM_OK);
@@ -753,7 +781,7 @@ TEST(AnimAnimation, ARunningReversedAnimationStopsAtZero) {
   EXPECT_EQ(std::string(ps(x.st(T(900)).play_state)), "finished");
 }
 
-TEST(AnimAnimation, AFinishedAnimationStaysFinishedWhenTheTimelineTimeGoesBackwards) {
+TEST(AnimAnimation, AFinishedAnimationIsNotStickyWhenTheTimelineTimeGoesBackwards) {
   /* "Without this definition, a once-finished animation would remain finished even when its timeline progresses in the opposite direction": the hold time is not sticky */
   A x;
   ASSERT_EQ(gtext_anim_animation_set_start_time(x.a, T(0), T(0)), GTEXT_ANIM_OK);

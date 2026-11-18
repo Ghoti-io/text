@@ -171,6 +171,7 @@ struct GTEXT_CSSOM_Transition_Tracker;
 struct GTEXT_CSS_Transition_Set;
 struct GTEXT_Anim_Css_Set;
 struct GTEXT_Anim_Events;
+struct GTEXT_Anim_Animation;
 
 /// The CSS animations and transitions of a tracker's entries, for the world (animation/world.h): one entry for each element and pseudo-element that has been through a style change event.
 typedef struct {
@@ -192,6 +193,12 @@ GTEXT_CSS_Status css_tracker_context(struct GTEXT_CSSOM_Transition_Tracker * tra
 /// One animation frame of the CSS animations of the tracker at its time: the events of every element and pseudo-element, in the order of the entries (the order of the transitions' events), each with its element and
 /// pseudo-element. All or nothing. The release of a retired entry waits for both this and gtext_cssom_transition_tracker_events().
 GTEXT_CSS_Status css_tracker_animation_events(struct GTEXT_CSSOM_Transition_Tracker * tracker, struct GTEXT_Anim_Events ** out);
+
+/// The CSS animation `id` of the tracker, wherever it is: with an Animation (NULL only looks) give it that Animation to hold its timing state (gtext_anim_css_set_bind()) and say what it is the animation of. `*pseudo` is valid until the
+/// tracker is updated. GTEXT_ANIM_INVALID: no such animation, or it has one already.
+GTEXT_CSS_Status css_tracker_bind_animation(struct GTEXT_CSSOM_Transition_Tracker * tracker, uint64_t id, struct GTEXT_Anim_Animation * animation, const void ** element, const char ** pseudo, size_t * pseudo_length);
+/// Every record of the tracker lets go of the Animation of CSS animation `id` (the owner is about to free it).
+void css_tracker_detach_animation(struct GTEXT_CSSOM_Transition_Tracker * tracker, uint64_t id);
 
 /// The session's memory (at the last release of the core).
 void css_computed_free(css_core * core);

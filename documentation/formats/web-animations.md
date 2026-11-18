@@ -55,6 +55,17 @@ place in `animation-name`). The tree order is the element interface's `compare_o
 `gtext_anim_world_update()` is "update animations and send events": the events of every transition and animation, in one list, by a stable sort on the scheduled event time, with transitions before animations between
 equal times (an animation with no start time has an unresolved scheduled time, which sorts first). It is all or nothing: a frame that cannot be made whole is made, whole, by the next call.
 
+# The Animation of a CSS animation (`gtext_anim_world_control()`)
+
+A `CSSAnimation` that script calls a method on, or whose `ready` or `finished` it reads, is held by an `GTEXT_Anim_Animation`: `gtext_anim_world_control(world, GTEXT_ANIM_KIND_CSS_ANIMATION, id, &animation)` makes
+it the first time (the effect's timing and the state the record had: start and hold time, a pending task), returns the same pointer afterwards, and the world owns it. From then on the Animation holds the
+animation's timing state: the current time the style samples and the events of CSS Animations 2 compare is the Animation's (a paused, seeked, finished, reversed or cancelled animation is what the model says), the
+frame runs its pending task (ready at the time of the style change event for a task a style change made, at the frame for a task script made) and asks whether it finished, a style change does to it what CSS
+Animations 2 says (`animation-play-state` pauses it or plays it again, a changed timing is the effect's new timing, a name that leaves the list cancels it, which settles its promises and owes the `cancel` event),
+and `gtext_anim_world_update()` adds its `finish`, `cancel` and `remove` events to the frame. An `animationcancel` is also owed when script cancels an animation a frame had seen begin. The host calls
+`gtext_anim_world_checkpoint()` where a microtask checkpoint is, and drains the notes of each Animation (`gtext_anim_world_control_at()`, `gtext_anim_animation_note_at()`) to settle its promises. A CSS
+transition is not yet held by an Animation (`GTEXT_ANIM_NOT_SUPPORTED`): its record keeps absolute start and end times, a ready flag and a reversing shortening factor of its own, which the same join has to replace.
+
 # Checks
 
 `tests/test-anim-timing.cpp`, `test-anim-animation.cpp`, `test-anim-css.cpp` and `test-anim-world.cpp` (each rule a test that quotes its text, an allocation sweep, planted defects of every function in

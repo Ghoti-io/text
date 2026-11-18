@@ -30,6 +30,8 @@
 
 #include <ghoti.io/text/animation/css_animations.h>
 
+#include <ghoti.io/text/animation/animation.h>
+
 #include <string.h>
 
 /// The most cancelled animations a set holds for the next frame to report.
@@ -56,6 +58,10 @@ typedef struct {
   uint8_t pending;                    ///< 0: none, 1: a play task, 2: a pause task.
   GTEXT_Anim_Phase phase;             ///< The phase the last frame left it in (idle until a frame sees it).
   double iteration;                   ///< The current iteration of the last frame, when its phase was active.
+  GTEXT_Anim_Animation * m;           ///< Borrowed: the Animation that holds its timing state once script has touched it (gtext_anim_css_set_bind()); NULL before. The owner of the set owns it.
+  double active_both;                 ///< The active time with a fill of both at the last frame that saw a current time (what an animationcancel reports when the animation is cancelled by script).
+  uint32_t css_task_gen;              ///< The ready generation of the Animation when the style change event made that task: a task of a later generation is script's.
+  bool css_task;                      ///< The pending task is one a style change event made, which is ready at the time of that event (an adopted animation's own tasks are ready at the frame).
 } ca_t;
 
 /// A cancelled animation and what its `animationcancel` owes.
@@ -69,6 +75,7 @@ typedef struct {
 
 struct GTEXT_Anim_Css_Set {
   GTEXT_Allocator alloc;
+  double now;                         ///< The time of the last style change event, frame or binding: what a change made with no time of its own (updateTiming()) is made at.
   ca_t * a;
   size_t n;
   gone_t * gone;
@@ -219,6 +226,26 @@ static GTEXT_Anim_Time current_of(const ca_t * c, double now) {
   return (GTEXT_Anim_Time){false, 0.0};
 }
 
+/// The current time of an animation at a time: the Animation's when script has touched it, else the record's own.
+static GTEXT_Anim_Time cur_of(const ca_t * c, double now) {
+  if (c->m) {
+    GTEXT_Anim_Animation_State ms;
+    (void)gtext_anim_animation_state(c->m, (GTEXT_Anim_Time){true, now}, &ms);
+    return ms.current_time;
+  }
+  return current_of(c, now);
+}
+
+/// The playback rate that decides the direction of the phases.
+static double rate_of(const ca_t * c) {
+  if (c->m) {
+    GTEXT_Anim_Animation_State ms;
+    (void)gtext_anim_animation_state(c->m, (GTEXT_Anim_Time){true, 0.0}, &ms);
+    return ms.playback_rate;
+  }
+  return 1.0;
+}
+
 static double infinity(void) {
   volatile double zero = 0.0;
   return 1.0 / zero;
@@ -315,7 +342,7 @@ static double active_time_both(const ca_t * c, double now) {
   GTEXT_Anim_Effect_Timing t = c->timing;
   t.fill = GTEXT_ANIM_FILL_BOTH;
   GTEXT_Anim_Computed_Timing ct;
-  if (gtext_anim_computed_timing(&t, current_of(c, now), 1.0, false, &ct) != GTEXT_ANIM_OK || !ct.in_effect) {
+  if (gtext_anim_computed_timing(&t, cur_of(c, now), rate_of(c), false, &ct) != GTEXT_ANIM_OK || !ct.in_effect) {
     return 0.0;
   }
   return ct.active_time;
@@ -331,6 +358,8 @@ typedef struct {
   ca_t c;
   size_t from;
   bool fresh_easing, fresh_name, changed;
+  int machine_op;                     ///< An adopted animation: 1 pause, 2 play again (animation-play-state changed).
+  bool timing_changed;
 } plan_t;
 
 static void plan_discard(const GTEXT_Allocator * a, plan_t * p, size_t n) {
@@ -420,9 +449,20 @@ GTEXT_CSS_Status gtext_anim_css_set_update(GTEXT_Anim_Css_Set * s, const GTEXT_C
         st = plan_easing(al, p, e.easing, true);
       }
       p->c.timing.easing = p->c.easing;
-      p->changed = p->changed || !timing_equal(&p->c.timing, &old->timing) || p->c.order != e.index;
+      p->timing_changed = !timing_equal(&p->c.timing, &old->timing);
+      p->changed = p->changed || p->timing_changed || p->c.order != e.index;
       p->c.order = e.index;
-      if (e.paused != old->css_paused) {
+      if (e.paused != old->css_paused && old->m) {
+        /* an animation script has touched: the Animation does what the property says (applied at the commit), unless script has played or paused it since ("After a successful call to
+           play() or pause() on a CSSAnimation, any subsequent change to the animation-play-state will no longer cause the CSSAnimation to be played or paused") */
+        GTEXT_Anim_Animation_State ms;
+        (void)gtext_anim_animation_state(old->m, (GTEXT_Anim_Time){true, time_ms}, &ms);
+        p->changed = true;
+        p->c.css_paused = e.paused;
+        p->c.event_time = time_ms;
+        p->machine_op = ms.play_state_override ? 0 : (e.paused ? 1 : 2);
+      }
+      else if (e.paused != old->css_paused) {
         /* "the resolved value of animation-play-state ... is newly paused: pause an animation; newly running: play an animation (auto-rewind false)" */
         p->changed = true;
         p->c.css_paused = e.paused;
@@ -443,6 +483,7 @@ GTEXT_CSS_Status gtext_anim_css_set_update(GTEXT_Anim_Css_Set * s, const GTEXT_C
           p->c.pending = PENDING_PLAY;
           p->c.start_valid = false;
         }
+        p->c.css_task = p->c.pending != PENDING_NONE;
       }
     }
     else {
@@ -463,6 +504,7 @@ GTEXT_CSS_Status gtext_anim_css_set_update(GTEXT_Anim_Css_Set * s, const GTEXT_C
       p->c.hold_valid = true;
       p->c.hold_time = 0.0;
       p->c.pending = e.paused ? PENDING_PAUSE : PENDING_PLAY;
+      p->c.css_task = true;
       p->c.phase = GTEXT_ANIM_PHASE_IDLE;
       st = plan_easing(al, p, e.easing, false);
       p->c.timing.easing = p->c.easing;
@@ -471,7 +513,10 @@ GTEXT_CSS_Status gtext_anim_css_set_update(GTEXT_Anim_Css_Set * s, const GTEXT_C
     np++;
   }
   for (size_t k = 0; k < s->n && st == GTEXT_CSS_OK; k++) {
-    if (!taken[k]) {
+    if (s->a[k].m && gtext_anim_animation_reserve(s->a[k].m) != GTEXT_ANIM_OK) {
+      st = GTEXT_CSS_E_OOM;   /* the Animations' notes and events are made after this point, which cannot fail */
+    }
+    if (st == GTEXT_CSS_OK && !taken[k]) {
       cancelled++;
       owed += owes_cancel(&s->a[k]) ? 1 : 0;
     }
@@ -487,6 +532,29 @@ GTEXT_CSS_Status gtext_anim_css_set_update(GTEXT_Anim_Css_Set * s, const GTEXT_C
     return st;
   }
   /* nothing below can fail */
+  s->now = time_ms;
+  for (size_t i = 0; i < np; i++) {
+    /* what the style change event does to an Animation script has touched (a status other than OK leaves it as it was: the model refuses what the specification refuses) */
+    if (plan[i].from != (size_t)-1 && plan[i].c.m) {
+      const GTEXT_Anim_Time at = {true, time_ms};
+      if (plan[i].timing_changed) {
+        (void)gtext_anim_animation_set_effect(plan[i].c.m, &plan[i].c.timing, at);
+      }
+      if (plan[i].machine_op == 1) {
+        (void)gtext_anim_animation_css_pause(plan[i].c.m, at);
+      }
+      else if (plan[i].machine_op == 2) {
+        (void)gtext_anim_animation_play_from(plan[i].c.m, at);
+      }
+      if (plan[i].machine_op) {
+        /* a task a style change made is ready at the time of that event: only if the call made one */
+        GTEXT_Anim_Animation_State ms;
+        (void)gtext_anim_animation_state(plan[i].c.m, at, &ms);
+        plan[i].c.css_task = ms.pending;
+        plan[i].c.css_task_gen = ms.ready_generation;
+      }
+    }
+  }
   for (size_t k = 0; k < s->n; k++) {
     ca_t * old = &s->a[k];
     if (taken[k]) {
@@ -499,12 +567,18 @@ GTEXT_CSS_Status gtext_anim_css_set_update(GTEXT_Anim_Css_Set * s, const GTEXT_C
       }
       continue;
     }
+    const double elapsed = owes_cancel(old) ? active_time_both(old, time_ms) : 0.0;   /* before the Animation is cancelled: its current time is the one to read */
+    if (old->m) {
+      /* "terminate": the Animation is cancelled (its promises settle, its cancel event is owed) and the record lets go of it */
+      (void)gtext_anim_animation_cancel(old->m, (GTEXT_Anim_Time){true, time_ms});
+      old->m = NULL;
+    }
     if (owes_cancel(old)) {
       gone_t * g = &s->gone[s->ngone++];
       g->name = old->name;
       g->lname = old->lname;
       g->id = old->id;
-      g->elapsed_ms = active_time_both(old, time_ms);
+      g->elapsed_ms = elapsed;
       g->at = time_ms;
       old->name = NULL;
     }
@@ -573,10 +647,17 @@ GTEXT_CSS_Status gtext_anim_css_set_info(const GTEXT_Anim_Css_Set * s, size_t in
   /* the start time of an animation with a pending pause is the one it had until it is ready */
   out->start_time = (GTEXT_Anim_Time){c->start_valid && c->pending != PENDING_PLAY, c->start_valid && c->pending != PENDING_PLAY ? c->start_time : 0.0};
   out->current_time = current_of(c, time_ms);
-  if (gtext_anim_computed_timing(&c->timing, out->current_time, 1.0, false, &out->computed) != GTEXT_ANIM_OK) {
+  if (c->m) {
+    out->adopted = true;
+    (void)gtext_anim_animation_state(c->m, (GTEXT_Anim_Time){true, time_ms}, &out->animation);
+    out->pending = out->animation.pending;
+    out->start_time = out->animation.start_time;
+    out->current_time = out->animation.current_time;
+  }
+  if (gtext_anim_computed_timing(&c->timing, out->current_time, rate_of(c), false, &out->computed) != GTEXT_ANIM_OK) {
     return GTEXT_CSS_E_INVALID;
   }
-  out->play_state = play_state_of(c, out->current_time, out->computed.end_time);
+  out->play_state = c->m ? out->animation.play_state : play_state_of(c, out->current_time, out->computed.end_time);
   /* "An animation effect is current if ... in the before phase and ... a playback rate > 0", "in play" (active, not finished), or "in effect" */
   out->relevant = out->computed.in_effect || out->computed.phase == GTEXT_ANIM_PHASE_BEFORE || (out->computed.phase == GTEXT_ANIM_PHASE_ACTIVE && out->play_state != GTEXT_ANIM_PLAY_FINISHED);
   return GTEXT_CSS_OK;
@@ -588,7 +669,7 @@ bool gtext_anim_css_set_current_time(const GTEXT_Anim_Css_Set * s, const GTEXT_C
   }
   for (size_t i = 0; i < s->n; i++) {
     if (s->a[i].order == order && name_is(s->a[i].name, s->a[i].lname, name)) {
-      const GTEXT_Anim_Time t = current_of(&s->a[i], time_ms);
+      const GTEXT_Anim_Time t = cur_of(&s->a[i], time_ms);
       if (t.resolved) {
         *ms = t.ms;
       }
@@ -645,8 +726,69 @@ GTEXT_Anim_Status gtext_anim_css_set_update_timing(GTEXT_Anim_Css_Set * s, const
   c->timing = next;
   c->timing.easing = c->easing;
   c->locked |= input->present;
+  if (c->m) {
+    /* the Animation's effect has the new timing, and the finished state is looked at again ("Updating the timing of an AnimationEffect") */
+    (void)gtext_anim_animation_set_effect(c->m, &c->timing, (GTEXT_Anim_Time){true, s->now});
+  }
   s->version++;
   return GTEXT_ANIM_OK;
+}
+
+GTEXT_Anim_Status gtext_anim_css_set_bind(GTEXT_Anim_Css_Set * s, uint64_t id, GTEXT_Anim_Animation * animation, double time_ms) {
+  if (!s || !animation || time_ms != time_ms) {
+    return GTEXT_ANIM_INVALID;
+  }
+  ca_t * c = NULL;
+  for (size_t i = 0; i < s->n; i++) {
+    if (s->a[i].id == id) {
+      c = &s->a[i];
+    }
+  }
+  if (!c || c->m) {
+    return GTEXT_ANIM_INVALID;
+  }
+  const GTEXT_Anim_Time at = {true, time_ms};
+  GTEXT_Anim_Status st = gtext_anim_animation_set_effect(animation, &c->timing, at);
+  if (st != GTEXT_ANIM_OK) {
+    return st;
+  }
+  GTEXT_Anim_Restore r;
+  memset(&r, 0, sizeof r);
+  r.hold_time = (GTEXT_Anim_Time){c->hold_valid, c->hold_valid ? c->hold_time : 0.0};
+  r.start_time = (GTEXT_Anim_Time){c->start_valid, c->start_valid ? c->start_time : 0.0};
+  r.pending_play = c->pending == PENDING_PLAY;
+  r.pending_pause = c->pending == PENDING_PAUSE;
+  st = gtext_anim_animation_restore(animation, &r, at);
+  if (st != GTEXT_ANIM_OK) {
+    return st;
+  }
+  c->m = animation;
+  c->css_task = c->pending != PENDING_NONE;
+  GTEXT_Anim_Animation_State bs;
+  (void)gtext_anim_animation_state(animation, at, &bs);
+  c->css_task_gen = bs.ready_generation;
+  c->pending = PENDING_NONE;
+  s->now = time_ms;
+  s->version++;
+  return GTEXT_ANIM_OK;
+}
+
+void gtext_anim_css_set_detach(GTEXT_Anim_Css_Set * s, uint64_t id) {
+  for (size_t i = 0; s && i < s->n; i++) {
+    ca_t * c = &s->a[i];
+    if (c->id == id && c->m) {
+      /* the record holds its timing state again: what the Animation had at the last time the set saw */
+      GTEXT_Anim_Animation_State ms;
+      (void)gtext_anim_animation_state(c->m, (GTEXT_Anim_Time){true, s->now}, &ms);
+      c->hold_valid = ms.hold_time.resolved;
+      c->hold_time = ms.hold_time.resolved ? ms.hold_time.ms : 0.0;
+      c->start_valid = ms.start_time.resolved;
+      c->start_time = ms.start_time.resolved ? ms.start_time.ms : 0.0;
+      c->pending = ms.pending_play ? PENDING_PLAY : ms.pending_pause ? PENDING_PAUSE : PENDING_NONE;
+      c->m = NULL;
+      s->version++;
+    }
+  }
 }
 
 /* ---- the frame ---------------------------------------------------------------------------------------------------------------------------------- */
@@ -674,10 +816,19 @@ static GTEXT_Anim_Time sched(const ca_t * c, double animation_time, double frame
   if (animation_time < 0.0) {
     return (GTEXT_Anim_Time){true, frame};   /* a phase change that goes backwards has no ideal time: the frame's */
   }
-  if (!c->start_valid || animation_time >= infinity()) {
+  GTEXT_Anim_Time start = {c->start_valid, c->start_time};
+  double rate = 1.0;
+  if (c->m) {
+    GTEXT_Anim_Animation_State ms;
+    (void)gtext_anim_animation_state(c->m, (GTEXT_Anim_Time){true, 0.0}, &ms);
+    start = ms.start_time;
+    rate = ms.playback_rate;
+  }
+  if (!start.resolved || rate == 0.0 || animation_time >= infinity()) {
     return (GTEXT_Anim_Time){false, 0.0};
   }
-  return (GTEXT_Anim_Time){true, c->start_time + animation_time};
+  /* "animation time to timeline time": time x (1 / playback rate) + start time */
+  return (GTEXT_Anim_Time){true, animation_time * (1.0 / rate) + start.ms};
 }
 
 static void emit(GTEXT_Anim_Events * events, const ca_t * c, GTEXT_Anim_Event_Type type, double elapsed_ms, GTEXT_Anim_Time scheduled) {
@@ -701,7 +852,13 @@ GTEXT_CSS_Status gtext_anim_css_set_frame(GTEXT_Anim_Css_Set * s, double time_ms
   if (rs != GTEXT_ANIM_OK) {
     return rs == GTEXT_ANIM_OOM ? GTEXT_CSS_E_OOM : GTEXT_CSS_E_INVALID;
   }
+  for (size_t i = 0; i < s->n; i++) {
+    if (s->a[i].m && gtext_anim_animation_reserve(s->a[i].m) != GTEXT_ANIM_OK) {
+      return GTEXT_CSS_E_OOM;   /* the Animations' notes and events are made below, which cannot fail */
+    }
+  }
   /* nothing below can fail, so the set only moves on with a frame that is reported whole */
+  s->now = time_ms;
   for (size_t i = 0; i < s->ngone; i++) {
     gone_t * g = &s->gone[i];
     GTEXT_Anim_Event ev;
@@ -717,7 +874,18 @@ GTEXT_CSS_Status gtext_anim_css_set_frame(GTEXT_Anim_Css_Set * s, double time_ms
   s->ngone = 0;
   for (size_t i = 0; i < s->n; i++) {
     ca_t * c = &s->a[i];
-    if (c->pending == PENDING_PLAY) {
+    if (c->m) {
+      /* an Animation script has touched: its tasks run now (a task a style change event made is ready at the time of that event, as for the records that hold their own state) and it is
+         asked whether it has finished */
+      GTEXT_Anim_Animation_State ms;
+      (void)gtext_anim_animation_state(c->m, (GTEXT_Anim_Time){true, time_ms}, &ms);
+      if (ms.pending) {
+        (void)gtext_anim_animation_run_pending(c->m, (GTEXT_Anim_Time){true, c->css_task && ms.ready_generation == c->css_task_gen ? c->event_time : time_ms});
+      }
+      c->css_task = false;
+      (void)gtext_anim_animation_update_finished(c->m, (GTEXT_Anim_Time){true, time_ms});
+    }
+    else if (c->pending == PENDING_PLAY) {
       /* ready: "the start time is set to the ready time less the time held, over the playback rate", the time of the style change event here */
       c->start_valid = true;
       c->start_time = c->event_time - (c->hold_valid ? c->hold_time : 0.0);
@@ -733,17 +901,25 @@ GTEXT_CSS_Status gtext_anim_css_set_frame(GTEXT_Anim_Css_Set * s, double time_ms
       c->pending = PENDING_NONE;
     }
     GTEXT_Anim_Computed_Timing ct;
-    const GTEXT_Anim_Time cur = current_of(c, time_ms);
-    (void)gtext_anim_computed_timing(&c->timing, cur, 1.0, false, &ct);
+    const GTEXT_Anim_Time cur = cur_of(c, time_ms);
+    (void)gtext_anim_computed_timing(&c->timing, cur, rate_of(c), false, &ct);
     const GTEXT_Anim_Phase to = ct.phase, from = c->phase;
     const double delay = c->timing.delay;
+    const bool cancelled_by_api = to == GTEXT_ANIM_PHASE_IDLE && from != GTEXT_ANIM_PHASE_IDLE && from != GTEXT_ANIM_PHASE_AFTER;
+    if (cancelled_by_api) {
+      /* "before or active -> idle: animationcancel", the elapsed time being the active time (fill of both) at the moment it was cancelled: the last the frames saw */
+      emit(events, c, GTEXT_ANIM_EVENT_ANIMATIONCANCEL, c->active_both, (GTEXT_Anim_Time){true, time_ms});
+    }
+    else if (cur.resolved) {
+      c->active_both = active_time_both(c, time_ms);
+    }
     /* "interval start" and "interval end" of CSS Animations 2, "Event dispatch" */
     double istart = -delay < ct.active_duration ? -delay : ct.active_duration;
     istart = istart > 0 ? istart : 0.0;
     double iend = ct.end_time - delay < ct.active_duration ? ct.end_time - delay : ct.active_duration;
     iend = iend > 0 ? iend : 0.0;
     const double at_start = delay > 0 ? delay : 0.0;
-    switch (from) {
+    switch (cancelled_by_api ? GTEXT_ANIM_PHASE_IDLE : from) {
       case GTEXT_ANIM_PHASE_IDLE:
       case GTEXT_ANIM_PHASE_BEFORE:
         if (to == GTEXT_ANIM_PHASE_ACTIVE || to == GTEXT_ANIM_PHASE_AFTER) {

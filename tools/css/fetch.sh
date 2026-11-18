@@ -218,7 +218,7 @@ else
 	mv "$drafts.partial" "$drafts"
 fi
 
-# ---- the one Editors' Draft of w3c/css-houdini-drafts (CSS Properties and Values API) ------------------------------------------
+# ---- the Editors' Drafts of w3c/css-houdini-drafts (CSS Properties and Values API, CSS Typed OM) ------------------------------------------
 # Kept beside the others in third_party/css/drafts/. tools/css/HOUDINI_COMMIT is the commit and tools/css/HOUDINI_SHA256 the hash of the source.
 houdini_manifest="$root/tools/css/HOUDINI_SHA256"
 want_houdini=$(cat "$root/tools/css/HOUDINI_COMMIT")
@@ -284,7 +284,7 @@ else
 	mv "$pkgdir.partial" "$pkgdir"
 fi
 
-# ---- w3c/webref, ed/idl: the WebIDL of the CSSOM family ---------------------------------------------------------------
+# ---- w3c/webref, ed/idl: the WebIDL of the CSSOM family, Typed OM and the animation family ---------------------------------------------------------------
 # The interface ledger (tools/css/cssom_ledger.tsv) is checked against these files of the same pinned commit as the CSS data:
 # tools/css/WEBREF_IDL_SHA256 lists them with their SHA-256, and a checkout with a missing, changed or extra file is not kept.
 idl_manifest="$root/tools/css/WEBREF_IDL_SHA256"
