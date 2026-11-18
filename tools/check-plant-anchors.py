@@ -42,7 +42,7 @@ ROOT = os.path.dirname(HERE)
 
 # list path, layout. Layouts: "nfoc" = name, file, old, new[, ...]; "html-serializer" = name, letter, old, new (the file is fixed);
 # "serialize-oracle" = name, old, new (fixed file). Directories under src/ that a file column may be relative to.
-SRC_DIRS = ["src/css", "src", "src/html", "src/markup", "src/encoding", "src/xml", "src/ini"]
+SRC_DIRS = ["src/css", "src/animation", "src", "src/html", "src/markup", "src/encoding", "src/xml", "src/ini"]
 LISTS = [
     ("tools/conformance/CSS_ANIMATION_PLANTS", "nfoc"),
     ("tools/conformance/CSS_TRANSITION_PLANTS", "nfoc"),

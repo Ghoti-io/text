@@ -20,7 +20,7 @@
     PREFIX=... DEP_PCS=... ARCHIVE=... tools/css/plant-animation.py [name ...]
 
 A gate that has never failed has not been shown to be able to. Each plant is a line of tools/conformance/CSS_ANIMATION_PLANTS: one edit (or the
-edits of one defect, as lines of one name) to one file of src/css/, made in a copy of src/ in a scratch directory (the working tree is never
+edits of one defect, as lines of one name) to one file of src/css/ or src/animation/, made in a copy of src/ in a scratch directory (the working tree is never
 touched). The edited file is compiled alone and linked ahead of the library's archive into the test programs the plant names, which are run; each
 must fail. The **control** is the same procedure with no edit, and all programs must pass.
 
@@ -115,7 +115,7 @@ def main(argv):
                 _, rel, old, new, _must = plant
                 olds, news = (old, new) if isinstance(old, list) else ([old], [new])
                 shutil.copytree(os.path.join(ROOT, "src"), os.path.join(work, "src"))
-                path = os.path.join(work, "src", "css", rel)
+                path = next(p for p in (os.path.join(work, "src", "css", rel), os.path.join(work, "src", "animation", rel)) if os.path.exists(p))
                 text = open(path, encoding="utf-8").read()
                 for o_ in olds:
                     if text.count(o_) != 1:

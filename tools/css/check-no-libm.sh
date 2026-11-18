@@ -57,32 +57,37 @@ check() {
 }
 
 if ! check "$dir"; then
-	echo "src/css must do its arithmetic through the math library only (gmath_*), never <math.h>." >&2
+	echo "$dir must do its arithmetic through the math library only (gmath_*), never <math.h>." >&2
 	exit 1
 fi
 
 scratch=$(mktemp -d)
+copy_sources() {   # a directory may have no private header
+	cp "$dir"/*.c "$scratch"/
+	for h in "$dir"/*.h; do [ -f "$h" ] && cp "$h" "$scratch"/; done
+	return 0
+}
 trap 'rm -rf "$scratch"' EXIT
-cp "$dir"/*.c "$dir"/*.h "$scratch"/
+copy_sources
 first=$(ls "$scratch"/*.c | head -1)
 printf '\nstatic double planted(double x) { return sin(x); }\n' >> "$first"
 if check "$scratch" >/dev/null 2>&1; then
 	echo "the libm gate did not refuse a planted sin()" >&2
 	exit 1
 fi
-cp "$dir"/*.c "$dir"/*.h "$scratch"/
+copy_sources
 printf '\n#include <math.h>\n' >> "$first"
 if check "$scratch" >/dev/null 2>&1; then
 	echo "the libm gate did not refuse a planted #include <math.h>" >&2
 	exit 1
 fi
-cp "$dir"/*.c "$dir"/*.h "$scratch"/
+copy_sources
 printf '\nstatic double planted(void) { return INFINITY; }\n' >> "$first"
 if check "$scratch" >/dev/null 2>&1; then
 	echo "the libm gate did not refuse a planted INFINITY" >&2
 	exit 1
 fi
-cp "$dir"/*.c "$dir"/*.h "$scratch"/
+copy_sources
 printf '\n/* no sin(x), pow( or <math.h> here, and no INFINITY */\n' >> "$first"
 if ! check "$scratch" >/dev/null 2>&1; then
 	echo "the libm gate refused a comment" >&2
@@ -122,7 +127,7 @@ if [ -n "$objdir" ]; then
 		exit 1
 	fi
 	if ! objcheck "$objdir"; then
-		echo "src/css objects must not refer to libm (gmath_* only)." >&2
+		echo "$dir objects must not refer to libm (gmath_* only)." >&2
 		exit 1
 	fi
 	mkdir "$scratch/obj"

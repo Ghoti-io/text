@@ -34,3 +34,16 @@ sample-revert-rolls-back-only-the-layer	css_anim_sample.c	{"revert", ROLL_ORIGIN
 sample-revert-keeps-what-nothing-declares	css_anim_sample.c	      st = gtext_css_block_remove(b, custom ? 0 : want.property, custom ? want.custom_name.data : NULL, custom ? want.custom_name.length : 0, NULL);	      st = GTEXT_CSS_OK;	sample
 sample-revert-layer-reaches-the-block	css_anim_sample.c	    if (roll == ROLL_LAYER) {\n      continue;   /* the underlying value */	    if (0) {\n      continue;   /* the underlying value */	sample
 sample-revert-takes-no-longhand-of-the-rollback	css_anim_sample.c	    const bool found = gtext_css_block_find(rolled,	    const bool found = 0 && gtext_css_block_find(rolled,	sample
+anim-timing-before-boundary-inclusive	timing.c	  if (lt < before_boundary || (backwards && !endpoint_inclusive && lt == before_boundary)) {	  if (lt <= before_boundary || (backwards && !endpoint_inclusive && lt == before_boundary)) {	animtiming
+anim-timing-backwards-start-boundary-is-active	timing.c	(backwards && !endpoint_inclusive && lt == before_boundary)	(0 && backwards && !endpoint_inclusive && lt == before_boundary)	animtiming
+anim-timing-endpoint-inclusive-flag-ignored	timing.c	(!backwards && !endpoint_inclusive && lt == after_boundary)	(!backwards && lt == after_boundary)	animtiming
+anim-timing-fill-auto-fills-forwards	timing.c	  if (out->timing.fill == GTEXT_ANIM_FILL_AUTO) {\n    out->timing.fill = GTEXT_ANIM_FILL_NONE;	  if (out->timing.fill == GTEXT_ANIM_FILL_AUTO) {\n    out->timing.fill = GTEXT_ANIM_FILL_FORWARDS;	animtiming
+anim-timing-iteration-start-not-added	timing.c	  overall += t->iteration_start;	  overall += 0.0;	animtiming
+anim-timing-zero-times-infinity-is-not-zero	timing.c	(dur == 0.0 || count == 0.0) ? 0.0 : dur * count	dur * count	animtiming
+anim-timing-end-delay-ignored	timing.c	  const double end_time = max2(delay + active_duration + t->end_delay, 0.0);	  const double end_time = max2(delay + active_duration, 0.0);	animtiming
+anim-timing-alternate-reverse-parity	timing.c	      if (t->direction == GTEXT_ANIM_DIRECTION_ALTERNATE_REVERSE) {\n        d += 1.0;	      if (0) {\n        d += 1.0;	animtiming
+anim-timing-update-assigns-before-it-checks	timing.c	  if (st != GTEXT_ANIM_OK) {\n    return st;\n  }\n  *timing = next;\n  return GTEXT_ANIM_OK;	  *timing = next;\n  if (st != GTEXT_ANIM_OK) {\n    return st;\n  }\n  return GTEXT_ANIM_OK;	animtiming
+anim-timing-easing-parse-takes-a-list	timing.c	    one = root->child_count == 1 ? &root->children[0] : NULL;	    one = &root->children[0];	animtiming
+anim-timing-validate-allows-negative-iteration-start	timing.c	  if (t->iteration_start < 0.0 || t->iterations < 0.0 || is_nan(t->iterations)) {	  if (t->iterations < 0.0 || is_nan(t->iterations)) {	animtiming
+anim-timing-before-flag-never-set	timing.c	  out->before_flag = (out->phase == GTEXT_ANIM_PHASE_BEFORE && forwards) || (out->phase == GTEXT_ANIM_PHASE_AFTER && !forwards);	  out->before_flag = false;	animtiming
+anim-timing-end-of-iteration-not-held	timing.c	    simple = 1.0;\n  }\n  out->simple_progress = simple;	    simple = 0.0;\n  }\n  out->simple_progress = simple;	animtiming

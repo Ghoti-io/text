@@ -1168,6 +1168,7 @@ ALLOCATOR_CLEAN_SOURCES := \
 	src/css/css_anim_interp.c \
 	src/css/css_anim_sample.c \
 	src/css/css_transition.c \
+	src/animation/timing.c \
 	src/css/css_atrule_set.c \
 	src/css/css_at_property.c \
 	src/css/css_custom_function.c \
@@ -2397,7 +2398,7 @@ check-css-libm: ## Fail if a CSS source or object refers to the C library's libm
 # function whose address is taken and a name no list holds); it then shows both refuse a planted call, address, include and INFINITY and do
 # not refuse a comment or arithmetic. It needs the library's objects, which `make test` has built; it is in TEST_GATES.
 check-css-libm: $(LIBOBJECTS)
-	@tools/css/check-no-libm.sh src/css $(OBJ_DIR)/css
+	@tools/css/check-no-libm.sh src/css $(OBJ_DIR)/css && tools/css/check-no-libm.sh src/animation $(OBJ_DIR)/animation
 
 check-css-selectors: ## Fail if the selector tables are not what the generator writes from the pinned webref data and the supplement, or a row has no probe, and show it
 # tools/css/gen-selector-tables.py: tools/css/selectors.tsv and src/css/css_selector_tables.h are generated from the `selectors` data of the pin (tools/css/WEBREF_COMMIT) and
