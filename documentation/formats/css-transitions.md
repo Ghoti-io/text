@@ -68,9 +68,12 @@ in seconds, the *interval start* `max(min(-start delay, active duration), 0)` fo
 is queued as it happens (a style change event that cancels, replaces or reverses a transition; `gtext_css_transition_set_cancel_all()` for an element that is no longer being rendered) and the next frame
 reports it as a `transitioncancel` whose `elapsedTime` is "the active time of the animation at the moment it was canceled calculated using a fill mode of both" (clamped to the transition's active
 interval, so 0 in the delay phase). A transition that was cancelled before any frame saw it reports nothing (idle to idle), and one that completes in a style change event before any frame saw it reports its
-`transitionrun`, `transitionstart` and `transitionend` at the next. The events of one frame are in the composite order of the transitions: by transition generation (the number of the style change event that
-started it, for the set), then by the codepoints of the expanded transition property name (`GTEXT_CSS_Transition_Event::property_name`: the longhand's name, or the custom property's), and a
-`transitioncancel` has the generation it had. `gtext_css_transition_set_frame_bound()` and `gtext_css_transition_events_reserve()` let a caller that takes the frames of many sets into one list
+`transitionrun`, `transitionstart` and `transitionend` at the next. The events of one frame are in the order Web Animations 1 gives ("update animations and send events"): a stable sort by the **scheduled event time**
+(`GTEXT_CSS_Transition_Event::scheduled_time_ms`, on the clock of the transitions' times: `transitionrun` when the style change event happened, `transitionstart` when the delay ends and not before the event,
+`transitionend` at the end of the effect, `transitioncancel` at the moment of the cancellation), and between equal times the composite order of the transitions: by transition generation (the number of the
+style change event that started it, for the set), then by the codepoints of the expanded transition property name (`GTEXT_CSS_Transition_Event::property_name`: the longhand's name, or the custom property's),
+and a `transitioncancel` has the generation it had. The text this library is given says when an event is scheduled only for the playback events; the ideal time of a transition's event is the moment its
+phase change happens, and an event of a time that moved backwards (which only a caller with the Animation model gives a frame) has the time of the frame. `gtext_css_transition_set_frame_bound()` and `gtext_css_transition_events_reserve()` let a caller that takes the frames of many sets into one list
 reserve the room first, so that no frame can fail (a frame is all or nothing in any case). `gtext_css_transition_set_clear()` is the same as cancelling without the events: the set of something that is gone.
 
 `gtext_css_transition_set_animation_at()` is the **`CSSTransition`** of a running transition at a time, as a value (`GTEXT_CSS_Transition_Animation`): `transitionProperty`, `playState`, `pending`, `startTime`
@@ -88,6 +91,11 @@ The library has no pending play task, so a transition's first frame sees its rea
 
 # What is not here
 
-`@starting-style` is the style options' `starting_style` flag (compute the starting style, then the style, and give the first as the before-change style).
+`@starting-style` is the style options' `starting_style` flag, and the tracker uses it: an element that has no before-change style at a style change event (its first, or the first after it was not rendered or left
+the document) is compared with its **starting style** (`gtext_cssom_document_starting_style()`: the after-change style with the rules under `@starting-style` in addition, which "cascade as any other grouped style
+rules without introducing any new ordering", so they do not necessarily win, and which it alone is made with, its ancestors being made without, as "starting style inherits from the parent's after-change style").
+Only a document whose rule index has an `@starting-style` rule (`gtext_css_rule_index_has_starting_style()`) computes the second style. The current value of a transition at its start time is its start value
+(Transitions 1: "at or before the start time"), so a transition from the starting style that has no delay reads the starting value until time passes, as the text says and both browsers do not for a timing function
+that jumps at 0.
 The specification builds the after-change style from the *before-change* `animation-*` values; this library asks the two styles which properties an animation applies, which agrees for every
 property an animation applies in both and differs when an animation starts or ends in the same event as a change of the property it did not apply before.

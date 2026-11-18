@@ -140,7 +140,7 @@ def plain_text(s):
     return re.sub(r'\s+', ' ', s).strip()
 
 
-QUOTE = re.compile(r'(css-[a-z0-9-]+): "([^"]*)"')
+QUOTE = re.compile(r'((?:css|web-animations)-[a-z0-9-]+): "([^"]*)"')
 
 
 def answer(msg):
@@ -155,10 +155,8 @@ def answer(msg):
 
 
 MESSAGE_OWNERS = [
-    (r'Background transition from @starting-style value', 'owner: src/css transition tracker (the before-change style of an element\'s first style comes from `@starting-style`, Transitions 2 "starting-style": not built)'),
-    (r'but got "(left|top|right|bottom) \d+(\.\d+)?px"$', 'owner: src/css animation sampling (an interpolated background-position component is written with its origin keyword; both browsers write the offset alone)'),
-    (r'but got "rgb\(\d+\.\d+, ', 'owner: src/css animation sampling (an interpolated sRGB color is written with fractional components; both browsers round to 8 bits)'),
-    (r'expected "example-counter \d+" but got "example-counter \d+"', 'owner: src/css animation type of counter-increment (a list of name and integer pairs is interpolated by the integer; both browsers are discrete at the midpoint)'),
+    (r'but got "(left|top|right|bottom) \d+(\.\d+)?px"$', 'owner: src/css animation sampling (an interpolated background-position component keeps its origin keyword, as the computed value of the longhand does in every static read of the library, which lists the same difference as served-text in CSS_COMPUTED_EXCEPTIONS: Backgrounds 4, 2.6; both browsers drop it; css-backgrounds-4 is not among the pinned drafts, so this gate cannot take it as served-text until it is)'),
+    (r'expected "none" but got "image-set\(url', 'owner: src/css transition values (a custom property value that came from attr() is attr-tainted, and the value a transition declares is made from the text of the start and the end value, which carries no taint: css-values-5, "attr() security limitations"; written as a spec, not built)'),
     (r'unsupported, needs (condition|container\.computed_style|sibling_index|sibling_count)', 'owner: src/css/css_markup.c, the element interface the Markup adapter provides (the callback the computed layer asks for is missing)'),
 ]
 
@@ -413,7 +411,7 @@ def main():
             continue
         quotes = [(d, q) for d, q in QUOTE.findall(f[3]) if len(q) >= 20 or len(q.split()) >= 4]
         if not quotes:
-            out.append('SUITE PROBLEMS: %s:%d: a %s reason quotes a sentence of the served draft (as css-NAME-N: "the sentence")' % (os.path.basename(served_path), n, f[2]))
+            out.append('SUITE PROBLEMS: %s:%d: a %s reason quotes a sentence of the served draft (as css-NAME-N: "the sentence", or web-animations-N)' % (os.path.basename(served_path), n, f[2]))
         for d, q in quotes:
             text = drafts.get(d)
             if text is None:

@@ -90,4 +90,15 @@
  */
 #define GTEXT_CSS_READING_DISPLAY_CONTENTS_RENDERED 1
 
+/**
+ * An interpolated color of the legacy sRGB syntax (`rgb()`, `hsl()`, hex, names), as in the middle of a transition from black to white.
+ *
+ * Color 4 says "Implementations should honor the precision of the component as authored or calculated wherever possible. If this is not possible, the component should be rounded towards
+ * +∞" and that the precision of an sRGB component "is not defined in this specification, but must at least be sufficient to round-trip eight bit values": the text allows the calculated
+ * `rgb(127.5, 127.5, 127.5)` and a rounded `rgb(128, 128, 128)` alike. 1 rounds each channel to a whole 8-bit value (a half goes up), which is what Chromium 156.0.8078.47 and Firefox 158.0.1
+ * answer and what the page css/css-transitions/all-interpolates-same-as-explicit-property.html expects. 0 keeps the calculated value. The alpha is not rounded. Used by color_node() in
+ * css_anim_interp.c; held by the test CssAnimationInterp.AnInterpolatedLegacyColorIsRoundedToEightBitChannels.
+ */
+#define GTEXT_CSS_READING_ANIMATED_SRGB_ROUNDED 1
+
 #endif

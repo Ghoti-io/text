@@ -35,6 +35,7 @@
 
 #include "css_anim_internal.h"
 #include "css_compute_internal.h"
+#include "css_readings.h"
 #include "css_shorthand_internal.h"
 
 #define MAX_DEPTH 48
@@ -289,6 +290,9 @@ static const GTEXT_CSS_Value * color_node(bctx * c, const GTEXT_CSS_Value * a, c
     if (alpha > 0.0) {
       for (int i = 0; i < 3; i++) {
         ch[i] = clamp(comb(c, ra[i] * ra[3], rb[i] * rb[3]) / alpha, 0.0, 255.0);
+        if (GTEXT_CSS_READING_ANIMATED_SRGB_ROUNDED) {
+          ch[i] = gmath_floor(ch[i] + 0.5);   /* to a whole 8-bit value, a half rounded towards +infinity ("rounded towards +∞, not truncated", Color 4) */
+        }
       }
     }
     memcpy(buf, "rgb(", 4);

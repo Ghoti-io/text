@@ -115,6 +115,7 @@ struct css_core {
   uint64_t tree_epoch;                 ///< gtext_cssom_document_tree_changed() advances it.
   struct GTEXT_CSSOM_Document * document;   ///< NULL once the handle was released.
   unsigned in_callback;                ///< Inside a notification: nesting depth.
+  bool starting_apply;                 ///< The style being computed is a starting style (gtext_cssom_document_starting_style()): the rules under `@starting-style` take part in its cascade.
   bool no_transitions;                 ///< The styles being computed are the after-change styles (gtext_cssom_document_after_change_style()): the layout's transitions are not given to them.
   unsigned in_finalizer;               ///< Inside a finalizer: nesting depth.
   unsigned computing;                  ///< Computed-style reads running (cssom_computed.c): the caller's tree and layout callbacks run inside them.

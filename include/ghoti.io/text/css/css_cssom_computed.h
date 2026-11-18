@@ -106,6 +106,17 @@ GTEXT_API GTEXT_CSS_Status gtext_cssom_computed_style(GTEXT_CSSOM_Document * doc
 GTEXT_API GTEXT_CSS_Status gtext_cssom_document_after_change_style(GTEXT_CSSOM_Document * document, const void * element, const char * pseudo, size_t pseudo_length,
     GTEXT_CSS_Computed_Style ** out);
 
+/**
+ * @brief The *starting style* of an element or one of its pseudo-elements (CSS Transitions 2, "Defining before-change style: the @starting-style rule"): "the after-change style with @starting-style
+ * rules applied in addition". It is what an element that has no before-change style at a style change event (it was not rendered or not in the document at the previous one) is compared with.
+ *
+ * The rules inside `@starting-style` "cascade as any other grouped style rules without introducing any new ordering to the cascade" (so they do not necessarily win), they do not apply to the
+ * after-change style, and the starting style "inherits from the parent's after-change style just like after-change style does": only the style of `element` (or of its pseudo-element) is made with
+ * them, and its ancestors are made without. Everything else is gtext_cssom_document_after_change_style()'s, and so are the parameters, the result and the statuses.
+ */
+GTEXT_API GTEXT_CSS_Status gtext_cssom_document_starting_style(GTEXT_CSSOM_Document * document, const void * element, const char * pseudo, size_t pseudo_length,
+    GTEXT_CSS_Computed_Style ** out);
+
 /** @brief The transitions of the elements of a document: a set (css_transition.h) and the before-change style for each element and pseudo-element that has been through a style change event. */
 typedef struct GTEXT_CSSOM_Transition_Tracker GTEXT_CSSOM_Transition_Tracker;
 
@@ -173,7 +184,8 @@ GTEXT_API void gtext_cssom_transition_events_free(GTEXT_CSSOM_Transition_Events 
  * @brief One animation frame of the tracker at its time (gtext_cssom_transition_tracker_set_time()): the events of every element and pseudo-element, as gtext_css_transition_set_frame() reports them for
  * each set, and the transitioncancel events of the elements that were forgotten.
  *
- * Order: by element (the order the tracker first saw it in; a flush brings the ancestors of an element in before it, and the tree order of a document is not something the library sees, so a caller
+ * Order: by scheduled event time first (GTEXT_CSS_Transition_Event::scheduled_time_ms: Web Animations 1, "Update animations and send events", a stable sort, so that two elements whose events were
+ * scheduled in a different order than the elements are get them in the order of the time), and between equal times by element (the order the tracker first saw it in; a flush brings the ancestors of an element in before it, and the tree order of a document is not something the library sees, so a caller
  * that needs it sorts by element), then the pseudo-elements of one element as Transitions 2, "Animation composite order", sorts them (the element, `::marker`, `::before`, any other by the codepoints
  * of its name, `::after`), then the composite order of the set. A frame does not flush: elements whose style changed since their last style change event have not started their transitions until
  * gtext_cssom_transition_tracker_flush() is called for them, as in a browser, where the frame follows the style update.

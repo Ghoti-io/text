@@ -65,6 +65,7 @@ typedef struct {
   uint64_t id, generation;
   double start_time, end_time, delay;
   double elapsed;             ///< a cancellation: the active time at the moment, in ms
+  double left_at;             ///< the time it left the running set (a cancellation's scheduled event time)
   GTEXT_CSS_Transition_Phase phase;   ///< the phase the last frame saw it in
   bool cancelled;
 } gone_t;
@@ -442,6 +443,7 @@ static GTEXT_CSS_Status run_leave(GTEXT_CSS_Transition_Set * s, size_t i, double
     g->delay = t->delay;
     g->phase = t->phase;
     g->cancelled = cancelled;
+    g->left_at = time_ms;
     g->elapsed = clamp_range(time_ms - t->start_time, 0, t->end_time - t->start_time);
   }
   run_remove(s, i);
@@ -1197,6 +1199,7 @@ typedef struct {
   GTEXT_CSS_Property_Id property;
   size_t name_off, name_len;
   double elapsed_ms;
+  double scheduled_ms;
 } ev_t;
 
 struct GTEXT_CSS_Transition_Events {
@@ -1247,6 +1250,7 @@ bool gtext_css_transition_events_at(const GTEXT_CSS_Transition_Events * events, 
   out->property = e->property;
   out->property_name = (GTEXT_CSS_String){events->pool + e->name_off, e->name_len};
   out->elapsed_time = e->elapsed_ms / 1000.0;
+  out->scheduled_time_ms = e->scheduled_ms;
   return true;
 }
 
@@ -1299,41 +1303,54 @@ void gtext_css_transition_set_frame_bound(const GTEXT_CSS_Transition_Set * set, 
 
 /// The events of one transition moving from one phase to another (Transitions 2, "Event dispatch", the table), with the elapsed times in ms: "interval start" is `max(min(-start delay, active
 /// duration), 0)` and "interval end" is `max(min(associated effect end - start delay, active duration), 0)`. Returns how many (0 to 3).
-static size_t phase_events(GTEXT_CSS_Transition_Phase from, GTEXT_CSS_Transition_Phase to, double delay, double duration, GTEXT_CSS_Transition_Event_Type type[3], double elapsed[3]) {
+static size_t phase_events(GTEXT_CSS_Transition_Phase from, GTEXT_CSS_Transition_Phase to, double delay, double duration, GTEXT_CSS_Transition_Event_Type type[3], double elapsed[3],
+    double ideal[3]) {
   const double s0 = -delay < duration ? -delay : duration;
   const double istart = s0 <= 0 ? 0.0 : s0;
   /* "max(min(associated effect end - start delay, active duration), 0)": the effect ends at the start delay plus the active duration (and no end delay), so it is the active duration; written so
      that no rounding of the sum can make it differ */
   const double iend = duration <= 0 ? 0.0 : duration;
   const GTEXT_CSS_Transition_Event_Type R = GTEXT_CSS_TRANSITION_EVENT_RUN, S = GTEXT_CSS_TRANSITION_EVENT_START, E = GTEXT_CSS_TRANSITION_EVENT_END;
+  /* The scheduled event time, relative to the start time of the animation (the style change event that made the transition): "when the event would ideally have been dispatched were animations
+     updated at an infinitely high frequency" (Web Animations 1, "Animation events"). The text this library is given does not say the time of each event of a transition (Transitions 2 gives the
+     elapsed times only); the ideal time of an event is the moment its phase change happens: the run when the animation starts, the start when the effect's active interval begins (not before
+     the animation does), the end when the effect ends. An event of a phase change that goes backwards (only a time that moved back, which a caller that has the model gives a frame) has no
+     ideal time, which is -1 here and the time of the frame in the event. */
+  const double at_start = delay > 0 ? delay : 0.0;
+  const double at_end = delay + duration > 0 ? delay + duration : 0.0;
   size_t n = 0;
-#define EV(t, ms) (type[n] = (t), elapsed[n] = (ms), n++)
+#define EV(t, ms, at) (type[n] = (t), elapsed[n] = (ms), ideal[n] = (at), n++)
   if (from == to) {
     return 0;
   }
   switch (from) {
     case GTEXT_CSS_TRANSITION_PHASE_IDLE:
-      EV(R, istart);
+      EV(R, istart, 0.0);
       if (to == GTEXT_CSS_TRANSITION_PHASE_ACTIVE || to == GTEXT_CSS_TRANSITION_PHASE_AFTER) {
-        EV(S, istart);
+        EV(S, istart, at_start);
       }
       if (to == GTEXT_CSS_TRANSITION_PHASE_AFTER) {
-        EV(E, iend);
+        EV(E, iend, at_end);
       }
       break;
     case GTEXT_CSS_TRANSITION_PHASE_BEFORE:
-      EV(S, istart);
+      EV(S, istart, at_start);
       if (to == GTEXT_CSS_TRANSITION_PHASE_AFTER) {
-        EV(E, iend);
+        EV(E, iend, at_end);
       }
       break;
     case GTEXT_CSS_TRANSITION_PHASE_ACTIVE:
-      EV(E, to == GTEXT_CSS_TRANSITION_PHASE_AFTER ? iend : istart);
+      if (to == GTEXT_CSS_TRANSITION_PHASE_AFTER) {
+        EV(E, iend, at_end);
+      }
+      else {
+        EV(E, istart, -1.0);
+      }
       break;
     case GTEXT_CSS_TRANSITION_PHASE_AFTER:
-      EV(S, iend);
+      EV(S, iend, -1.0);
       if (to == GTEXT_CSS_TRANSITION_PHASE_BEFORE) {
-        EV(E, istart);
+        EV(E, istart, -1.0);
       }
       break;
   }
@@ -1343,7 +1360,7 @@ static size_t phase_events(GTEXT_CSS_Transition_Phase from, GTEXT_CSS_Transition
 
 /// Append the events of one transition (the room is reserved): the name once, the events sharing it.
 static void events_add(GTEXT_CSS_Transition_Events * ev, uint64_t id, uint64_t generation, GTEXT_CSS_Property_Id prop, const char * pname, size_t lpn, size_t n,
-    const GTEXT_CSS_Transition_Event_Type * type, const double * elapsed) {
+    const GTEXT_CSS_Transition_Event_Type * type, const double * elapsed, const double * ideal, double event_time, double frame_time) {
   if (!n) {
     return;
   }
@@ -1361,17 +1378,21 @@ static void events_add(GTEXT_CSS_Transition_Events * ev, uint64_t id, uint64_t g
     e->name_off = off;
     e->name_len = lpn;
     e->elapsed_ms = elapsed[i];
+    e->scheduled_ms = ideal[i] >= 0 ? event_time + ideal[i] : frame_time;
   }
 }
 
 /// "Within the set of CSS Transitions ... sort A and B in ascending order by the Unicode codepoints that make up the expanded transition property name of each transition" after the transition
 /// generation; the order the events of one transition were appended in is kept (a stable insertion sort of the events of one frame, which are nearly in order already).
 static bool ev_after(const GTEXT_CSS_Transition_Events * l, const ev_t * a, const ev_t * b) {
+  if (a->transition == b->transition) {
+    return false;   /* the events of one transition keep the order of the table (their scheduled times do not decrease along it) */
+  }
+  if (a->scheduled_ms != b->scheduled_ms) {
+    return a->scheduled_ms > b->scheduled_ms;   /* "Sort the events by their scheduled event time such that events that were scheduled to occur earlier sort before events scheduled to occur later" */
+  }
   if (a->generation != b->generation) {
     return a->generation > b->generation;
-  }
-  if (a->transition == b->transition) {
-    return false;
   }
   const size_t m = a->name_len < b->name_len ? a->name_len : b->name_len;
   const int c = m ? memcmp(l->pool + a->name_off, l->pool + b->name_off, m) : 0;
@@ -1396,6 +1417,49 @@ static void ev_sort(GTEXT_CSS_Transition_Events * l, size_t from) {
   }
 }
 
+/// Where the copy of the events starts in the scratch of the sort: after the `n` indexes, at the alignment an event needs.
+static size_t sort_copy_offset(size_t n) {
+  const size_t a = _Alignof(ev_t);
+  return (n * sizeof(size_t) + a - 1) / a * a;
+}
+
+size_t css_transition_events_sort_bytes(size_t n) {
+  return sort_copy_offset(n) + n * sizeof(ev_t);
+}
+
+void css_transition_events_sort_by_time(GTEXT_CSS_Transition_Events * l, size_t * from, void * scratch) {
+  const size_t n = l ? l->n : 0;
+  size_t * tmp = scratch;
+  ev_t * copy = (ev_t *)((char *)scratch + sort_copy_offset(n));
+  for (size_t i = 0; i < n; i++) {
+    from[i] = i;
+  }
+  /* a bottom-up merge sort of the indexes: stable, n log n, and no allocation */
+  for (size_t width = 1; width < n; width *= 2) {
+    for (size_t lo = 0; lo < n; lo += 2 * width) {
+      const size_t mid = lo + width < n ? lo + width : n;
+      const size_t hi = lo + 2 * width < n ? lo + 2 * width : n;
+      size_t a = lo, b = mid, k = lo;
+      while (a < mid && b < hi) {
+        tmp[k++] = l->ev[from[b]].scheduled_ms < l->ev[from[a]].scheduled_ms ? from[b++] : from[a++];
+      }
+      while (a < mid) {
+        tmp[k++] = from[a++];
+      }
+      while (b < hi) {
+        tmp[k++] = from[b++];
+      }
+    }
+    memcpy(from, tmp, n * sizeof *from);
+  }
+  for (size_t i = 0; i < n; i++) {
+    copy[i] = l->ev[from[i]];
+  }
+  if (n) {
+    memcpy(l->ev, copy, n * sizeof *copy);
+  }
+}
+
 GTEXT_CSS_Status gtext_css_transition_set_frame(GTEXT_CSS_Transition_Set * set, double time_ms, GTEXT_CSS_Transition_Events * events) {
   if (!set || !events || time_ms != time_ms) {
     return GTEXT_CSS_E_INVALID;
@@ -1409,7 +1473,7 @@ GTEXT_CSS_Status gtext_css_transition_set_frame(GTEXT_CSS_Transition_Set * set, 
   /* nothing below can fail, so the set is only changed by a frame that is reported whole */
   const size_t first = events->n;
   GTEXT_CSS_Transition_Event_Type type[3];
-  double elapsed[3];
+  double elapsed[3], ideal[3];
   for (size_t i = 0; i < set->ngone; i++) {
     gone_t * g = &set->gone[i];
     const double duration = g->end_time - g->start_time;
@@ -1417,20 +1481,21 @@ GTEXT_CSS_Status gtext_css_transition_set_frame(GTEXT_CSS_Transition_Set * set, 
     if (g->cancelled) {
       type[0] = GTEXT_CSS_TRANSITION_EVENT_CANCEL;
       elapsed[0] = g->elapsed;
+      ideal[0] = -1.0;   /* the moment of the cancellation */
       n = 1;
     }
     else {
-      n = phase_events(g->phase, GTEXT_CSS_TRANSITION_PHASE_AFTER, g->delay, duration, type, elapsed);
+      n = phase_events(g->phase, GTEXT_CSS_TRANSITION_PHASE_AFTER, g->delay, duration, type, elapsed, ideal);
     }
-    events_add(events, g->id, g->generation, g->prop, g->pname, g->lpn, n, type, elapsed);
+    events_add(events, g->id, g->generation, g->prop, g->pname, g->lpn, n, type, elapsed, ideal, g->start_time - g->delay, g->cancelled ? g->left_at : time_ms);
     gone_free(&set->alloc, g);
   }
   set->ngone = 0;
   for (size_t i = 0; i < set->nrun; i++) {
     tr_t * t = &set->run[i];
     const GTEXT_CSS_Transition_Phase to = phase_at(t->start_time, t->end_time, time_ms);
-    const size_t n = phase_events(t->phase, to, t->delay, t->end_time - t->start_time, type, elapsed);
-    events_add(events, t->id, t->generation, t->prop, t->pname, t->lpn, n, type, elapsed);
+    const size_t n = phase_events(t->phase, to, t->delay, t->end_time - t->start_time, type, elapsed, ideal);
+    events_add(events, t->id, t->generation, t->prop, t->pname, t->lpn, n, type, elapsed, ideal, t->start_time - t->delay, time_ms);
     t->phase = to;
     t->ready = true;
   }

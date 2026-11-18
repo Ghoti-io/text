@@ -107,6 +107,14 @@ bool css_property_is_discrete(const GTEXT_CSS_Registry * registry, GTEXT_CSS_Pro
 /// The easing function of a serialized `transition-timing-function` item (never NULL on GTEXT_CSS_OK); release with gtext_css_easing_free().
 GTEXT_CSS_Status css_easing_from_text(const GTEXT_CSS_Registry * registry, const GTEXT_Allocator * alloc, const char * text, size_t length, GTEXT_CSS_Easing ** out);
 
+/// The bytes of scratch css_transition_events_sort_by_time() needs to sort `n` events.
+size_t css_transition_events_sort_bytes(size_t n);
+
+/// Stable sort of a list of events by their scheduled event time (Web Animations 1, "Update animations and send events": "Perform a stable sort of the animation events ... Sort the events by
+/// their scheduled event time"), the order they were appended in deciding between equal times. `from[i]` receives the index the event now at `i` had. It cannot fail: `scratch` is
+/// css_transition_events_sort_bytes(n) bytes, suitably aligned for a pointer, and `from` has room for `n` indexes.
+void css_transition_events_sort_by_time(GTEXT_CSS_Transition_Events * events, size_t * from, void * scratch);
+
 /// Sample the running transitions of an element over `base`, the winners of its cascade after the animations (`animated_block` may be that block, or NULL for `base`): each transition that
 /// is undergoing at `time_ms` and whose property no animation applied (`applied`) has its current value declared in a copy of the block in `*transitioned` (the caller's); NULL if none.
 GTEXT_CSS_Status css_transition_sample(const GTEXT_CSS_Compute_Context * cc, const GTEXT_CSS_Style_Options * options, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Computed_Style * parent,

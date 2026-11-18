@@ -455,7 +455,7 @@ transition-version-ignored	cssom_computed.c	    v += 0x9E3779B97F4A7C15ull * (co
 transitions-without-version-are-cached	cssom_computed.c	  else if (core->layout.transitions) {\n    *cacheable = false;	  else if (0) {\n    *cacheable = false;	transition
 after-change-style-has-transitions	cssom_computed.c	    core->no_transitions = true;\n    sync_pair(core, cs, cacheable, tree, time);	    core->no_transitions = false;\n    sync_pair(core, cs, cacheable, tree, time);	transition
 layout-transitions-not-asked	cssom_computed.c	  if (!core->no_transitions && core->has_layout && core->layout.transitions) {	  if (0 && core->has_layout && core->layout.transitions) {	transition
-tracker-first-event-has-a-before-style	cssom_computed.c	e->before && e->before->cc == after->cc ? e->before : NULL, after,	after, after,	transition
+tracker-first-event-has-a-before-style	cssom_computed.c	= e->before && e->before->cc == after->cc ? e->before : NULL;	= after;	transition
 tracker-keeps-the-previous-style	cssom_computed.c	  gtext_css_computed_free(e->before);\n  e->before = gtext_css_computed_retain(after);\n  return GTEXT_CSS_OK;	  return GTEXT_CSS_OK;	transition
 tracker-pseudo-element-shares-the-elements-set	cssom_computed.c	    *key = s->name.data ? s->name.data : "";\n    *length = s->name.data ? s->name.length : 0;	    *key = "";\n    *length = 0;	transition
 tracker-forget-keeps-the-set	cssom_computed.c	    if (tracker->entries[i].element != element) {\n      i++;\n      continue;	    if (1) {\n      i++;\n      continue;	transition
@@ -559,10 +559,17 @@ tracker-unrender-keeps-the-before-change-style	cssom_computed.c	    gtext_css_co
 tracker-unrender-does-not-cancel	cssom_computed.c	    GTEXT_CSS_Status st = gtext_css_transition_set_cancel_all(e->set, t->time_ms);	    GTEXT_CSS_Status st = GTEXT_CSS_OK;	transition
 tracker-events-pseudo-elements-in-creation-order	cssom_computed.c	  const int ra = pseudo_rank(a), rb = pseudo_rank(b);	  const int ra = 0, rb = 0;	transition
 tracker-events-pseudo-element-without-two-colons	cssom_computed.c	(pseudo[0] == ':' ? (length > 1 && pseudo[1] == ':' ? 0 : 1) : 2);	(pseudo[0] == ':' ? 0 : 2);	transition
-tracker-events-retired-entries-not-reported	cssom_computed.c	  const size_t total = tracker->count + tracker->nretired;	  const size_t total = tracker->count;	transition
+tracker-events-retired-entries-not-reported	cssom_computed.c	  const size_t total = tracker->count + tracker->nretired;\n  const tracker_entry ** order = gtext_allocator_calloc(&tracker->alloc, total ? total : 1, sizeof *order);\n  if (!order) {\n    return GTEXT_CSS_E_OOM;\n  }\n  size_t m = 0, need_events = 0, need_names = 0;\n	  const size_t total = tracker->count;\n  const tracker_entry ** order = gtext_allocator_calloc(&tracker->alloc, total ? total : 1, sizeof *order);\n  if (!order) {\n    return GTEXT_CSS_E_OOM;\n  }\n  size_t m = 0, need_events = 0, need_names = 0;\n	transition
 tracker-forget-drops-the-cancellations	cssom_computed.c	    st = gtext_css_transition_set_cancel_all(tracker->entries[i].set, tracker->time_ms);	    st = GTEXT_CSS_OK;	transition
 tracker-display-transition-does-not-hold-an-element-rendered	cssom_computed.c	style_is_not_rendered(core, after) && !entry_transitions_display(tracker, core, chain[i], "", 0)) {	style_is_not_rendered(core, after)) {	transition
 tracker-accepts-a-time-that-is-not-a-number	cssom_computed.c	  if (tracker && time_ms == time_ms && tracker->time_ms != time_ms) {	  if (tracker && tracker->time_ms != time_ms) {	transition
 tracker-new-set-restarts-the-ids	cssom_computed.c	    gtext_css_transition_set_start_ids_after(fresh.set, t->id_high);		transition
 tracker-display-contents-is-not-rendered	cssom_computed.c	  return !GTEXT_CSS_READING_DISPLAY_CONTENTS_RENDERED && root->text.length == 8	  return root->text.length == 8	transition
 tracker-element-not-in-the-document-has-an-after-change-style	cssom_computed.c	    if (st != GTEXT_CSS_OK || !rendered) {	    if (st != GTEXT_CSS_OK) {	transition
+tracker-first-style-is-not-compared-with-the-starting-style	cssom_computed.c	      before = starting;	      before = NULL;	transition
+starting-style-rules-apply-to-the-after-change-style	cssom_computed.c	      core->starting_apply = starting && i == 0 && !list;	      core->starting_apply = i == 0 && !list;	transition
+starting-style-rules-apply-to-the-ancestors	cssom_computed.c	      core->starting_apply = starting && i == 0 && !list;	      core->starting_apply = starting && !list;	transition
+starting-style-pseudo-element-is-computed-without-the-rules	cssom_computed.c	      core->starting_apply = starting;\n      st = pseudo_style_of	      core->starting_apply = false;\n      st = pseudo_style_of	transition
+rule-index-does-not-see-a-starting-rule	css_rule_index.c	    if (c->kind == SCK_STARTING_STYLE) {\n      x->has_starting = true;	    if (c->kind == SCK_STARTING_STYLE) {\n      x->has_starting = false;	transition
+tracker-events-not-sorted-by-scheduled-time	cssom_computed.c	    css_transition_events_sort_by_time(ev->list, from, scratch);	    for (size_t k = 0; k < gtext_css_transition_events_count(ev->list); k++) {\n      from[k] = k;\n    }	transition
+tracker-events-sort-leaves-the-elements-behind	cssom_computed.c	      element2[k] = ev->element[from[k]];	      element2[k] = ev->element[k];	transition

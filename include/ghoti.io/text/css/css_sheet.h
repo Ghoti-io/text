@@ -403,6 +403,9 @@ GTEXT_API const GTEXT_CSS_Layer_Registry * gtext_css_rule_index_layers(const GTE
 
 /** @brief How many records the index holds, and how many sheets (imports included). */
 GTEXT_API size_t gtext_css_rule_index_record_count(const GTEXT_CSS_Rule_Index * index);
+
+/** @brief Whether any sheet of the index has an `@starting-style` rule (so that a consumer that needs the starting style of Transitions 2 can skip computing it when none does). NULL is false. */
+GTEXT_API bool gtext_css_rule_index_has_starting_style(const GTEXT_CSS_Rule_Index * index);
 GTEXT_API size_t gtext_css_rule_index_sheet_count(const GTEXT_CSS_Rule_Index * index);
 
 /** @brief What collecting may be told. A zeroed struct is the default. */

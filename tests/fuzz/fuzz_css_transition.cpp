@@ -32,7 +32,7 @@
  *  - the style shown at the time of an event after it ran is a style, and a style computed from the same set at the same time twice is the same (a pure function of its inputs);
  *  - a failed allocation (every fourth input arms one) is OOM or OK, leaves the set as it was, and leaks nothing;
  *  - the animation frames taken between the events (Transitions 2, "Event dispatch"): a frame answers OK or OOM and leaves nothing behind when it fails (the same frame is then made again), the
- *    elapsed time of an event is finite and not negative, the events of a frame are in the composite order (generation, then the name of the property), the first event of a transition is its
+ *    elapsed time of an event is finite and not negative, the events of a frame are in the order of their scheduled event times and, between equal ones, in the composite order (generation, then the name of the property), the first event of a transition is its
  *    `transitionrun`, nothing follows a `transitioncancel`, a transition is cancelled once, and the snapshot of a running transition (its `CSSTransition`) has the id and the property of the set's.
  *
  * Build with: make fuzz-css-transition      Run: make fuzz-run-css-transition
@@ -152,6 +152,7 @@ void take_frame(GTEXT_CSS_Transition_Set * set, double time, FaultAllocator & fa
     fail("a frame failed with a status other than OOM", std::to_string(static_cast<int>(st)));
   }
   uint64_t generation = 0, previous = 0;
+  double scheduled = -1e300;
   std::string name;
   for (size_t i = 0; i < gtext_css_transition_events_count(ev); i++) {
     GTEXT_CSS_Transition_Event e{};
@@ -162,9 +163,18 @@ void take_frame(GTEXT_CSS_Transition_Set * set, double time, FaultAllocator & fa
       fail("an event has an elapsed time out of range", std::to_string(e.elapsed_time));
     }
     const std::string n(e.property_name.data, e.property_name.length);
-    if (e.generation < generation || (e.generation == generation && e.transition != previous && n < name)) {
-      fail("the events of a frame are not in the composite order", n);
+    if (!(e.scheduled_time_ms >= scheduled)) {
+      fail("the events of a frame are not in the order of their scheduled event times", n);
     }
+    if (e.scheduled_time_ms > scheduled) {
+      generation = 0;   /* the composite order is the order between events of one scheduled time */
+      previous = 0;
+      name.clear();
+    }
+    if (e.generation < generation || (e.generation == generation && e.transition != previous && n < name)) {
+      fail("the events of a frame of one scheduled time are not in the composite order", n);
+    }
+    scheduled = e.scheduled_time_ms;
     generation = e.generation;
     previous = e.transition;
     name = n;

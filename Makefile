@@ -2700,7 +2700,7 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=0
 CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4532 CSS_COMPUTED_MAX_DEFECTS=0
 CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=240
 CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX_DEFECTS=0 CSS_CSSOM_MIN_FRACTION=2418 \
-	CSS_CSSOM_SCRIPT_MIN_SCORED=5676 CSS_CSSOM_SCRIPT_MIN_PAGES=682 CSS_CSSOM_SCRIPT_MAX_DEFECTS=18 CSS_CSSOM_SCRIPT_MAX_LAYOUT=678 CSS_CSSOM_SCRIPT_MAX_TIMELINE=0 CSS_CSSOM_SCRIPT_MAX_UA=4
+	CSS_CSSOM_SCRIPT_MIN_SCORED=5676 CSS_CSSOM_SCRIPT_MIN_PAGES=682 CSS_CSSOM_SCRIPT_MAX_DEFECTS=11 CSS_CSSOM_SCRIPT_MAX_LAYOUT=678 CSS_CSSOM_SCRIPT_MAX_TIMELINE=0 CSS_CSSOM_SCRIPT_MAX_UA=4
 # What moved with the pin of web-platform-tests of 2026-11-10 (CSS-PLAN.md C5e21): the scored counts and pages go up with the new pages that are read (a floor that goes up); the share of the touched
 # tests that is scored goes from 2196 to 2190 in ten thousand because 1,300 of the 1,500 added tests are reftests and layout tests, which no gate here scores (a floor that goes down, with its
 # reason); 27 pages need a layout that did not (the ceiling of layout tests goes from 631 to 658); and ONE defect is above the old ceiling of 0 (highlight-cascade-currentcolor-color-mix.html#0:
@@ -2715,6 +2715,11 @@ CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
 conformance-css-computed: $(CONFORMANCE_LIB)
+# What moved with the fixes of the recorded defects: the ceiling of defects goes DOWN from 18 to 11. `@starting-style` for the first style (six tests) and the rounding of an interpolated
+# sRGB color (one) are fixed; the integer of counter-increment (one) is `served-text` (Web Animations 1: the components of a computed value type are combined, and the identifiers are equal); the two
+# background-position tests stay defects, with a reason that says why (the text keeps the origin keyword, as every static read of the library does, and css-backgrounds-4 is not pinned among the drafts); and
+# TWO tests of css-values/attr-security-transition-interpolated.html are `served-text` (a transition is at its start time at the first style update: Transitions 1, "at or before the start time") and ONE
+# test of attr-security-transition.html is a new defect (the attr() taint of a custom property value does not survive a transition: not built), found because `@starting-style` now starts the transition.
 	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/support,tools/css/fetch.sh)
 	@$(call REQUIRE_DATA,$(CSS_DATA_DIR)/wpt/css/css-grid/parsing,tools/css/fetch.sh)
 	@$(CONFORMANCE_ENV) $(CSS_COMPUTED_FLOOR) tools/conformance/run-css-computed.sh && \

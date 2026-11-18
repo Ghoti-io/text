@@ -34,6 +34,7 @@ sample-revert-rolls-back-only-the-layer	css_anim_sample.c	{"revert", ROLL_ORIGIN
 sample-revert-keeps-what-nothing-declares	css_anim_sample.c	      st = gtext_css_block_remove(b, custom ? 0 : want.property, custom ? want.custom_name.data : NULL, custom ? want.custom_name.length : 0, NULL);	      st = GTEXT_CSS_OK;	sample
 sample-revert-layer-reaches-the-block	css_anim_sample.c	    if (roll == ROLL_LAYER) {\n      continue;   /* the underlying value */	    if (0) {\n      continue;   /* the underlying value */	sample
 sample-revert-takes-no-longhand-of-the-rollback	css_anim_sample.c	    const bool found = gtext_css_block_find(rolled,	    const bool found = 0 && gtext_css_block_find(rolled,	sample
+interp-srgb-not-rounded	css_anim_interp.c	        if (GTEXT_CSS_READING_ANIMATED_SRGB_ROUNDED) {\n          ch[i] = gmath_floor(ch[i] + 0.5);	        if (0) {\n          ch[i] = gmath_floor(ch[i] + 0.5);	interp
 anim-timing-before-boundary-inclusive	timing.c	  if (lt < before_boundary || (backwards && !endpoint_inclusive && lt == before_boundary)) {	  if (lt <= before_boundary || (backwards && !endpoint_inclusive && lt == before_boundary)) {	animtiming
 anim-timing-backwards-start-boundary-is-active	timing.c	(backwards && !endpoint_inclusive && lt == before_boundary)	(0 && backwards && !endpoint_inclusive && lt == before_boundary)	animtiming
 anim-timing-endpoint-inclusive-flag-ignored	timing.c	(!backwards && !endpoint_inclusive && lt == after_boundary)	(!backwards && lt == after_boundary)	animtiming

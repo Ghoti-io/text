@@ -120,6 +120,7 @@ struct GTEXT_CSS_Rule_Index {
   struct req_slot * reqs;             ///< The distinct container requests of the index, for the limit.
   size_t nreqs, capreqs;
   bool frozen, failed, has_shadow;
+  bool has_starting; ///< some sheet has an `@starting-style` rule (gtext_css_rule_index_has_starting_style())
   bool has_part; ///< some sheet, a document's too, has a rule ending in `::part()`: it reaches into shadow trees whether or not one has a sheet of its own
 };
 
@@ -465,6 +466,9 @@ static GTEXT_CSS_Status evaluate_nodes(GTEXT_CSS_Rule_Index * x, placed * p, GTE
   }
   for (uint32_t id = 1; id <= sheet->nconds; id++) {
     const sheet_cond * c = &sheet->conds[id - 1];
+    if (c->kind == SCK_STARTING_STYLE) {
+      x->has_starting = true;
+    }
     const uint8_t pt = c->parent ? p->tv[c->parent] : (uint8_t)TV_OK;
     bool own = false;
     GTEXT_CSS_Tristate t = GTEXT_CSS_TRI_UNKNOWN;
@@ -926,6 +930,10 @@ const GTEXT_CSS_Layer_Registry * gtext_css_rule_index_layers(const GTEXT_CSS_Rul
 
 size_t gtext_css_rule_index_record_count(const GTEXT_CSS_Rule_Index * x) {
   return x ? x->total : 0;
+}
+
+bool gtext_css_rule_index_has_starting_style(const GTEXT_CSS_Rule_Index * x) {
+  return x && x->has_starting;
 }
 
 size_t gtext_css_rule_index_sheet_count(const GTEXT_CSS_Rule_Index * x) {

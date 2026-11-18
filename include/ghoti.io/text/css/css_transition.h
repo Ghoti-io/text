@@ -55,7 +55,7 @@
  * the time is before the start time, `active` from the start time to the end time, `after` from the end time on; `idle` until the first frame that sees the transition, and after it is
  * cancelled), the table of changes ("idle -> before: transitionrun", "before -> after: transitionstart, transitionend", "not idle and not after -> idle: transitioncancel" and the rest) and its
  * elapsed times ("interval start" is `max(min(-start delay, active duration), 0)`, "interval end" the active duration, and the time a transitioncancel gives is the active time at the moment of
- * cancellation with a fill of both). Events come in the order of the composite order of the transitions of one element ("sort ... in ascending order by the Unicode codepoints that make up the
+ * cancellation with a fill of both). Events come in the order of their scheduled event times (Web Animations 1, "Update animations and send events": a stable sort by it, then by the composite order), and within equal times in the composite order of the transitions of one element ("sort ... in ascending order by the Unicode codepoints that make up the
  * expanded transition property name", after the transition generation; a transitioncancel "use[s] the owning element and transition generation that were set immediately prior to canceling").
  * Cancellations are queued as they happen (a style change event cancels, replaces or reverses a transition; gtext_css_transition_set_cancel_all() is the element that is no longer being rendered or
  * is no longer in the document) and are reported by the next frame, which is what the table's last row is. A transition that is cancelled before any frame saw it reports nothing ("idle -> idle"); a
@@ -210,6 +210,9 @@ typedef struct {
   GTEXT_CSS_Property_Id property;           ///< The longhand, or 0 for a custom property.
   GTEXT_CSS_String property_name;           ///< `propertyName`: the name of the longhand, or the custom property's name.
   double elapsed_time;                      ///< `elapsedTime`, in seconds.
+  /** The *scheduled event time* (Web Animations 1, "Animation events"): "when the event would ideally have been dispatched were animations updated at an infinitely high frequency", on the clock of
+   *  the transitions' times, in milliseconds. A frame is in this order, by it. Not a member of the event the page sees. */
+  double scheduled_time_ms;
 } GTEXT_CSS_Transition_Event;
 
 /** @brief The events of one or more frames. Opaque; release with gtext_css_transition_events_free(). */
@@ -239,7 +242,7 @@ GTEXT_API GTEXT_CSS_Status gtext_css_transition_events_reserve(GTEXT_CSS_Transit
 
 /**
  * @brief One animation frame of a set: the events that moving each transition from the phase it was last seen in to its phase at `time_ms` dispatches, then those of the transitions that were
- * cancelled or completed since the last frame. They are appended to `events` in the composite order of the set (Transitions 2, "Animation composite order"), and the set's record of each transition's
+ * cancelled or completed since the last frame. They are appended to `events` in the order Web Animations 1 gives a frame's events (by the scheduled event time of each, then in the composite order of the set: Transitions 2, "Animation composite order"), and the set's record of each transition's
  * phase moves on, so that the same time asked again reports nothing. A transition's first frame also makes it ready (its `pending` ends).
  *
  * All or nothing: on a failure the set and the list are as they were.

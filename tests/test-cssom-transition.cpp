@@ -689,6 +689,35 @@ TEST(CssomTransitionEvents, PseudoElementsAreInTheCompositeOrderAndNamedWithTwoC
   EXPECT_TRUE(at_element);
 }
 
+/* "Perform a stable sort of the animation events ... Sort the events by their scheduled event time ... Within events with equal scheduled event times, sort by their composite order" (Web Animations 1,
+   "Update animations and send events"): the events of two elements in one frame are in the order of the time each was scheduled for, and the element that was first seen is first only between equal
+   times. The first element (`a`) has the longer transition, so its end comes after the second's whole life. */
+TEST(CssomTransitionEvents, TheEventsOfTwoElementsAreInTheOrderOfTheirScheduledTimes) {
+  Tr t(page("div { width: 100px } #a { transition: width 1s linear } #b { transition: width 100ms linear } .on { width: 200px }", "<div id=a></div><div id=b></div>"));
+  t.at(0);
+  t.flush("#a");
+  t.flush("#b");
+  t.set_class("#a", "on");
+  t.set_class("#b", "on");
+  t.at(10);
+  t.flush("#a");
+  t.flush("#b");
+  t.at(5000);
+  GTEXT_CSSOM_Transition_Events * ev = nullptr;
+  ASSERT_EQ(gtext_cssom_transition_tracker_events(t.tracker, &ev), GTEXT_CSS_OK);
+  std::string out;
+  for (size_t i = 0; i < gtext_cssom_transition_events_count(ev); i++) {
+    GTEXT_CSSOM_Transition_Event e{};
+    ASSERT_TRUE(gtext_cssom_transition_events_at(ev, i, &e));
+    static const char * const names[] = {"run", "start", "end", "cancel"};
+    char buf[48];
+    std::snprintf(buf, sizeof buf, "@%g", e.event.scheduled_time_ms);
+    out += std::string(i ? " " : "") + (e.element == t.m.handle("#a") ? "a" : e.element == t.m.handle("#b") ? "b" : "?") + ":" + names[e.event.type] + buf;
+  }
+  gtext_cssom_transition_events_free(ev);
+  EXPECT_EQ(out, "a:run@10 a:start@10 b:run@10 b:start@10 b:end@110 a:end@1010");
+}
+
 /* All or nothing: every allocation of a tracker's frame fails in turn (the list, its room, the order, the names), and of the forgetting of an element (the room of the retired entries): a failure
    reports nothing and moves no set on, and the same call then reports everything. */
 TEST(CssomTransitionEventsOom, EveryAllocationOfAFrameAndOfForgettingFailsCleanly) {
@@ -760,6 +789,127 @@ TEST(CssomTransitionEventsOom, EveryAllocationOfAFrameAndOfForgettingFailsCleanl
     }
     EXPECT_GT(failures, 0u);
   }
+}
+
+/* ---- @starting-style -------------------------------------------------------------------------------------------------------------------------------- */
+
+const char * kStart = "#t { background-color: white; transition: background-color 1s linear } @starting-style { #t { background-color: black } }";
+
+/* Transitions 2, "Defining before-change style": "If an element does not have a before-change style for a given style change event, the starting style is used instead of the before-change
+   style to compare with the after-change style to start transitions." The first event of an element starts a transition from the style with the `@starting-style` rules to the one without. */
+TEST(CssomStartingStyle, TheFirstEventOfAnElementStartsATransitionFromItsStartingStyle) {
+  Tr t(page(kStart));
+  t.at(0);
+  t.flush("#t");
+  EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(0, 0, 0)") << "at the start time the current value is the starting value";
+  t.at(500);
+  EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(128, 128, 128)");
+  t.at(1000);
+  EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(255, 255, 255)");
+}
+
+/* "Style rules in @starting-style do not apply to after-change style": once the transition is over, and for a style that is read with no event at all, the starting rules are nowhere. */
+TEST(CssomStartingStyle, TheRulesDoNotApplyToTheAfterChangeStyleOrToAReadWithNoEvent) {
+  Tr t(page(kStart));
+  EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(255, 255, 255)") << "no event, no starting style";
+  t.at(0);
+  t.flush("#t");
+  t.at(5000);
+  EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(255, 255, 255)");
+  /* the second event has a before-change style: the starting style is not used again */
+  t.flush("#t");
+  t.at(5100);
+  EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(255, 255, 255)");
+}
+
+/* "The rules inside @starting-style cascade as any other grouped style rules without introducing any new ordering to the cascade, which means rules inside @starting-style do not necessarily win
+   over those outside": a rule of the same specificity that comes after the `@starting-style` rule wins, and the starting style is then the style, and nothing starts. */
+TEST(CssomStartingStyle, ARuleOutsideThatWinsTheCascadeLeavesNothingToTransitionFrom) {
+  Tr t(page("@starting-style { #t { background-color: black } } #t { background-color: white; transition: background-color 1s linear }"));
+  t.at(0);
+  t.flush("#t");
+  t.at(500);
+  EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(255, 255, 255)");
+  /* and the same rules, with the specificity of the starting rule higher, give the transition */
+  Tr u(page("@starting-style { #t { background-color: black } } div { background-color: white; transition: background-color 1s linear }"));
+  u.at(0);
+  u.flush("#t");
+  u.at(500);
+  EXPECT_EQ(u.width("#t", nullptr, "background-color"), "rgb(128, 128, 128)");
+}
+
+/* An element that was not being rendered at the previous style change event has no before-change style either: `display: none` and back starts the transition again ("the elements that change
+   from not being rendered to being rendered"). */
+TEST(CssomStartingStyle, AnElementThatBecomesRenderedStartsAgainFromItsStartingStyle) {
+  Tr t(page(std::string(kStart) + " #t.hide { display: none }"));
+  t.at(0);
+  t.flush("#t");
+  t.at(2000);
+  EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(255, 255, 255)");
+  t.set_class("#t", "hide");
+  t.flush("#t");
+  t.at(3000);
+  t.set_class("#t", "");
+  t.flush("#t");
+  EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(0, 0, 0)") << "a new transition from the starting style";
+  t.at(3500);
+  EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(128, 128, 128)");
+}
+
+/* An element that was forgotten (it left the document) and comes back is a first style again. */
+TEST(CssomStartingStyle, AnElementThatCameBackIntoTheDocumentStartsFromItsStartingStyle) {
+  Tr t(page(kStart));
+  t.at(0);
+  t.flush("#t");
+  t.at(2000);
+  size_t gone = 0;
+  ASSERT_EQ(gtext_cssom_transition_tracker_forget(t.tracker, t.m.handle("#t"), &gone), GTEXT_CSS_OK);
+  t.flush("#t");
+  EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(0, 0, 0)");
+  t.at(2500);
+  EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(128, 128, 128)");
+}
+
+/* A pseudo-element is an element for this, as it is for the transitions: the starting style of `::before` comes from the rules under `@starting-style` that match it. */
+TEST(CssomStartingStyle, APseudoElementHasAStartingStyleToo) {
+  Tr t(page("#t::before { content: ''; background-color: white; transition: background-color 1s linear } @starting-style { #t::before { background-color: black } }"));
+  t.at(0);
+  t.flush("#t", "::before");
+  EXPECT_EQ(t.width("#t", "::before", "background-color"), "rgb(0, 0, 0)");
+  t.at(500);
+  EXPECT_EQ(t.width("#t", "::before", "background-color"), "rgb(128, 128, 128)");
+}
+
+/* "Starting style inherits from the parent's after-change style just like after-change style does": the parent's own starting rules are not its child's inheritance. The child has no starting rule,
+   so its starting style is its after-change style and nothing starts, though the parent's starting style (which the parent is compared with, and has no transition for) has another color. */
+TEST(CssomStartingStyle, TheStartingStyleInheritsFromTheParentsAfterChangeStyle) {
+  Tr t(page("#p { color: rgb(0, 0, 100) } @starting-style { #p { color: rgb(100, 0, 0) } } #t { transition: color 1s linear }", "<div id=p><div id=t></div></div>"));
+  t.at(0);
+  t.flush("#t");
+  t.at(500);
+  EXPECT_EQ(t.width("#t", nullptr, "color"), "rgb(0, 0, 100)");
+  /* and a child whose own starting rule names the inherited color starts from the parent's after-change color, not from the one the parent's starting rule gives */
+  Tr u(page("#p { color: rgb(0, 0, 100) } @starting-style { #p { color: rgb(100, 0, 0) } #t { color: rgb(200, 0, 0) } } #t { transition: color 1s linear }", "<div id=p><div id=t></div></div>"));
+  u.at(0);
+  u.flush("#t");
+  EXPECT_EQ(u.width("#t", nullptr, "color"), "rgb(200, 0, 0)");
+  u.at(1000);
+  EXPECT_EQ(u.width("#t", nullptr, "color"), "rgb(0, 0, 100)") << "the end value is the one inherited from the parent's after-change style";
+}
+
+/* The second style is made only where a rule can change it: a document with no `@starting-style` rule has none (and the answer to every test above that has one is the proof that it is asked). */
+TEST(CssomStartingStyle, TheIndexSaysWhetherADocumentHasAStartingRule) {
+  Tr with(page(kStart));
+  const GTEXT_CSS_Rule_Index * index = nullptr;
+  ASSERT_EQ(gtext_cssom_document_index(with.m.doc->d, &index), GTEXT_CSS_OK);
+  EXPECT_TRUE(gtext_css_rule_index_has_starting_style(index));
+  Tr without(page(kBox));
+  ASSERT_EQ(gtext_cssom_document_index(without.m.doc->d, &index), GTEXT_CSS_OK);
+  EXPECT_FALSE(gtext_css_rule_index_has_starting_style(index));
+  EXPECT_FALSE(gtext_css_rule_index_has_starting_style(nullptr));
+  GTEXT_CSS_Computed_Style * style = nullptr;
+  EXPECT_EQ(gtext_cssom_document_starting_style(nullptr, with.m.handle("#t"), nullptr, 0, &style), GTEXT_CSS_E_INVALID);
+  EXPECT_EQ(gtext_cssom_document_starting_style(with.m.doc->d, nullptr, nullptr, 0, &style), GTEXT_CSS_E_INVALID);
 }
 
 } // namespace

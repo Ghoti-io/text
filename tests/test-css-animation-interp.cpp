@@ -102,6 +102,18 @@ TEST(CssAnimationInterp, ALegacyColorIsInterpolatedInSrgbPremultiplied) {
 }
 
 /* A pair of lists of one shape is combined item by item; a pair that differs in a keyword is discrete. */
+/* Color 4: the precision of an sRGB component "must at least be sufficient to round-trip eight bit values" and a component that is rounded is "rounded towards +infinity, not truncated". Both
+   browsers (and css/css-transitions/all-interpolates-same-as-explicit-property.html) write the middle of black and white as 128 and not 127.5 (GTEXT_CSS_READING_ANIMATED_SRGB_ROUNDED). */
+TEST(CssAnimationInterp, AnInterpolatedLegacyColorIsRoundedToEightBitChannels) {
+  EXPECT_EQ(mix("color", "black", "white", 0.5), "rgb(128 128 128)") << "127.5 goes up";
+  EXPECT_EQ(mix("color", "rgb(0, 0, 0)", "rgb(255, 255, 255)", 0.25), "rgb(64 64 64)") << "63.75";
+  EXPECT_EQ(mix("color", "rgb(0, 0, 0)", "rgb(255, 255, 255)", 0.2), "rgb(51 51 51)") << "51 exactly";
+  EXPECT_EQ(mix("color", "rgb(10, 20, 30)", "rgb(11, 22, 31)", 0.4), "rgb(10 21 30)") << "10.4 down, 20.8 up, 30.4 down";
+  /* the endpoints and a premultiplied pair keep their meaning: only the channel is rounded, and never past the 8-bit range */
+  EXPECT_EQ(mix("color", "rgba(0, 0, 0, 0)", "rgb(101, 201, 1)", 0.5), "rgb(101 201 1 / 0.5)");
+  EXPECT_EQ(mix("color", "rgb(250, 250, 250)", "rgb(255, 255, 255)", 1.5), "rgb(255 255 255)");
+}
+
 TEST(CssAnimationInterp, AListIsCombinedByItem) {
   EXPECT_EQ(mix("text-shadow", "rgb(0, 200, 0) 1px 2px 3px", "rgb(100, 0, 200) 3px 2px 1px", 0.5), "rgb(50 100 100) 2px 2px 2px 0px") << "(the computed value of a shadow has the four lengths of the pin's prose)";
   bool discrete = false;

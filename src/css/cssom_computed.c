@@ -37,6 +37,7 @@
 #include <string.h>
 
 #include <ghoti.io/text/css/css_container.h>
+#include "css_anim_internal.h"
 #include "css_compute_internal.h"
 #include "css_match_internal.h"
 #include "css_readings.h"
@@ -656,6 +657,7 @@ static GTEXT_CSS_Status compute_one_hl(css_core * core, css_cmps * cs, const GTE
   so.rules = index;
   so.match = cs->match;
   so.container_call = &cs->call;
+  so.starting_style = core->starting_apply;
   GTEXT_CSS_Flow origin_flow;
   if (pseudo) {
     so.pseudo = pseudo;
@@ -1190,8 +1192,9 @@ GTEXT_CSS_Status gtext_cssom_computed_style(GTEXT_CSSOM_Document * document, con
   return GTEXT_CSS_OK;
 }
 
-GTEXT_CSS_Status gtext_cssom_document_after_change_style(GTEXT_CSSOM_Document * document, const void * element, const char * pseudo, size_t pseudo_length,
-    GTEXT_CSS_Computed_Style ** out) {
+/// The after-change style of an element or pseudo-element, or its starting style (`starting`: the rules under `@starting-style` take part in the cascade of that one style, and only of it: it
+/// "inherits from the parent's after-change style just like [the] after-change style does").
+static GTEXT_CSS_Status after_change_style(GTEXT_CSSOM_Document * document, const void * element, const char * pseudo, size_t pseudo_length, bool starting, GTEXT_CSS_Computed_Style ** out) {
   if (!document || !element || !out || (!pseudo && pseudo_length)) {
     return GTEXT_CSS_E_INVALID;
   }
@@ -1265,13 +1268,17 @@ GTEXT_CSS_Status gtext_cssom_document_after_change_style(GTEXT_CSSOM_Document * 
     }
     for (size_t i = n; st == GTEXT_CSS_OK && i-- > 0;) {
       GTEXT_CSS_Computed_Style * made = NULL;
+      core->starting_apply = starting && i == 0 && !list;
       st = compute_one(core, cs, index, chain[i], current, NULL, &made);
+      core->starting_apply = false;
       gtext_css_computed_free(current);
       current = st == GTEXT_CSS_OK ? made : NULL;
     }
     if (st == GTEXT_CSS_OK && list) {
       GTEXT_CSS_Computed_Style * of_pseudo = NULL;
+      core->starting_apply = starting;
       st = pseudo_style_of(core, cs, index, element, current, list, &of_pseudo);
+      core->starting_apply = false;
       gtext_css_computed_free(current);
       current = st == GTEXT_CSS_OK ? of_pseudo : NULL;
     }
@@ -1293,6 +1300,16 @@ GTEXT_CSS_Status gtext_cssom_document_after_change_style(GTEXT_CSSOM_Document * 
   }
   *out = current;
   return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status gtext_cssom_document_after_change_style(GTEXT_CSSOM_Document * document, const void * element, const char * pseudo, size_t pseudo_length,
+    GTEXT_CSS_Computed_Style ** out) {
+  return after_change_style(document, element, pseudo, pseudo_length, false, out);
+}
+
+GTEXT_CSS_Status gtext_cssom_document_starting_style(GTEXT_CSSOM_Document * document, const void * element, const char * pseudo, size_t pseudo_length,
+    GTEXT_CSS_Computed_Style ** out) {
+  return after_change_style(document, element, pseudo, pseudo_length, true, out);
 }
 
 /* ---- the transition tracker ----------------------------------------------------------------------------------------------------------------------- */
@@ -1649,7 +1666,25 @@ static GTEXT_CSS_Status tracker_step(GTEXT_CSSOM_Transition_Tracker * t, const v
   }
   const uint64_t was = gtext_css_transition_set_version(e->set);
   /* a style made in another context (the registrations of the document changed between the two events) is not comparable: it is as if the element had no before-change style */
-  st = gtext_css_transitions_update(after->cc, e->set, e->before && e->before->cc == after->cc ? e->before : NULL, after, t->time_ms, NULL);
+  const GTEXT_CSS_Computed_Style * before = e->before && e->before->cc == after->cc ? e->before : NULL;
+  GTEXT_CSS_Computed_Style * starting = NULL;
+  if (!before) {
+    /* Transitions 2, "@starting-style": "If an element does not have a before-change style for a given style change event, the starting style is used instead of the before-change style to
+       compare with the after-change style". Only a document with an `@starting-style` rule has one that can differ from the after-change style, so only it pays for the second style. */
+    css_core * core = css_document_core(t->document);
+    const GTEXT_CSS_Rule_Index * index = NULL;
+    st = css_index_current(core, &index);
+    if (st == GTEXT_CSS_OK && gtext_css_rule_index_has_starting_style(index)) {
+      st = gtext_cssom_document_starting_style(t->document, element, pseudo_length ? pseudo : NULL, pseudo_length, &starting);
+      before = starting;
+    }
+    if (st != GTEXT_CSS_OK) {
+      gtext_css_computed_free(starting);
+      return st;
+    }
+  }
+  st = gtext_css_transitions_update(after->cc, e->set, before, after, t->time_ms, NULL);
+  gtext_css_computed_free(starting);
   if (st != GTEXT_CSS_OK) {
     return st;
   }
@@ -1886,6 +1921,20 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_events(GTEXT_CSSOM_Transition_Tr
       st = GTEXT_CSS_E_OOM;
     }
   }
+  /* what the sort by scheduled event time needs, so that nothing can fail once the sets have moved on */
+  size_t * from = NULL;
+  void * scratch = NULL;
+  const void ** element2 = NULL;
+  size_t * owner2 = NULL;
+  if (st == GTEXT_CSS_OK) {
+    from = gtext_allocator_calloc(&tracker->alloc, need_events ? need_events : 1, sizeof *from);
+    scratch = gtext_allocator_malloc(&tracker->alloc, css_transition_events_sort_bytes(need_events) + 1);
+    element2 = gtext_allocator_calloc(&tracker->alloc, need_events ? need_events : 1, sizeof *element2);
+    owner2 = gtext_allocator_calloc(&tracker->alloc, need_events ? need_events : 1, sizeof *owner2);
+    if (!from || !scratch || !element2 || !owner2) {
+      st = GTEXT_CSS_E_OOM;
+    }
+  }
   for (size_t i = 0; i < m && st == GTEXT_CSS_OK; i++) {
     ev->names[i] = gtext_allocator_malloc(&tracker->alloc, order[i]->display_length + 1);
     if (!ev->names[i]) {
@@ -1910,6 +1959,22 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_events(GTEXT_CSSOM_Transition_Tr
     }
   }
   gtext_allocator_free(&tracker->alloc, (void *)order);
+  if (st == GTEXT_CSS_OK) {
+    /* "Perform a stable sort of the animation events ... Sort the events by their scheduled event time ... Within events with equal scheduled event times, sort by their composite order": the
+       list is in composite order (the order of the owners, then of each set), and a stable sort by the time keeps it between equal ones */
+    css_transition_events_sort_by_time(ev->list, from, scratch);
+    const size_t made = gtext_css_transition_events_count(ev->list);
+    for (size_t k = 0; k < made; k++) {
+      element2[k] = ev->element[from[k]];
+      owner2[k] = ev->owner[from[k]];
+    }
+    memcpy(ev->element, element2, made * sizeof *element2);
+    memcpy(ev->owner, owner2, made * sizeof *owner2);
+  }
+  gtext_allocator_free(&tracker->alloc, from);
+  gtext_allocator_free(&tracker->alloc, scratch);
+  gtext_allocator_free(&tracker->alloc, (void *)element2);
+  gtext_allocator_free(&tracker->alloc, owner2);
   if (st != GTEXT_CSS_OK) {
     gtext_cssom_transition_events_free(ev);
     return st;

@@ -28,9 +28,9 @@ custom-unregistered-property-transitions-without-allow-discrete	css_transition.c
 every-custom-property-is-one-transition-slot	css_transition.c	  return p || k.id ? p == k.id : same(cn, cl, k.name, k.nlen);	  return p || k.id ? p == k.id : true;	transition
 a-custom-property-the-style-holds-is-read-as-absent	css_transition.c	    if (!gtext_css_computed_custom_find(style, k.name, k.nlen, &cv) || !cv) {	    if (1) {	transition
 a-custom-transition-is-sampled-as-a-longhand	css_anim_sample.c	    const bool custom = t.property == 0;	    const bool custom = false;	transition
-events-run-without-start-for-an-active-first-frame	css_transition.c	      if (to == GTEXT_CSS_TRANSITION_PHASE_ACTIVE || to == GTEXT_CSS_TRANSITION_PHASE_AFTER) {\n        EV(S, istart);	      if (to == GTEXT_CSS_TRANSITION_PHASE_AFTER) {\n        EV(S, istart);	transition
-events-end-at-the-interval-start	css_transition.c	      EV(E, to == GTEXT_CSS_TRANSITION_PHASE_AFTER ? iend : istart);	      EV(E, istart);	transition
-events-start-after-before-active-at-the-interval-end	css_transition.c	    case GTEXT_CSS_TRANSITION_PHASE_BEFORE:\n      EV(S, istart);	    case GTEXT_CSS_TRANSITION_PHASE_BEFORE:\n      EV(S, iend);	transition
+events-run-without-start-for-an-active-first-frame	css_transition.c	      if (to == GTEXT_CSS_TRANSITION_PHASE_ACTIVE || to == GTEXT_CSS_TRANSITION_PHASE_AFTER) {\n        EV(S, istart, at_start);	      if (to == GTEXT_CSS_TRANSITION_PHASE_AFTER) {\n        EV(S, istart, at_start);	transition
+events-end-at-the-interval-start	css_transition.c	        EV(E, iend, at_end);\n      }\n      else {\n        EV(E, istart, -1.0);\n      }\n      break;	        EV(E, istart, at_end);\n      }\n      else {\n        EV(E, istart, -1.0);\n      }\n      break;	transition
+events-start-after-before-active-at-the-interval-end	css_transition.c	    case GTEXT_CSS_TRANSITION_PHASE_BEFORE:\n      EV(S, istart, at_start);	    case GTEXT_CSS_TRANSITION_PHASE_BEFORE:\n      EV(S, iend, at_start);	transition
 cancel-elapsed-not-clamped-to-the-active-interval	css_transition.c	clamp_range(time_ms - t->start_time, 0, t->end_time - t->start_time)	time_ms - t->start_time	transition
 cancel-of-a-transition-no-frame-saw-is-reported	css_transition.c	(t->phase != GTEXT_CSS_TRANSITION_PHASE_IDLE && t->phase != GTEXT_CSS_TRANSITION_PHASE_AFTER) : t->phase != GTEXT_CSS_TRANSITION_PHASE_AFTER;	true : t->phase != GTEXT_CSS_TRANSITION_PHASE_AFTER;	transition
 completion-no-frame-saw-reports-nothing	css_transition.c	GTEXT_CSS_TRANSITION_PHASE_AFTER) : t->phase != GTEXT_CSS_TRANSITION_PHASE_AFTER;	GTEXT_CSS_TRANSITION_PHASE_AFTER) : false;	transition
@@ -46,3 +46,8 @@ frame-keeps-the-events-it-reported	css_transition.c	    gone_free(&set->alloc, g
 snapshot-has-another-transitions-id	css_transition.c	  out->id = t->id;\n  out->generation = t->generation;\n  out->transition_property	  out->id = t->id + 1;\n  out->generation = t->generation;\n  out->transition_property	transition,fuzzseeds
 cancel-all-cancels-a-finished-transition	css_transition.c	set->run[set->nrun - 1].end_time > time_ms);	true);	transition
 owed-events-are-not-bounded	css_transition.c	  while (s->ngone + more > MAX_OWED && s->ngone > 0) {	  while (0 && s->ngone + more > MAX_OWED && s->ngone > 0) {	transition
+events-not-sorted-by-scheduled-time	css_transition.c	  if (a->scheduled_ms != b->scheduled_ms) {\n    return a->scheduled_ms > b->scheduled_ms;	  if (0) {\n    return a->scheduled_ms > b->scheduled_ms;	transition
+scheduled-start-is-not-the-end-of-the-delay	css_transition.c	  const double at_start = delay > 0 ? delay : 0.0;	  const double at_start = 0.0;	transition
+scheduled-end-ignores-the-delay	css_transition.c	  const double at_end = delay + duration > 0 ? delay + duration : 0.0;	  const double at_end = duration;	transition
+scheduled-cancel-is-the-end-of-the-effect	css_transition.c	    g->left_at = time_ms;	    g->left_at = t->end_time;	transition
+scheduled-time-is-always-the-frames	css_transition.c	    e->scheduled_ms = ideal[i] >= 0 ? event_time + ideal[i] : frame_time;	    e->scheduled_ms = frame_time;	transition

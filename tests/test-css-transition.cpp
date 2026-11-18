@@ -934,6 +934,49 @@ TEST(CssTransitionEvents, EventsAreInTheCompositeOrderOfTheTransitions) {
   EXPECT_EQ(frame(t.set, 20), "run:--z:0 start:--z:0 run:opacity:0 start:opacity:0 run:color:0 start:color:0");
 }
 
+/// The scheduled event times of a frame, as text: `type:name@time` for each event, joined by spaces.
+std::string frame_times(GTEXT_CSS_Transition_Set * set, double t) {
+  GTEXT_CSS_Transition_Events * ev = nullptr;
+  EXPECT_EQ(gtext_css_transition_events_new(nullptr, &ev), GTEXT_CSS_OK);
+  EXPECT_EQ(gtext_css_transition_set_frame(set, t, ev), GTEXT_CSS_OK);
+  std::string out;
+  for (size_t i = 0; i < gtext_css_transition_events_count(ev); i++) {
+    GTEXT_CSS_Transition_Event e{};
+    EXPECT_TRUE(gtext_css_transition_events_at(ev, i, &e));
+    out += std::string(i ? " " : "") + type_name(e.type) + ":" + std::string(e.property_name.data, e.property_name.length) + "@" + num(e.scheduled_time_ms);
+  }
+  gtext_css_transition_events_free(ev);
+  return out;
+}
+
+/* Web Animations 1, "Update animations and send events": "Perform a stable sort of the animation events ... Sort the events by their scheduled event time such that events that were scheduled to
+   occur earlier sort before events scheduled to occur later ... Within events with equal scheduled event times, sort by their composite order." One frame that spans the whole life of two
+   transitions of one element: the composite order puts `color` first, but `opacity` ends first. */
+TEST(CssTransitionEvents, AFrameIsInTheOrderOfTheScheduledEventTimesAndTheCompositeOrderBetweenEqualOnes) {
+  Tx t;
+  const std::string tr = "transition: opacity 100ms linear, color 1s linear; ";
+  ASSERT_EQ(t.event("opacity: 0; color: red", tr + "opacity: 1; color: blue", 40), GTEXT_CSS_OK);
+  EXPECT_EQ(frame_times(t.set, 5000), "run:color@40 start:color@40 run:opacity@40 start:opacity@40 end:opacity@140 end:color@1040")
+      << "the run and the start are at the time of the style change event (no delay), the end at the end time of the effect; the sort is stable";
+}
+
+/* The scheduled time of the start is the end of the delay ("the start ... when the transition's delay phase ends"), of the end the end of the effect, and of a cancellation the moment of it. A
+   transition with a long delay and one with none: the second one's end comes before the first one's start. */
+TEST(CssTransitionEvents, TheScheduledTimeOfTheStartIsTheEndOfTheDelayAndOfACancellationTheMomentOfIt) {
+  Tx t;
+  ASSERT_EQ(t.event("opacity: 0; color: red", "transition: opacity 100ms linear 2s, color 1s linear; opacity: 1; color: blue", 0), GTEXT_CSS_OK);
+  EXPECT_EQ(frame_times(t.set, 5000), "run:color@0 start:color@0 run:opacity@0 end:color@1000 start:opacity@2000 end:opacity@2100");
+  Tx c;
+  ASSERT_EQ(c.event("opacity: 0", kFade + "opacity: 1", 10), GTEXT_CSS_OK);
+  EXPECT_EQ(frame_times(c.set, 10), "run:opacity@10 start:opacity@10");
+  ASSERT_EQ(gtext_css_transition_set_cancel_all(c.set, 400), GTEXT_CSS_OK);
+  EXPECT_EQ(frame_times(c.set, 900), "cancel:opacity@400") << "the moment of the cancellation, not the frame's";
+  Tx n;
+  ASSERT_EQ(n.event("opacity: 0", "transition: opacity 1s linear -300ms; opacity: 1", 100), GTEXT_CSS_OK);
+  EXPECT_EQ(frame_times(n.set, 100), "run:opacity@100 start:opacity@100") << "a negative delay starts the effect with the animation, not before it";
+  EXPECT_EQ(frame_times(n.set, 2000), "end:opacity@800") << "the effect ends at the time of the event plus the delay plus the duration: 100 - 300 + 1000";
+}
+
 /* A custom property's transition reports the property's name, and the event is of transition 0 of the longhand ids. */
 TEST(CssTransitionEvents, ACustomPropertyEventNamesTheCustomProperty) {
   Tx t;
