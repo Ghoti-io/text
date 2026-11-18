@@ -87,6 +87,7 @@ typedef struct {
   bool opaque;                 ///< A declaration kept as written (gtext_css_block_set_opaque()): `raw` holds the value; `set` is NULL.
   char * raw;                  ///< Opaque: the value text (NUL-terminated).
   size_t raw_length;
+  bool tainted;                ///< A custom property declared with an attr()-tainted value (css_block_mark_last_tainted()): its computed value is tainted as a whole, as if an attr() had made it.
   bool dead;                   ///< Removed (gtext_css_block_remove()): a slot that every reader skips until the next compaction. Its set and name are released.
   size_t prev;                 ///< With the index: the slot + 1 of the previous item of the same property or custom name (0: none); the chain is what a removal kills whole.
 } blk_item;

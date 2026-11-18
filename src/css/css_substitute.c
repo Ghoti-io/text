@@ -56,6 +56,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "css_cascade_internal.h"
 #include "css_fndef.h"
 #include "css_style_range.h"
 #include "css_substitute_internal.h"
@@ -4432,7 +4433,7 @@ static GTEXT_CSS_Status rope_wide_keyword(css_sub * sub, css_rope * rope, int * 
 static int prop_finish(css_sub * sub, size_t fi);
 
 /// Read the source of a custom property's value (`text`) and start replacing the functions in it: the frame goes on in `prop_finish()` when the value has arrived.
-static int prop_start_seq(css_sub * sub, size_t fi, const char * text, size_t len) {
+static int prop_start_seq(css_sub * sub, size_t fi, const char * text, size_t len, bool tainted) {
   frame_t * f = &sub->frames[fi];
   entry_t * e = &f->scope->entries[f->entry];
   css_state * st = sub->st;
@@ -4441,7 +4442,7 @@ static int prop_start_seq(css_sub * sub, size_t fi, const char * text, size_t le
     return STEP_ERROR;
   }
   src_t * src = NULL;
-  const GTEXT_CSS_Status status = src_open(&sub->alloc, text, len, NULL, false, &src);
+  const GTEXT_CSS_Status status = src_open(&sub->alloc, text, len, NULL, tainted, &src);
   if (status != GTEXT_CSS_OK) {
     SUB_FAIL(sub, status == GTEXT_CSS_E_OOM ? status : css_st_fail(st, status, e->name.data, "the value of a custom property could not be read"));
     return STEP_ERROR;
@@ -4526,7 +4527,7 @@ static int step_prop(css_sub * sub, size_t fi) {
       text = e->text ? e->text : "";
       len = e->text_len;
     }
-    return prop_start_seq(sub, fi, text, len);
+    return prop_start_seq(sub, fi, text, len, !sc->fn && e->kind == EK_ELEMENT && css_block_item_tainted(st->block, e->item));
   }
   return prop_finish(sub, fi);
 }
@@ -4661,7 +4662,7 @@ static int prop_finish(css_sub * sub, size_t fi) {
     slot_clear(&f->res[1]);
     f->mode = 2;
     f->phase = 1;
-    return prop_start_seq(sub, fi, sc->fn->params[e->param].default_text ? sc->fn->params[e->param].default_text : "", sc->fn->params[e->param].default_len);
+    return prop_start_seq(sub, fi, sc->fn->params[e->param].default_text ? sc->fn->params[e->param].default_text : "", sc->fn->params[e->param].default_len, false);
   }
   GTEXT_CSS_Custom_Value * v = NULL;
   if (final) {

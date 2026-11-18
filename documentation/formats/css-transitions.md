@@ -100,3 +100,8 @@ Only a document whose rule index has an `@starting-style` rule (`gtext_css_rule_
 that jumps at 0.
 The specification builds the after-change style from the *before-change* `animation-*` values; this library asks the two styles which properties an animation applies, which agrees for every
 property an animation applies in both and differs when an animation starts or ends in the same event as a change of the property it did not apply before.
+
+A custom property that transitions from or to a value that an `attr()` made keeps the taint of Values 5, "attr() security": the transition remembers, for its start and its end value, whether the style's value was
+tainted (`gtext_css_custom_value_tainted()`), `gtext_css_transition_current_tainted()` says whether the current value at a time is (the start value at or before the start time, the end value from the end time, and
+a value made of both when either was), and the sampler declares the current value as a tainted declaration, which computes to a tainted custom value. A `url()` made of it (`image-set(var(--s))`) is invalid at
+computed-value time, as it is for the value itself.

@@ -191,6 +191,12 @@ GTEXT_CSS_Status css_block_push(GTEXT_CSS_Declaration_Block * block, GTEXT_CSS_P
     bool important, GTEXT_CSS_Property_Outcome outcome, GTEXT_CSS_Wide_Keyword wide, const GTEXT_CSS_Value_Set * set, GTEXT_CSS_Property_Id shorthand,
     size_t declaration);
 
+/// Mark the most recently added declaration of a block as an attr()-tainted custom property value (the current value of a transition that began or ends at one), and read the mark of
+/// the index-th live declaration. The mark is not copied by gtext_css_block_clone(): the sampler marks the block it hands on, which nothing clones. A declaration so marked is read as if the value had been made by an attr(): "the substitution value of an arbitrary substitution function is
+/// attr()-tainted as a whole if any attr()-tainted values were involved in creating it" (Values 5, attr() security).
+void css_block_mark_last_tainted(GTEXT_CSS_Declaration_Block * block);
+bool css_block_item_tainted(const GTEXT_CSS_Declaration_Block * block, size_t index);
+
 #define CASCADE_NONE UINT32_MAX
 
 #ifdef __cplusplus

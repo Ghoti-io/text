@@ -40,6 +40,7 @@
 #include <ghoti.io/text/css/css_style.h>
 
 #include "css_anim_internal.h"
+#include "css_cascade_internal.h"
 #include "css_compute_internal.h"
 #include "css_creg.h"
 #include "css_pseudo_apply.h"
@@ -1217,6 +1218,10 @@ GTEXT_CSS_Status css_transition_sample(const GTEXT_CSS_Compute_Context * cc, con
     GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
     if (st == GTEXT_CSS_OK) {
       st = add_declaration(&s, out_block, pi.name, pi.name_length, text, len, &outcome);
+      if (st == GTEXT_CSS_OK && custom && (outcome == GTEXT_CSS_PROP_RESULT_VALID || outcome == GTEXT_CSS_PROP_RESULT_PENDING) && gtext_css_transition_current_tainted(tr->set, i, tr->time_ms)) {
+        /* a transition from or to an attr()-tainted value: the current value is made from it, so it is tainted as a whole (a url made of it is invalid at computed-value time) */
+        css_block_mark_last_tainted(out_block);
+      }
     }
     if (st == GTEXT_CSS_OK && !custom && outcome != GTEXT_CSS_PROP_RESULT_VALID && outcome != GTEXT_CSS_PROP_RESULT_WIDE) {
       /* the number is outside the range of its property (an easing that overshoots): a calculation clamps it as the property says */

@@ -152,6 +152,14 @@ GTEXT_API size_t gtext_css_transition_set_completed_count(const GTEXT_CSS_Transi
 GTEXT_API bool gtext_css_transition_set_completed_at(const GTEXT_CSS_Transition_Set * set, size_t index, GTEXT_CSS_Property_Id * property, GTEXT_CSS_String * custom_name, GTEXT_CSS_String * end_value);
 
 /**
+ * @brief Whether the current value of running transition `index` at a time is attr()-tainted (Values 5, attr() security): a custom property that began at, or goes to, a value that an `attr()`
+ * made, keeps the taint, so that a `url()` made of it (an `image-set(var(--s))`) is invalid at computed-value time as it is for the value itself. The start value is tainted at or before the start
+ * time, the end value from the end time, and a value made of both (an interpolation, a discrete flip) when either is.
+ * @return false for a longhand, an index that is not running, or values that were not tainted.
+ */
+GTEXT_API bool gtext_css_transition_current_tainted(const GTEXT_CSS_Transition_Set * set, size_t index, double time_ms);
+
+/**
  * @brief The current value of a running transition at a time, serialized as the declaration `property: <text>` would say it.
  *
  * Before the start time (the delay phase) it is the start value; after it, the interpolation of the start and the end value by the output of the timing function at

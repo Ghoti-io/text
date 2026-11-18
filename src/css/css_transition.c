@@ -55,6 +55,7 @@ typedef struct {
   double delay;               ///< the start delay of the effect: start time minus the time of the style change event
   GTEXT_CSS_Transition_Phase phase;   ///< the phase the last frame left it in (idle until a frame sees it)
   bool ready;                 ///< a frame has seen it ("the animation is ready")
+  bool start_tainted, end_tainted;   ///< a custom property: the start (end) value came from an attr()-tainted value (Values 5, attr() security), which its current value keeps
 } tr_t;
 
 /// A transition that left the running set and has an event the next frame owes: a transitioncancel (cancelled after a frame saw it begin and before it ended), or the events up to transitionend
@@ -518,6 +519,23 @@ static GTEXT_CSS_Status tr_current(const GTEXT_CSS_Compute_Context * cc, const G
   return css_blend_key_text(cc, style, t->prop, t->cname, t->lcn, t->start, t->ls, t->end, t->le, p, a, text, length, &discrete);
 }
 
+/// Whether the current value of a transition at a time is attr()-tainted: it is the start value at or before the start time and the end value from the end time, and one made from both (an
+/// interpolation, or a discrete flip between them) is tainted when either was: "the substitution value of an arbitrary substitution function is attr()-tainted as a whole if any
+/// attr()-tainted values were involved in creating it" (Values 5, attr() security). The branches are those of tr_current().
+static bool tr_tainted_at(const tr_t * t, double time_ms) {
+  if (time_ms <= t->start_time || t->end_time <= t->start_time) {
+    return (time_ms < t->end_time || t->end_time > t->start_time) ? t->start_tainted : t->end_tainted;
+  }
+  if (time_ms >= t->end_time) {
+    return t->end_tainted;
+  }
+  return t->start_tainted || t->end_tainted;
+}
+
+bool gtext_css_transition_current_tainted(const GTEXT_CSS_Transition_Set * set, size_t index, double time_ms) {
+  return set && index < set->nrun && tr_tainted_at(&set->run[index], time_ms);
+}
+
 GTEXT_CSS_Status gtext_css_transition_current_value(const GTEXT_CSS_Compute_Context * context, const GTEXT_CSS_Computed_Style * style, const GTEXT_CSS_Transition_Set * set, size_t index,
     double time_ms, const GTEXT_Allocator * allocator, char ** text, size_t * length) {
   if (!context || !set || !text || !length || index >= set->nrun) {
@@ -782,9 +800,10 @@ static GTEXT_CSS_Status custom_candidates(const GTEXT_CSS_Compute_Context * cc, 
 /// The computed value of a property of a style, serialized (NUL-terminated, released with the allocator); NULL with GTEXT_CSS_OK for a style that has none. A custom property the style has no
 /// value of has the guaranteed-invalid value, which has no text of its own (an empty text is the value of `--x:;`): it is written `initial`, the declaration that gives it, which no value can be
 /// ("initial" is a CSS-wide keyword and never a computed value), so that a current value that is the guaranteed-invalid value is declared as itself.
-static GTEXT_CSS_Status value_text(const GTEXT_CSS_Computed_Style * style, pkey k, const GTEXT_Allocator * a, char ** text, size_t * length) {
+static GTEXT_CSS_Status value_text(const GTEXT_CSS_Computed_Style * style, pkey k, const GTEXT_Allocator * a, char ** text, size_t * length, bool * tainted) {
   *text = NULL;
   *length = 0;
+  *tainted = false;
   if (!k.id) {
     const GTEXT_CSS_Custom_Value * cv = NULL;
     if (!gtext_css_computed_custom_find(style, k.name, k.nlen, &cv) || !cv) {
@@ -794,6 +813,7 @@ static GTEXT_CSS_Status value_text(const GTEXT_CSS_Computed_Style * style, pkey 
     }
     GTEXT_CSS_Serialize_Options co = gtext_css_serialize_options_default();
     co.allocator = a;
+    *tainted = gtext_css_custom_value_tainted(cv);
     return gtext_css_custom_value_text(cv, &co, text, length);
   }
   const GTEXT_CSS_Value * root = gtext_css_computed_root(style, k.id);
@@ -852,9 +872,11 @@ static GTEXT_CSS_Status transitionable(const GTEXT_CSS_Compute_Context * cc, con
 
 /// One transition: started from `start` (a copy is made) to `end`, with the matching timing item.
 static GTEXT_CSS_Status make_tr(GTEXT_CSS_Transition_Set * w, const GTEXT_CSS_Registry * reg, pkey key, const char * start, size_t ls, const char * end, size_t le, const char * rasv,
-    size_t lr, const char * timing, size_t lt, double event_time, double start_time, double end_time, double rsf, bool allow_discrete) {
+    size_t lr, const char * timing, size_t lt, double event_time, double start_time, double end_time, double rsf, bool allow_discrete, bool start_tainted, bool end_tainted) {
   tr_t t;
   memset(&t, 0, sizeof t);
+  t.start_tainted = start_tainted;
+  t.end_tainted = end_tainted;
   const char * pname = key.name;
   size_t lpn = key.nlen;
   if (key.id) {
@@ -952,11 +974,12 @@ static GTEXT_CSS_Status step_key(upd_t * u, pkey k, long m) {
   }
   char *bt = NULL, *at = NULL, *cur = NULL;
   size_t bl = 0, atl = 0, cl = 0;
+  bool bt_tainted = false, at_tainted = false;
   if (before) {
-    st = value_text(before, k, al, &bt, &bl);
+    st = value_text(before, k, al, &bt, &bl, &bt_tainted);
   }
   if (st == GTEXT_CSS_OK) {
-    st = value_text(after, k, al, &at, &atl);
+    st = value_text(after, k, al, &at, &atl, &at_tainted);
   }
   GTEXT_CSS_Serialize_Options so = gtext_css_serialize_options_default();
   so.allocator = al;
@@ -998,7 +1021,7 @@ static GTEXT_CSS_Status step_key(upd_t * u, pkey k, long m) {
       di = (size_t)-1;
       res->forgotten++;
     }
-    st = make_tr(w, reg, k, bt, bl, at, atl, bt, bl, timing, lt, time_ms, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);
+    st = make_tr(w, reg, k, bt, bl, at, atl, bt, bl, timing, lt, time_ms, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete, bt_tainted, at_tainted);
     if (st == GTEXT_CSS_OK) {
       res->started++;
       started_here = true;
@@ -1064,7 +1087,7 @@ static GTEXT_CSS_Status step_key(upd_t * u, pkey k, long m) {
           }
           else {
             const size_t lr = old.le;
-            st = make_tr(w, reg, k, cur, cl, at, atl, rasv, lr, timing, lt, time_ms, start_time, start_time + d0 * rsf, rsf, allow_discrete);
+            st = make_tr(w, reg, k, cur, cl, at, atl, rasv, lr, timing, lt, time_ms, start_time, start_time + d0 * rsf, rsf, allow_discrete, tr_tainted_at(&old, time_ms), at_tainted);
             gtext_allocator_free(al, rasv);
             if (st == GTEXT_CSS_OK) {
               /* the new entry is last; the old one is removed (its index has not moved) */
@@ -1076,7 +1099,7 @@ static GTEXT_CSS_Status step_key(upd_t * u, pkey k, long m) {
         }
       }
       else {
-        st = make_tr(w, reg, k, cur, cl, at, atl, cur, cl, timing, lt, time_ms, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete);
+        st = make_tr(w, reg, k, cur, cl, at, atl, cur, cl, timing, lt, time_ms, time_ms + delay, time_ms + delay + d0, 1.0, allow_discrete, tr_tainted_at(&old, time_ms), at_tainted);
         if (st == GTEXT_CSS_OK) {
           st = run_leave(w, ri, time_ms, true);
           res->cancelled++;

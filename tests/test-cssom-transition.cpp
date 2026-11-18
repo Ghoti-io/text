@@ -808,6 +808,31 @@ TEST(CssomStartingStyle, TheFirstEventOfAnElementStartsATransitionFromItsStartin
   EXPECT_EQ(t.width("#t", nullptr, "background-color"), "rgb(255, 255, 255)");
 }
 
+/* ---- the attr() taint of a transitioned custom property ------------------------------------------------------------------------------------------ */
+
+/* Values 5, attr() security: "Using an attr()-tainted value as or in a <url> makes a declaration invalid at computed-value time ... The substitution value of an arbitrary substitution function is
+   attr()-tainted as a whole if any attr()-tainted values were involved in creating it". A custom property that transitions from or to a value an attr() made has a current value made from it, so a
+   url made of the current value is invalid, as it is for the value itself (css/css-values/attr-security-transition.html). */
+const char * kTaintPage = "@property --s { syntax: \"<string>\"; inherits: false; initial-value: \"x\" } "
+                          "#t { --s: attr(href); transition: --s 10s allow-discrete -9s; background-image: image-set(var(--s)) } @starting-style { #t { --s: \"x\" } }";
+
+TEST(CssomStartingStyle, ACustomPropertyThatTransitionsToAnAttrValueKeepsItsTaintAndSoCannotBecomeAUrl) {
+  Tr t(page(kTaintPage, "<div id=t href=\"https://does-not-exist.test/404.png\"></div>"));
+  t.at(0);
+  t.flush("#t");
+  EXPECT_EQ(t.width("#t", nullptr, "background-image"), "none") << "nine tenths into a discrete transition the current value is the end value, made by the attr()";
+  t.at(10000);
+  EXPECT_EQ(t.width("#t", nullptr, "background-image"), "none") << "and when it is over the value is the attr()'s, still tainted";
+}
+
+TEST(CssomStartingStyle, ATransitionBetweenValuesNoAttrMadeIsNotTainted) {
+  Tr t(page("@property --s { syntax: \"<string>\"; inherits: false; initial-value: \"x\" } #t { --s: \"https://does-not-exist.test/404.png\"; transition: --s 10s allow-discrete -9s; "
+            "background-image: image-set(var(--s)) } @starting-style { #t { --s: \"x\" } }"));
+  t.at(0);
+  t.flush("#t");
+  EXPECT_NE(t.width("#t", nullptr, "background-image"), "none") << "a string written in the style sheet may be a url";
+}
+
 /* "Style rules in @starting-style do not apply to after-change style": once the transition is over, and for a style that is read with no event at all, the starting rules are nowhere. */
 TEST(CssomStartingStyle, TheRulesDoNotApplyToTheAfterChangeStyleOrToAReadWithNoEvent) {
   Tr t(page(kStart));

@@ -155,7 +155,6 @@ def answer(msg):
 
 
 MESSAGE_OWNERS = [
-    (r'expected "none" but got "image-set\(url', 'owner: src/css transition values (a custom property value that came from attr() is attr-tainted, and the value a transition declares is made from the text of the start and the end value, which carries no taint: css-values-5, "attr() security limitations"; written as a spec, not built)'),
     (r'unsupported, needs (condition|container\.computed_style|sibling_index|sibling_count)', 'owner: src/css/css_markup.c, the element interface the Markup adapter provides (the callback the computed layer asks for is missing)'),
 ]
 

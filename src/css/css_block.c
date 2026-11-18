@@ -538,6 +538,28 @@ bool gtext_css_block_item(const GTEXT_CSS_Declaration_Block * block, size_t inde
   return true;
 }
 
+void css_block_mark_last_tainted(GTEXT_CSS_Declaration_Block * block) {
+  if (block && block->count) {
+    block->items[block->count - 1].tainted = true;
+  }
+}
+
+bool css_block_item_tainted(const GTEXT_CSS_Declaration_Block * block, size_t index) {
+  if (!block || index >= block->live) {
+    return false;
+  }
+  if (block->live == block->count) {
+    return block->items[index].tainted;
+  }
+  size_t seen = 0;
+  for (size_t i = 0; i < block->count; i++) {
+    if (!block->items[i].dead && seen++ == index) {
+      return block->items[i].tainted;
+    }
+  }
+  return false;
+}
+
 /* ---- editing: set, remove, find, clone ---------------------------------------------------------------------------------------- */
 
 static void change_reset(GTEXT_CSS_Block_Change * change) {

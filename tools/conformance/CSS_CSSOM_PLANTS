@@ -581,3 +581,7 @@ tracker-animation-time-ignores-the-place-in-the-list	cssom_computed.c	gtext_anim
 markup-adapter-compare-order-says-first-seen	css_markup.c	  i->compare_order = cb_compare_order;		animworld
 if-condition-taint-ignored	css_substitute.c	f->res[1].rope && f->cond_tainted ?	f->res[1].rope && 0 && f->cond_tainted ?	custom
 tracker-ignores-the-pending-frame-flag	cssom_computed.c	    st = tracker->frame_pending ? gtext_css_transition_set_frame_pending(e->set, tracker->time_ms, ev->list) : gtext_css_transition_set_frame(e->set, tracker->time_ms, ev->list);	    st = gtext_css_transition_set_frame(e->set, tracker->time_ms, ev->list);	animworld
+transition-taint-not-marked-on-the-current-value-declaration	css_anim_sample.c	        css_block_mark_last_tainted(out_block);	        (void)out_block;	transition
+transition-taint-not-read-when-a-custom-value-is-computed	css_substitute.c	!sc->fn && e->kind == EK_ELEMENT && css_block_item_tainted(st->block, e->item)	false	transition
+transition-taint-of-an-interpolation-needs-both-ends	css_transition.c	  return t->start_tainted || t->end_tainted;\n}\n\nbool gtext_css_transition_current_tainted	  return t->start_tainted && t->end_tainted;\n}\n\nbool gtext_css_transition_current_tainted	transition
+transition-taint-of-a-value-is-not-read	css_transition.c	    *tainted = gtext_css_custom_value_tainted(cv);\n		transition
