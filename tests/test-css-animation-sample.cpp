@@ -319,6 +319,22 @@ TEST(CssAnimationSample, AdditionOfShadowAndFilterListsConcatenatesThemAndAccumu
       "rgb(100, 0, 200) 3px 2px 1px 0px, rgb(0, 200, 0) 1px 2px 3px 0px") << "a comma between the shadows of the list (the computed value has the four lengths)";
 }
 
+/* Filter Effects 1, "Interpolation of Filters": the shorter of two filter lists is extended with the identity of each function it lacks, when the functions the two share are the same one by one (the
+   pinned `animation-composition-keyframes` page, both browsers); `none` is the empty list; a pair that is not so is discrete. */
+TEST(CssAnimationSample, AShorterFilterListIsExtendedWithTheIdentityOfWhatItLacks) {
+  auto at = [](const char * from, const char * to, double ms) {
+    const std::string kf = std::string("@keyframes a { from { filter: ") + from + " } to { filter: " + to + " } }";
+    return Sampled(kf.c_str(), "animation: a 10s linear both", {{"a", ms}}).value("filter");
+  };
+  EXPECT_EQ(at("blur(5px) blur(10px)", "blur(20px)", 5000.0), "blur(12.5px) blur(5px)");
+  EXPECT_EQ(at("blur(20px)", "blur(5px) blur(10px)", 5000.0), "blur(12.5px) blur(5px)");
+  EXPECT_EQ(at("blur(10px)", "blur(10px) brightness(3)", 5000.0), "blur(10px) brightness(2)") << "brightness(1) is the identity";
+  EXPECT_EQ(at("none", "blur(10px)", 5000.0), "blur(5px)");
+  EXPECT_EQ(at("blur(10px)", "brightness(2)", 5000.0), "brightness(2)") << "other functions: discrete";
+  EXPECT_EQ(at("blur(10px) grayscale(1)", "brightness(2)", 6000.0), "brightness(2)") << "the common prefix does not match: discrete, and the end value is not padded";
+  EXPECT_EQ(at("blur(10px) grayscale(1)", "brightness(2)", 4000.0), "blur(10px) grayscale(1)");
+}
+
 /* Web Animations 1, "Computing property values": the values of a keyframe are computed in the context of the element; em is the element's, `inherit` the parent's. */
 TEST(CssAnimationSample, TheValuesOfAKeyframeAreComputedInTheContextOfTheElement) {
   const char * kf = "@keyframes a { from { column-width: 3em } to { column-width: 5em } }";

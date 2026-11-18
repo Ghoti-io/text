@@ -564,10 +564,145 @@ static const keyword_value KEYWORD_VALUES[] = {
   {"font-style", "normal", "oblique 0deg"},
 };
 
+/// The functions of a filter list: a list of them, one function, or none (the empty list). False for anything else (a `url()` is a function, and is not padded: see filter_identity()).
+static bool filter_items(const GTEXT_CSS_Value * root, const GTEXT_CSS_Value ** items, size_t * n) {
+  if (root->kind == GTEXT_CSS_VAL_KEYWORD && root->text.length == 4 && memcmp(root->text.data, "none", 4) == 0) {
+    *items = NULL;
+    *n = 0;
+    return true;
+  }
+  if (root->kind == GTEXT_CSS_VAL_FUNCTION) {
+    *items = root;
+    *n = 1;
+    return true;
+  }
+  if (root->kind == GTEXT_CSS_VAL_LIST && root->separator == GTEXT_CSS_SEP_SPACE && root->child_count > 0) {
+    for (size_t i = 0; i < root->child_count; i++) {
+      if (root->children[i].kind != GTEXT_CSS_VAL_FUNCTION) {
+        return false;
+      }
+    }
+    *items = root->children;
+    *n = root->child_count;
+    return true;
+  }
+  return false;
+}
+
+/// The identity of a filter function, "the initial values" Filter Effects 1 pads the shorter of two lists with: a function that does nothing. NULL for a function that has none here (`drop-shadow`,
+/// `url`): the pair is then discrete, as it was.
+static const char * filter_identity(const GTEXT_CSS_Value * fn) {
+  static const struct {
+    const char * name;
+    const char * identity;
+  } IDENTITIES[] = {{"blur", "blur(0px)"}, {"brightness", "brightness(1)"}, {"contrast", "contrast(1)"}, {"grayscale", "grayscale(0)"}, {"hue-rotate", "hue-rotate(0deg)"},
+      {"invert", "invert(0)"}, {"opacity", "opacity(1)"}, {"saturate", "saturate(1)"}, {"sepia", "sepia(0)"}};
+  for (size_t i = 0; i < sizeof IDENTITIES / sizeof *IDENTITIES; i++) {
+    const size_t l = strlen(IDENTITIES[i].name);
+    if (fn->text.length != l) {
+      continue;
+    }
+    size_t k = 0;
+    while (k < l && (fn->text.data[k] >= 'A' && fn->text.data[k] <= 'Z' ? fn->text.data[k] + 32 : fn->text.data[k]) == IDENTITIES[i].name[k]) {
+      k++;
+    }
+    if (k == l) {
+      return IDENTITIES[i].identity;
+    }
+  }
+  return NULL;
+}
+
+static bool same_function_name(const GTEXT_CSS_Value * x, const GTEXT_CSS_Value * y) {
+  if (x->text.length != y->text.length) {
+    return false;
+  }
+  for (size_t i = 0; i < x->text.length; i++) {
+    const char c = x->text.data[i] >= 'A' && x->text.data[i] <= 'Z' ? x->text.data[i] + 32 : x->text.data[i];
+    const char d = y->text.data[i] >= 'A' && y->text.data[i] <= 'Z' ? y->text.data[i] + 32 : y->text.data[i];
+    if (c != d) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// Filter Effects 1, "Interpolation of Filters": a list that is shorter than the one it is interpolated with is extended with the identity of each function it lacks (`none` is the empty list), as long
+/// as the functions the two have in common are the same, one by one: `blur(5px) blur(10px)` and `blur(20px)` interpolate to `blur(12.5px) blur(5px)` at the middle. A pair that is not so is discrete.
+static GTEXT_CSS_Status pad_filter_lists(sampler * s, const key * k, val * a, val * b) {
+  const GTEXT_CSS_Value * ra = val_root(a);
+  const GTEXT_CSS_Value * rb = val_root(b);
+  const GTEXT_CSS_Value *ia = NULL, *ib = NULL;
+  size_t na = 0, nb = 0;
+  if (!ra || !rb || !filter_items(ra, &ia, &na) || !filter_items(rb, &ib, &nb) || na == nb) {
+    return GTEXT_CSS_OK;
+  }
+  const bool a_short = na < nb;
+  val * shorter = a_short ? a : b;
+  const GTEXT_CSS_Value * short_root = a_short ? ra : rb;
+  const GTEXT_CSS_Value * longer = a_short ? ib : ia;
+  const GTEXT_CSS_Value * shorter_items = a_short ? ia : ib;
+  const size_t ns = a_short ? na : nb, nl = a_short ? nb : na;
+  for (size_t i = 0; i < ns; i++) {
+    if (!same_function_name(&shorter_items[i], &longer[i])) {
+      return GTEXT_CSS_OK;
+    }
+  }
+  size_t extra = 0;
+  for (size_t i = ns; i < nl; i++) {
+    const char * id = filter_identity(&longer[i]);
+    if (!id) {
+      return GTEXT_CSS_OK;
+    }
+    extra += strlen(id) + 1;
+  }
+  GTEXT_CSS_Serialize_Options so;
+  memset(&so, 0, sizeof so);
+  so.allocator = &s->al;
+  char * head = NULL;
+  size_t nh = 0;
+  GTEXT_CSS_Status st = ns ? gtext_css_serialize_value_buffer(short_root, &so, &head, &nh) : GTEXT_CSS_OK;
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  char * text = gtext_allocator_malloc(&s->al, nh + extra + 1);
+  if (!text) {
+    gtext_css_serialize_buffer_free(&so, head);
+    return GTEXT_CSS_E_OOM;
+  }
+  size_t at = 0;
+  if (nh) {
+    memcpy(text, head, nh);
+    at = nh;
+  }
+  for (size_t i = ns; i < nl; i++) {
+    const char * id = filter_identity(&longer[i]);
+    if (at) {
+      text[at++] = ' ';
+    }
+    memcpy(text + at, id, strlen(id));
+    at += strlen(id);
+  }
+  text[at] = '\0';
+  gtext_css_serialize_buffer_free(&so, head);
+  val padded;
+  st = val_of_text(s, k, text, at, &padded);
+  gtext_allocator_free(&s->al, text);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  val_free(&s->al, shorter);
+  *shorter = padded;
+  return GTEXT_CSS_OK;
+}
+
 static GTEXT_CSS_Status prepare_pair(sampler * s, const key * k, val * a, val * b) {
   GTEXT_CSS_Property_Info pi;
   if (!k->id || !gtext_css_registry_property_info(s->reg, k->id, &pi)) {
     return GTEXT_CSS_OK;
+  }
+  if ((pi.name_length == 6 && memcmp(pi.name, "filter", 6) == 0) || (pi.name_length == 15 && memcmp(pi.name, "backdrop-filter", 15) == 0)) {
+    return pad_filter_lists(s, k, a, b);
   }
   for (size_t i = 0; i < sizeof KEYWORD_VALUES / sizeof *KEYWORD_VALUES; i++) {
     const keyword_value * kv = &KEYWORD_VALUES[i];
