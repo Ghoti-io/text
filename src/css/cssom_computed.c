@@ -1210,6 +1210,21 @@ GTEXT_CSS_Status gtext_cssom_document_after_change_style(GTEXT_CSSOM_Document * 
   if (st != GTEXT_CSS_OK || null_obj) {
     return st;
   }
+  /* an element that is not rendered (not in the document, say) has no after-change style, as it has no computed style to read: "being rendered" is the one test of getComputedStyle() */
+  {
+    css_comp probe;
+    memset(&probe, 0, sizeof probe);
+    probe.element = element;
+    probe.pseudo = list;
+    bool rendered = true;
+    core->in_callback++;
+    st = is_rendered(core, &probe, &rendered);
+    core->in_callback--;
+    if (st != GTEXT_CSS_OK || !rendered) {
+      gtext_css_selector_list_free(list);
+      return st;
+    }
+  }
   core->computing++;
   bool hook = false;
   const uint64_t tree = css_core_tree_version(core, &hook);

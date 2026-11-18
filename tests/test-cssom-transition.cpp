@@ -581,6 +581,27 @@ TEST(CssomTransitionEvents, ADisplayContentsElementIsRendered) {
   EXPECT_EQ(frame(u, "#t"), "end::width:1");
 }
 
+/* "If an element is no longer in the document, implementations must cancel any running transitions on it and remove transitions on it from the set of completed transitions", and one that is not in the
+   document is not rendered, so a style change event for it records no before-change style: when it comes back, its first style change event starts nothing (the pinned disconnected-element-001.html,
+   "Transitions do not run for an element newly added to the document"). */
+TEST(CssomTransitionEvents, AnElementThatLeftTheDocumentHasNoBeforeChangeStyleWhenItComesBack) {
+  Tr t(page(kBox));
+  t.at(0);
+  GTEXT_Markup_Node * e = t.m.el("#t");
+  GTEXT_Markup_Node * body = gtext_markup_node_parent(e);
+  const void * h = gtext_css_markup_handle(e);
+  t.flush("#t");
+  ASSERT_EQ(gtext_markup_remove(e), GTEXT_MARKUP_OK);
+  ASSERT_EQ(t.m.sync(), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_cssom_transition_tracker_flush(t.tracker, h, nullptr, 0), GTEXT_CSS_OK) << "a flush of an element that is not in the document";
+  ASSERT_EQ(gtext_markup_append_child(body, e), GTEXT_MARKUP_OK);
+  ASSERT_EQ(t.m.sync(), GTEXT_CSS_OK);
+  t.set_class("#t", "on");
+  t.flush("#t");
+  EXPECT_EQ(t.width("#t"), "200px") << "the first event after it came back starts nothing";
+  EXPECT_EQ(frame(t, "#t"), "");
+}
+
 /* A time that is not a number is not a time: the tracker keeps the one it had, and forgetting an element still works. Ids are not given twice for an element that is forgotten and seen again. */
 TEST(CssomTransitionEvents, ANotANumberTimeIsIgnoredAndAnIdIsNotGivenTwiceForAForgottenElement) {
   Tr t(page(kBox));

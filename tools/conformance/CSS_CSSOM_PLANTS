@@ -565,3 +565,4 @@ tracker-display-transition-does-not-hold-an-element-rendered	cssom_computed.c	st
 tracker-accepts-a-time-that-is-not-a-number	cssom_computed.c	  if (tracker && time_ms == time_ms && tracker->time_ms != time_ms) {	  if (tracker && tracker->time_ms != time_ms) {	transition
 tracker-new-set-restarts-the-ids	cssom_computed.c	    gtext_css_transition_set_start_ids_after(fresh.set, t->id_high);		transition
 tracker-display-contents-is-not-rendered	cssom_computed.c	  return !GTEXT_CSS_READING_DISPLAY_CONTENTS_RENDERED && root->text.length == 8	  return root->text.length == 8	transition
+tracker-element-not-in-the-document-has-an-after-change-style	cssom_computed.c	    if (st != GTEXT_CSS_OK || !rendered) {	    if (st != GTEXT_CSS_OK) {	transition
