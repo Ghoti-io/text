@@ -595,6 +595,29 @@ static GTEXT_CSS_Status prepare_pair(sampler * s, const key * k, val * a, val * 
   return GTEXT_CSS_OK;
 }
 
+/// Whether "value addition" of the property's lists is list concatenation, and with which separator: of shadow lists (Web Animations 1, "Animation types": "Addition of two shadow lists ... is defined as list
+/// concatenation": a comma between) and of filter function lists (the pinned pages of Web Animations, `animation-composition`: `blur(5px) blur(10px)`, a space between). 0 for any other property.
+static char concatenation_separator(const sampler * s, const key * k) {
+  GTEXT_CSS_Property_Info pi;
+  if (!k->id || !gtext_css_registry_property_info(s->reg, k->id, &pi)) {
+    return 0;
+  }
+  static const struct {
+    const char * name;
+    char separator;
+  } LISTS[] = {{"box-shadow", ','}, {"text-shadow", ','}, {"filter", ' '}, {"backdrop-filter", ' '}};
+  for (size_t i = 0; i < sizeof LISTS / sizeof *LISTS; i++) {
+    if (strlen(LISTS[i].name) == pi.name_length && memcmp(LISTS[i].name, pi.name, pi.name_length) == 0) {
+      return LISTS[i].separator;
+    }
+  }
+  return 0;
+}
+
+static bool is_none(const GTEXT_CSS_Value * v) {
+  return v->kind == GTEXT_CSS_VAL_KEYWORD && v->text.length == 4 && memcmp(v->text.data, "none", 4) == 0;
+}
+
 /// The combination of two values of a key as a value: typed values by type, texts (unregistered custom properties) discrete.
 static GTEXT_CSS_Status combine(sampler * s, const key * k, css_blend_op op, const val * a, const val * b, double p, val * out) {
   const GTEXT_CSS_Value * ra = val_root(a);
@@ -602,6 +625,47 @@ static GTEXT_CSS_Status combine(sampler * s, const key * k, css_blend_op op, con
   char * text = NULL;
   size_t n = 0;
   GTEXT_CSS_Status st;
+  const char separator = ra && rb && op == CSS_BLEND_ADD ? concatenation_separator(s, k) : 0;
+  if (separator) {
+    /* "value addition" of two lists of these properties is concatenation (`none` is the empty list), where accumulation, which interpolation shares its rules with, adds the components of the functions */
+    GTEXT_CSS_Serialize_Options so;
+    memset(&so, 0, sizeof so);
+    so.allocator = &s->al;
+    char *ta = NULL, *tb = NULL;
+    size_t na = 0, nb = 0;
+    st = gtext_css_serialize_value_buffer(ra, &so, &ta, &na);
+    if (st == GTEXT_CSS_OK) {
+      st = gtext_css_serialize_value_buffer(rb, &so, &tb, &nb);
+    }
+    if (st == GTEXT_CSS_OK) {
+      const bool none_a = is_none(ra), none_b = is_none(rb);
+      if (none_a || none_b) {
+        st = val_of_text(s, k, none_a ? tb : ta, none_a ? nb : na, out);
+      }
+      else {
+        char * joined = gtext_allocator_malloc(&s->al, na + nb + 3);
+        if (!joined) {
+          st = GTEXT_CSS_E_OOM;
+        }
+        else {
+          memcpy(joined, ta, na);
+          size_t at = na;
+          if (separator == ',') {
+            joined[at++] = ',';
+          }
+          joined[at++] = ' ';
+          memcpy(joined + at, tb, nb);
+          at += nb;
+          joined[at] = '\0';
+          st = val_of_text(s, k, joined, at, out);
+          gtext_allocator_free(&s->al, joined);
+        }
+      }
+    }
+    gtext_css_serialize_buffer_free(&so, ta);
+    gtext_css_serialize_buffer_free(&so, tb);
+    return st;
+  }
   if (ra && rb) {
     st = css_interp_text(&s->al, op, ra, rb, p, current_color(s), &text, &n, NULL);
     if (st != GTEXT_CSS_OK) {

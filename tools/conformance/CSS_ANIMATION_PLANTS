@@ -108,3 +108,6 @@ anim-finish-event-time-of-an-inactive-timeline	animation.c	  if (a->timeline != 
 join-event-time-ignores-the-rate	css_animations.c	animation_time * (1.0 / rate) + start.ms	animation_time + start.ms	animworld
 join-cancel-elapsed-read-after-the-cancel	css_animations.c	const double elapsed = owes_cancel(old) ? active_time_both(old, time_ms) : 0.0;	const double elapsed = 0.0;	animworld
 join-script-task-ready-at-the-style-events-time	css_animations.c	c->css_task && ms.ready_generation == c->css_task_gen ? c->event_time : time_ms	c->css_task ? c->event_time : time_ms	animworld
+addition-of-filter-lists-is-accumulation	css_anim_sample.c	  const char separator = ra && rb && op == CSS_BLEND_ADD ? concatenation_separator(s, k) : 0;	  const char separator = 0;	sample
+addition-of-shadow-lists-has-no-comma	css_anim_sample.c	          if (separator == ',') {\n            joined[at++] = ',';\n          }	          if (0) {\n            joined[at++] = ',';\n          }	sample
+addition-of-a-list-and-none-is-concatenated-with-it	css_anim_sample.c	      if (none_a || none_b) {	      if (0) {	sample

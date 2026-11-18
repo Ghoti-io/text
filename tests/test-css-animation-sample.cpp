@@ -306,6 +306,19 @@ TEST(CssAnimationSample, TheCompositeOperationCombinesTheEffectWithTheUnderlying
   EXPECT_EQ(Sampled(own, "width: 10px; animation: a 10s linear both", {{"a", 0.0}}).value("width"), "10px");
 }
 
+/* Web Animations 1, "Animation types": "Addition of two shadow lists ... is defined as list concatenation", and the same for the lists of filter functions (the pinned `animation-composition` pages), where
+   accumulation adds the lengths of the functions that match. `none` is the empty list. */
+TEST(CssAnimationSample, AdditionOfShadowAndFilterListsConcatenatesThemAndAccumulationAddsTheirComponents) {
+  const char * f = "@keyframes a { from { filter: blur(10px) } to { filter: blur(30px) } }";
+  EXPECT_EQ(Sampled(f, "filter: blur(5px); animation: a 10s linear both; animation-composition: add", {{"a", 0.0}}).value("filter"), "blur(5px) blur(10px)");
+  EXPECT_EQ(Sampled(f, "filter: blur(5px); animation: a 10s linear both; animation-composition: add", {{"a", 10000.0}}).value("filter"), "blur(5px) blur(30px)");
+  EXPECT_EQ(Sampled(f, "filter: blur(5px); animation: a 10s linear both; animation-composition: accumulate", {{"a", 0.0}}).value("filter"), "blur(15px)");
+  EXPECT_EQ(Sampled(f, "animation: a 10s linear both; animation-composition: add", {{"a", 0.0}}).value("filter"), "blur(10px)") << "none is the empty list";
+  const char * g = "@keyframes a { from { text-shadow: rgb(0, 200, 0) 1px 2px 3px } to { text-shadow: rgb(0, 200, 0) 1px 2px 3px } }";
+  EXPECT_EQ(Sampled(g, "text-shadow: rgb(100, 0, 200) 3px 2px 1px; animation: a 10s linear both; animation-composition: add", {{"a", 0.0}}).value("text-shadow"),
+      "rgb(100, 0, 200) 3px 2px 1px 0px, rgb(0, 200, 0) 1px 2px 3px 0px") << "a comma between the shadows of the list (the computed value has the four lengths)";
+}
+
 /* Web Animations 1, "Computing property values": the values of a keyframe are computed in the context of the element; em is the element's, `inherit` the parent's. */
 TEST(CssAnimationSample, TheValuesOfAKeyframeAreComputedInTheContextOfTheElement) {
   const char * kf = "@keyframes a { from { column-width: 3em } to { column-width: 5em } }";
