@@ -75,4 +75,19 @@
  */
 #define GTEXT_CSS_READING_FAMILY_KEYWORD_ONLY_FIRST 1
 
+/**
+ * Whether an element with `display: contents` is "being rendered" for CSS Transitions: starting a transition on it, keeping a running one when the element becomes `contents`, and
+ * holding the before-change style of one that is `contents`.
+ *
+ * Transitions 2 uses the HTML term "being rendered" for the elements that start transitions and for those whose running transitions are cancelled, and the text this library is given does
+ * not define it for `display: contents`; the one sentence it has about `contents` (Web Animations 1, "commit computed styles") says "the definition of being rendered with regards to
+ * `display: contents` is still under discussion" and for that procedure assumes that a connected `display: contents` element not below a `display: none` one is being rendered. 1 follows
+ * that assumption: the element starts transitions and keeps them (a transition on it, a CSS animation on it, and the page css/css-animations/display-contents-animates.html agree, and Chromium
+ * 156.0.8078.47 keeps a running transition and animation when the element becomes `contents`). 0 treats `contents` as not rendered, as `none` is: nothing starts and what runs is cancelled
+ * at the style change event, which is what Firefox 158.0.1 does to a running transition and a running CSS animation when the element becomes `contents` (it starts one on a `contents`
+ * element and keeps a script animation, so its answer is not one rule). Undecidable by the text and split by the browsers; the reading is the text's assumption. Used by the check of the tracker's
+ * style change events (cssom_computed.c, style_is_not_rendered()); held by the test CssomTransitionEvents.ADisplayContentsElementIsRendered.
+ */
+#define GTEXT_CSS_READING_DISPLAY_CONTENTS_RENDERED 1
+
 #endif

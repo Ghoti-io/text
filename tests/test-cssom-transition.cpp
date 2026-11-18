@@ -555,6 +555,32 @@ TEST(CssomTransitionEvents, ADisplayTransitionKeepsAnElementThatGoesToDisplayNon
   EXPECT_EQ(frame(u, "#t"), "") << "nothing runs on a display:none element";
 }
 
+/* "the definition of being rendered with regards to `display: contents` is still under discussion" and Web Animations 1 assumes a connected `display: contents` element is being rendered
+   (css_readings.h, GTEXT_CSS_READING_DISPLAY_CONTENTS_RENDERED): a transition starts on such an element and is kept when an element becomes one, which is what the browsers agree on for starting and
+   Chromium does for keeping; it is cancelled only by `display: none`. */
+TEST(CssomTransitionEvents, ADisplayContentsElementIsRendered) {
+  Tr t(page("#t { width: 100px; display: contents; transition: width 1s linear } #t.on { width: 200px }"));
+  t.at(0);
+  t.flush("#t");
+  t.set_class("#t", "on");
+  t.flush("#t");
+  EXPECT_EQ(frame(t, "#t"), "run::width:0 start::width:0") << "a transition starts on a display: contents element";
+  t.at(1000);
+  EXPECT_EQ(frame(t, "#t"), "end::width:1");
+  Tr u(page("#t { width: 100px; transition: width 1s linear } #t.on { width: 200px } #t.contents { display: contents }"));
+  u.at(0);
+  u.flush("#t");
+  u.set_class("#t", "on");
+  u.flush("#t");
+  EXPECT_EQ(frame(u, "#t"), "run::width:0 start::width:0");
+  u.at(400);
+  u.set_class("#t", "on contents");
+  u.flush("#t");
+  EXPECT_EQ(frame(u, "#t"), "") << "a running transition is kept when the element becomes display: contents";
+  u.at(1000);
+  EXPECT_EQ(frame(u, "#t"), "end::width:1");
+}
+
 /* A time that is not a number is not a time: the tracker keeps the one it had, and forgetting an element still works. Ids are not given twice for an element that is forgotten and seen again. */
 TEST(CssomTransitionEvents, ANotANumberTimeIsIgnoredAndAnIdIsNotGivenTwiceForAForgottenElement) {
   Tr t(page(kBox));

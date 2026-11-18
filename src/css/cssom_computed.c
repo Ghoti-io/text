@@ -39,6 +39,7 @@
 #include <ghoti.io/text/css/css_container.h>
 #include "css_compute_internal.h"
 #include "css_match_internal.h"
+#include "css_readings.h"
 #include "css_internal.h"
 #include "cssom_computed_internal.h"
 #include "cssom_doc_internal.h"
@@ -1575,11 +1576,18 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_lookup(GTEXT_CSSOM_Transition_Tr
   return GTEXT_CSS_OK;
 }
 
-/// Whether a style has `display: none` (the element has no box, and neither has anything below it: "being rendered", Transitions 2).
-static bool style_is_display_none(css_core * core, const GTEXT_CSS_Computed_Style * style) {
+/// Whether a style says its element is not being rendered (Transitions 2): `display: none` (the element has no box, and neither has anything below it), and `display: contents` only under the
+/// reading that says it is not (css_readings.h, GTEXT_CSS_READING_DISPLAY_CONTENTS_RENDERED).
+static bool style_is_not_rendered(css_core * core, const GTEXT_CSS_Computed_Style * style) {
   const GTEXT_CSS_Property_Id display = gtext_css_registry_find_property(core->registry, "display", 7);
   const GTEXT_CSS_Value * root = display ? gtext_css_computed_root(style, display) : NULL;
-  return root && root->kind == GTEXT_CSS_VAL_KEYWORD && root->text.length == 4 && memcmp(root->text.data, "none", 4) == 0;
+  if (!root || root->kind != GTEXT_CSS_VAL_KEYWORD) {
+    return false;
+  }
+  if (root->text.length == 4 && memcmp(root->text.data, "none", 4) == 0) {
+    return true;
+  }
+  return !GTEXT_CSS_READING_DISPLAY_CONTENTS_RENDERED && root->text.length == 8 && memcmp(root->text.data, "contents", 8) == 0;
 }
 
 /// Whether the entry has a running transition of `display`.
@@ -1686,7 +1694,7 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_flush(GTEXT_CSSOM_Transition_Tra
       st = tracker_step(tracker, chain[i], "", 0, "", 0, after);
       /* an after-change style with `display: none` is not rendered unless a transition of `display` (`allow-discrete`, Transitions 2) is holding the element: "Transitions and animations should not
          occur on display:none elements" (the pinned `display-none-no-animations.html`), but the element that fades out and then goes away is being rendered while it does */
-      if (st == GTEXT_CSS_OK && style_is_display_none(core, after) && !entry_transitions_display(tracker, core, chain[i], "", 0)) {
+      if (st == GTEXT_CSS_OK && style_is_not_rendered(core, after) && !entry_transitions_display(tracker, core, chain[i], "", 0)) {
         hidden = true;
         st = tracker_unrender(tracker, chain[i], NULL, 0);
       }
@@ -1704,7 +1712,7 @@ GTEXT_CSS_Status gtext_cssom_transition_tracker_flush(GTEXT_CSSOM_Transition_Tra
   if (st == GTEXT_CSS_OK && pseudo && pseudo_length) {
     GTEXT_CSS_Computed_Style * after = NULL;
     st = hidden ? GTEXT_CSS_OK : gtext_cssom_document_after_change_style(tracker->document, element, pseudo, pseudo_length, &after);
-    bool none = st == GTEXT_CSS_OK && after && style_is_display_none(core, after);
+    bool none = st == GTEXT_CSS_OK && after && style_is_not_rendered(core, after);
     if (st == GTEXT_CSS_OK && after) {
       GTEXT_CSS_Selector_List * list = NULL;
       bool null_obj = false;
