@@ -384,11 +384,15 @@ def translate(op):
             desc = desc[:-len('Reached unreachable code')].rstrip(' ')
         return '%s.addEventListener(%s, t.step_func(() => { assert_unreached(%s); }));' % (E(a[0]), jstr(a[1]), jstr(desc))
     if n in ('ewait', 'ewaito'):
+        fields = ('type', 'propertyName', 'elapsedTime', 'pseudoElement')
+        if a and a[-1] == '!swap':   # the plant `swap-event-fields`: the registers of an event's type and property name are filled the wrong way round
+            a = a[:-1]
+            fields = ('propertyName', 'type', 'elapsedTime', 'pseudoElement')
         if n == 'ewaito':
             regs = a[2:6]
             groups = [regs]
             call = 'await new Promise(function (resolve) { %s.addEventListener(%s, resolve, {once: true}); })' % (E(a[0]), jstr(a[1]))
-            return 'ev = [%s]; ' % call + ' '.join(('%s = ev[0].%s;' % (Rg(r), f)) for r, f in zip(regs, ('type', 'propertyName', 'elapsedTime', 'pseudoElement')))
+            return 'ev = [%s]; ' % call + ' '.join(('%s = ev[0].%s;' % (Rg(r), f)) for r, f in zip(regs, fields))
         count = int(a[3])
         types = a[4:4 + count]
         regs = a[4 + count:]
@@ -398,7 +402,7 @@ def translate(op):
         if not record:
             out.append('ev = [ev];')
         for i in range(count):
-            for r, f in zip(regs[4 * i:4 * i + 4], ('type', 'propertyName', 'elapsedTime', 'pseudoElement')):
+            for r, f in zip(regs[4 * i:4 * i + 4], fields):
                 out.append('%s = ev[%d].%s;' % (Rg(r), i if record else 0, f))
         return ' '.join(out)
     if n == 'ebatch':
@@ -415,7 +419,7 @@ def translate(op):
     raise ValueError('the op %s has no replay' % n)
 
 
-PLANTS = ('drop-assert', 'flip-expect', 'wrong-id', 'negate-cmp')
+PLANTS = ('drop-assert', 'flip-expect', 'wrong-id', 'negate-cmp', 'swap-event-fields')
 
 
 def plant_index(ops, plant):
@@ -429,6 +433,12 @@ def plant_index(ops, plant):
             return i
         if plant == 'negate-cmp' and op[0] == 'cmp':
             return i
+        if plant == 'swap-event-fields' and op[0] == 'ewait':
+            # an event whose property name some later operand reads (a wait whose event nothing asserts on shows no swap)
+            count = int(op[4])
+            regs = op[5 + count:]
+            if any(('r:' + regs[4 * k + 1]) in later for k in range(count) for later in ops[i + 1:]):
+                return i
     return None
 
 
@@ -446,6 +456,8 @@ def apply_plant(ops, plant):
         op[3] += 'X'
     elif plant == 'negate-cmp':
         op[2] = {'eq': 'ne', 'ne': 'eq', 'leq': 'lne', 'lne': 'leq'}[op[2]]
+    elif plant == 'swap-event-fields':
+        op.append('!swap')
     return ops[:at] + [op] + ops[at + 1:]
 
 
