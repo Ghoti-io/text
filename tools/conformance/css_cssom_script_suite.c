@@ -54,11 +54,17 @@
  * events and the expectations sorted by property name and compared, as helper.js assert_end_event_batch_equal does); tlnow R (document.timeline.currentTime). The time is the document timeline's: 0 at
  * the start of a page, and it only moves in these ops. An event that no listener is waiting for fails the test of the EventWatcher it reaches, as testharness.js's handler does, and a test that waits more
  * than 625 frames (the ten seconds the harness gives it) fails.
+ * Animations (Element.getAnimations(), the members of the objects it returns; the Web Animations model of the library, animation/world.h): ga L ROOT PSEUDO SUBTREE (the animations of an element, or ROOT `doc`, after a
+ * style update of the whole document: L is a list of them); alen R L; aat A L INDEX (the animation, or undefined past the end: a member read of it fails the test as the TypeError of the page does); aget R A MEMBER
+ * (animationName and transitionProperty, which are `undefined` on the other kind, playState, pending, currentTime, id); aset A id VALUE; tget R A timing|computed MEMBER (getTiming() and getComputedTiming() of its
+ * effect: delay, endDelay, fill, iterationStart, iterations, duration, direction, easing, and for the computed ones endTime, activeDuration, localTime, progress, currentIteration). An animation is read as it is
+ * when the op runs; one that is no longer in the document's animations reads as idle, with null times.
  * `sattr R S NAME flush` is a read whose value the page drops (it needs no layout, whatever the property is). `elem R nav E ...` on an element whose creation the runner skipped because the test had failed is null.
  * fail MSG; test INDEX NAME; cleanup (the ops after it run whether or not the test failed); end. An op on an element that is null (a lookup that found nothing) fails the test, as
  * the TypeError of the page does.
  */
 
+#include <ghoti.io/text/animation.h>
 #include <ghoti.io/text/css.h>
 #include <ghoti.io/text/html.h>
 
@@ -221,6 +227,8 @@ typedef struct {
   char * property;
   char * pseudo;
   double elapsed;
+  int resolved;           /* the scheduled event time is resolved */
+  double scheduled;       /* ... and is this (ms on the timeline) */
 } qevent;
 
 /* A listener of the page. kind 0 is an EventWatcher's (testharness.js: its handler asserts that it is waiting for the event's type, and records it), kind 1 is a handler that only calls
@@ -246,11 +254,30 @@ typedef struct {
   size_t nrec;
 } watcher;
 
+/* An Animation object the program holds: which animation it is, and what it was when it was found (an animation that has left the document's animations reads as idle, with this timing). */
+typedef struct animh {
+  char * name;
+  int missing;                  /* the index was past the end: the value is undefined */
+  GTEXT_Anim_Kind kind;
+  uint64_t id;
+  char * pname;                 /* animationName or transitionProperty */
+  char * easing;
+  GTEXT_Anim_Effect_Timing timing;
+  char * idtext;                /* `id`, which a page sets */
+} animh;
+
+typedef struct animlist {
+  char * name;
+  animh * items;
+  size_t n;
+} animlist;
+
 typedef struct {
   GTEXT_CSS_Registry * registry;
   GTEXT_CSS_Conditions * conditions;
   GTEXT_CSSOM_Document * doc;
   GTEXT_CSSOM_Transition_Tracker * tracker;
+  GTEXT_Anim_World * anim;
   GTEXT_Markup_Document * markup;
   GTEXT_CSS_Markup_Adapter * adapter;
   GTEXT_CSS_Selector_Match_Options match_options;
@@ -289,6 +316,10 @@ typedef struct {
   size_t nwatchers, capwatchers;
   qevent * queue;              /* the events of the frames that have not been dispatched */
   size_t nqueue, capqueue, headqueue;
+  struct animh * ahs;          /* the Animation objects the program holds */
+  size_t nahs, capahs;
+  struct animlist * alists;    /* the results of getAnimations() */
+  size_t nalists, capalists;
 } world;
 
 /* The user agent's style sheet is the part of the HTML rendering section that the display and the body's margin need; the library has no user agent sheet of its own. */
@@ -397,10 +428,16 @@ static size_t g_ua_len = sizeof UA_SHEET - 1;
 static int g_timeline = 1;
 
 static GTEXT_CSS_Status runner_animation_time(void * user, const void * element, const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Anim_Effect * effect, double * time_ms, bool * known) {
-  (void)user;
-  (void)element;
-  (void)pseudo;
-  (void)effect;
+  /* the CSS animations the tracker made have the time the tracker gives them (their start is the style change event that made them); one it has not made yet (no style change event of its element) has the
+     document timeline's 0, which is where every animation of a page began */
+  const world * w = user;
+  GTEXT_CSSOM_Transition_Tracker * t = w ? w->tracker : NULL;
+  if (t && g_timeline != 0) {
+    const GTEXT_CSS_Status st = gtext_cssom_transition_tracker_animation_time(t, element, pseudo, effect, time_ms, known);
+    if (st != GTEXT_CSS_OK || *known) {
+      return st;
+    }
+  }
   *time_ms = 0.0;
   *known = g_timeline != 0;
   return GTEXT_CSS_OK;
@@ -921,6 +958,9 @@ static int world_open(world * w, const char * html, size_t html_len) {
   if (g_transitions && gtext_cssom_transition_tracker_new(w->doc, NULL, &w->tracker) != GTEXT_CSS_OK) {
     return 0;
   }
+  if (w->tracker && gtext_anim_world_new(w->doc, w->tracker, NULL, &w->anim) != GTEXT_ANIM_OK) {
+    return 0;
+  }
   GTEXT_CSSOM_Markup_Options mo = gtext_cssom_markup_options_default();
   if (gtext_cssom_markup_binding_new(w->doc, gtext_cssom_document_scope(w->doc), w->markup, &mo, &w->binding) != GTEXT_CSS_OK ||
       gtext_cssom_markup_sync(w->binding, NULL) != GTEXT_CSS_OK) {
@@ -975,6 +1015,25 @@ static void world_close(world * w) {
   }
   free(w->shadows);
   gtext_cssom_markup_binding_free(w->binding);
+  for (size_t i = 0; i < w->nahs; i++) {
+    free(w->ahs[i].name);
+    free(w->ahs[i].pname);
+    free(w->ahs[i].easing);
+    free(w->ahs[i].idtext);
+  }
+  free(w->ahs);
+  for (size_t i = 0; i < w->nalists; i++) {
+    for (size_t k = 0; k < w->alists[i].n; k++) {
+      free(w->alists[i].items[k].name);
+      free(w->alists[i].items[k].pname);
+      free(w->alists[i].items[k].easing);
+      free(w->alists[i].items[k].idtext);
+    }
+    free(w->alists[i].items);
+    free(w->alists[i].name);
+  }
+  free(w->alists);
+  gtext_anim_world_free(w->anim);
   gtext_cssom_transition_tracker_free(w->tracker);
   gtext_cssom_document_release(w->doc);
   gtext_css_sheet_free(w->ua_sheet);
@@ -3198,17 +3257,17 @@ static char * run_frame(world * w) {
   if (w->headqueue == w->nqueue) {   /* everything queued has been dispatched: start again from the front, so that the events of this frame are the ones from `first` on */
     w->headqueue = w->nqueue = 0;
   }
-  GTEXT_CSSOM_Transition_Events * events = NULL;
-  const GTEXT_CSS_Status st = gtext_cssom_transition_tracker_events(w->tracker, &events);
-  if (st != GTEXT_CSS_OK) {
-    return status_failure("the events of a frame", st);
+  GTEXT_Anim_Events * events = NULL;
+  const GTEXT_Anim_Status st = gtext_anim_world_update(w->anim, &events);
+  if (st != GTEXT_ANIM_OK) {
+    return fmt("the events of a frame could not be made (status %d)", (int)st);
   }
-  static const char * const types[] = {"transitionrun", "transitionstart", "transitionend", "transitioncancel"};
-  const size_t n = gtext_cssom_transition_events_count(events);
+  static const char * const types[] = {"animationstart", "animationiteration", "animationend", "animationcancel", "transitionrun", "transitionstart", "transitionend", "transitioncancel"};
+  const size_t n = gtext_anim_events_count(events);
   const size_t first = w->nqueue;
   for (size_t i = 0; i < n; i++) {
-    GTEXT_CSSOM_Transition_Event e;
-    if (!gtext_cssom_transition_events_at(events, i, &e)) {
+    GTEXT_Anim_Event e;
+    if (!gtext_anim_events_at(events, i, &e)) {
       break;
     }
     qevent q;
@@ -3218,14 +3277,18 @@ static char * run_frame(world * w) {
         q.target = w->known[k];
       }
     }
-    q.type = types[e.event.type];
-    q.property = dupn(e.event.property_name.data ? e.event.property_name.data : "", e.event.property_name.length);
+    q.type = types[e.type];
+    q.property = dupn(e.name.data ? e.name.data : "", e.name.length);
     q.pseudo = dupn(e.pseudo_element.data ? e.pseudo_element.data : "", e.pseudo_element.length);
-    q.elapsed = e.event.elapsed_time;
+    q.elapsed = e.elapsed_time;
+    q.resolved = e.scheduled_time.resolved;
+    q.scheduled = e.scheduled_time.ms;
     queue_push(w, q);
   }
-  gtext_cssom_transition_events_free(events);
-  /* tree order of the targets (a stable insertion sort of this frame's events: the order within an element is the composite order) */
+  gtext_anim_events_free(events);
+  /* "Perform a stable sort of the animation events ... Sort the events by their scheduled event time ... Within events with equal scheduled event times, sort by their composite order": the library's list is in
+     that order for the events of one element and of one frame of the tracker; across elements the composite order is the tree order of the owning elements (the tracker's order is the order it first saw them in),
+     so this frame's events are sorted again, stably, by the time and then the tree order of the targets */
   for (size_t i = first + 1; i < w->nqueue; i++) {
     qevent x = w->queue[i];
     const size_t key = x.target ? tracked_index(w, x.target) : (size_t)-1;
@@ -3233,7 +3296,8 @@ static char * run_frame(world * w) {
     while (k > first) {
       const qevent * prev = &w->queue[k - 1];
       const size_t pk = prev->target ? tracked_index(w, prev->target) : (size_t)-1;
-      if (pk <= key) {
+      const int by_time = prev->resolved != x.resolved ? (prev->resolved ? 1 : -1) : (prev->scheduled > x.scheduled ? 1 : prev->scheduled < x.scheduled ? -1 : 0);
+      if (by_time < 0 || (by_time == 0 && pk <= key)) {
         break;
       }
       w->queue[k] = w->queue[k - 1];
@@ -3710,6 +3774,357 @@ static int is_events_op(const char * name) {
     }
   }
   return 0;
+}
+
+/* ---- animations ------------------------------------------------------------------------------------------------------------------------------- */
+
+static int is_anim_op(const char * name) {
+  static const char * const names[] = {"ga", "alen", "aat", "aget", "aset", "tget"};
+  for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
+    if (strcmp(name, names[i]) == 0) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static animh * find_ah(world * w, const char * name) {
+  for (size_t i = w->nahs; i-- > 0;) {
+    if (strcmp(w->ahs[i].name, name) == 0) {
+      return &w->ahs[i];
+    }
+  }
+  return NULL;
+}
+
+static animlist * find_alist(world * w, const char * name) {
+  for (size_t i = w->nalists; i-- > 0;) {
+    if (strcmp(w->alists[i].name, name) == 0) {
+      return &w->alists[i];
+    }
+  }
+  return NULL;
+}
+
+static void animh_free(animh * h) {
+  free(h->name);
+  free(h->pname);
+  free(h->easing);
+  free(h->idtext);
+  memset(h, 0, sizeof *h);
+}
+
+static animh animh_copy(const animh * h, const char * name) {
+  animh c = *h;
+  c.name = dups(name);
+  c.pname = dups(h->pname ? h->pname : "");
+  c.easing = dups(h->easing ? h->easing : "");
+  c.idtext = dups(h->idtext ? h->idtext : "");
+  return c;
+}
+
+static value number_value(double v) {
+  char buf[64];
+  if (v != v) {
+    return val('n', "NaN", 3);
+  }
+  if (v > 1e308) {
+    return val('n', "Infinity", 8);
+  }
+  if (v < -1e308) {
+    return val('n', "-Infinity", 9);
+  }
+  snprintf(buf, sizeof buf, "%.17g", v);
+  return val('n', buf, strlen(buf));
+}
+
+static value time_value(GTEXT_Anim_Time t) {
+  return t.resolved ? number_value(t.ms) : val('N', "", 0);
+}
+
+static const char * fill_name(GTEXT_Anim_Fill f) {
+  switch (f) {
+    case GTEXT_ANIM_FILL_NONE: return "none";
+    case GTEXT_ANIM_FILL_FORWARDS: return "forwards";
+    case GTEXT_ANIM_FILL_BACKWARDS: return "backwards";
+    case GTEXT_ANIM_FILL_BOTH: return "both";
+    default: return "auto";
+  }
+}
+
+static const char * direction_name(GTEXT_Anim_Direction d) {
+  switch (d) {
+    case GTEXT_ANIM_DIRECTION_REVERSE: return "reverse";
+    case GTEXT_ANIM_DIRECTION_ALTERNATE: return "alternate";
+    case GTEXT_ANIM_DIRECTION_ALTERNATE_REVERSE: return "alternate-reverse";
+    default: return "normal";
+  }
+}
+
+static char * anim_op(world * w, const op * o, int * program_error) {
+  const char * name = o->f[0];
+  *program_error = 0;
+  if (strcmp(name, "ga") == 0) {
+    if (o->n != 5) {
+      *program_error = 1;
+      return dups("ga has the wrong number of fields");
+    }
+    sync_world(w);
+    GTEXT_Markup_Node * node = NULL;
+    if (strcmp(o->f[2], "doc") != 0) {
+      elem * e = find_elem(w, o->f[2]);
+      if (!e) {
+        *program_error = 1;
+        return fmt("ga names the element %s, which the program did not make", o->f[2]);
+      }
+      if (!e->node || !is_element(e->node)) {
+        return dups("TypeError: the element is null");
+      }
+      node = e->node;
+    }
+    /* "Element.getAnimations()": the style of the document is brought up to date first, as a style change event for every element, whether or not the page has waited */
+    char * recalc_failure = style_recalc(w);
+    if (recalc_failure) {
+      return recalc_failure;
+    }
+    animlist l;
+    memset(&l, 0, sizeof l);
+    l.name = dups(o->f[1]);
+    if (w->anim) {
+      GTEXT_Anim_List * list = NULL;
+      const GTEXT_Anim_Status st = gtext_anim_world_get_animations(w->anim, node ? gtext_css_markup_handle(node) : NULL, o->f[3], o->l[3], strcmp(o->f[4], "true") == 0, &list);
+      if (st != GTEXT_ANIM_OK) {
+        free(l.name);
+        return fmt("getAnimations() failed (status %d)", (int)st);
+      }
+      l.n = gtext_anim_list_count(list);
+      l.items = calloc(l.n ? l.n : 1, sizeof *l.items);
+      for (size_t i = 0; i < l.n; i++) {
+        GTEXT_Anim_Info a;
+        (void)gtext_anim_list_at(list, i, &a);
+        animh * h = &l.items[i];
+        h->kind = a.kind;
+        h->id = a.id;
+        h->pname = dupn(a.name.data ? a.name.data : "", a.name.length);
+        h->easing = dupn(a.easing.data ? a.easing.data : "", a.easing.length);
+        h->timing = a.timing;
+        h->timing.easing = NULL;
+        h->idtext = dups("");
+      }
+      gtext_anim_list_free(list);
+    }
+    animlist * old = find_alist(w, o->f[1]);
+    if (old) {
+      for (size_t i = 0; i < old->n; i++) {
+        animh_free(&old->items[i]);
+      }
+      free(old->items);
+      free(old->name);
+      *old = l;
+      return NULL;
+    }
+    if (w->nalists == w->capalists) {
+      w->capalists = w->capalists ? w->capalists * 2 : 8;
+      w->alists = realloc(w->alists, w->capalists * sizeof *w->alists);
+      if (!w->alists) {
+        abort();
+      }
+    }
+    w->alists[w->nalists++] = l;
+    return NULL;
+  }
+  if (strcmp(name, "alen") == 0) {
+    if (o->n != 3) {
+      *program_error = 1;
+      return dups("alen has the wrong number of fields");
+    }
+    animlist * l = find_alist(w, o->f[2]);
+    if (!l) {
+      *program_error = 1;
+      return fmt("alen names the list %s, which the program did not make", o->f[2]);
+    }
+    put_reg(w, o->f[1], number_value((double)l->n));
+    return NULL;
+  }
+  if (strcmp(name, "aat") == 0) {
+    if (o->n != 4) {
+      *program_error = 1;
+      return dups("aat has the wrong number of fields");
+    }
+    animlist * l = find_alist(w, o->f[2]);
+    if (!l) {
+      *program_error = 1;
+      return fmt("aat names the list %s, which the program did not make", o->f[2]);
+    }
+    const size_t index = (size_t)strtoull(o->f[3], NULL, 10);
+    animh h;
+    memset(&h, 0, sizeof h);
+    if (index < l->n) {
+      h = animh_copy(&l->items[index], o->f[1]);
+    }
+    else {
+      h.name = dups(o->f[1]);
+      h.missing = 1;
+      h.pname = dups("");
+      h.easing = dups("");
+      h.idtext = dups("");
+    }
+    animh * old = find_ah(w, o->f[1]);
+    if (old) {
+      animh_free(old);
+      *old = h;
+      return NULL;
+    }
+    if (w->nahs == w->capahs) {
+      w->capahs = w->capahs ? w->capahs * 2 : 8;
+      w->ahs = realloc(w->ahs, w->capahs * sizeof *w->ahs);
+      if (!w->ahs) {
+        abort();
+      }
+    }
+    w->ahs[w->nahs++] = h;
+    return NULL;
+  }
+  /* aget, aset and tget name an animation */
+  const size_t at = strcmp(name, "aset") == 0 ? 1 : 2;
+  if (o->n <= at) {
+    *program_error = 1;
+    return fmt("%s has too few fields", name);
+  }
+  animh * h = find_ah(w, o->f[at]);
+  if (!h) {
+    *program_error = 1;
+    return fmt("%s names the animation %s, which the program did not make", name, o->f[at]);
+  }
+  if (h->missing) {
+    return dups("TypeError: Cannot read properties of undefined");
+  }
+  if (strcmp(name, "aset") == 0) {
+    if (o->n != 4 || strcmp(o->f[2], "id") != 0) {
+      *program_error = 1;
+      return dups("aset sets only the id");
+    }
+    free(h->idtext);
+    h->idtext = dups(o->f[3]);
+    return NULL;
+  }
+  GTEXT_Anim_Info info;
+  memset(&info, 0, sizeof info);
+  bool found = false;
+  if (w->anim && gtext_anim_world_find(w->anim, h->kind, h->id, &found, &info) != GTEXT_ANIM_OK) {
+    return dups("the animation could not be read");
+  }
+  const char * member;
+  if (strcmp(name, "aget") == 0) {
+    if (o->n != 4) {
+      *program_error = 1;
+      return dups("aget has the wrong number of fields");
+    }
+    member = o->f[3];
+    value v;
+    if (strcmp(member, "animationName") == 0) {
+      v = h->kind == GTEXT_ANIM_KIND_CSS_ANIMATION ? val('s', h->pname, strlen(h->pname)) : val('u', "", 0);
+    }
+    else if (strcmp(member, "transitionProperty") == 0) {
+      v = h->kind == GTEXT_ANIM_KIND_CSS_TRANSITION ? val('s', h->pname, strlen(h->pname)) : val('u', "", 0);
+    }
+    else if (strcmp(member, "playState") == 0) {
+      static const char * const states[] = {"idle", "running", "paused", "finished"};
+      const char * s = found ? states[info.play_state] : "idle";
+      v = val('s', s, strlen(s));
+    }
+    else if (strcmp(member, "pending") == 0) {
+      v = val('b', found && info.pending ? "true" : "false", found && info.pending ? 4 : 5);
+    }
+    else if (strcmp(member, "currentTime") == 0) {
+      v = found ? time_value(info.current_time) : val('N', "", 0);
+    }
+    else if (strcmp(member, "id") == 0) {
+      v = val('s', h->idtext, strlen(h->idtext));
+    }
+    else {
+      *program_error = 1;
+      return fmt("aget does not know the member %s", member);
+    }
+    put_reg(w, o->f[1], v);
+    return NULL;
+  }
+  /* tget R A timing|computed MEMBER */
+  if (o->n != 5) {
+    *program_error = 1;
+    return dups("tget has the wrong number of fields");
+  }
+  const int computed = strcmp(o->f[3], "computed") == 0;
+  member = o->f[4];
+  const GTEXT_Anim_Effect_Timing * t = found ? &info.timing : &h->timing;
+  const char * easing = found ? NULL : h->easing;
+  char * easing_copy = NULL;
+  if (found) {
+    easing_copy = dupn(info.easing.data ? info.easing.data : "", info.easing.length);
+    easing = easing_copy;
+  }
+  /* the computed timing of an animation that is not found: its timing with no local time */
+  GTEXT_Anim_Computed_Timing ct;
+  if (found) {
+    ct = info.computed;
+  }
+  else {
+    (void)gtext_anim_computed_timing(t, (GTEXT_Anim_Time){false, 0.0}, 1.0, false, &ct);
+  }
+  value v;
+  int known = 1;
+  if (strcmp(member, "delay") == 0) {
+    v = number_value(t->delay);
+  }
+  else if (strcmp(member, "endDelay") == 0) {
+    v = number_value(t->end_delay);
+  }
+  else if (strcmp(member, "fill") == 0) {
+    const char * s = fill_name(computed ? ct.timing.fill : t->fill);
+    v = val('s', s, strlen(s));
+  }
+  else if (strcmp(member, "iterationStart") == 0) {
+    v = number_value(t->iteration_start);
+  }
+  else if (strcmp(member, "iterations") == 0) {
+    v = number_value(t->iterations);
+  }
+  else if (strcmp(member, "duration") == 0) {
+    v = !computed && t->duration_auto ? val('s', "auto", 4) : number_value(computed ? ct.timing.duration : t->duration);
+  }
+  else if (strcmp(member, "direction") == 0) {
+    const char * s = direction_name(t->direction);
+    v = val('s', s, strlen(s));
+  }
+  else if (strcmp(member, "easing") == 0) {
+    v = val('s', easing, strlen(easing));
+  }
+  else if (computed && strcmp(member, "endTime") == 0) {
+    v = number_value(ct.end_time);
+  }
+  else if (computed && strcmp(member, "activeDuration") == 0) {
+    v = number_value(ct.active_duration);
+  }
+  else if (computed && strcmp(member, "localTime") == 0) {
+    v = time_value(ct.local_time);
+  }
+  else if (computed && strcmp(member, "progress") == 0) {
+    v = ct.has_progress ? number_value(ct.progress) : val('N', "", 0);
+  }
+  else if (computed && strcmp(member, "currentIteration") == 0) {
+    v = ct.has_current_iteration ? number_value(ct.current_iteration) : val('N', "", 0);
+  }
+  else {
+    known = 0;
+    v = val('u', "", 0);
+  }
+  free(easing_copy);
+  if (!known) {
+    *program_error = 1;
+    return fmt("tget does not know the member %s", member);
+  }
+  put_reg(w, o->f[1], v);
+  return NULL;
 }
 
 static char * run_op(world * w, const op * o, testrun * t, int * program_error) {
@@ -4249,6 +4664,9 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
   }
   if (is_events_op(name)) {
     return events_op(w, o, program_error);
+  }
+  if (is_anim_op(name)) {
+    return anim_op(w, o, program_error);
   }
   if (strncmp(name, "assert_", 7) == 0) {
     value vals[MAX_FIELDS];

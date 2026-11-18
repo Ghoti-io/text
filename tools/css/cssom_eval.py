@@ -454,6 +454,31 @@ class HostDoc(Host):
     pass
 
 
+class HostAnimList(Host):
+    """The result of `getAnimations()`: a static array whose length only the library knows (``ga`` made it)."""
+
+
+class HostAnim(Host):
+    """An Animation object (a CSSAnimation or a CSSTransition: which, only the library knows): the name is its name in the program."""
+
+
+class HostEffect(Host):
+    """`animation.effect`: of the animation named ``anim``."""
+
+    def __init__(self, anim):
+        Host.__init__(self, 'effect')
+        self.anim = anim
+
+
+class HostTiming(Host):
+    """The dictionary `effect.getTiming()` (``which`` 'timing') or `effect.getComputedTiming()` ('computed') returned: its members are read from the library when they are read."""
+
+    def __init__(self, anim, which):
+        Host.__init__(self, 'timing')
+        self.anim = anim
+        self.which = which
+
+
 class HostWindow(Host):
     pass
 
@@ -1020,6 +1045,8 @@ class Interp:
         msg = self.desc(a, 2)
         if len(a) < 2:
             raise Unmodeled('harness-assert-arity')
+        if isinstance(a[0], HostAnim) or isinstance(a[1], HostAnim):
+            raise Unmodeled('animation-object-identity')   # one Animation object per animation is the binding's: two reads of getAnimations() give two handles here
         if isinstance(a[0], Rt) or isinstance(a[1], Rt) or (isinstance(a[0], (HostElem, HostObj)) and a[0] is not a[1]) or (isinstance(a[1], (HostElem, HostObj)) and a[0] is not a[1]):
             if any(not isinstance(x, (Rt, str, float, bool, HostElem, HostObj)) and x is not None and x is not UNDEF for x in a[:2]):
                 raise Unmodeled('computed-value-compared-with-object')
@@ -1034,6 +1061,8 @@ class Interp:
         msg = self.desc(a, 2)
         if len(a) < 2:
             raise Unmodeled('harness-assert-arity')
+        if isinstance(a[0], HostAnim) or isinstance(a[1], HostAnim):
+            raise Unmodeled('animation-object-identity')
         if isinstance(a[0], Rt) or isinstance(a[1], Rt) or (isinstance(a[0], (HostElem, HostObj)) and a[0] is not a[1]) or (isinstance(a[1], (HostElem, HostObj)) and a[0] is not a[1]):
             if any(not isinstance(x, (Rt, str, float, bool, HostElem, HostObj)) and x is not None and x is not UNDEF for x in a[:2]):
                 raise Unmodeled('computed-value-compared-with-object')
@@ -1092,6 +1121,11 @@ class Interp:
         msg = self.desc(a, 2)
         if len(a) < 2:
             raise Unmodeled('harness-assert-arity')
+        if isinstance(a[0], HostAnimList) and isinstance(a[1], JArr) and len(a[1]) == 0:
+            r = interp.new_reg()
+            interp.emit('alen', r, a[0].name)
+            self.runtime_assert('assert_equals', [Rt(r, 'n'), 0.0], msg)   # an array of no animations has the length 0
+            return UNDEF
         for x in a[:2]:
             if not isinstance(x, JArr):
                 raise Unmodeled('harness-assert-array-argument')
@@ -2400,6 +2434,8 @@ def doc_get(interp, d, key, for_call):
         n = interp.new_node('e')
         interp.emit('elem', n, SPECIAL_ELEM_PROPS[key], '')
         return HostElem(n)
+    if key == 'getAnimations':
+        return BoundMethod(m_get_animations('doc'))
     if key == 'getElementById':
         def f(i, a):
             i.need_dom()
@@ -2759,6 +2795,8 @@ def elem_get(interp, el, key, for_call):
         raise Unmodeled('dom-element-' + key)   # members of a shadow root: on an element they are undefined (or another thing), and the evaluator does not know which
     if key == 'getElementById':
         return BoundMethod(m_get_element_by_id(el))
+    if key == 'getAnimations' and not el.root:
+        return BoundMethod(m_get_animations(el.name))
     if key == 'setHTMLUnsafe':
         return BoundMethod(m_set_html_unsafe(el))
     if key == 'addEventListener':
@@ -3243,6 +3281,80 @@ def doc_set(interp, d, key, value):
 
 
 HOST_GET = {HostObj: obj_get, HostRuleList: rulelist_get, HostSheetList: sheetlist_get, HostDoc: doc_get, HostWindow: window_get, HostElem: elem_get, HostStyle: style_get, HostClassList: classlist_get, HostList: list_get, HostTest: test_get, HostMath: math_get, HostCSS: css_get}
+def m_get_animations(root):
+    """`Element.getAnimations(options)` and `Document.getAnimations()`: the animations (a static array) after a style update of the document; ``{subtree: true}`` includes the descendants."""
+    def f(interp, a):
+        interp.need_dom()
+        subtree = False
+        if len(a) > 1:
+            raise Unmodeled('host-getAnimations-argument')
+        if a:
+            if not isinstance(a[0], JObj) or root == 'doc':
+                raise Unmodeled('host-getAnimations-argument')
+            for k, v in a[0].items():
+                if k != 'subtree' or not isinstance(v, bool):
+                    raise Unmodeled('host-getAnimations-option')
+                subtree = v
+        n = interp.new_node('g')
+        interp.emit('ga', n, root, '', 'true' if subtree else 'false')
+        return HostAnimList(n)
+    return f
+
+
+def alist_get(interp, lst, key, for_call):
+    if re.fullmatch(r'\d+', key):
+        n = interp.new_node('a')
+        interp.emit('aat', n, lst.name, key)
+        return HostAnim(n)
+    if key == 'length':
+        r = interp.new_reg()
+        interp.emit('alen', r, lst.name)
+        return Rt(r, 'n')
+    raise Unmodeled('animation-list-' + key)
+
+
+# what an Animation's members read as (the library says the value; `any` is a number, null, a string or undefined)
+ANIM_READS = {'animationName': 'any', 'transitionProperty': 'any', 'playState': 's', 'pending': 'b', 'currentTime': 'any', 'id': 's'}   # `startTime` is the Animation state machine's: it is null until a frame the page does not control (Firefox answers a pending one both ways), and the frame that resolves it is W2's
+TIMING_READS = {'delay': 'n', 'endDelay': 'n', 'fill': 's', 'iterationStart': 'n', 'iterations': 'n', 'duration': 'any', 'direction': 's', 'easing': 's'}
+COMPUTED_READS = dict(TIMING_READS, endTime='n', activeDuration='n', localTime='any', progress='any', currentIteration='any')
+
+
+def anim_get(interp, an, key, for_call):
+    if key in ANIM_READS:
+        r = interp.new_reg()
+        interp.emit('aget', r, an.name, key)
+        return Rt(r, ANIM_READS[key])
+    if key == 'effect':
+        return HostEffect(an.name)
+    raise Unmodeled('animation-' + key)   # the timeline, the promises and the methods that change an animation are the Animation state machine's
+
+
+def anim_set(interp, an, key, value):
+    if key == 'id' and isinstance(value, str):
+        interp.emit('aset', an.name, 'id', value)
+        return
+    raise Unmodeled('animation-set-' + key)
+
+
+def effect_get(interp, ef, key, for_call):
+    if key in ('getTiming', 'getComputedTiming'):
+        which = 'timing' if key == 'getTiming' else 'computed'
+        return BoundMethod(lambda i, a: HostTiming(ef.anim, which))
+    raise Unmodeled('animation-effect-' + key)
+
+
+def timing_get(interp, t, key, for_call):
+    reads = TIMING_READS if t.which == 'timing' else COMPUTED_READS
+    if key in reads:
+        r = interp.new_reg()
+        interp.emit('tget', r, t.anim, t.which, key)
+        return Rt(r, reads[key])
+    raise Unmodeled('animation-timing-' + key)
+
+
+HOST_GET.update({HostAnimList: alist_get, HostAnim: anim_get, HostEffect: effect_get, HostTiming: timing_get})
+
+
 def event_get(interp, ev, key, for_call):
     if ev.poisoned:
         raise Unmodeled('event-after-sort')
@@ -3259,7 +3371,7 @@ def timeline_get(interp, tl, key, for_call):
     raise Unmodeled('dom-timeline-' + key)
 
 
-HOST_SET = {HostObj: obj_set, HostDoc: doc_set, HostWindow: window_set, HostElem: elem_set, HostStyle: style_set}
+HOST_SET = {HostObj: obj_set, HostDoc: doc_set, HostWindow: window_set, HostElem: elem_set, HostStyle: style_set, HostAnim: anim_set}
 
 
 # ---- promises, async functions and the event loop of a promise_test ----------------------------------------------------------------------------
@@ -3877,7 +3989,7 @@ HARNESS_SRC = ('testharness.js', 'testharnessreport.js')
 
 # The helper scripts of the pinned pages that the evaluator runs as part of the page, by base name: their source is read from the pin next to the page, and what a helper function does that the
 # evaluator cannot fold (a loop on a read, a try with a finally) is a native of MODELED_HELPER_NATIVES, which the helper's own declaration does not replace.
-MODELED_HELPER_FILES = ('css/mediaqueries/resources/matchmedia-utils.js', 'css/css-transitions/support/helper.js')
+MODELED_HELPER_FILES = ('css/mediaqueries/resources/matchmedia-utils.js', 'css/css-transitions/support/helper.js', 'css/css-animations/support/testcommon.js')
 MODELED_HELPERS = tuple(os.path.basename(f) for f in MODELED_HELPER_FILES)
 
 
@@ -3885,7 +3997,7 @@ def reads_timing(wpt, rel, text, helpers):
     """Whether a page that waits (promise_test, a frame, a timer, an event) is one the evaluator reads: the page loads the helper of the transition pages (css/css-transitions/support/helper.js,
     whose `waitForFrame`, `addDiv` and event assertions the page's tests are written with). A page that waits in another way stays with the reason it has; this is the set the event loop of Loop
     was built for, and it grows with the model (each page added is recorded in the browsers and replayed there)."""
-    return any((helper_path(wpt, rel, h) or '').endswith('css-transitions/support/helper.js') for h in helpers if wpt is not None)
+    return any((helper_path(wpt, rel, h) or '').endswith(('css-transitions/support/helper.js', 'css-animations/support/testcommon.js')) for h in helpers if wpt is not None)
 
 
 def is_modeled_helper(wpt, rel, src):

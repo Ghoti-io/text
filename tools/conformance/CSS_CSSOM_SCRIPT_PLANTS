@@ -61,3 +61,5 @@ runner-forgets-nothing-when-an-element-is-moved-or-removed	runner:	    forget_pl
 runner-frame-runs-no-style-recalc	runner:	  char * failure = style_recalc(w);\n  if (failure) {\n    return failure;\n  }\n  w->now_ms += FRAME_MS;	  char * failure = NULL;\n  w->now_ms += FRAME_MS;	fail
 runner-frame-does-not-move-the-time	runner:	  w->now_ms += FRAME_MS;\n  w->test_frames++;	  w->now_ms += 0;\n  w->test_frames++;	fail
 runner-batch-expectations-not-sorted-by-property	runner:	    while (k > 0 && strcmp(o->f[3 + ex[k - 1]], o->f[3 + x]) > 0) {	    while (0 && k > 0 && strcmp(o->f[3 + ex[k - 1]], o->f[3 + x]) > 0) {	fail
+runner-get-animations-skips-the-style-update	runner:	    char * recalc_failure = style_recalc(w);\n    if (recalc_failure) {\n      return recalc_failure;\n    }\n    animlist l;	    animlist l;	fail
+runner-animation-name-is-read-from-the-other-kind	runner:	      v = h->kind == GTEXT_ANIM_KIND_CSS_ANIMATION ? val('s', h->pname, strlen(h->pname)) : val('u', "", 0);	      v = h->kind == GTEXT_ANIM_KIND_CSS_TRANSITION ? val('s', h->pname, strlen(h->pname)) : val('u', "", 0);	fail

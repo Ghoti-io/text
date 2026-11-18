@@ -1006,3 +1006,57 @@ outcome 0 unmodeled:host-window-assign
 <!DOCTYPE html><title>t</title><script>
 test(() => { window.innerWidth = 3; assert_true(true); }, "assign");
 </script>
+=== get-animations-length-is-a-register-the-runner-fills
+tests 1
+has ga|g2|e1||false$
+has alen|r1|g2$
+has assert_equals|r:r1|n:0|
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => { assert_equals(t.getAnimations().length, 0); }, "n");
+</script>
+=== get-animations-subtree-members-and-timing-are-reads-of-the-library
+tests 1
+has ga|g2|e1||true$
+has aat|a3|g2|1$
+has aget|r1|a3|animationName$
+has assert_equals|r:r1|s:x|
+has aset|a5|id|q$
+has tget|r3|a6|timing|duration$
+has tget|r4|a7|computed|endTime$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => {
+  const a = t.getAnimations({subtree: true});
+  assert_equals(a[1].animationName, "x");
+  assert_equals(a[0].playState, "running");
+  a[0].id = "q";
+  assert_equals(a[0].effect.getTiming().duration, "auto");
+  assert_equals(a[0].effect.getComputedTiming().endTime, 0);
+}, "n");
+</script>
+=== the-animations-of-a-document-and-an-empty-array-assertion
+tests 1
+has ga|g2|e1||false$
+has ga|g3|doc||false$
+has alen|r2|g3$
+has assert_equals|r:r1|n:0|
+has assert_equals|r:r2|n:1|
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => { assert_array_equals(t.getAnimations(), []); assert_equals(document.getAnimations().length, 1); }, "n");
+</script>
+=== an-animation-method-is-the-state-machines-and-is-refused-by-name
+tests 1
+outcome 0 unmodeled:animation-play
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => { t.getAnimations()[0].play(); }, "n");
+</script>
+=== an-update-of-an-effects-timing-is-the-state-machines-and-is-refused-by-name
+tests 1
+outcome 0 unmodeled:animation-effect-updateTiming
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => { t.getAnimations()[0].effect.updateTiming({duration: 5}); }, "n");
+</script>

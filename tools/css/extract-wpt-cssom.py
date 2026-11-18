@@ -1185,7 +1185,7 @@ def scan_page(wpt, rel, programs, unextracted):
         page.styles = col.styles
         page.sheets_ok = bool(col.styles) and all(not st[1] for st in col.styles)
         page.quirks = not re.match(r'\s*(<!--.*?-->\s*)*<!doctype\s+html', text, re.I | re.S) and not rel.endswith(('.xht', '.xhtml', '.svg'))
-        if any(HELPERS.search(s) for s in col.helper_scripts):
+        if any(HELPERS.search(s) and not (EVAL is not None and EVAL.is_modeled_helper(wpt, rel, s)) for s in col.helper_scripts):
             n = len(re.findall(r'\btest_\w+\s*\(|\bruntTests?\s*\(|\bruntest\s*\(', text))
             unextracted.append((rel, max(1, n), helper_reason(col.helper_scripts)))
             return True
@@ -1219,7 +1219,7 @@ def interpret_page(wpt, rel, text, unextracted):
     calls, marks, helpers = census.features(wpt, rel, False)
     # a page that waits (promise_test, requestAnimationFrame, setTimeout, a transition's events) is the evaluator's to read now: its event loop is a virtual one (tools/css/cssom_eval.py, Loop); what
     # needs the Web Animations model (an Animation object, the animations of an element, the events of CSS animations) is not, and is counted under its own reason
-    blocked = {'animation-model', 'input-driver', 'frame-or-popup', 'typed-om', 'register-property', 'view-transition', 'custom-element', 'fonts'}
+    blocked = {'input-driver', 'frame-or-popup', 'typed-om', 'register-property', 'view-transition', 'custom-element', 'fonts'}
     if 'timing' in marks and not EVAL.reads_timing(wpt, rel, text, helpers):
         return
     if blocked & set(marks) or [h for h in helpers if not EVAL.is_modeled_helper(wpt, rel, h)]:
@@ -1227,6 +1227,8 @@ def interpret_page(wpt, rel, text, unextracted):
     res = EVAL.evaluate_page(rel, text, wpt)
     if res is None or not res.tests:
         return
+    if 'animation-model' in marks and not any(t.reason is None for t in res.tests):
+        return   # a page of the Web Animations model's class every test of which still needs the Animation state machine or the effect stack has nothing to score: it stays unread, as it was
     unextracted[:] = [u for u in unextracted if u[0] != rel]
     for t in res.tests:
         if t.reason is not None:

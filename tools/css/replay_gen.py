@@ -250,6 +250,19 @@ def translate(op):
         return '%s = R.l[%s].length;' % (Rg(a[0]), jstr(a[1]))
     if n == 'qlen':
         return '%s = %s.querySelectorAll(%s).length;' % (Rg(a[0]), 'document' if a[1] == 'doc' else E(a[1]), jstr(a[2]))
+    if n == 'ga':
+        root = 'document' if a[1] == 'doc' else E(a[1])
+        return 'R.l[%s] = %s.getAnimations(%s);' % (jstr(a[0]), root, '{subtree: true}' if a[3] == 'true' else '')
+    if n == 'alen':
+        return '%s = R.l[%s].length;' % (Rg(a[0]), jstr(a[1]))
+    if n == 'aat':
+        return 'R.o[%s] = R.l[%s][%s];' % (jstr(a[0]), jstr(a[1]), a[2])
+    if n == 'aget':
+        return '%s = R.o[%s].%s;' % (Rg(a[0]), jstr(a[1]), a[2])
+    if n == 'aset':
+        return 'R.o[%s].%s = %s;' % (jstr(a[0]), a[1], jstr(a[2]))
+    if n == 'tget':
+        return '%s = R.o[%s].effect.%s().%s;' % (Rg(a[0]), jstr(a[1]), 'getTiming' if a[2] == 'timing' else 'getComputedTiming', a[3])
     if n == 'iftrue':
         return 'if (%s) {' % lit(a[0])
     if n == 'iffalse':

@@ -2702,8 +2702,8 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=0
 # scored is listed (UNSCORED_COMPUTED), and the gate is made to fail (--controls). tools/conformance/run-css-computed.sh --regenerate writes the lists.
 CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4532 CSS_COMPUTED_MAX_DEFECTS=0
 CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=240
-CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX_DEFECTS=0 CSS_CSSOM_MIN_FRACTION=2418 \
-	CSS_CSSOM_SCRIPT_MIN_SCORED=5676 CSS_CSSOM_SCRIPT_MIN_PAGES=682 CSS_CSSOM_SCRIPT_MAX_DEFECTS=11 CSS_CSSOM_SCRIPT_MAX_LAYOUT=678 CSS_CSSOM_SCRIPT_MAX_TIMELINE=0 CSS_CSSOM_SCRIPT_MAX_UA=4
+CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX_DEFECTS=0 CSS_CSSOM_MIN_FRACTION=2405 \
+	CSS_CSSOM_SCRIPT_MIN_SCORED=5700 CSS_CSSOM_SCRIPT_MIN_PAGES=694 CSS_CSSOM_SCRIPT_MAX_DEFECTS=11 CSS_CSSOM_SCRIPT_MAX_LAYOUT=685 CSS_CSSOM_SCRIPT_MAX_TIMELINE=0 CSS_CSSOM_SCRIPT_MAX_UA=4
 # What moved with the pin of web-platform-tests of 2026-11-10 (CSS-PLAN.md C5e21): the scored counts and pages go up with the new pages that are read (a floor that goes up); the share of the touched
 # tests that is scored goes from 2196 to 2190 in ten thousand because 1,300 of the 1,500 added tests are reftests and layout tests, which no gate here scores (a floor that goes down, with its
 # reason); 27 pages need a layout that did not (the ceiling of layout tests goes from 631 to 658); and ONE defect is above the old ceiling of 0 (highlight-cascade-currentcolor-color-mix.html#0:
@@ -2720,6 +2720,10 @@ CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX
 # background-position tests stay defects, with a reason that says why (the text keeps the origin keyword, as every static read of the library does, and css-backgrounds-4 is not pinned among the drafts); and
 # TWO tests of css-values/attr-security-transition-interpolated.html are `served-text` (a transition is at its start time at the first style update: Transitions 1, "at or before the start time") and ONE
 # test of attr-security-transition.html is a new defect (the attr() taint of a custom property value does not survive a transition: not built), found because `@starting-style` now starts the transition.
+# What moved with `getAnimations()` and the timing of an effect (the Web Animations model's first stage): the pages of css-animations and css-transitions that read `getAnimations()` and the members of what it
+# returns are read when they load the helper of the animation pages (css/css-animations/support/testcommon.js, modeled like the transition pages' helper) and have a test to score. 12 more pages are scored
+# (694), 24 more tests (5,700; all pass), seven more need a layout (678 to 685: tests of the new pages that read a used `width`), and the share of the touched tests that is scored goes from 2418 to
+# 2405 in ten thousand (a floor that goes down: 240 tests of the pages that are read now were counted as one test each while their helper was not modeled, and the 24 scored are not as many as the 240).
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
 conformance-css-computed: $(CONFORMANCE_LIB)

@@ -38,6 +38,18 @@ CASES = os.path.join(HERE, 'eval-corpus', 'cases.txt')
 
 # name, file, text (exactly once), replacement: the planted defects of the evaluator
 PLANTS = [
+    ('get-animations-subtree-option-taken-as-false', 'cssom_eval.py',
+     "                subtree = v\n        n = interp.new_node('g')",
+     "                subtree = False\n        n = interp.new_node('g')"),
+    ('empty-array-assertion-compared-with-one', 'cssom_eval.py',
+     "self.runtime_assert('assert_equals', [Rt(r, 'n'), 0.0], msg)",
+     "self.runtime_assert('assert_equals', [Rt(r, 'n'), 1.0], msg)"),
+    ('computed-timing-read-as-the-timing', 'cssom_eval.py',
+     "interp.emit('tget', r, t.anim, t.which, key)",
+     "interp.emit('tget', r, t.anim, 'timing', key)"),
+    ('animation-at-an-index-is-always-the-first', 'cssom_eval.py',
+     "        interp.emit('aat', n, lst.name, key)\n        return HostAnim(n)",
+     "        interp.emit('aat', n, lst.name, '0')\n        return HostAnim(n)"),
     ('margin-trim-written-as-any-property', 'cssom_eval.py',
      "    if key in ('marginTrim', 'margin-trim') and not st.computed:",
      "    if False and key in ('marginTrim', 'margin-trim') and not st.computed:"),
