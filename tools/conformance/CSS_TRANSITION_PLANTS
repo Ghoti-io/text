@@ -71,3 +71,5 @@ join-control-ignores-the-kind	world.c	if (world->controls[i].id == id && world->
 join-ids-are-per-element	cssom_computed.c	  gtext_css_transition_set_start_ids_after(e->set, t->id_high);\n  gtext_anim_css_set_start_ids_after(e->anims, t->id_high);\n		animworld
 join-touch-does-not-move-the-version	cssom_computed.c	void css_tracker_touch(GTEXT_CSSOM_Transition_Tracker * tracker) {\n  if (tracker) {\n    tracker->version++;\n  }	void css_tracker_touch(GTEXT_CSSOM_Transition_Tracker * tracker) {\n  if (tracker) {\n    (void)tracker;\n  }	animworld
 join-cancelled-transition-keeps-its-phase	css_transition.c	        to = GTEXT_CSS_TRANSITION_PHASE_IDLE;\n      }\n      else if (!ready) {	        to = t->phase;\n      }\n      else if (!ready) {	animworld
+pseudo-element-without-content-is-rendered	cssom_computed.c	      st = pseudo_not_generated(tracker, core, element, after, pseudo, pseudo_length, &none);	      st = GTEXT_CSS_OK;	animworld
+marker-is-generated-for-any-element	cssom_computed.c	      *not_generated = owner && !display_is_list_item(core, owner);	      *not_generated = false;	animworld

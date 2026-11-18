@@ -1321,4 +1321,50 @@ TEST(AnimWorldOom, AFrameThatCannotBeMadeIsMadeWholeByTheNextCall) {
   EXPECT_EQ(w.frame(), "");
 }
 
+/* Pseudo-Elements 4: "::before" and "::after" are generated only if `content` computes to something other than `normal` or `none`; a pseudo-element that is not generated is not being rendered, and Transitions
+   2 says "implementations must also cancel any running transitions on elements that are no longer being rendered" (the pinned `non-rendered-element-002.html`). */
+TEST(AnimWorld, ATransitionOnAPseudoElementWhoseContentIsClearedIsCancelled) {
+  for (const char * pseudo : {"::before", "::after"}) {
+    for (const char * cleared : {"none", "normal"}) {
+      const std::string p = pseudo;
+      Wd w(page("." + std::string("init") + p + " { content: \"\"; width: 0px; transition: width 100s } .change" + p + " { width: 100px } .cancel" + p + " { content: " + cleared + " }",
+          "<div id=t class=init></div>"));
+      w.at(0);
+      w.flush("#t");
+      w.flush("#t", pseudo);
+      w.set_class("#t", "init change");
+      w.flush("#t");
+      w.flush("#t", pseudo);
+      w.at(16);
+      EXPECT_EQ(w.frame(), "transitionrun:width:0@0(" + p + ") transitionstart:width:0@0(" + p + ")") << pseudo << " " << cleared;
+      w.set_class("#t", "init change cancel");
+      w.flush("#t");
+      w.flush("#t", pseudo);
+      w.at(32);
+      EXPECT_EQ(w.frame(), "transitioncancel:width:0.016@16(" + p + ")") << pseudo << " " << cleared << ": the pseudo-element is no longer generated";
+    }
+  }
+}
+
+/* The same for `::marker`, which a list item generates and an element of another display does not (the pinned `non-rendered-element-004.tentative.html`). */
+TEST(AnimWorld, ATransitionOnAMarkerIsCancelledWhenTheParentIsNoLongerAListItem) {
+  Wd w(page(".init::marker { content: \"\"; color: red; transition: color 100s } .change::marker { color: green } .block { display: block }", "<div id=t class=init style='display: list-item'></div>"));
+  w.at(0);
+  w.flush("#t");
+  w.flush("#t", "::marker");
+  w.set_class("#t", "init change");
+  w.flush("#t");
+  w.flush("#t", "::marker");
+  w.at(16);
+  EXPECT_EQ(w.frame(), "transitionrun:color:0@0(::marker) transitionstart:color:0@0(::marker)");
+  w.set_class("#t", "init change block");
+  GTEXT_Markup_Node * e = w.m.el("#t");
+  ASSERT_NE(e, nullptr);
+  ASSERT_EQ(gtext_markup_element_set_attribute(e, nullptr, nullptr, "style", "display: block", 14), GTEXT_MARKUP_OK);
+  w.flush("#t");
+  w.flush("#t", "::marker");
+  w.at(32);
+  EXPECT_EQ(w.frame(), "transitioncancel:color:0.016@16(::marker)");
+}
+
 }  // namespace
