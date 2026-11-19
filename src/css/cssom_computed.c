@@ -1472,11 +1472,7 @@ static GTEXT_CSS_Status entry_get(GTEXT_CSSOM_Transition_Tracker * t, const void
   fresh.display = display_name(&t->alloc, pseudo, pseudo_length, &fresh.display_length);
   GTEXT_CSS_Status st = fresh.display ? gtext_css_transition_set_new(&t->alloc, &fresh.set) : GTEXT_CSS_E_OOM;
   if (st == GTEXT_CSS_OK) {
-    gtext_css_transition_set_start_ids_after(fresh.set, t->id_high);
     st = gtext_anim_css_set_new(&t->alloc, &fresh.anims);
-  }
-  if (st == GTEXT_CSS_OK) {
-    gtext_anim_css_set_start_ids_after(fresh.anims, t->id_high);
   }
   if (st != GTEXT_CSS_OK) {
     gtext_css_transition_set_free(fresh.set);

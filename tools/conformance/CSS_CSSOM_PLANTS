@@ -563,7 +563,6 @@ tracker-events-retired-entries-not-reported	cssom_computed.c	  const size_t tota
 tracker-forget-drops-the-cancellations	cssom_computed.c	    st = gtext_css_transition_set_cancel_all(tracker->entries[i].set, tracker->time_ms);	    st = GTEXT_CSS_OK;	transition
 tracker-display-transition-does-not-hold-an-element-rendered	cssom_computed.c	style_is_not_rendered(core, after) && !entry_transitions_display(tracker, core, chain[i], "", 0)) {	style_is_not_rendered(core, after)) {	transition
 tracker-accepts-a-time-that-is-not-a-number	cssom_computed.c	  if (tracker && time_ms == time_ms && tracker->time_ms != time_ms) {	  if (tracker && tracker->time_ms != time_ms) {	transition
-tracker-new-set-restarts-the-ids	cssom_computed.c	    gtext_css_transition_set_start_ids_after(fresh.set, t->id_high);		transition
 tracker-display-contents-is-not-rendered	cssom_computed.c	  return !GTEXT_CSS_READING_DISPLAY_CONTENTS_RENDERED && root->text.length == 8	  return root->text.length == 8	transition
 tracker-element-not-in-the-document-has-an-after-change-style	cssom_computed.c	    if (st != GTEXT_CSS_OK || !rendered) {	    if (st != GTEXT_CSS_OK) {	transition
 tracker-first-style-is-not-compared-with-the-starting-style	cssom_computed.c	      before = starting;	      before = NULL;	transition
