@@ -65,6 +65,7 @@ typedef enum {
   GTEXT_ANIM_NOT_SUPPORTED,             ///< A `NotSupportedError`.
   GTEXT_ANIM_NO_MODIFICATION_ALLOWED,   ///< A `NoModificationAllowedError`.
   GTEXT_ANIM_ABORT,                     ///< An `AbortError`.
+  GTEXT_ANIM_SYNTAX_ERROR,              ///< A `SyntaxError` (a `pseudoElement` that is not a valid pseudo-element selector).
   GTEXT_ANIM_INVALID,                   ///< A call that is wrong in C (a NULL argument, an id of no object): not an exception of the IDL.
   GTEXT_ANIM_OOM                        ///< An allocation failed; nothing changed.
 } GTEXT_Anim_Status;

@@ -4,3 +4,4 @@ animcss	test-anim-css.cpp
 animworld	test-anim-world.cpp
 animanim	test-anim-animation.cpp
 compute	test-css-compute.cpp
+animeffect	test-anim-effect.cpp

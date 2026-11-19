@@ -78,6 +78,7 @@ typedef struct {
   size_t order;                         ///< Its place in the computed `animation-name` list: the composite order of the animations of one element.
   GTEXT_Anim_Effect_Timing timing;      ///< `getTiming()`: the easing is the set's.
   GTEXT_CSS_String easing;              ///< `getTiming().easing`, serialized.
+  GTEXT_CSS_Anim_Composite composite;   ///< `effect.composite`: the `animation-composition` of its place in the list.
   GTEXT_Anim_Play_State play_state;     ///< `playState`.
   bool pending;                         ///< `pending`: a play or pause task is waiting for the next frame.
   GTEXT_Anim_Time start_time;           ///< `startTime`: unresolved while pending a play and while paused.

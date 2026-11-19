@@ -592,10 +592,12 @@ static GTEXT_CSS_Status ensure_match(css_core * core, css_cmps * cs) {
 /// The version of the animation timeline the caller keeps (GTEXT_CSSOM_Layout_Interface::timeline_version), 0 when it keeps none. A caller that gives the time of animations and no version cannot
 /// have a style kept across reads while the document has `@keyframes` to sample: the time could be anything, so `*cacheable` is cleared.
 static uint64_t timeline_version(const css_core * core, bool * cacheable) {
+  /* what script animations would give is a part of the same key */
+  const uint64_t script = 0xD1B54A32D192ED03ull * core->script_version;
   if (!core->has_layout) {
-    return 0;
+    return script;
   }
-  uint64_t v = 0;
+  uint64_t v = script;
   if (core->layout.timeline_version) {
     v = core->layout.timeline_version(core->layout.user);
   }
@@ -649,6 +651,25 @@ static GTEXT_CSS_Status animation_time(void * user, GTEXT_CSS_Element_Handle ele
   return st;
 }
 
+static void pseudo_key(const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Flow * flow, char * buf, size_t cap, const char ** key, size_t * length);
+
+/// The keyframe effects of script animations of the element or pseudo-element, for the sampler of a style (css_style.h).
+static GTEXT_CSS_Status script_effects(void * user, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Script_Effect ** effects, size_t * count) {
+  css_core * core = user;
+  *effects = NULL;
+  *count = 0;
+  if (!core->script.effects) {
+    return GTEXT_CSS_OK;
+  }
+  const char * key = "";
+  size_t kl = 0;
+  char buf[32];
+  if (pseudo) {
+    pseudo_key(pseudo, NULL, buf, sizeof buf, &key, &kl);
+  }
+  return core->script.effects(core->script.user, element, key, kl, effects, count);
+}
+
 static GTEXT_CSS_Status compute_one_hl(css_core * core, css_cmps * cs, const GTEXT_CSS_Rule_Index * index, const void * element, const GTEXT_CSS_Computed_Style * parent,
     const GTEXT_CSS_Selector_List * pseudo, bool highlight, const GTEXT_CSS_Computed_Style * highlight_parent, GTEXT_CSS_Computed_Style ** out) {
   GTEXT_CSS_Style_Options so = gtext_css_style_options_default();
@@ -669,12 +690,13 @@ static GTEXT_CSS_Status compute_one_hl(css_core * core, css_cmps * cs, const GTE
   }
   /* the animations of the sheets' `@keyframes`, sampled at the times the caller's layout gives */
   GTEXT_CSS_Style_Animation anim;
-  if (core->keyframes) {
+  if (core->keyframes || core->script.effects) {
     memset(&anim, 0, sizeof anim);
     anim.size = sizeof anim;
     anim.keyframes = core->keyframes;
     anim.user = core;
     anim.current_time = animation_time;
+    anim.script_effects = core->script.effects ? script_effects : NULL;
     so.animation = &anim;
   }
   /* the running transitions of the element the caller's layout keeps, at its time (the after-change styles are made without them) */
@@ -1146,6 +1168,49 @@ static GTEXT_CSS_Status parse_pseudo(css_core * core, const char * text, size_t 
     return GTEXT_CSS_OK;
   }
   *list = l;
+  return GTEXT_CSS_OK;
+}
+
+GTEXT_CSS_Status css_pseudo_target(css_core * core, const GTEXT_Allocator * allocator, const char * text, size_t length, char ** key, size_t * key_length, bool * valid) {
+  *key = NULL;
+  *key_length = 0;
+  *valid = false;
+  /* "If value is not null and is an invalid <pseudo-element-selector>": one pseudo-element and the whole text (the single-colon forms of Selectors 2 are the two-colon ones) */
+  if (!text || length == 0 || text[0] != ':') {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Selector_Options so = gtext_css_selector_options_default();
+  so.allocator = &core->alloc;
+  GTEXT_CSS_Selector_List * l = NULL;
+  GTEXT_CSS_Selector_Result res;
+  memset(&res, 0, sizeof res);
+  GTEXT_CSS_Status st = gtext_css_selector_parse(text, length, &so, &l, &res);
+  gtext_css_selector_result_free(&res);
+  if (st == GTEXT_CSS_E_OOM) {
+    return st;
+  }
+  if (st != GTEXT_CSS_OK || !l) {
+    return GTEXT_CSS_OK;
+  }
+  const bool good = l->count == 1 && l->complex[0].compound_count == 1 && l->complex[0].compounds[0].simple_count == 1 && !l->complex[0].relative && l->complex[0].span.end == length &&
+      l->complex[0].compounds[0].simples[0].kind == GTEXT_CSS_SIMPLE_PSEUDO_ELEMENT;
+  if (good) {
+    const char * k;
+    size_t kl;
+    char buf[32];
+    pseudo_key(l, NULL, buf, sizeof buf, &k, &kl);
+    char * copy = gtext_allocator_malloc(allocator, kl + 1);
+    if (!copy) {
+      gtext_css_selector_list_free(l);
+      return GTEXT_CSS_E_OOM;
+    }
+    memcpy(copy, k, kl);
+    copy[kl] = '\0';
+    *key = copy;
+    *key_length = kl;
+    *valid = true;
+  }
+  gtext_css_selector_list_free(l);
   return GTEXT_CSS_OK;
 }
 
@@ -2161,6 +2226,23 @@ GTEXT_CSS_Status css_tracker_context(GTEXT_CSSOM_Transition_Tracker * tracker, c
   const GTEXT_CSS_Status st = ensure_context(core, cs);
   *ctx = st == GTEXT_CSS_OK ? cs->ctx : NULL;
   return st;
+}
+
+GTEXT_Anim_Status css_tracker_update_animation_timing(GTEXT_CSSOM_Transition_Tracker * tracker, const GTEXT_CSS_Registry * registry, uint64_t id, const GTEXT_Anim_Optional_Timing * input, const char * easing,
+    size_t easing_length) {
+  if (!tracker) {
+    return GTEXT_ANIM_INVALID;
+  }
+  for (size_t i = 0; i < tracker->count; i++) {
+    tracker_entry * e = &tracker->entries[i];
+    for (size_t k = 0; k < gtext_anim_css_set_count(e->anims); k++) {
+      GTEXT_Anim_Css_Info info;
+      if (gtext_anim_css_set_info(e->anims, k, tracker->time_ms, &info) == GTEXT_CSS_OK && info.id == id) {
+        return gtext_anim_css_set_update_timing(e->anims, registry, id, input, easing, easing_length);
+      }
+    }
+  }
+  return GTEXT_ANIM_INVALID;
 }
 
 GTEXT_CSS_Status css_tracker_bind_animation(GTEXT_CSSOM_Transition_Tracker * tracker, uint64_t id, GTEXT_Anim_Animation * animation, const void ** element, const char ** pseudo, size_t * pseudo_length) {

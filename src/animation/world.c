@@ -28,28 +28,7 @@
 
 #include <string.h>
 
-#include "../css/cssom_computed_internal.h"
-#include "../css/cssom_doc_internal.h"
-
-/// An Animation script has touched: the Animation (owned by the world), what it is the animation of, and its id.
-typedef struct {
-  GTEXT_Anim_Animation * animation;
-  GTEXT_Anim_Kind kind;
-  uint64_t id;
-  const void * element;
-  char * pseudo;
-  size_t pseudo_length;
-} control_t;
-
-struct GTEXT_Anim_World {
-  GTEXT_Allocator alloc;
-  control_t * controls;
-  size_t ncontrols, capcontrols;
-  GTEXT_CSSOM_Document * doc;
-  GTEXT_CSSOM_Transition_Tracker * tracker;
-  GTEXT_CSSOM_Transition_Events * stash;   ///< The transition events of a frame that could not be completed: the next frame reports them, so that a frame is whole or not at all.
-  GTEXT_Anim_Events * stash_animations;    ///< The same for the events of the CSS animations.
-};
+#include "world_internal.h"
 
 struct GTEXT_Anim_List {
   GTEXT_Allocator alloc;
@@ -93,6 +72,7 @@ GTEXT_Anim_Status gtext_anim_world_new(GTEXT_CSSOM_Document * document, GTEXT_CS
   w->alloc = a;
   w->doc = document;
   w->tracker = tracker;
+  anim_script_register(w);
   *out = w;
   return GTEXT_ANIM_OK;
 }
@@ -103,18 +83,20 @@ void gtext_anim_world_free(GTEXT_Anim_World * world) {
   }
   gtext_cssom_transition_events_free(world->stash);
   gtext_anim_events_free(world->stash_animations);
+  anim_script_unregister(world);
   GTEXT_Allocator a = world->alloc;
   for (size_t i = 0; i < world->ncontrols; i++) {
     if (world->controls[i].kind == GTEXT_ANIM_KIND_CSS_TRANSITION) {
       css_tracker_detach_transition(world->tracker, world->controls[i].id);
     }
-    else {
+    else if (world->controls[i].kind == GTEXT_ANIM_KIND_CSS_ANIMATION) {
       css_tracker_detach_animation(world->tracker, world->controls[i].id);
     }
     gtext_anim_animation_free(world->controls[i].animation);
     gtext_allocator_free(&a, world->controls[i].pseudo);
   }
   gtext_allocator_free(&a, world->controls);
+  anim_script_free(world);
   gtext_allocator_free(&a, world);
 }
 
@@ -140,7 +122,10 @@ typedef struct {
 /// Whether `a` sorts after `b` in the composite order.
 static bool rec_after(const sort_ctx * c, const rec_t * a, const rec_t * b) {
   if (a->info.kind != b->info.kind) {
-    return a->info.kind > b->info.kind;   /* "CSS Animations with an owning element have a later composite order than CSS Transitions" */
+    return a->info.kind > b->info.kind;   /* "CSS Animations with an owning element have a later composite order than CSS Transitions", and an animation of no class a later one than both */
+  }
+  if (a->info.kind == GTEXT_ANIM_KIND_SCRIPT) {
+    return a->info.id > b->info.id;       /* "sort by the position of their associated animations in the global animation list" */
   }
   if (a->info.element != b->info.element) {
     int cmp = 0;
@@ -346,6 +331,7 @@ static GTEXT_Anim_Status collect(GTEXT_Anim_World * world, const void * element,
       r->info.start_time = ai.start_time;
       r->info.current_time = ai.current_time;
       r->info.timing = ai.timing;
+      r->info.composite = (GTEXT_Anim_Composite)ai.composite;
       r->info.timing.easing = NULL;
       r->info.easing = ai.easing;
       r->info.computed = ai.computed;
@@ -354,6 +340,38 @@ static GTEXT_Anim_Status collect(GTEXT_Anim_World * world, const void * element,
       r->pseudo_rank = v.pseudo_rank;
       n++;
     }
+  }
+  /* the animations script made: those whose effect has a target in the place asked */
+  for (size_t ci = 0; ci < world->ncontrols && result == GTEXT_ANIM_OK; ci++) {
+    GTEXT_Anim_Info info;
+    bool relevant = false;
+    if (!anim_script_info(world, ci, &info, &relevant) || !info.element) {
+      continue;
+    }
+    if (relevant_only && !relevant) {
+      continue;
+    }
+    if (element) {
+      const bool same_target = info.element == element && info.pseudo_element.length == want_length && (want_length == 0 || memcmp(info.pseudo_element.data, want, want_length) == 0);
+      const bool below = subtree && want_length == 0 && iface && info.element != element && inside(iface, info.element, element);
+      const bool own_pseudo = subtree && want_length == 0 && info.element == element;
+      if (!same_target && !below && !own_pseudo) {
+        continue;
+      }
+    }
+    if (n + 1 > cap) {
+      size_t grown = cap ? cap * 2 : 16;
+      rec_t * bigger = gtext_allocator_realloc(&world->alloc, recs, grown * sizeof *bigger);
+      if (!bigger) {
+        result = GTEXT_ANIM_OOM;
+        break;
+      }
+      recs = bigger;
+      cap = grown;
+    }
+    rec_t * r = &recs[n++];
+    memset(r, 0, sizeof *r);
+    r->info = info;
   }
   rec_t * tmp = result == GTEXT_ANIM_OK && n > 1 ? gtext_allocator_malloc(&world->alloc, n * sizeof *tmp) : NULL;
   if (result == GTEXT_ANIM_OK && n > 1 && !tmp) {
@@ -430,11 +448,59 @@ static GTEXT_Anim_Event_Type map_type(GTEXT_CSS_Transition_Event_Type t) {
   }
 }
 
+/// What a control is the animation of, for the events it owes: the owning element of a CSS animation or transition, the effect's target of a script animation.
+static void control_target(const control_t * c, const void ** element, const char ** pseudo, size_t * length) {
+  if (c->kind == GTEXT_ANIM_KIND_SCRIPT) {
+    GTEXT_CSS_String p = {"", 0};
+    GTEXT_Anim_Effect * e = gtext_anim_animation_effect(c->animation);
+    *element = NULL;
+    if (e) {
+      (void)gtext_anim_effect_get_target(e, element, &p);
+    }
+    *pseudo = p.data;
+    *length = p.length;
+    return;
+  }
+  *element = c->element;
+  *pseudo = c->pseudo;
+  *length = c->pseudo_length;
+}
+
 GTEXT_Anim_Status gtext_anim_world_update(GTEXT_Anim_World * world, GTEXT_Anim_Events ** out) {
   if (!world || !out) {
     return GTEXT_ANIM_INVALID;
   }
   *out = NULL;
+  /* the animations script made: "as soon as the animation is ready" is this frame (their pending play and pause tasks run), they are asked whether they finished, and the replaced ones are removed. The room
+     for what these make is reserved first, so that a failure leaves them as they were. */
+  {
+    GTEXT_Anim_Status rs = GTEXT_ANIM_OK;
+    for (size_t i = 0; i < world->ncontrols && rs == GTEXT_ANIM_OK; i++) {
+      if (world->controls[i].kind == GTEXT_ANIM_KIND_SCRIPT) {
+        rs = gtext_anim_animation_reserve_calls(world->controls[i].animation, 4);
+      }
+    }
+    if (rs != GTEXT_ANIM_OK) {
+      return rs;
+    }
+    const GTEXT_Anim_Time now = anim_world_now(world);
+    bool any = false;
+    for (size_t i = 0; i < world->ncontrols; i++) {
+      if (world->controls[i].kind == GTEXT_ANIM_KIND_SCRIPT) {
+        (void)gtext_anim_animation_run_pending(world->controls[i].animation, now);
+        (void)gtext_anim_animation_update_finished(world->controls[i].animation, now);
+        any = true;
+      }
+    }
+    if (any) {
+      bool removed = false;
+      rs = anim_script_remove_replaced(world, &removed);
+      if (rs != GTEXT_ANIM_OK) {
+        return rs;
+      }
+      anim_world_touch(world);
+    }
+  }
   /* the transitions' frame moves their sets on, so it is made once: if the animations' cannot be made, its events wait in the world for the next call */
   if (!world->stash) {
     const GTEXT_CSS_Status ts = gtext_cssom_transition_tracker_events(world->tracker, &world->stash);
@@ -471,8 +537,12 @@ GTEXT_Anim_Status gtext_anim_world_update(GTEXT_Anim_World * world, GTEXT_Anim_E
     /* the playback events of the animations script has touched (finish, cancel): reserved with the rest, so that nothing below can fail */
     for (size_t i = 0; i < world->ncontrols; i++) {
       const size_t k = gtext_anim_animation_event_count(world->controls[i].animation);
+      const void * el;
+      const char * ps;
+      size_t pl;
+      control_target(&world->controls[i], &el, &ps, &pl);
       np += k;
-      bytes += k * world->controls[i].pseudo_length;
+      bytes += k * pl;
     }
     st = gtext_anim_events_reserve(all, nt + na + np, bytes);
     if (st == GTEXT_ANIM_OK && np) {
@@ -510,11 +580,15 @@ GTEXT_Anim_Status gtext_anim_world_update(GTEXT_Anim_World * world, GTEXT_Anim_E
   for (size_t i = 0; i < world->ncontrols; i++) {
     gtext_anim_events_clear(playback);
     (void)gtext_anim_animation_take_events(world->controls[i].animation, world->controls[i].id, playback);   /* the room is reserved */
+    const void * el;
+    const char * ps;
+    size_t pl;
+    control_target(&world->controls[i], &el, &ps, &pl);
     for (size_t k = 0; k < gtext_anim_events_count(playback); k++) {
       GTEXT_Anim_Event ev;
       (void)gtext_anim_events_at(playback, k, &ev);
-      ev.element = world->controls[i].element;
-      ev.pseudo_element = (GTEXT_CSS_String){world->controls[i].pseudo, world->controls[i].pseudo_length};
+      ev.element = el;
+      ev.pseudo_element = (GTEXT_CSS_String){ps, pl};
       (void)gtext_anim_events_append(all, &ev);
     }
   }
@@ -536,7 +610,7 @@ GTEXT_Anim_Status gtext_anim_world_control(GTEXT_Anim_World * world, GTEXT_Anim_
     return GTEXT_ANIM_INVALID;
   }
   *out = NULL;
-  if (kind != GTEXT_ANIM_KIND_CSS_ANIMATION && kind != GTEXT_ANIM_KIND_CSS_TRANSITION) {
+  if (kind != GTEXT_ANIM_KIND_CSS_ANIMATION && kind != GTEXT_ANIM_KIND_CSS_TRANSITION && kind != GTEXT_ANIM_KIND_SCRIPT) {
     return GTEXT_ANIM_INVALID;
   }
   for (size_t i = 0; i < world->ncontrols; i++) {
@@ -544,6 +618,9 @@ GTEXT_Anim_Status gtext_anim_world_control(GTEXT_Anim_World * world, GTEXT_Anim_
       *out = world->controls[i].animation;
       return GTEXT_ANIM_OK;
     }
+  }
+  if (kind == GTEXT_ANIM_KIND_SCRIPT) {
+    return GTEXT_ANIM_INVALID;   /* a script animation is made by script, not found in the tracker */
   }
   if (world->ncontrols == world->capcontrols) {
     const size_t cap = world->capcontrols ? world->capcontrols * 2 : 8;

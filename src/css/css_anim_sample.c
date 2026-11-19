@@ -34,6 +34,8 @@
  * value stands for lack of a timeline.
  */
 
+#include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 #include <ghoti.io/text/css/css_animation.h>
@@ -72,6 +74,10 @@ typedef struct {
   GTEXT_CSS_Easing ** ease;          ///< By frame: the `animation-timing-function` the keyframe declares (owned), or NULL.
   int * comp;                        ///< By frame: the `animation-composition` the keyframe declares, -1 for none.
   GTEXT_CSS_Computed_Style ** frame; ///< By frame: the style computed with the frame's declarations added (owned), or NULL until needed.
+  bool script;                       ///< The effect of a script animation: `kf` is `own_kf`, `ease` and `comp` are the effect's and are not owned, and `timing` is the effect's.
+  GTEXT_CSS_Keyframes own_kf;
+  bool iteration_accumulate;         ///< The iteration composite operation is `accumulate`.
+  double current_iteration;
 } entry;
 
 typedef struct {
@@ -85,6 +91,7 @@ typedef struct {
   const css_anim_rollback * rollback;   ///< How `revert` is rolled back, or NULL.
   GTEXT_CSS_Computed_Style * base_style;
   GTEXT_CSS_Property_Id id_timing, id_composition;
+  GTEXT_CSS_Easing * linear;            ///< The `linear` easing function: the keyframe-specific easing of a keyframe made from the underlying value, and of one that gave none.
   unsigned asked_pseudo;
   GTEXT_CSS_Compute_Result * failure;   ///< What the compute that failed said (the style's result carries it: which callback or property was missing).
   key * keys;
@@ -238,7 +245,7 @@ static bool is_frame_attribute(const sampler * s, GTEXT_CSS_Property_Id id) {
 static void entry_free(sampler * s, entry * e) {
   const size_t nf = e->kf ? e->kf->frame_count : 0;
   for (size_t f = 0; f < nf; f++) {
-    if (e->ease) {
+    if (e->ease && !e->script) {
       gtext_css_easing_free(e->ease[f]);
     }
     if (e->frame) {
@@ -857,7 +864,94 @@ static GTEXT_CSS_Status keyframe_value(sampler * s, entry * e, const pk * k, con
   return st;
 }
 
-/// "The effect value of a keyframe effect" of one property (Web Animations 1): `*has` false when the effect has no keyframe for it.
+/// The text of a value that only has its typed value (a value read from a computed style): the declaration the result is written as needs it.
+static GTEXT_CSS_Status val_ensure_text(sampler * s, val * v) {
+  if (v->text || !v->set) {
+    return GTEXT_CSS_OK;
+  }
+  const GTEXT_CSS_Value * root = gtext_css_value_set_root(v->set);
+  if (!root) {
+    return GTEXT_CSS_OK;
+  }
+  GTEXT_CSS_Serialize_Options so;
+  memset(&so, 0, sizeof so);
+  so.allocator = &s->al;
+  char * text = NULL;
+  size_t n = 0;
+  GTEXT_CSS_Status st = gtext_css_serialize_value_buffer(root, &so, &text, &n);
+  if (st != GTEXT_CSS_OK) {
+    return st;
+  }
+  v->text = gtext_allocator_malloc(&s->al, n + 1);
+  if (!v->text) {
+    gtext_css_serialize_buffer_free(&so, text);
+    return GTEXT_CSS_E_OOM;
+  }
+  memcpy(v->text, text, n);
+  v->text[n] = '\0';
+  v->length = n;
+  gtext_css_serialize_buffer_free(&so, text);
+  return GTEXT_CSS_OK;
+}
+
+/// A copy of a value (a counted reference to its typed value, a copy of its text).
+static GTEXT_CSS_Status val_copy(sampler * s, const val * v, val * out) {
+  memset(out, 0, sizeof *out);
+  if (v->text) {
+    out->text = gtext_allocator_malloc(&s->al, v->length + 1);
+    if (!out->text) {
+      return GTEXT_CSS_E_OOM;
+    }
+    memcpy(out->text, v->text, v->length + 1);
+    out->length = v->length;
+  }
+  if (v->set) {
+    out->set = gtext_css_value_set_retain(v->set);
+  }
+  return GTEXT_CSS_OK;
+}
+
+/// `a` accumulated onto itself `count` times in front of `b`: the result of applying `V = accumulate(a, V)` to `b` that many times ("Effect accumulation", Web Animations 2). The accumulation is
+/// associative for every type this layer combines, so a power of `a` made by repeated squaring is combined with `b` once: a count of a million is twenty steps, not a million.
+static GTEXT_CSS_Status accumulate_times(sampler * s, const key * ky, const val * a, const val * b, double count, val * out) {
+  const uint64_t limit = (uint64_t)1 << 53;
+  uint64_t n = count >= 9007199254740992.0 ? limit : (uint64_t)count;
+  val power, base, tmp;
+  bool have_power = false;
+  memset(&power, 0, sizeof power);
+  GTEXT_CSS_Status st = val_copy(s, a, &base);
+  while (n && st == GTEXT_CSS_OK) {
+    if (n & 1) {
+      if (!have_power) {
+        st = val_copy(s, &base, &power);
+        have_power = st == GTEXT_CSS_OK;
+      }
+      else {
+        st = combine(s, ky, CSS_BLEND_ACCUMULATE, &power, &base, 0.0, &tmp);
+        if (st == GTEXT_CSS_OK) {
+          val_free(&s->al, &power);
+          power = tmp;
+        }
+      }
+    }
+    n >>= 1;
+    if (n && st == GTEXT_CSS_OK) {
+      st = combine(s, ky, CSS_BLEND_ACCUMULATE, &base, &base, 0.0, &tmp);
+      if (st == GTEXT_CSS_OK) {
+        val_free(&s->al, &base);
+        base = tmp;
+      }
+    }
+  }
+  if (st == GTEXT_CSS_OK) {
+    st = have_power ? combine(s, ky, CSS_BLEND_ACCUMULATE, &power, b, 0.0, out) : val_copy(s, b, out);
+  }
+  val_free(&s->al, &power);
+  val_free(&s->al, &base);
+  return st;
+}
+
+/// "The effect value of a keyframe effect" of one property (Web Animations 1, with the iteration composite operation of Web Animations 2): `*has` false when the effect has no keyframe for it.
 static GTEXT_CSS_Status effect_value(sampler * s, entry * e, size_t key_index, const val * under, val * out, bool * has) {
   const key * ky = &s->keys[key_index];
   const size_t nf = e->kf->frame_count;
@@ -882,53 +976,97 @@ static GTEXT_CSS_Status effect_value(sampler * s, entry * e, size_t key_index, c
     return GTEXT_CSS_OK;
   }
   *has = true;
-  if (list[0].offset != 0.0) {
+  /* "If there is no keyframe in property-specific keyframes with a computed keyframe offset of 0, create a new keyframe ... and prepend it", and the same at 1 */
+  bool has0 = false, has1 = false;
+  for (size_t i = 0; i < n; i++) {
+    has0 = has0 || list[i].offset == 0.0;
+    has1 = has1 || list[i].offset == 1.0;
+  }
+  if (!has0) {
     memmove(list + 1, list, n * sizeof *list);
     list[0] = (pk){0.0, -1, e->effect.easing, -1};
     n++;
   }
-  if (list[n - 1].offset != 1.0) {
+  if (!has1) {
     list[n++] = (pk){1.0, -1, e->effect.easing, -1};
   }
-  const double t = e->timing.progress;
-  size_t a = 0;
-  bool found = false;
+  size_t at0 = 0, at1 = 0;
   for (size_t i = 0; i < n; i++) {
-    if (list[i].offset <= t && list[i].offset < 1.0) {
-      a = i;
-      found = true;
+    at0 += list[i].offset == 0.0;
+    at1 += list[i].offset == 1.0;
+  }
+  const double t = e->timing.progress;
+  /* "Populate interval endpoints" */
+  size_t a = 0, b = 0;
+  bool single = false;
+  if (t < 0.0 && at0 > 1) {
+    a = 0;
+    single = true;
+  }
+  else if (t >= 1.0 && at1 > 1) {
+    a = n - 1;
+    single = true;
+  }
+  else {
+    bool found = false;
+    for (size_t i = 0; i < n; i++) {
+      if (list[i].offset <= t && list[i].offset < 1.0) {
+        a = i;
+        found = true;
+      }
     }
+    if (!found) {
+      for (size_t i = 0; i < n; i++) {
+        if (list[i].offset == 0.0) {
+          a = i;   /* "add the last keyframe whose computed keyframe offset is 0" */
+        }
+      }
+    }
+    b = a + 1 < n ? a + 1 : a;
+    single = a == b;
   }
-  if (!found) {
-    a = 0;   /* "add the last keyframe whose computed keyframe offset is 0" */
-  }
-  const size_t b = a + 1 < n ? a + 1 : a;
   val va, vb;
   memset(&va, 0, sizeof va);
   memset(&vb, 0, sizeof vb);
   GTEXT_CSS_Status st = keyframe_value(s, e, &list[a], ky, under, &va);
-  if (st == GTEXT_CSS_OK) {
+  if (st == GTEXT_CSS_OK && !single) {
     st = keyframe_value(s, e, &list[b], ky, under, &vb);
   }
-  /* "If keyframe has a composite operation that is not replace, or no composite operation and the composite operation of this keyframe effect is not replace" */
-  for (int side = 0; side < 2 && st == GTEXT_CSS_OK; side++) {
+  const size_t ends = single ? 1 : 2;
+  for (size_t side = 0; side < ends && st == GTEXT_CSS_OK; side++) {
     const pk * k = side == 0 ? &list[a] : &list[b];
     val * v = side == 0 ? &va : &vb;
+    /* "If keyframe has a composite operation that is not replace, or no composite operation and the composite operation of this keyframe effect is not replace" */
     const int op = k->comp >= 0 ? k->comp : (int)e->effect.composite;
-    if (k->frame < 0 || op == (int)GTEXT_CSS_ANIM_COMPOSITE_REPLACE) {
-      continue;
+    if (k->frame >= 0 && op != (int)GTEXT_CSS_ANIM_COMPOSITE_REPLACE) {
+      val combined;
+      st = combine(s, ky, op == (int)GTEXT_CSS_ANIM_COMPOSITE_ADD ? CSS_BLEND_ADD : CSS_BLEND_ACCUMULATE, under, v, 0.0, &combined);
+      if (st == GTEXT_CSS_OK) {
+        val_free(&s->al, v);
+        *v = combined;
+      }
     }
-    val combined;
-    st = combine(s, ky, op == (int)GTEXT_CSS_ANIM_COMPOSITE_ADD ? CSS_BLEND_ADD : CSS_BLEND_ACCUMULATE, under, v, 0.0, &combined);
-    if (st == GTEXT_CSS_OK) {
-      val_free(&s->al, v);
-      *v = combined;
+    /* "If this keyframe effect has an iteration composite operation of accumulate, apply the following step current iteration times" */
+    if (st == GTEXT_CSS_OK && e->iteration_accumulate && e->current_iteration >= 1.0 && e->current_iteration < 1e300) {
+      val last, accumulated;
+      st = keyframe_value(s, e, &list[n - 1], ky, under, &last);
+      if (st == GTEXT_CSS_OK) {
+        st = accumulate_times(s, ky, &last, v, e->current_iteration, &accumulated);
+        val_free(&s->al, &last);
+      }
+      if (st == GTEXT_CSS_OK) {
+        val_free(&s->al, v);
+        *v = accumulated;
+      }
     }
   }
   if (st == GTEXT_CSS_OK) {
-    if (a == b) {
-      *out = va;
-      memset(&va, 0, sizeof va);
+    if (single) {
+      st = val_ensure_text(s, &va);   /* an endpoint that is not combined with anything is a value read from a style, which has no text yet */
+      if (st == GTEXT_CSS_OK) {
+        *out = va;
+        memset(&va, 0, sizeof va);
+      }
     }
     else {
       st = prepare_pair(s, ky, &va, &vb);
@@ -1044,6 +1182,7 @@ static void sampler_free(sampler * s) {
   }
   gtext_allocator_free(&s->al, s->keys);
   gtext_css_computed_free(s->base_style);
+  gtext_css_easing_free(s->linear);
 }
 
 static unsigned asked_pseudo(const GTEXT_CSS_Selector_List * l) {
@@ -1082,20 +1221,36 @@ GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTE
   s.asked_pseudo = asked_pseudo(options->pseudo);
   s.failure = failure;
   const GTEXT_CSS_Property_Id name_id = gtext_css_registry_find_property(s.reg, "animation-name", 14);
-  if (!an || !an->keyframes || !name_id || !gtext_css_block_find(base, name_id, NULL, 0, NULL)) {
-    return GTEXT_CSS_OK;   /* no animation is named by the cascade: nothing to sample, nothing computed */
+  const bool named = an && an->keyframes && name_id && gtext_css_block_find(base, name_id, NULL, 0, NULL);
+  /* the keyframe effects of script animations: "CSS animations have a lower composite order than animations of no class", so they are stacked above the named ones */
+  const GTEXT_CSS_Script_Effect * script = NULL;
+  size_t nscript = 0;
+  if (an && an->size >= offsetof(GTEXT_CSS_Style_Animation, script_effects) + sizeof an->script_effects && an->script_effects) {
+    const GTEXT_CSS_Status ss = an->script_effects(an->user, element, options->pseudo, &script, &nscript);
+    if (ss != GTEXT_CSS_OK) {
+      return ss;
+    }
+    if (!script) {
+      nscript = 0;
+    }
+  }
+  if (!named && !nscript) {
+    return GTEXT_CSS_OK;   /* no animation is named by the cascade and no script animation has an effect: nothing to sample, nothing computed */
   }
   s.id_timing = gtext_css_registry_find_property(s.reg, "animation-timing-function", 25);
   s.id_composition = gtext_css_registry_find_property(s.reg, "animation-composition", 21);
   GTEXT_CSS_Anim_List * list = NULL;
   GTEXT_CSS_Declaration_Block * out_block = NULL;
   GTEXT_CSS_Status st = compute_block(&s, base, &s.base_style);
-  if (st == GTEXT_CSS_OK) {
+  if (st == GTEXT_CSS_OK && named) {
     st = gtext_css_anim_list_from_style(s.base_style, &s.al, &list);
   }
+  if (st == GTEXT_CSS_OK && nscript) {
+    st = css_easing_from_text(s.reg, &s.al, "linear", 6, &s.linear);
+  }
   const size_t neffects = st == GTEXT_CSS_OK ? gtext_css_anim_list_count(list) : 0;
-  if (st == GTEXT_CSS_OK && neffects) {
-    s.entries = gtext_allocator_calloc(&s.al, neffects, sizeof *s.entries);
+  if (st == GTEXT_CSS_OK && neffects + nscript) {
+    s.entries = gtext_allocator_calloc(&s.al, neffects + nscript, sizeof *s.entries);
     if (!s.entries) {
       st = GTEXT_CSS_E_OOM;
     }
@@ -1132,6 +1287,23 @@ GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTE
     }
     s.nentries++;
   }
+  /* the script effects, in composite order above those: each is in effect, and has its keyframes, easings and composite operations from the effect */
+  for (size_t i = 0; i < nscript && st == GTEXT_CSS_OK; i++) {
+    const GTEXT_CSS_Script_Effect * se = &script[i];
+    entry * e = &s.entries[s.nentries++];
+    e->script = true;
+    e->own_kf.frames = se->frames;
+    e->own_kf.frame_count = se->frame_count;
+    e->kf = &e->own_kf;
+    e->effect.composite = se->composite;
+    e->effect.easing = s.linear;
+    e->timing.phase = GTEXT_CSS_ANIM_PHASE_ACTIVE;
+    e->timing.in_effect = true;
+    e->timing.progress = se->progress;
+    e->timing.before_flag = se->before_flag;
+    e->iteration_accumulate = se->iteration_accumulate;
+    e->current_iteration = se->current_iteration;
+  }
   /* the properties of all the effects, in the order they are first met */
   for (size_t i = 0; i < s.nentries && st == GTEXT_CSS_OK; i++) {
     st = each_kf_property(&s, s.entries[i].kf, collect_fn, NULL);
@@ -1139,6 +1311,7 @@ GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTE
   for (size_t i = 0; i < s.nentries && st == GTEXT_CSS_OK; i++) {
     entry * e = &s.entries[i];
     const size_t nf = e->kf->frame_count;
+    const GTEXT_CSS_Script_Effect * se = e->script ? &script[i - (s.nentries - nscript)] : NULL;
     e->cover = gtext_allocator_malloc(&s.al, (nf * s.nkeys + 1) * sizeof *e->cover);
     e->ease = gtext_allocator_calloc(&s.al, nf + 1, sizeof *e->ease);
     e->comp = gtext_allocator_malloc(&s.al, (nf + 1) * sizeof *e->comp);
@@ -1159,7 +1332,11 @@ GTEXT_CSS_Status css_anim_sample(const GTEXT_CSS_Compute_Context * cc, const GTE
         cover_args ca = {e, f, (int)p};
         st = each_longhand(&s, fr->properties[p].property, fr->properties[p].name.data, fr->properties[p].name.length, cover_fn, &ca);
       }
-      if (st == GTEXT_CSS_OK) {
+      if (st == GTEXT_CSS_OK && se) {
+        e->ease[f] = (GTEXT_CSS_Easing *)(uintptr_t)(se->easings ? se->easings[f] : NULL);   /* borrowed: the effect's */
+        e->comp[f] = se->composites ? se->composites[f] : -1;
+      }
+      else if (st == GTEXT_CSS_OK) {
         st = frame_attributes(&s, e, f);
       }
     }

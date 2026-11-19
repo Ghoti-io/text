@@ -44,6 +44,7 @@ typedef struct {
   char * name;
   size_t lname;
   size_t order;                       ///< Its place in the `animation-name` list.
+  GTEXT_CSS_Anim_Composite composite; ///< `animation-composition` of its place in the list, which `effect.composite` shows.
   GTEXT_Anim_Effect_Timing timing;    ///< `timing.easing` is `easing`.
   GTEXT_CSS_Easing * easing;          ///< Owned.
   char * etext;                       ///< The easing, serialized (owned).
@@ -445,6 +446,7 @@ GTEXT_CSS_Status gtext_anim_css_set_update(GTEXT_Anim_Css_Set * s, const GTEXT_C
       taken[found] = true;
       p->c = *old;
       p->c.timing = timing_from(&e, &old->timing, old->locked);
+      p->c.composite = e.composite;
       if (!(old->locked & GTEXT_ANIM_TIMING_EASING)) {
         st = plan_easing(al, p, e.easing, true);
       }
@@ -498,6 +500,7 @@ GTEXT_CSS_Status gtext_anim_css_set_update(GTEXT_Anim_Css_Set * s, const GTEXT_C
       p->c.lname = e.name.length;
       p->c.order = e.index;
       p->c.timing = timing_from(&e, &(GTEXT_Anim_Effect_Timing){0}, 0);
+      p->c.composite = e.composite;
       p->c.timing.iteration_start = 0;
       p->c.css_paused = e.paused;
       p->c.event_time = time_ms;
@@ -642,6 +645,7 @@ GTEXT_CSS_Status gtext_anim_css_set_info(const GTEXT_Anim_Css_Set * s, size_t in
   out->animation_name = (GTEXT_CSS_String){c->name, c->lname};
   out->order = c->order;
   out->timing = c->timing;
+  out->composite = c->composite;
   out->easing = (GTEXT_CSS_String){c->etext, c->letext};
   out->pending = c->pending != PENDING_NONE;
   /* the start time of an animation with a pending pause is the one it had until it is ready */

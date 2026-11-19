@@ -72,6 +72,7 @@
 #include <ghoti.io/text/css/css_computed.h>
 #include <ghoti.io/text/css/css_core.h>
 #include <ghoti.io/text/css/css_element.h>
+#include <ghoti.io/text/css/css_keyframes.h>
 #include <ghoti.io/text/css/css_layer.h>
 #include <ghoti.io/text/css/css_match.h>
 #include <ghoti.io/text/css/css_presentation.h>
@@ -105,6 +106,26 @@ typedef struct {
 #define GTEXT_CSS_STYLE_STYLE_ATTRIBUTE 0x2u         ///< The `style` attribute, through the element interface.
 
 /**
+ * @struct GTEXT_CSS_Script_Effect
+ * @brief One keyframe effect of a script animation, at the moment it is sampled (Web Animations 1, "The effect value of a keyframe effect").
+ *
+ * The keyframes are the effect's *keyframes* with their computed keyframe offsets (loosely sorted: an offset is not less than the one before it; equal offsets are separate keyframes and the last
+ * of them wins "at the point of overlap"); the properties of a keyframe are the animation properties it was given, each with its value as text (a shorthand stays one property and is expanded, and
+ * computed, in the element's own context when the effect is sampled: "computed keyframes" are live).
+ */
+typedef struct {
+  const GTEXT_CSS_Keyframe * frames;             ///< The keyframes, with their computed offsets.
+  size_t frame_count;
+  const GTEXT_CSS_Easing * const * easings;      ///< The keyframe-specific easing function of each keyframe (NULL: `linear`).
+  const signed char * composites;                ///< The keyframe-specific composite operation of each keyframe: -1 for `auto`, else a GTEXT_CSS_Anim_Composite.
+  GTEXT_CSS_Anim_Composite composite;            ///< The composite operation of the effect.
+  bool iteration_accumulate;                     ///< The iteration composite operation is `accumulate` (Web Animations 2, "Effect accumulation").
+  double progress;                               ///< The iteration progress ("Yielding the iteration progress": the transformed progress), which the keyframes are indexed by.
+  double current_iteration;                      ///< The current iteration index.
+  bool before_flag;                              ///< The before flag of the easing functions of the keyframes.
+} GTEXT_CSS_Script_Effect;
+
+/**
  * @struct GTEXT_CSS_Style_Animation
  * @brief The animations of an element, sampled at the times the caller gives (css_animation.h).
  *
@@ -122,6 +143,10 @@ typedef struct {
    *  A paused animation's time is the one it holds. Any status but GTEXT_CSS_OK fails the style. NULL: no effect has a time. */
   GTEXT_CSS_Status (*current_time)(void * user, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Anim_Effect * effect, double * time_ms,
       bool * known);
+  /** The keyframe effects of script animations that target the element or its pseudo-element (`pseudo`, or NULL for the element), in their composite order (the lowest first): they are
+   *  stacked above the effects of the element's `animation-name` list ("Animation classes": CSS Animations have a lower composite order than animations of no class). Each effect the callback
+   *  gives is *in effect* (its progress is resolved). `*effects` and what it points to are valid until the next call. NULL: there are none. Any status but GTEXT_CSS_OK fails the style. */
+  GTEXT_CSS_Status (*script_effects)(void * user, GTEXT_CSS_Element_Handle element, const GTEXT_CSS_Selector_List * pseudo, const GTEXT_CSS_Script_Effect ** effects, size_t * count);
 } GTEXT_CSS_Style_Animation;
 
 /**

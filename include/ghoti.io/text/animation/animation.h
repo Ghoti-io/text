@@ -94,6 +94,9 @@ typedef struct {
 /** @brief An animation. Opaque; one owner; not shared between threads. */
 typedef struct GTEXT_Anim_Animation GTEXT_Anim_Animation;
 
+/** @brief A keyframe effect (effect.h). Opaque. */
+typedef struct GTEXT_Anim_Effect GTEXT_Anim_Effect;
+
 /**
  * @struct GTEXT_Anim_Animation_State
  * @brief What `Animation` reads at a time.
@@ -144,6 +147,22 @@ GTEXT_API GTEXT_Anim_Status gtext_anim_animation_set_effect(GTEXT_Anim_Animation
  * @return GTEXT_ANIM_OK; GTEXT_ANIM_TYPE_ERROR (nothing changed); GTEXT_ANIM_INVALID (no effect).
  */
 GTEXT_API GTEXT_Anim_Status gtext_anim_animation_update_effect_timing(GTEXT_Anim_Animation * animation, const GTEXT_Anim_Optional_Timing * input, GTEXT_Anim_Time now);
+
+/** @brief The keyframe effect the animation holds (gtext_anim_animation_set_effect_object()), or NULL: an effect that is only its timing (gtext_anim_animation_set_effect()) is not an object. */
+GTEXT_API GTEXT_Anim_Effect * gtext_anim_animation_effect(const GTEXT_Anim_Animation * animation);
+
+/**
+ * @brief The timing of the associated effect, as the animation holds it (its easing pointer is the one given to it). @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID (no effect).
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_animation_get_timing(const GTEXT_Anim_Animation * animation, GTEXT_Anim_Effect_Timing * out);
+
+/**
+ * @brief `animation.effect = effect` ("Setting the associated effect of an animation") with a keyframe effect object: the animation's effect is `effect` (NULL for none); an effect that is the effect of
+ * another animation leaves that animation first ("If new effect is not null and if new effect is the associated effect of another previous animation ... set the associated effect of previous animation to null"),
+ * and the finished state is updated. The timing of the effect is the animation's from then on, and the effect's again when it leaves.
+ * @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID.
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_animation_set_effect_object(GTEXT_Anim_Animation * animation, GTEXT_Anim_Effect * effect, GTEXT_Anim_Time now);
 
 /** @brief The state at a time. */
 GTEXT_API GTEXT_Anim_Status gtext_anim_animation_state(const GTEXT_Anim_Animation * animation, GTEXT_Anim_Time now, GTEXT_Anim_Animation_State * out);

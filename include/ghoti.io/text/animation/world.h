@@ -37,6 +37,7 @@
 #include <ghoti.io/text/allocator.h>
 #include <ghoti.io/text/animation/animation.h>
 #include <ghoti.io/text/animation/css_animations.h>
+#include <ghoti.io/text/animation/effect.h>
 #include <ghoti.io/text/animation/events.h>
 #include <ghoti.io/text/animation/timing.h>
 #include <ghoti.io/text/css/css_cssom_computed.h>
@@ -53,10 +54,11 @@ extern "C" {
 /** @brief The animation classes of Web Animations 1, "Animation classes", that a document's tracker makes: the order is the composite order between classes (a CSS Transition before a CSS Animation). */
 typedef enum {
   GTEXT_ANIM_KIND_CSS_TRANSITION = 1,   ///< A `CSSTransition`.
-  GTEXT_ANIM_KIND_CSS_ANIMATION         ///< A `CSSAnimation`.
+  GTEXT_ANIM_KIND_CSS_ANIMATION,        ///< A `CSSAnimation`.
+  GTEXT_ANIM_KIND_SCRIPT                ///< An `Animation` that script made (`new Animation()`, `Element.animate()`): no class, so a higher composite order than the other two; among themselves in the order they were made.
 } GTEXT_Anim_Kind;
 
-/** @brief The animations of one document, as a view over its tracker. Opaque. */
+/** @brief The animations of one document, as a view over its tracker, and the ones script makes. Opaque. */
 typedef struct GTEXT_Anim_World GTEXT_Anim_World;
 
 /**
@@ -75,6 +77,7 @@ typedef struct {
   GTEXT_Anim_Time current_time;
   GTEXT_Anim_Effect_Timing timing;      ///< `effect.getTiming()`; the easing is not given (see `easing`).
   GTEXT_CSS_String easing;              ///< `effect.getTiming().easing`.
+  GTEXT_Anim_Composite composite;       ///< `effect.composite`: of a CSSAnimation its `animation-composition`, of a CSSTransition `replace`.
   GTEXT_Anim_Computed_Timing computed;  ///< `effect.getComputedTiming()`.
   GTEXT_CSS_String start_value;         ///< A transition's offset 0 value (serialized computed value); empty for an animation.
   GTEXT_CSS_String end_value;           ///< A transition's offset 1 value.
@@ -143,6 +146,54 @@ GTEXT_API GTEXT_Anim_Status gtext_anim_world_update(GTEXT_Anim_World * world, GT
  * @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID (no such animation: a transition is held while it is running, and an id of a transition that left the set is not found); GTEXT_ANIM_OOM.
  */
 GTEXT_API GTEXT_Anim_Status gtext_anim_world_control(GTEXT_Anim_World * world, GTEXT_Anim_Kind kind, uint64_t id, GTEXT_Anim_Animation ** out);
+
+/**
+ * @brief `new Animation(effect, timeline)`: an animation made by script, idle, in the world's global animation list after every animation made before it (its composite order). The effect may be NULL; its timeline
+ * is the document timeline or none. The animation is not played: gtext_anim_animation_play().
+ *
+ * Call gtext_anim_world_touch() after any call that changes it. The world owns the Animation (and the effect); it is valid until the world is freed. The ids of script animations are never those of the tracker's.
+ * @param id Receives its id (with GTEXT_ANIM_KIND_SCRIPT, the key of gtext_anim_world_control()). @param out Receives the Animation.
+ * @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID; GTEXT_ANIM_OOM.
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_world_animation_new(GTEXT_Anim_World * world, GTEXT_Anim_Effect * effect, GTEXT_Anim_Timeline_Kind timeline, uint64_t * id, GTEXT_Anim_Animation ** out);
+
+/**
+ * @brief `Element.animate(keyframes, options)`: a keyframe effect on `target` (as the constructor of `KeyframeEffect` makes it) held by a new animation on the document timeline, played with the auto-rewind flag.
+ *
+ * @param target The element (the tree's handle; not NULL). @param keyframes, options As gtext_anim_world_effect_new(). @param effect Receives the effect; may be NULL. @param id, out As gtext_anim_world_animation_new().
+ * @return GTEXT_ANIM_OK; GTEXT_ANIM_TYPE_ERROR; GTEXT_ANIM_SYNTAX_ERROR; GTEXT_ANIM_INVALID; GTEXT_ANIM_OOM. On an error no animation was made (an effect may have been, and stays in the world).
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_world_animate(GTEXT_Anim_World * world, const void * target, const GTEXT_Anim_Keyframes_Argument * keyframes, const GTEXT_Anim_Effect_Options * options,
+    GTEXT_Anim_Effect ** effect, uint64_t * id, GTEXT_Anim_Animation ** out);
+
+/** @brief The inline style declarations `commitStyles()` writes: the longhands an animation's effect targets, with their computed values. Opaque; release with gtext_anim_style_values_free(). */
+typedef struct GTEXT_Anim_Style_Values GTEXT_Anim_Style_Values;
+
+/**
+ * @brief `Animation.commitStyles()` ("commit computed styles"): for each physical longhand the animation's effect targets, the computed value of the effect stack of the target's property up to and including this
+ * animation (the effects of a higher composite order are left out, the effect of a removed animation is in) at the world's time, with "the endpoint-inclusive active interval" flag set, so that an animation
+ * that has just finished commits its last value though it has no fill. The caller writes each as the declaration of the target's inline style (the style attribute: the library does not own it); the
+ * model does not write anything.
+ *
+ * "Unlike most other methods defined on this interface, calling this method does trigger a style change event": the caller flushes the tracker's style change events after it writes.
+ *
+ * @param animation An Animation of this world. @param out Receives the declarations (empty for an animation with no effect or no target element).
+ * @return GTEXT_ANIM_OK; GTEXT_ANIM_NO_MODIFICATION_ALLOWED (the target is a pseudo-element); GTEXT_ANIM_INVALID_STATE (the target is not being rendered: it, or an ancestor, has `display: none`; an element with
+ * `display: contents` is rendered, as Web Animations 1 assumes); GTEXT_ANIM_INVALID; GTEXT_ANIM_OOM.
+ */
+GTEXT_API GTEXT_Anim_Status gtext_anim_world_commit_styles(GTEXT_Anim_World * world, const GTEXT_Anim_Animation * animation, GTEXT_Anim_Style_Values ** out);
+
+/** @brief How many declarations. NULL is 0. */
+GTEXT_API size_t gtext_anim_style_values_count(const GTEXT_Anim_Style_Values * list);
+
+/** @brief The element the declarations are for (the effect's target). */
+GTEXT_API const void * gtext_anim_style_values_element(const GTEXT_Anim_Style_Values * list);
+
+/** @brief Declaration `index`: a longhand's name (a custom property's name) and its value, serialized. Valid until the list is freed. @return false past the end. */
+GTEXT_API bool gtext_anim_style_values_at(const GTEXT_Anim_Style_Values * list, size_t index, GTEXT_CSS_String * name, GTEXT_CSS_String * value);
+
+/** @brief Release the declarations; NULL is ignored. */
+GTEXT_API void gtext_anim_style_values_free(GTEXT_Anim_Style_Values * list);
 
 /** @brief How many Animations the world holds (the CSS animations script has touched), in the order they were first asked for. NULL is 0. */
 GTEXT_API size_t gtext_anim_world_control_count(const GTEXT_Anim_World * world);

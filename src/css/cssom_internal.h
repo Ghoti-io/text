@@ -101,6 +101,13 @@ typedef struct {
   bool dead;                           ///< Removed during a delivery; taken out when the outermost delivery ends.
 } css_observer;
 
+/// The keyframe effects of script animations, for the sampler of a style (animation/world.h registers a source with the document it is the world of). `key` is the pseudo-element's key as the tracker has it
+/// (the name of the pseudo-element without colons: `before`), or empty for the element.
+typedef struct {
+  GTEXT_CSS_Status (*effects)(void * user, const void * element, const char * key, size_t key_length, const GTEXT_CSS_Script_Effect ** out, size_t * count);
+  void * user;
+} css_script_source;
+
 /// The document core: reference counted by the objects and the document handle, not atomic.
 struct css_core {
   size_t refs;
@@ -165,6 +172,8 @@ struct css_core {
   struct css_cmps * cs;                  ///< The session, made on first use.
   GTEXT_CSSOM_Layout_Interface layout; ///< The caller's layout interface, copied (`has_layout`).
   bool has_layout;
+  css_script_source script;            ///< The keyframe effects of script animations (`effects` NULL: none).
+  uint64_t script_version;             ///< Moves on whenever what the source would give changes: a style computed before is computed again.
 };
 
 /// A notification (css_cssom_core.h names the kinds). The pointers are borrowed for the call.

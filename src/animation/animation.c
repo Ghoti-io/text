@@ -25,6 +25,8 @@
 
 #include <ghoti.io/text/animation/animation.h>
 
+#include "animation_internal.h"
+
 #include <float.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,6 +40,7 @@ struct GTEXT_Anim_Animation {
   GTEXT_Allocator alloc;
   GTEXT_Anim_Timeline_Kind timeline;
   bool has_effect;
+  GTEXT_Anim_Effect * effect_obj;     ///< The keyframe effect object the animation holds (effect.h), or NULL: borrowed; the effect's `animation` is this one.
   GTEXT_Anim_Effect_Timing timing;
   double effect_end;
   GTEXT_Anim_Time hold, start, previous_current;
@@ -610,6 +613,22 @@ GTEXT_Anim_Status gtext_anim_animation_set_effect(GTEXT_Anim_Animation * a, cons
   }
   update_finished(a, now, false, false);
   return GTEXT_ANIM_OK;
+}
+
+GTEXT_Anim_Effect * gtext_anim_animation_effect(const GTEXT_Anim_Animation * a) {
+  return a ? a->effect_obj : NULL;
+}
+
+GTEXT_Anim_Status gtext_anim_animation_get_timing(const GTEXT_Anim_Animation * a, GTEXT_Anim_Effect_Timing * out) {
+  if (!a || !out || !a->has_effect) {
+    return GTEXT_ANIM_INVALID;
+  }
+  *out = a->timing;
+  return GTEXT_ANIM_OK;
+}
+
+void anim_effect_put(GTEXT_Anim_Animation * a, GTEXT_Anim_Effect * effect) {
+  a->effect_obj = effect;
 }
 
 GTEXT_Anim_Status gtext_anim_animation_update_effect_timing(GTEXT_Anim_Animation * a, const GTEXT_Anim_Optional_Timing * input, GTEXT_Anim_Time now) {

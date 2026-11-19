@@ -206,8 +206,16 @@ GTEXT_CSS_Status css_tracker_bind_transition(struct GTEXT_CSSOM_Transition_Track
 /// Something a style is sampled from changed without the tracker being told (an Animation that holds a transition or a CSS animation was played, paused, seeked ...): the version a layout reads moves on.
 void css_tracker_touch(struct GTEXT_CSSOM_Transition_Tracker * tracker);
 
+/// `effect.updateTiming()` of the CSS animation `id` wherever it is in the tracker (gtext_anim_css_set_update_timing(), whose statuses it gives; GTEXT_ANIM_INVALID: no such animation).
+GTEXT_Anim_Status css_tracker_update_animation_timing(struct GTEXT_CSSOM_Transition_Tracker * tracker, const GTEXT_CSS_Registry * registry, uint64_t id, const GTEXT_Anim_Optional_Timing * input, const char * easing,
+    size_t easing_length);
+
 /// A transition lets go of its Animation (the world is about to free it).
 void css_tracker_detach_transition(struct GTEXT_CSSOM_Transition_Tracker * tracker, uint64_t id);
+
+/// Whether `text` is a valid pseudo-element selector (one pseudo-element and the whole text) and, if so, its key as the tracker has it (the pseudo-element's name without colons, a new string of
+/// `allocator`; `::slotted()` and `::part()` are valid selectors). `*valid` false for anything else (`*key` NULL). GTEXT_CSS_OK, GTEXT_CSS_E_OOM.
+GTEXT_CSS_Status css_pseudo_target(css_core * core, const GTEXT_Allocator * allocator, const char * text, size_t length, char ** key, size_t * key_length, bool * valid);
 
 /// The session's memory (at the last release of the core).
 void css_computed_free(css_core * core);

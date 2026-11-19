@@ -117,3 +117,27 @@ filter-padding-ignores-the-common-prefix	css_anim_sample.c	    if (!same_functio
 identity-of-brightness-is-zero	css_anim_sample.c	{"brightness", "brightness(1)"}	{"brightness", "brightness(0)"}	sample
 none-is-not-the-empty-filter-list	css_anim_sample.c	    *items = NULL;\n    *n = 0;\n    return true;	    *items = NULL;\n    *n = 0;\n    return false;	sample
 reserve-calls-reserves-for-one	animation.c	  const size_t need_notes = 4 * calls, need_events = 2 * calls;	  const size_t need_notes = 4, need_events = 2;	animanim
+effect-last-null-offset-is-not-one	effect.c	    frames[n - 1].computed = 1.0;	    frames[n - 1].computed = 0.0;	animeffect
+effect-missing-offsets-not-evenly-spaced	effect.c	(double)(k - a) / (double)m;	(double)(k - a) / (double)(m + 1);	animeffect
+effect-property-keyframes-sort-is-not-stable	effect.c	while (j > 0 && computed[j - 1] > computed[j]) {	while (j > 0 && computed[j - 1] >= computed[j]) {	animeffect
+effect-equal-offsets-are-unsorted	effect.c	if (have_previous && k->frames[i].offset < previous) {	if (have_previous && k->frames[i].offset <= previous) {	animeffect
+effect-offset-of-one-is-out-of-range	effect.c	(k->frames[i].offset < 0.0 || k->frames[i].offset > 1.0)	(k->frames[i].offset < 0.0 || k->frames[i].offset >= 1.0)	animeffect
+effect-easings-not-repeated	effect.c	ne ? &in->easings[i % ne] : &linear	ne ? &in->easings[i < ne ? i : ne - 1] : &linear	animeffect
+effect-invalid-value-is-kept	effect.c	    if (keep) {\n      f->props[kept++] = *p;	    if (1) {\n      f->props[kept++] = *p;	animeffect
+effect-float-is-not-cssfloat	effect.c	else if (length == 5 && memcmp(name, "float", 5) == 0) {	else if (0 && length == 5 && memcmp(name, "float", 5) == 0) {	animeffect
+effect-legacy-before-is-not-two-colons	effect.c	((text->length == 7 && memcmp(text->data, ":before", 7) == 0) ||	((0 && text->length == 7 && memcmp(text->data, ":before", 7) == 0) ||	animeffect
+effect-local-time-ignores-the-animation	effect.c	      local = s.current_time;	      local = (GTEXT_Anim_Time){false, 0.0};	animeffect
+effect-timing-update-leaves-the-animation	effect.c	      st = gtext_anim_animation_update_effect_timing(e->animation, &in, now);	      st = GTEXT_ANIM_OK;	animeffect
+script-replaced-by-a-lower-animation	script.c	for (size_t j = i + 1; j < w->ncontrols && !covered; j++) {	for (size_t j = 0; j < w->ncontrols && !covered; j++) {	animeffect
+script-commit-keeps-the-higher-effects	script.c	if (committing && c->id > w->commit.limit) {	if (committing && c->id > w->commit.limit + 1000) {	animeffect
+script-removed-animation-stays-stacked	script.c	return gtext_anim_animation_state(a, (GTEXT_Anim_Time){true, 0.0}, &s) == GTEXT_ANIM_OK && s.replace_state != GTEXT_ANIM_REPLACE_REMOVED;	return true;	animeffect
+script-relevance-not-asked	script.c	  *relevant = (current || c2->in_effect) && s.replace_state != GTEXT_ANIM_REPLACE_REMOVED;	  *relevant = true;	animeffect
+script-pending-task-not-run-by-the-frame	world.c	        (void)gtext_anim_animation_run_pending(world->controls[i].animation, now);	        (void)now;	animeffect
+script-animation-is-not-over-the-css-ones	world.c	    return a->info.id > b->info.id;       /* "sort by the position of their associated animations in the global animation list" */	    return a->info.id < b->info.id;	animeffect
+sample-overshoot-below-zero-is-interpolated	css_anim_sample.c	  if (t < 0.0 && at0 > 1) {	  if (t < 0.0 && at0 > 100) {	animeffect
+sample-overshoot-above-one-is-interpolated	css_anim_sample.c	  else if (t >= 1.0 && at1 > 1) {	  else if (t >= 1.0 && at1 > 100) {	animeffect
+sample-iteration-composite-skips-the-second-iteration	css_anim_sample.c	e->iteration_accumulate && e->current_iteration >= 1.0 &&	e->iteration_accumulate && e->current_iteration > 1.0 &&	animeffect
+sample-iteration-composite-not-applied	css_anim_sample.c	    e->iteration_accumulate = se->iteration_accumulate;	    e->iteration_accumulate = false;	animeffect
+sample-effect-composite-ignored	css_anim_sample.c	    e->effect.composite = se->composite;	    e->effect.composite = GTEXT_CSS_ANIM_COMPOSITE_REPLACE;	animeffect
+sample-keyframe-composite-ignored	css_anim_sample.c	        e->comp[f] = se->composites ? se->composites[f] : -1;	        e->comp[f] = -1;	animeffect
+sample-single-endpoint-has-no-text	css_anim_sample.c	      st = val_ensure_text(s, &va);   /* an endpoint	      st = GTEXT_CSS_OK;   /* an endpoint	animeffect
