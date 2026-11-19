@@ -16,11 +16,11 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-"""Fail when the generated seeds of a CSS fuzz corpus are not what their generator writes.
+"""Fail when the generated seeds of a CSS or XML fuzz corpus are not what their generator writes.
 
     tools/css/check-fuzz-seed-generators.py [--control]
 
-Each tools/css/make-fuzz-NAME-seeds.py writes the committed seeds of tests/fuzz/corpus/CORPUS: the files named `*.seed` that are not `reproducer-*.seed` (a reproducer is
+Each tools/css/make-fuzz-NAME-seeds.py, and tools/xml/make-fuzz-seeds.py (which writes the XML parser's corpus and the XML writer's), writes the committed seeds of tests/fuzz/corpus/CORPUS: the files named `*.seed` that are not `reproducer-*.seed` (a reproducer is
 a recorded input of a fixed defect; the fuzzer's own finds are named by their hash and are not seeds). When a generator's input changes (the pin's list of shorthands moves the
 number of every shorthand after it, a harness gains an option byte) and the corpus is not written again, the committed seeds are no longer the ones the generator describes: the
 next person to run it rewrites a few hundred files that nobody reviewed, and what the corpus reaches is not what the generator's comments say. This runs every generator into an
@@ -49,20 +49,25 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus")
 
 # generator name -> (corpus directory, the argument that carries the output directory: its index in argv)
-GENERATORS = [
-    ("compute", "css-compute", 1),
-    ("container", "css-container", 1),
-    ("custom", "css-custom", 1),
-    ("condition", "css-condition", 1),
-    ("transition", "css-transition", 1),
-    ("atrule", "css-atrule", 1),
-    ("selector", "css-selector", 1),
-    ("sheet", "css-sheet", 1),
-    ("style", "css-style", 1),
-    ("cssom", "cssom-decl", 1),
-    ("match", "css-match", 1),
-    ("sheet-cssom", "cssom-sheet", 1),
-    ("document-cssom", "cssom-document", 1),
+# (name, the corpus under tests/fuzz/corpus, the generator's path from tools/ and the arguments before the directory it writes into). A CSS generator is
+# css/make-fuzz-<name>-seeds.py DIRECTORY; the XML one writes two corpora and is told which.
+GENERATORS = [(n, c, "css/make-fuzz-%s-seeds.py" % n, []) for n, c in [
+    ("compute", "css-compute"),
+    ("container", "css-container"),
+    ("custom", "css-custom"),
+    ("condition", "css-condition"),
+    ("transition", "css-transition"),
+    ("atrule", "css-atrule"),
+    ("selector", "css-selector"),
+    ("sheet", "css-sheet"),
+    ("style", "css-style"),
+    ("cssom", "cssom-decl"),
+    ("match", "css-match"),
+    ("sheet-cssom", "cssom-sheet"),
+    ("document-cssom", "cssom-document"),
+]] + [
+    ("xml", "xml", "xml/make-fuzz-seeds.py", ["xml"]),
+    ("xml-writer", "xml-writer", "xml/make-fuzz-seeds.py", ["xml-writer"]),
 ]
 
 
@@ -71,8 +76,8 @@ def seeds(directory):
 
 
 def generate(name, scratch):
-    script = os.path.join(HERE, "make-fuzz-%s-seeds.py" % name)
-    done = subprocess.run([sys.executable, "-I", script, scratch], capture_output=True, text=True)
+    _, _, script, args = next(g for g in GENERATORS if g[0] == name)
+    done = subprocess.run([sys.executable, "-I", os.path.join(os.path.dirname(HERE), script)] + args + [scratch], capture_output=True, text=True)
     if done.returncode != 0:
         return None, done.stderr.strip() or done.stdout.strip()
     return done, ""
@@ -114,7 +119,7 @@ def build_inputs():
 def check(only=None):
     problems = build_inputs() if not only else []
     count = 0
-    for name, corpus, _ in GENERATORS:
+    for name, corpus, _, _ in GENERATORS:
         if only and name not in only:
             continue
         scratch = tempfile.mkdtemp(prefix="seed-gen-")
@@ -130,9 +135,11 @@ def check(only=None):
     return problems, count
 
 
-def control():
-    """The check has to see a seed that moved and a seed that is missing."""
-    name, corpus, _ = GENERATORS[0]
+def control(name=None):
+    """The check has to see a seed that moved and a seed that is missing, in a CSS generator's corpus and in the XML one."""
+    if name is None:
+        return control("compute") or control("xml") or control_build()
+    corpus = next(g[1] for g in GENERATORS if g[0] == name)
     scratch = tempfile.mkdtemp(prefix="seed-gen-")
     try:
         done, why = generate(name, scratch)
@@ -159,13 +166,19 @@ def control():
             return 1
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+    print("control: %s: a moved seed, a stale seed and a missing seed are each reported" % name)
+    return 0
+
+
+def control_build():
+    """The build-directory check has to see a generator that reads build/."""
     if not build_reads('vec = os.path.join(ROOT, "build", "css-property-vectors", "selector.json")\n') or not build_reads("path = 'build/x.json'\n"):
         print("control: a generator that reads the build directory was not reported")
         return 1
     if build_reads("# the build directory: build/ is not read\nname = os.path.join(ROOT, 'tests', 'fuzz')\n") or build_inputs():
         print("control: the build-directory check reports what it should not")
         return 1
-    print("control: a moved seed, a stale seed, a missing seed and a generator that reads build/ are each reported")
+    print("control: a generator that reads build/ is reported, and the generators here are not")
     return 0
 
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Write the seed corpora for fuzz_xml and fuzz_xml_writer.
 
-    tools/xml/make-fuzz-seeds.py
+    tools/xml/make-fuzz-seeds.py [xml|xml-writer DIRECTORY]
 
 The seeds are tracked (tests/fuzz/corpus/.gitignore keeps `*.seed` and nothing else),
 and they are *derived*: this script reads the W3C XML Conformance Test Suite under
 third_party/xml/xmlconf (fetch it with tools/xml/fetch.sh) and writes them again, the
-same bytes each time. Run it after a change to the selection and commit the result.
+same bytes each time. Run it after a change to the selection and commit the result; `make check-fuzz-seed-generators` fails when the committed seeds are not what it writes.
 Files named `reproducer-*.seed` are not touched: they are the recorded finds, each one
 the input that made a fuzzer fail before the fix, replayed by `make test`
 (tests/test-xml-fuzz-seeds.cpp) and by every fuzz run.
@@ -108,14 +108,20 @@ def safe(ident):
     return re.sub(r"[^A-Za-z0-9._-]", "_", ident)
 
 
-def main():
-    xml_dir = os.path.join(CORPUS, "xml")
+def write_suite(xml_dir):
+    """The seeds of fuzz_xml (the suite's documents and the encoding starts) into `xml_dir`; returns how many of each.
+
+    A seed is an input, not a verdict: the documents of XMLCONF_EXCLUSIONS (cases whose expected answer the parser does not promise: another edition, a
+    non-namespace-aware processor) are seeds as well, because the parser still reads them and a refusal of a document is what a search learns from. The
+    exclusions are the conformance denominator's, and the corpus is not tied to them: a case added to that list changes the score and no seed.
+    """
     # Only what this script writes: a reproducer-*.seed is a find, recorded by hand, and
     # is not regenerated from anything.
-    for old in (os.listdir(xml_dir) if os.path.isdir(xml_dir) else []):
+    os.makedirs(xml_dir, exist_ok=True)
+    for old in os.listdir(xml_dir):
         if old.endswith(".seed") and old.startswith(("xmlconf-", "encoding-")):
             os.unlink(os.path.join(xml_dir, old))
-    cases = sorted(xml_gen.xmlconf_cases(), key=lambda c: c[0])
+    cases = sorted(xml_gen.xmlconf_cases(include_excluded=True), key=lambda c: c[0])
     kept = 0
     for index, (ident, data, _tags) in enumerate(cases):
         plain_utf8 = len(data) <= 300 and not data.startswith((b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff", b"\x00", b"<\x00"))
@@ -132,23 +138,42 @@ def main():
         kept += 1
     for name, data in sorted(ENCODING_STARTS.items()):
         write(xml_dir, "encoding-" + name, bytes(OPTIONS[0]) + data)
-    # Programs for the writer: bytes from a fixed generator.
-    rng = xml_gen.Rng(20261011)
-    writer_dir = os.path.join(CORPUS, "xml-writer")
-    for old in (os.listdir(writer_dir) if os.path.isdir(writer_dir) else []):
+    if not EXPECTED_SUITE_SEEDS[0] <= kept <= EXPECTED_SUITE_SEEDS[1]:
+        raise SystemExit("%d suite seeds written; the documentation says %d to %d" % ((kept,) + EXPECTED_SUITE_SEEDS))
+    return kept, len(ENCODING_STARTS)
+
+
+def write_writer(writer_dir):
+    """The programs of fuzz_xml_writer into `writer_dir`: bytes from a fixed generator."""
+    os.makedirs(writer_dir, exist_ok=True)
+    for old in os.listdir(writer_dir):
         if old.endswith(".seed") and old.startswith("program-"):
             os.unlink(os.path.join(writer_dir, old))
+    rng = xml_gen.Rng(20261011)
     for n in range(EXPECTED_WRITER_PROGRAMS):
         length = 24 + rng.below(160)
         prog = bytes(rng.below(256) for _ in range(length))
         # The first bytes choose strict or wild mode: alternate them so both start populated.
         prog = bytes((prog[0], prog[1], (prog[2] & 0xfe) | (n & 1))) + prog[3:]
         write(writer_dir, "program-%02d" % n, prog)
-    if not EXPECTED_SUITE_SEEDS[0] <= kept <= EXPECTED_SUITE_SEEDS[1]:
-        raise SystemExit("%d suite seeds written; the documentation says %d to %d" % ((kept,) + EXPECTED_SUITE_SEEDS))
-    print("fuzz_xml: %d seeds from the suite and %d encoding starts; fuzz_xml_writer: %d programs"
-          % (kept, len(ENCODING_STARTS), EXPECTED_WRITER_PROGRAMS))
+    return EXPECTED_WRITER_PROGRAMS
+
+
+def main(argv):
+    """No argument: both corpora, in place. `xml DIR` or `xml-writer DIR`: one of them into DIR (the drift check of tools/css/check-fuzz-seed-generators.py)."""
+    if len(argv) == 3 and argv[1] in ("xml", "xml-writer"):
+        if argv[1] == "xml":
+            write_suite(argv[2])
+        else:
+            write_writer(argv[2])
+        return 0
+    if len(argv) != 1:
+        raise SystemExit("usage: make-fuzz-seeds.py [xml|xml-writer DIRECTORY]")
+    kept, starts = write_suite(os.path.join(CORPUS, "xml"))
+    programs = write_writer(os.path.join(CORPUS, "xml-writer"))
+    print("fuzz_xml: %d seeds from the suite and %d encoding starts; fuzz_xml_writer: %d programs" % (kept, starts, programs))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main(sys.argv))

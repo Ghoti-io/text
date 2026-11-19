@@ -2241,8 +2241,8 @@ check-fuzz-plant-anchors:
 	@$(REQUIRE_PYTHON3); \
 	python3 tools/check-fuzz-plant-anchors.py
 
-check-fuzz-seed-generators: ## Fail if the generated seeds of a CSS fuzz corpus are not the bytes their generator writes, and show it
-# tools/css/check-fuzz-seed-generators.py: each tools/css/make-fuzz-*-seeds.py is run into an empty directory and compared with tests/fuzz/corpus (the same names and the same bytes;
+check-fuzz-seed-generators: ## Fail if the generated seeds of a CSS or XML fuzz corpus are not the bytes their generator writes, and show it
+# tools/css/check-fuzz-seed-generators.py: each tools/css/make-fuzz-*-seeds.py and tools/xml/make-fuzz-seeds.py is run into an empty directory and compared with tests/fuzz/corpus (the same names and the same bytes;
 # reproducers and the fuzzer's own finds are not seeds). A pin that moves a list a generator reads renumbers or renames seeds, and a corpus nobody wrote again stops being what the
 # generator's comments say; --control makes the three ways it can differ (a byte, a name only in the corpus, a name only in the generator) and requires the report.
 check-fuzz-seed-generators:
