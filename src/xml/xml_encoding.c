@@ -266,17 +266,41 @@ static GTEXT_XML_Status conv_invalid(xml_converter * c, const char * message,
 
 /* The version is the first pseudo-attribute in an XML declaration. The
    converter needs it only to locate a later decoding error correctly; the XML
-   parser remains the authority that validates the complete declaration. */
+   parser remains the authority that validates the complete declaration.
+
+   The answer is asked after every converted character, and for an XML 1.0
+   document it is "no" every time, so what makes it final is looked for instead
+   of asking again. The declaration that makes it "yes" is `<?xml`, white space,
+   `version`, `=` and a quoted `1.1`, and none of those is a `>`: so once the
+   text holds a `>` (or does not begin as a declaration at all) the answer is
+   whatever it is now and growth cannot change it. The text can also get
+   shorter (the stream drops what the parser has read), and then it begins
+   somewhere else and the question is open again. */
 static int conv_select_profile(xml_converter * c) {
   if (c->version == XML_VERSION_11) {
+    return 0;
+  }
+  const size_t length = c->out->length;
+  if (length <= c->probe_length) {
+    c->probe_decided = 0;
+  }
+  c->probe_length = length;
+  if (c->probe_decided || length == 0) {
+    return 0;
+  }
+  static const char start[] = "<?xml";
+  const size_t known = length < sizeof(start) - 1 ? length : sizeof(start) - 1;
+  if (memcmp(c->out->data, start, known) != 0) {
+    c->probe_decided = 1; /* not a declaration, and no more text makes it one */
     return 0;
   }
   xml_ctx probe;
   memset(&probe, 0, sizeof(probe));
   probe.in = (const unsigned char *)c->out->data;
-  probe.length = c->out->length;
+  probe.length = length;
   xml_probe_xml11_declaration(&probe);
   if (probe.version != XML_VERSION_11) {
+    c->probe_decided = memchr(c->out->data, '>', length) != NULL;
     return 0;
   }
   c->version = probe.version;

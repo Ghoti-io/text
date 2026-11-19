@@ -1635,6 +1635,28 @@ TEST(XmlStream, TheByteBeforeTheCursorSurvivesDroppingWhatWasRead) {
   expect_agrees("comments", run2, dom2);
 }
 
+TEST(XmlStream, TheLineOfAnErrorInALegacyXml11DocumentCountsWhatWasDroppedBeforeIt) {
+  // The converter counts the lines of the original as it converts, and the profile (1.1 makes U+0085 a line end) is taken from the declaration
+  // once, at the start: after the parser has dropped what it read, the buffer no longer begins with the declaration, and the count of what was
+  // dropped must not be lost (or counted again under another profile). ISO-8859-3 has U+0085 at 0x85 and nothing at 0xA5.
+  for (const char * version : {"1.1", "1.0"}) {
+    std::string doc = std::string("<?xml version=\"") + version + "\" encoding=\"ISO-8859-3\"?><r>";
+    for (int i = 0; i < 3000; i++) {
+      doc += "x\x85";
+    }
+    doc += "\xA5</r>";
+    Dom dom;
+    run_dom(dom, doc);
+    ASSERT_EQ(dom.status, GTEXT_XML_E_INVALID_SEQUENCE) << version;
+    EXPECT_EQ(dom.err.line, std::strcmp(version, "1.1") == 0 ? 3001u : 1u) << version;
+    for (size_t chunk : {size_t(1), size_t(7), size_t(500), size_t(4096), size_t(5000)}) {
+      Parsed run;
+      run_stream(run, doc, Chunks{chunk});
+      expect_agrees(std::string(version) + " in pieces of " + std::to_string(chunk), run, dom);
+    }
+  }
+}
+
 TEST(XmlStream, ACdataEndCutAcrossFeedsIsStillRefusedInText) {
   // "]]>" in character data is an error wherever it is cut, and the position is
   // that of the first bracket.

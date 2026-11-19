@@ -620,6 +620,55 @@ TEST_F(XmlEncodings, AnXml11DocumentInALegacyEncodingGetsItsLineEnds) {
   EXPECT_EQ(root_text(r.doc), "x\xC2\x85y");
 }
 
+// What the converter reads of the XML declaration to count line ends is the version, and only the version of a declaration at the start of the
+// document, as the declaration is written (the quotes, the white space and the line ends in it) once it is complete. These pin where the profile
+// is taken, so that how it is found can change and nothing else does.
+TEST_F(XmlEncodings, TheProfileOfALegacyDocumentIsTheVersionOfItsDeclarationAndNothingAfterIt) {
+  // 0x85 is U+0085 in ISO-8859-2: a line end in 1.1, a character in 1.0. Each document is read as the declaration says and the element b is
+  // where the line ends put it.
+  struct Case {
+    const char * name;
+    std::string text;
+    unsigned line, column;  // of <b/>
+  };
+  const Case cases[] = {
+      {"double quotes", "<?xml version=\"1.1\" encoding=\"ISO-8859-2\"?><a>x\x85y<b/></a>", 2, 2},
+      {"single quotes", "<?xml version='1.1' encoding='ISO-8859-2'?><a>x\x85y<b/></a>", 2, 2},
+      {"white space around the version", "<?xml\n\t version\r\n=\t'1.1' encoding='ISO-8859-2'?><a>x\x85y<b/></a>", 4, 2},
+      {"a 1.0 declaration", "<?xml version=\"1.0\" encoding=\"ISO-8859-2\"?><a>x\x85y<b/></a>", 1, 50},
+      {"1.1 after the declaration is nothing", "<?xml version=\"1.0\" encoding=\"ISO-8859-2\"?><a>x\x85y<b/><c d=\"1.1\"/></a>", 1, 50},
+  };
+  for (const Case & c : cases) {
+    Result r = parse(c.text);
+    if (r.status != GTEXT_XML_OK) {
+      ADD_FAILURE() << c.name << ": " << r.err.message;
+      continue;
+    }
+    GTEXT_Markup_Node * b = gtext_markup_node_first_child(gtext_markup_document_element(r.doc));
+    while (b && gtext_markup_node_kind(b) != GTEXT_MARKUP_KIND_ELEMENT) {
+      b = gtext_markup_node_next_sibling(b);
+    }
+    ASSERT_NE(b, nullptr) << c.name;
+    GTEXT_Markup_Location where;
+    ASSERT_TRUE(gtext_markup_node_location(b, &where)) << c.name;
+    EXPECT_EQ(where.line, c.line) << c.name;
+    EXPECT_EQ(where.column, c.column) << c.name;
+  }
+  // The error of a bad sequence is placed by the profile as well: line ends before it count in 1.1 and do not in 1.0 (ISO-8859-3 has no 0xA5).
+  Result r = parse("<?xml version=\"1.1\" encoding=\"ISO-8859-3\"?>\x85\x85<a>\xA5</a>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  EXPECT_EQ(r.err.line, 3u);
+  EXPECT_EQ(r.err.column, 4u);
+  r = parse("<?xml version=\"1.0\" encoding=\"ISO-8859-3\"?>\x85\x85<a>\xA5</a>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  EXPECT_EQ(r.err.line, 1u);
+  EXPECT_EQ(r.err.column, 49u);
+  // A document that is not declared at its start is not read for a version at all, wherever it says one.
+  r = parse("<?xml version=\"1.0\" encoding=\"ISO-8859-3\"?><a>x\x85y<?xml version=\"1.1\"?></a>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_SYNTAX);
+  EXPECT_EQ(r.err.line, 1u) << "the version after the declaration is not the profile";
+}
+
 TEST_F(XmlEncodings, BadUnitsAreRefused) {
   const std::string head = utf16("<a>", false, true);
   const std::string tail = utf16("</a>", false, false);

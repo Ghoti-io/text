@@ -683,6 +683,8 @@ typedef struct {
   size_t column;
   uint32_t previous;
   xml_version version; ///< Declared profile, when the XML declaration is present.
+  size_t probe_length;   ///< The length of the converted text when the profile was last asked about (a shorter one is a buffer that was compacted).
+  int probe_decided;     ///< The converted text cannot become an XML 1.1 declaration by growing: the profile is not asked again.
   unsigned char left[4]; ///< A partial code unit carried from the last piece.
   size_t left_n;
   uint32_t high;       ///< A high surrogate waiting for its low one.
