@@ -332,6 +332,11 @@ typedef struct {
    *  level only (`fit-content(10)` is not a length), and the property layer sets this for `clip` alone. Appended after the fields above.
    *  Default false. */
   bool unitless_length_nested;
+  /** With `unitless_length`: the functions whose own arguments also read a bare number as a length, as a string of lower-case names separated by single spaces
+   *  (`"drop-shadow inset circle"`; the match is ASCII case-insensitive on the function's name). Only the function's direct arguments are read so, not the
+   *  arguments of a function inside it and not a math function's. NULL is none. Used by the property layer for an SVG presentation attribute. Appended after the
+   *  fields above. */
+  const char * unitless_length_functions;
   /** Most bytes of the text of one opaque value (`<any-value>`, a math function's arguments, a pending
    *  value): the output limit of the serializer that makes it. Default 256 MiB. One more is
    *  GTEXT_CSS_E_LIMIT_OUTPUT. Appended after the fields above. */

@@ -668,6 +668,60 @@ TEST(CssPresentation, UnitlessLengthsAreUserUnitsInAnyLengthProperty) {
   EXPECT_EQ(gtext_css_computed_diagnostic_total(e.at("r")->style), 1u) << "font-size: 12 is not valid; stroke-width takes a number";
 }
 
+TEST(CssPresentation, ADropShadowTakesBareNumbersAsUserUnits) {
+  struct C {
+    const char * attrs;
+    const char * expect;
+  };
+  const C cases[] = {
+      {"filter=\"drop-shadow(blue 4 5 6)\"", "drop-shadow(blue 4px 5px 6px)"},
+      {"filter=\"drop-shadow(4 5 6 blue)\"", "drop-shadow(blue 4px 5px 6px)"},
+      {"filter=\"drop-shadow(4 5 6)\"", "drop-shadow(currentcolor 4px 5px 6px)"},
+      {"filter=\"drop-shadow(10 15)\"", "drop-shadow(currentcolor 10px 15px 0px)"},
+      {"filter=\"drop-shadow(currentColor 10 20)\"", "drop-shadow(currentcolor 10px 20px 0px)"},
+      {"filter=\"drop-shadow(blue 0 0 30)\"", "drop-shadow(blue 0px 0px 30px)"},
+      {"filter=\"drop-shadow(blue 4px 5 6px)\"", "drop-shadow(blue 4px 5px 6px)"},
+      {"filter=\"drop-shadow(blue -4 -5)\"", "drop-shadow(blue -4px -5px 0px)"},
+      {"filter=\"drop-shadow(blue 4.5 5.5)\"", "drop-shadow(blue 4.5px 5.5px 0px)"},
+      {"filter=\"drop-shadow(blue 4 5) drop-shadow(red 1 2)\"", "drop-shadow(blue 4px 5px 0px) drop-shadow(red 1px 2px 0px)"},
+      {"filter=\"drop-shadow(blue calc(4px) 5)\"", "drop-shadow(blue 4px 5px 0px)"},
+      {"filter=\"DROP-SHADOW(blue 4 5)\"", "drop-shadow(blue 4px 5px 0px)"},
+  };
+  for (const C & c : cases) {
+    Doc d(svg(std::string("<rect id=\"r\" color=\"black\" ") + c.attrs + "/>"));
+    ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+    EXPECT_EQ(d.value("r", "filter"), c.expect) << c.attrs;
+  }
+}
+
+TEST(CssPresentation, TheFunctionsThatTakeABareNumberAreTheOnesBothBrowsersTake) {
+  const char * const accepted[] = {"inset(10)", "circle(10)", "circle(10 at 5 5)", "ellipse(5 6)", "polygon(0 0, 10 10, 0 10)", "inset(10 round 5)", "xywh(0 0 10 10)"};
+  for (const char * v : accepted) {
+    Doc d(svg(std::string("<rect id=\"r\" clip-path=\"") + v + "\"/>"));
+    ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+    EXPECT_NE(d.value("r", "clip-path"), "none") << v;
+  }
+}
+
+TEST(CssPresentation, ABareNumberIsNoLengthWhereTheBrowsersAndTheTextRefuseIt) {
+  /* the cases of the resvg suite that keep their outcome, and the forms that are not the leniency */
+  const char * const refused[] = {
+      "filter=\"drop-shadow(4)\"", "filter=\"drop-shadow(blue 4 5 6 7)\"", "filter=\"drop-shadow(red, 10, 15)\"", "filter=\"drop-shadow()\"",
+      "filter=\"drop-shadow(blue 3% 4% 5%)\"", "filter=\"drop-shadow(blue 4 5 -6)\"", "filter=\"drop-shadow(blue calc(1px + 3) 5)\"", "filter=\"drop-shadow(blue calc(4) 5)\"",
+      "filter=\"blur(4)\"", "filter=\"drop-shadow(4 blue 5)\"", "filter=\"drop-shadow(blue 4 5 blur(1))\"", "filter=\"hue-rotate(45)\"",
+      "clip-path=\"circle(calc(10))\"", "clip-path=\"circle(-10)\"", "clip-path=\"polygon(0 0 10 10)\""};
+  for (const char * a : refused) {
+    Doc d(svg(std::string("<rect id=\"r\" ") + a + "/>"));
+    ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+    EXPECT_EQ(gtext_css_computed_diagnostic_total(d.at("r")->style), 1u) << a << " is dropped, with a diagnostic";
+  }
+  /* the same text is not a length in a style attribute or in a sheet */
+  Doc s(svg("<style>#q{filter:drop-shadow(blue 4 5 6)}</style><rect id=\"r\" style=\"filter:drop-shadow(blue 4 5 6)\"/><rect id=\"q\"/>"));
+  ASSERT_EQ(s.status, GTEXT_CSS_OK) << s.result.name;
+  EXPECT_EQ(s.value("r", "filter"), "none");
+  EXPECT_EQ(s.value("q", "filter"), "none");
+}
+
 TEST(CssPresentation, TheStyleAttributeOfAnHtmlElementIsReadAndItsAttributesAreNotPresentation) {
   Doc d("<!doctype html><html><body><div id=\"x\" fill=\"red\" style=\"color: red\">t</div></body></html>", true);
   ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;

@@ -657,6 +657,40 @@ TEST(CssGrammarTypes, ABareNumberIsALengthOnlyUnderTheQuirksOption) {
   EXPECT_EQ(angle.dump(), "no match");
 }
 
+TEST(CssGrammarTypes, ABareNumberIsALengthInTheOwnArgumentsOfTheFunctionsTheOptionNames) {
+  Grammar g;
+  compile_into(g, "<length> | shape( <length>+ ) | other( <length>+ ) | wrap( shape( <length>+ ) )");
+  ASSERT_TRUE(g.ok());
+  GTEXT_CSS_Match_Options o = gtext_css_match_options_default();
+  o.unitless_length = true;
+  o.unitless_length_functions = "shape wrap";
+  Matched in_list;
+  match_into(in_list, g, "shape(1 2px)", &o);
+  EXPECT_TRUE(in_list.matched) << "a named function's own arguments";
+  Matched upper;
+  match_into(upper, g, "SHAPE(1)", &o);
+  EXPECT_TRUE(upper.matched) << "the name is ASCII case-insensitive";
+  Matched other;
+  match_into(other, g, "other(1)", &o);
+  EXPECT_FALSE(other.matched) << "a function that is not named";
+  Matched inner;
+  match_into(inner, g, "wrap(shape(1))", &o);
+  EXPECT_TRUE(inner.matched) << "shape() is named, whoever holds it";
+  Matched outer_only;
+  GTEXT_CSS_Match_Options p = o;
+  p.unitless_length_functions = "wrap";
+  match_into(outer_only, g, "wrap(shape(1))", &p);
+  EXPECT_FALSE(outer_only.matched) << "wrap() being named does not name the function inside it";
+  Matched off;
+  GTEXT_CSS_Match_Options q = o;
+  q.unitless_length = false;
+  match_into(off, g, "shape(1)", &q);
+  EXPECT_FALSE(off.matched) << "without unitless_length the list is not read";
+  Matched none;
+  match_into(none, g, "shape(1)");
+  EXPECT_FALSE(none.matched);
+}
+
 TEST(CssGrammarTypes, EmptyInputMatchesOnlyWhatCanBeEmpty) {
   check_rows({
       {"a?", "", "<none>"},

@@ -105,6 +105,11 @@ scenario("markers", ca="marker-start=url(#m)\nmarker-mid=none\nmarker-end=url(#m
 scenario("dash", ca="stroke-dasharray=1 2 3\nstroke-dashoffset=-2\nstroke-linecap=round\nstroke-linejoin=bevel\nstroke-miterlimit=2")
 scenario("filter-mask", ca="filter=blur(2px)\nmask=url(#m)\nmask-type=alpha\nclip-rule=evenodd\nfill-rule=evenodd\nopacity=2")
 scenario("display-overflow", ca="display=none\noverflow=hidden\nvisibility=hidden\npointer-events=none")
+scenario("unitless-functions", ca="filter=drop-shadow(blue 4 5 6)\nclip-path=circle(10 at 5 5)\nmask=url(#m) 5 5")
+scenario("unitless-functions-mixed", ca="filter=drop-shadow(4px 5 6px) drop-shadow(red calc(1px) 2)")
+scenario("unitless-functions-refused", ca="filter=drop-shadow(blue 4 5 6 7)\nclip-path=circle(calc(10))")
+scenario("unitless-functions-blur", ca="filter=blur(4)")
+scenario("unitless-functions-style", cs="filter: drop-shadow(blue 4 5 6); clip-path: inset(1 2)", ca="filter=drop-shadow(4 5)")
 scenario("transform-origin", ca="transform-origin=10 20\nbaseline-shift=sub\nalignment-baseline=middle\ndominant-baseline=hanging")
 scenario("lighting", ca="flood-color=red\nflood-opacity=0.5\nlighting-color=blue\nstop-color=green\nstop-opacity=0.2\ncolor-interpolation=linearRGB")
 

@@ -101,4 +101,20 @@
  */
 #define GTEXT_CSS_READING_ANIMATED_SRGB_ROUNDED 1
 
+/**
+ * A bare number as a length inside the functions of an SVG presentation attribute, as in `filter="drop-shadow(blue 4 5 6)"` or `clip-path="circle(10 at 5 5)"`.
+ *
+ * SVG 2, 6.6 says a presentation attribute's value "is parsed as a value of that property", and the attribute-syntax section's allowance of a unitless `<length>` (a
+ * user unit, px) is read here to reach the top level of the value (`stroke-width="2"`, `x="7"`, `transform-origin="10 20"`); nothing it quotes in the text this library has reaches
+ * into a function's arguments. Chromium 156.0.8078.47 and Firefox 158.0.1 both do, in two groups of functions, and only for the attribute (the same text in a `style` attribute or in
+ * a stylesheet is invalid in both): the basic shapes of `clip-path` (`inset()`, `circle()`, `ellipse()`, `polygon()`, `rect()`, `xywh()`, `shape()`) and `drop-shadow()` of `filter`.
+ * `blur()` takes one in Firefox and not in Chromium, and the text has none, so it is not valid. 1 reads a bare number as a length, in px, in the direct arguments of those functions in
+ * the attribute only. 0 reads one at the top level of the value only, which is what the text says. Used by the property layer's attribute mode (css_property.c, run_match());
+ * held by the tests CssPresentation.ADropShadowTakesBareNumbersAsUserUnits and CssPresentation.TheFunctionsThatTakeABareNumberAreTheOnesBothBrowsersTake and CssPresentation.ABareNumberIsNoLengthWhereTheBrowsersAndTheTextRefuseIt.
+ */
+#define GTEXT_CSS_READING_ATTRIBUTE_FUNCTION_UNITLESS_LENGTH 1
+
+/** The functions of GTEXT_CSS_READING_ATTRIBUTE_FUNCTION_UNITLESS_LENGTH, as css_grammar.h's `unitless_length_functions` takes them. */
+#define GTEXT_CSS_ATTRIBUTE_UNITLESS_FUNCTIONS "drop-shadow inset circle ellipse polygon rect xywh shape"
+
 #endif

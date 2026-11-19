@@ -163,10 +163,19 @@ An attribute's value is mostly a CSS value, and where SVG gives it a spelling th
 
 | Option | The attribute |
 |--------|---------------|
-| `unitless_lengths` | a number is a length in user units, in every property that takes a `<length>`: `stroke-width="2"` is `2px` |
+| `unitless_lengths` | a number is a length in user units, in every property that takes a `<length>`: `stroke-width="2"` is `2px`; and, inside the functions `drop-shadow()`, `inset()`, `circle()`, `ellipse()`, `polygon()`, `rect()`, `xywh()` and `shape()`, in their own arguments: `filter="drop-shadow(blue 4 5 6)"`, `clip-path="circle(10 at 5 5)"` (below) |
 | `svg_transform` | `transform`, `gradientTransform` and `patternTransform` are SVG's list (`rotate(45 10 10)`, `translate(10,20)`, numbers without units); a value that is not one is read as CSS's |
 | `path_data` | `d` is path data, and the property `d` holds the string (the pin's grammar of `d` is `none | <string>`; engines that take `path("...")` need a caller that writes it) |
 | `trim_whitespace` | the white space at both ends of a value is not part of it |
+
+**A bare number inside a function.** SVG 2 says a presentation attribute's value is parsed as a value of the property, and a number is a
+length at the top of that value. Inside a function the text says nothing, and Chromium 156 and Firefox 158 both read one in two groups of functions
+and only in the attribute (the same text in a `style` attribute or a stylesheet is invalid in both): the basic shapes of `clip-path` and
+`drop-shadow()` of `filter`. The attribute mode reads exactly those, in the function's own arguments: `drop-shadow(blue 4 5 6)`,
+`drop-shadow(4 5 6 blue)`, `drop-shadow(10 15)` and `circle(10 at 5 5)` are valid and compute to `4px 5px 6px` and so on. It does not reach `blur(4)`
+(Firefox reads it, Chromium and the text do not), a percentage (`drop-shadow(blue 3% 4% 5%)`), a number inside `calc()` (`calc(4)`; Chromium reads
+it, Firefox and the text do not), an extra value (`drop-shadow(blue 4 5 6 7)`), a comma-separated list (`drop-shadow(red, 10, 15)`) or an empty
+one (`drop-shadow()`), and the `style` attribute and sheets never read it. The reading is `GTEXT_CSS_READING_ATTRIBUTE_FUNCTION_UNITLESS_LENGTH`.
 
 The HTML Standard's presentational hints are the same mechanism with a table of the caller's; the library ships SVG's only.
 

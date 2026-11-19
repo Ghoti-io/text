@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include "css_property_canon.h"
+#include "css_readings.h"
 #include "css_registry_internal.h"
 #include "css_value_internal.h"
 
@@ -151,6 +152,7 @@ static GTEXT_CSS_Status run_match(const GTEXT_CSS_Registry * registry, const GTE
   mo.allocator = options && options->allocator ? options->allocator : css_registry_allocator(registry);
   mo.unitless_length = unitless || (options && options->unitless_lengths); /* attribute mode: every property that takes a length */
   mo.unitless_length_nested = unitless && name_is_clip;
+  mo.unitless_length_functions = GTEXT_CSS_READING_ATTRIBUTE_FUNCTION_UNITLESS_LENGTH && options && options->unitless_lengths ? GTEXT_CSS_ATTRIBUTE_UNITLESS_FUNCTIONS : NULL;
   mo.anchor_functions = anchors;
   mo.property = property;
   mo.property_length = property_length;
