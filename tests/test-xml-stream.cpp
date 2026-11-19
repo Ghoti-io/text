@@ -34,7 +34,8 @@
  *    equal to gtext_xml_parse()'s;
  *  - the same documents damaged by one byte, and every proper prefix of them,
  *    give the DOM parse's status, offset, line, column and message, however cut;
- *  - the same documents in UTF-16, UTF-32, ISO-8859-1 and US-ASCII;
+ *  - the same documents in UTF-16, UTF-32, ISO-8859-1, US-ASCII and the encoding
+ *    module's other encodings (Windows-1251, Shift_JIS, ...);
  *  - and the things only an incremental parser can get wrong: a CR LF cut
  *    between the two, a `]]>` cut, a multi-byte character cut, a surrogate pair
  *    cut, an XML declaration still arriving when the encoding has to be known,
@@ -2098,7 +2099,17 @@ TEST(XmlStream, EveryLegacyEncodingGivesTheDomParsesTreeHoweverItIsCut) {
     Parsed utf8;
     run_stream(utf8, declared(sample.body, "UTF-8"), {});
     ASSERT_EQ(utf8.status, GTEXT_XML_OK);
-    EXPECT_EQ(one.rec.log.size(), utf8.rec.log.size()) << sample.label;
+    // The same events (their positions count characters of the original, so only
+    // what each says is compared).
+    ASSERT_EQ(one.rec.log.size(), utf8.rec.log.size()) << sample.label;
+    for (size_t i = 0; i < one.rec.log.size(); i++) {
+      const std::string a = one.rec.log[i].substr(0, one.rec.log[i].find(" @"));
+      const std::string b = utf8.rec.log[i].substr(0, utf8.rec.log[i].find(" @"));
+      if (a.rfind("DOCUMENT_START", 0) == 0) {
+        continue;  // names the original encoding
+      }
+      EXPECT_EQ(a, b) << sample.label << " event " << i;
+    }
     for (size_t cut = 0; cut <= bytes.size(); cut++) {
       Parsed run;
       run_stream(run, bytes, {cut, bytes.size()});
@@ -2114,9 +2125,9 @@ TEST(XmlStream, EveryLegacyEncodingGivesTheDomParsesTreeHoweverItIsCut) {
 }
 
 TEST(XmlStream, ALegacyCharacterFedByteByByteIsOneCharacterOfText) {
-  // A Shift_JIS character is two bytes and the first alone is nothing: no text
-  // is delivered for it until the second arrives, and the position afterwards is
-  // of characters.
+  // A Shift_JIS character is two bytes and the first alone is nothing, and the
+  // position afterwards is of characters. (A stream may deliver text only when a
+  // construct is complete, so what is checked is the text and the position.)
   const std::string doc = encode_as(GTEXT_ENCODING_SHIFT_JIS,
       declared("<a>\xE6\x97\xA5\xE6\x9C\xAC<b/></a>", "Shift_JIS"));
   Recorder rec;

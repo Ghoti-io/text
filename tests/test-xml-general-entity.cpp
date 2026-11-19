@@ -263,11 +263,11 @@ TEST(XmlGeneralEntity, AnExternalEntityInAnotherEncodingIsReadByItsTextDeclarati
     }
     return out;
   };
-  const std::string bad[] = {
-      wide("<?xml version='1.0' encoding='windows-1251'?><child/>"),
-      "<?xml version='1.0' encoding='Shift_JIS'?><child>\x82</child>",
+  const std::pair<std::string, GTEXT_XML_Status> bad[] = {
+      {wide("<?xml version='1.0' encoding='windows-1251'?><child/>"), GTEXT_XML_E_ENCODING_MISMATCH},
+      {"<?xml version='1.0' encoding='Shift_JIS'?><child>\x82</child>", GTEXT_XML_E_INVALID_SEQUENCE},
   };
-  for (const std::string & bytes : bad) {
+  for (const auto & [bytes, want] : bad) {
     ExternalEntity source;
     source.bytes = bytes;
     const std::string input =
@@ -281,8 +281,7 @@ TEST(XmlGeneralEntity, AnExternalEntityInAnotherEncodingIsReadByItsTextDeclarati
     GTEXT_XML_Error error{};
     const GTEXT_XML_Status status =
         gtext_xml_parse(input.data(), input.size(), &options, &document, &error);
-    EXPECT_TRUE(status == GTEXT_XML_E_ENCODING_MISMATCH || status == GTEXT_XML_E_INVALID_SEQUENCE)
-        << status << " " << (error.message ? error.message : "");
+    EXPECT_EQ(status, want) << (error.message ? error.message : "");
     EXPECT_EQ(document, nullptr);
     EXPECT_EQ(source.closes, 1u);
   }

@@ -117,7 +117,8 @@ xml_label xml_classify_label(
     return XML_LABEL_ASCII;
   }
   /* Anything else is the encoding module's to say, by the Encoding standard's
-     labels (the label is an EncName, so it holds no white space to trim). */
+     labels (the label is an EncName, so it holds no white space to trim: the
+     parser refuses one that is not, and xml_raw_label() does not offer it). */
   const GTEXT_Encoding found = gtext_encoding_for_label((const char *)s, n);
   switch (found) {
     case GTEXT_ENCODING_NONE:
@@ -196,6 +197,19 @@ int xml_raw_label(const unsigned char * s, size_t n, size_t * at, size_t * len) 
       return 0;
     }
     if (name_len == 8 && memcmp(s + name_at, "encoding", 8) == 0) {
+      /* EncName ::= [A-Za-z] ([A-Za-z0-9._] | '-')*: anything else is the
+         parser's syntax error, and no encoding's label (the encoding module
+         trims white space, which the production does not allow). */
+      for (size_t k = 0; k < value_len; k++) {
+        const unsigned char b = s[value_at + k];
+        const int letter = (b | 0x20) >= 'a' && (b | 0x20) <= 'z';
+        if (!(letter || (k > 0 && ((b >= '0' && b <= '9') || b == '.' || b == '_' || b == '-')))) {
+          return 0;
+        }
+      }
+      if (value_len == 0) {
+        return 0;
+      }
       *at = value_at;
       *len = value_len;
       return 1;

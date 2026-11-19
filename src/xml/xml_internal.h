@@ -124,7 +124,7 @@ typedef enum {
   XML_LABEL_ASCII,
   XML_LABEL_UTF16LE, ///< UTF-16 with the byte order spelled out.
   XML_LABEL_UTF16BE,
-  XML_LABEL_LEGACY   ///< Another encoding the encoding module decodes: see xml_label_encoding().
+  XML_LABEL_LEGACY   ///< Another encoding the encoding module decodes (xml_classify_label() gives which).
 } xml_label;
 
 /** The effective XML character profile. Zero initialization means XML 1.0. */
@@ -644,7 +644,7 @@ typedef struct {
 
 /**
  * Decide the encoding from the first bytes (and, for a document with no mark
- * that declares ISO-8859-1 or US-ASCII, the declaration), and convert the input
+ * that declares another encoding, the declaration), and convert the input
  * to UTF-8 if it is not already: `in`/`length` then name the converted copy.
  * A UTF-8 mark is skipped by moving `pos`.
  */

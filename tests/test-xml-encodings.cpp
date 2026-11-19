@@ -463,9 +463,21 @@ TEST_F(XmlEncodings, AByteSequenceThatIsNotLegalInTheEncodingIsFatalAtItsFirstBy
   // ISO-2022-JP: a byte above 0x7F, and an escape sequence that is not one.
   r = parse(declaration("ISO-2022-JP") + "<a>\xE9</a>");
   EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE);
-  // The decoder's replacement character is never part of a document: it would
-  // be a character the document did not contain.
-  EXPECT_NE(r.status, GTEXT_XML_OK);
+  // An escape sequence that is not one of ISO-2022-JP's, and one cut by the end.
+  r = parse(declaration("ISO-2022-JP") + "<a>\x1b$X</a>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  r = parse(declaration("ISO-2022-JP") + "<a>\x1b$");
+  EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  // Each multi-byte encoding with a character cut by the end of the document,
+  // at the first byte of it.
+  const char * cut[][2] = {{"EUC-JP", "\x8f\xb0"}, {"gb18030", "\x81\x30\x81"}, {"Big5", "\xa4"},
+      {"EUC-KR", "\xb0"}, {"GBK", "\xb0"}};
+  for (const auto & c : cut) {
+    const std::string doc = declaration(c[0]) + "<a>" + c[1];
+    r = parse(doc);
+    EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE) << c[0];
+    EXPECT_EQ(r.err.raw_byte_offset, doc.size() - std::strlen(c[1])) << c[0];
+  }
   // A byte that decodes to a character XML does not have is the parser's, as for
   // UTF-8: NUL is the same in every encoding.
   r = parse(declaration("windows-1251") + std::string("<a>\0</a>", 8));
@@ -571,18 +583,41 @@ TEST_F(XmlEncodings, TheInputLimitCountsTheOriginalBytesOfALegacyDocument) {
 
 TEST_F(XmlEncodings, ADeclarationThatNamesALegacyEncodingIsReadInAnAsciiCompatibleReading) {
   // Appendix F: the first bytes "<?xm" in ASCII are every encoding that keeps
-  // ASCII where it is, and the declaration says which. Not so when the bytes are
-  // not those of "<?": a document in UTF-16 with no mark and no "<?" first is
-  // read as UTF-8 and refused, whatever it declares.
-  EXPECT_NE(parse(utf16("<a/>", false, false)).status, GTEXT_XML_OK);
-  // A label further into the declaration than the encoding's own name.
+  // ASCII where it is, and the declaration says which. A label further into the
+  // declaration than the encoding's own name still counts.
   Result r = parse("<?xml version=\"1.0\" encoding=\"windows-1251\" standalone=\"no\"?><a>\xCF</a>");
-  EXPECT_EQ(r.status, GTEXT_XML_OK);
-  // Only a declaration that is at the start of the document counts: in a
-  // document that starts with a comment, the "declaration" is a processing
-  // instruction that no document may have there.
+  ASSERT_EQ(r.status, GTEXT_XML_OK);
+  EXPECT_EQ(root_text(r.doc), "\xD0\x9F");
+  // Only a declaration at the start of the document is one: after a comment it
+  // is a processing instruction with a reserved name, whatever it says.
   r = parse("<!-- x --><?xml version=\"1.0\" encoding=\"windows-1251\"?><a/>");
-  EXPECT_NE(r.status, GTEXT_XML_OK);
+  EXPECT_EQ(r.status, GTEXT_XML_E_SYNTAX);
+  // A label that is not an EncName (white space around it) is not a label: the
+  // document is read as UTF-8, as the encoding module's trimming would not be.
+  r = parse("<?xml version=\"1.0\" encoding=\" shift_jis\"?><a>\x82</a>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_UTF8);
+  r = parse("<?xml version=\"1.0\" encoding=\" shift_jis\"?><a/>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_SYNTAX);
+}
+
+TEST_F(XmlEncodings, AnXml11DocumentInALegacyEncodingGetsItsLineEnds) {
+  // ISO-8859-2 byte 0x85 is U+0085, which XML 1.1 makes a line end (and XML 1.0
+  // does not): the conversion keeps the line and the column of the original.
+  Result r = parse("<?xml version=\"1.1\" encoding=\"ISO-8859-2\"?><a>x\x85y<b/></a>");
+  ASSERT_EQ(r.status, GTEXT_XML_OK) << r.err.message;
+  EXPECT_EQ(root_text(r.doc), "x\ny");
+  GTEXT_Markup_Node * b = gtext_markup_node_first_child(gtext_markup_document_element(r.doc));
+  while (b && gtext_markup_node_kind(b) != GTEXT_MARKUP_KIND_ELEMENT) {
+    b = gtext_markup_node_next_sibling(b);
+  }
+  ASSERT_NE(b, nullptr);
+  GTEXT_Markup_Location where;
+  ASSERT_TRUE(gtext_markup_node_location(b, &where));
+  EXPECT_EQ(where.line, 2u);
+  EXPECT_EQ(where.column, 2u);  // after "y"
+  r = parse("<?xml version=\"1.0\" encoding=\"ISO-8859-2\"?><a>x\x85y</a>");
+  ASSERT_EQ(r.status, GTEXT_XML_OK);
+  EXPECT_EQ(root_text(r.doc), "x\xC2\x85y");
 }
 
 TEST_F(XmlEncodings, BadUnitsAreRefused) {

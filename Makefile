@@ -2610,11 +2610,11 @@ conformance-csv: $(CONFORMANCE_LIB)
 # `make conformance-all` fail the same way.
 XML_DATA_DIR := third_party/xml
 
-# Measured against the pinned xmlconf corpus: 872 XML 1.0 and 64 XML 1.1
+# Measured against the pinned xmlconf corpus: 875 XML 1.0 (872 before the Shift_JIS, EUC-JP and ISO-2022-JP documents were read) and 64 XML 1.1
 # documents complete the round trip. The prior pooled floor of 1,222 exceeds
 # the current total of 936; these per-version floors retain the XML 1.0 baseline
 # and cannot be satisfied by XML 1.1 cases.
-XML_ROUNDTRIP_FLOORS := XMLCONF_MIN_ROUNDTRIP_10=872 XMLCONF_MIN_ROUNDTRIP_11=64
+XML_ROUNDTRIP_FLOORS := XMLCONF_MIN_ROUNDTRIP_10=875 XMLCONF_MIN_ROUNDTRIP_11=64
 
 conformance-xml: ## Score the XML parser against the pinned W3C XML Conformance Test Suite
 conformance-xml: $(CONFORMANCE_LIB)
