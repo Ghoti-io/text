@@ -36,7 +36,13 @@ cannot know is whether time passing makes something happen, since that is a fact
 runner can end, and when the microtasks are done one *turn* ends it by writing the op that lets time pass (``frame``, ``advance``, ``ewait``, ``ewaito``); what the page does next is the ops that follow, and a
 wait that does not end in time fails the test at run time. Two waits that could end in either order (an event and a frame, two timers) would need the program to branch on a fact of the library, so they are
 ``Unmodeled('concurrent-waits')``. An event listener is modeled in the two forms that need no branch: an EventWatcher, and a handler that only calls ``assert_unreached``. The runner owns the document timeline
-(frames of 16 ms) and the events the transition tracker owes; the events of CSS animations are the Web Animations model's and are refused by name (``animation-event-*``, reason ``animation-model``).
+(frames of 16 ms) and the events the tracker owes (the events of CSS transitions and CSS animations are watched alike; the playback events of an Animation, `finish` and `cancel`, are not).
+
+**The Animation of a CSS animation or transition.** What a page does to one (`play()`, `pause()`, `finish()`, `cancel()`, `reverse()`, `updatePlaybackRate()`, `persist()`, `currentTime =`, `startTime =`, `playbackRate =`)
+is an op the runner does to the Animation of the model (``am``, ``asetv``); a failure is the exception the status names, which `assert_throws_dom` and `assert_throws_js` take. `ready` and `finished` are *promises of
+generations* (``HostPromise``): reading one is the generation the Animation has now (``pgen``), an `await` of one is a wait the runner ends by letting frames pass until that generation has settled (``pwait``;
+the test fails if it was rejected), `promise_rejects_dom` and `try { await p; assert_unreached() } catch (e) { ... }` expect the rejection, and two reads are the same promise object when the generation is the same.
+The times of the document timeline are numbers a page may do arithmetic on (``calc``); a computed `margin-left` that a page reads with `parseFloat` is one too (``pfloat``).
 
 Test counts: a page's tests are the `test()` calls its script makes, counted as it runs (so a loop is unrolled and a function called twice is two tests). ``PageResult.static_calls``
 is the count of `test(` call sites in the source, the second method of the census; the two differ only for a page that makes tests in a loop or a function, and the page record of the
@@ -124,11 +130,12 @@ class Native:
 
 class Rt:
     """A value only the library can give: a register of the runner. ``kind``: s (string), n (number), b (boolean), sn (string or null), any."""
-    __slots__ = ('reg', 'kind')
+    __slots__ = ('reg', 'kind', 'time')
 
-    def __init__(self, reg, kind):
+    def __init__(self, reg, kind, time=False):
         self.reg = reg
         self.kind = kind
+        self.time = time   # a time of the document timeline (``tlnow``): a number that the page may add to and subtract from (``calc``), because a time the runner reads is the one number the model gives
 
 
 class Regex:
@@ -365,6 +372,8 @@ def operand(v):
         return 'e:' + v.name
     if isinstance(v, HostObj):
         return 'o:' + v.name
+    if isinstance(v, HostAnim):
+        return 'a:' + v.name   # an Animation object: two are the same when they are the same animation, which the runner knows
     if isinstance(v, str):
         return 's:' + v
     if isinstance(v, bool):
@@ -460,6 +469,17 @@ class HostAnimList(Host):
 
 class HostAnim(Host):
     """An Animation object (a CSSAnimation or a CSSTransition: which, only the library knows): the name is its name in the program."""
+
+
+class HostPromise(Host):
+    """`animation.ready` and `animation.finished`: the promise the Animation has *now*. The model keeps a promise for each generation and settles it when the specification does (animation.h), so
+    the value is the generation: ``gen`` is the register that holds it (``pgen``). Two reads are the same promise object when the animation, the member and the generation are the same."""
+
+    def __init__(self, anim, which, gen):
+        Host.__init__(self, 'promise')
+        self.anim = anim
+        self.which = which
+        self.gen = gen
 
 
 class HostEffect(Host):
@@ -723,7 +743,7 @@ class Interp:
         for name in ('test', 'promise_test', 'setup', 'assert_equals', 'assert_not_equals', 'assert_true', 'assert_false', 'assert_array_equals', 'assert_approx_equals', 'assert_greater_than',
                      'assert_less_than', 'assert_greater_than_equal', 'assert_less_than_equal', 'assert_in_array', 'assert_unreached', 'assert_regexp_match', 'assert_class_string',
                      'add_completion_callback', 'done', 'getComputedStyle', 'parseInt', 'parseFloat', 'isNaN', 'String', 'Number', 'Boolean', 'Array', 'Object', 'JSON', 'isFinite',
-                     'assert_throws_dom', 'assert_throws_js', 'assert_throws_exactly', 'assert_implements', 'assert_implements_optional'):
+                     'assert_throws_dom', 'assert_throws_js', 'assert_throws_exactly', 'assert_implements', 'assert_implements_optional', 'promise_rejects_dom'):
             g[name] = Native(getattr(self, 'n_' + name, None) or self.n_unsupported(name), name)
 
     def n_matchMedia(self, interp, this, args):
@@ -759,7 +779,7 @@ class Interp:
         a read, a sort of values only the library has, a comparison of two times) are the runner's."""
         if 'query_is_css_parseable' in scope.vars and isinstance(scope.vars['query_is_css_parseable'], Func):
             scope.vars['query_is_css_parseable'] = Native(self.n_query_is_css_parseable, 'query_is_css_parseable')
-        for name, native in (('waitForAnimationFrames', self.n_waitForAnimationFrames), ('assert_end_event_batch_equal', self.n_assert_end_event_batch_equal)):
+        for name, native in (('waitForAnimationFrames', self.n_waitForAnimationFrames), ('waitForNextFrame', self.n_waitForNextFrame), ('assert_end_event_batch_equal', self.n_assert_end_event_batch_equal)):
             if isinstance(scope.vars.get(name), Func):
                 scope.vars[name] = Native(native, name)
 
@@ -927,6 +947,25 @@ class Interp:
         self.loop.add_wait(HostWait('timer', callback=args[0], ms=ms))
         return float(self.loop.ids)
 
+    def n_waitForNextFrame(self, interp, this, args):
+        """testcommon.js `waitForNextFrame()`: a promise that resolves at the next frame whose time is not the time it was called at (the helper asks for one more when the timeline's time has not moved).
+        Every frame the runner runs moves the time, so it is one frame."""
+        if args:
+            raise Unmodeled('host-waitForNextFrame-argument')
+        return self.loop.wait_promise('frames', count=1, on_frame=None)
+
+    def n_assert_class_string(self, interp, this, a):
+        """`assert_class_string(object, class_string, description)`: `Object.prototype.toString.call(object)` is `[object <class_string>]`. Of an Animation the class is the library's (a CSSAnimation or a
+        CSSTransition), which only it knows."""
+        self.need_test()
+        if len(a) < 2 or not isinstance(a[0], HostAnim) or not isinstance(a[1], str):
+            raise Unmodeled('harness-assert_class_string-argument')
+        msg = self.desc(a, 2)
+        r = self.new_reg()
+        self.emit('aget', r, a[0].name, 'className')
+        self.runtime_assert('assert_equals', [Rt(r, 's'), a[1]], msg)
+        return UNDEF
+
     def n_waitForAnimationFrames(self, interp, this, args):
         """helper.js `waitForAnimationFrames(count, onFrame)`: a promise that resolves after that many frames, each of which runs onFrame. (The helper compares the timeline's time with its time at the
         start, which is a comparison of a fact of the library with another; every frame the runner runs moves the time, so it is `count` frames.)"""
@@ -953,9 +992,9 @@ class Interp:
         return HostWatcher(name, args[1].name, types, timeout)
 
     def need_event_types(self, types):
-        """The events the library reports are those of CSS Transitions; the events of CSS animations are the Web Animations model's (the next stage), so a page that waits for one has no events here."""
+        """The events the library reports are those of CSS Transitions and of CSS Animations (the playback events of an Animation, `finish` and `cancel`, are dispatched at the Animation and are not watched)."""
         for t in types:
-            if t not in TRANSITION_EVENTS:
+            if t not in TRANSITION_EVENTS and t not in ANIMATION_EVENTS:
                 raise Unmodeled('animation-event-' + t)
 
     def watcher_get(self, w, key, for_call):
@@ -1045,8 +1084,10 @@ class Interp:
         msg = self.desc(a, 2)
         if len(a) < 2:
             raise Unmodeled('harness-assert-arity')
+        if isinstance(a[0], HostPromise) or isinstance(a[1], HostPromise):
+            return self.promise_identity('assert_equals', a, msg)
         if isinstance(a[0], HostAnim) or isinstance(a[1], HostAnim):
-            raise Unmodeled('animation-object-identity')   # one Animation object per animation is the binding's: two reads of getAnimations() give two handles here
+            return self.animation_identity('assert_equals', a, msg)
         if isinstance(a[0], Rt) or isinstance(a[1], Rt) or (isinstance(a[0], (HostElem, HostObj)) and a[0] is not a[1]) or (isinstance(a[1], (HostElem, HostObj)) and a[0] is not a[1]):
             if any(not isinstance(x, (Rt, str, float, bool, HostElem, HostObj)) and x is not None and x is not UNDEF for x in a[:2]):
                 raise Unmodeled('computed-value-compared-with-object')
@@ -1061,8 +1102,10 @@ class Interp:
         msg = self.desc(a, 2)
         if len(a) < 2:
             raise Unmodeled('harness-assert-arity')
+        if isinstance(a[0], HostPromise) or isinstance(a[1], HostPromise):
+            return self.promise_identity('assert_not_equals', a, msg)
         if isinstance(a[0], HostAnim) or isinstance(a[1], HostAnim):
-            raise Unmodeled('animation-object-identity')
+            return self.animation_identity('assert_not_equals', a, msg)
         if isinstance(a[0], Rt) or isinstance(a[1], Rt) or (isinstance(a[0], (HostElem, HostObj)) and a[0] is not a[1]) or (isinstance(a[1], (HostElem, HostObj)) and a[0] is not a[1]):
             if any(not isinstance(x, (Rt, str, float, bool, HostElem, HostObj)) and x is not None and x is not UNDEF for x in a[:2]):
                 raise Unmodeled('computed-value-compared-with-object')
@@ -1161,13 +1204,38 @@ class Interp:
         self.emit('endthrows')
 
     def n_assert_throws_dom(self, interp, this, a):
-        if len(a) < 2 or not isinstance(a[0], str) or not isinstance(a[-1], Func) or len(a) > 3:
+        # assert_throws_dom(type, func, description) (or, for a frame's constructor, type, constructor, func, description: not modeled)
+        if len(a) < 2 or len(a) > 3 or not isinstance(a[0], str) or not isinstance(a[1], Func) or (len(a) == 3 and not isinstance(a[2], str)):
             raise Unmodeled('harness-assert_throws_dom-argument')
-        self.throws('dom', a[0], a[-1])
+        self.throws('dom', LEGACY_DOM_ERRORS.get(a[0], a[0]), a[1])   # testharness.js takes the legacy code names ('NO_MODIFICATION_ALLOWED_ERR') for the names of the DOMExceptions with those codes
+        return UNDEF
+
+    def n_promise_rejects_dom(self, interp, this, a):
+        """`promise_rejects_dom(t, type, promise, description)`: the promise of an Animation is rejected with a DOMException of that name; the wait is the runner's (``pwait``), which fails the test when
+        the promise is fulfilled or rejected with another name."""
+        self.need_test()
+        if len(a) < 3 or not isinstance(a[1], str) or not isinstance(a[2], HostPromise):
+            raise Unmodeled('harness-promise_rejects_dom-argument')
+        return self.loop.wait_promise('hostpromise', host=a[2], expect='dom:' + a[1])
+
+    def animation_identity(self, name, a, msg):
+        """`assert_equals` and `assert_not_equals` of two Animation objects: the same object when they are the same animation (the binding has one object for each; two reads of getAnimations()
+        give two handles here, which the runner compares by the animation)."""
+        if not (isinstance(a[0], HostAnim) and isinstance(a[1], HostAnim)):
+            raise Unmodeled('animation-object-identity')   # an Animation compared with a value of another kind
+        self.runtime_assert(name, a[:2], msg)
+        return UNDEF
+
+    def promise_identity(self, name, a, msg):
+        """`assert_equals` and `assert_not_equals` of two promises of an Animation: the same promise object when the generation is the same (the model replaces the promise where the specification does)."""
+        x, y = a[0], a[1]
+        if not (isinstance(x, HostPromise) and isinstance(y, HostPromise)) or (x.anim, x.which) != (y.anim, y.which):
+            raise Unmodeled('animation-promise-identity')   # another handle may be the same animation: two reads of getAnimations() give two handles here
+        self.runtime_assert(name, [x.gen, y.gen], msg)
         return UNDEF
 
     def n_assert_throws_js(self, interp, this, a):
-        if len(a) != 2 or not isinstance(a[0], HostCtor) or a[0].name not in JS_ERRORS or not isinstance(a[1], Func):
+        if len(a) < 2 or len(a) > 3 or not isinstance(a[0], HostCtor) or a[0].name not in JS_ERRORS or not isinstance(a[1], Func) or (len(a) == 3 and not isinstance(a[2], str)):
             raise Unmodeled('harness-assert_throws_js-argument')
         self.throws('js', a[0].name, a[1])
         return UNDEF
@@ -1210,6 +1278,12 @@ class Interp:
         return float(int(m.group(0))) if m else math.nan
 
     def n_parseFloat(self, interp, this, a):
+        if a and isinstance(a[0], Rt):
+            if a[0].kind not in ('s', 'sn', 'any'):
+                raise Unmodeled('computed-value-expression')
+            r = self.new_reg()
+            self.emit('pfloat', r, operand(a[0]))   # the leading number of a string the library gave (`getComputedStyle(div).marginLeft`): the runner reads it
+            return Rt(r, 'n')
         s = to_str(a[0]).strip() if a else 'undefined'
         m = re.match(r'[+-]?(\d+\.?\d*([eE][+-]?\d+)?|\.\d+([eE][+-]?\d+)?)', s)
         return float(m.group(0)) if m else math.nan
@@ -1505,8 +1579,39 @@ class Interp:
             self.guard_depth -= 1
         self.emit('endif')
 
+    @classmethod
+    def pure_reference(cls, e):
+        """Whether an expression is a variable or a chain of members of variables (`p`, `a.ready`): reading it makes no op and has no effect."""
+        return isinstance(e, tuple) and (e[0] == 'id' or (e[0] == 'mem' and not e[3] and cls.pure_reference(e[1])))
+
+    @staticmethod
+    def rejection_pattern(blk):
+        """The expression of a block that is exactly `await <p>; assert_unreached(...)` (the try of a test that expects a promise to reject), else None."""
+        if isinstance(blk, tuple) and blk[0] == 'block' and len(blk[1]) == 2:
+            first, second = blk[1]
+            if first[0] == 'expr' and first[1][0] == 'await' and second[0] == 'expr' and second[1][0] == 'call' and second[1][1] == ('id', 'assert_unreached'):
+                return first[1][1]
+        return None
+
+    def exec_expected_rejection(self, subject, param, handler, scope):
+        """`try { await p; assert_unreached(...); } catch (err) { ... }` where p is a promise of an Animation: the wait is the runner's (``pwait``), which fails the test if the promise is fulfilled and puts
+        the name of the rejection in a register; the handler runs with `err` bound to an object that has it. (A promise that is fulfilled is a failure of the test, as the assert_unreached is.)"""
+        r = self.new_reg()
+        p = self.loop.wait_promise('hostpromise', host=subject, expect='rej', reg=r)
+        self.loop.await_value(p)
+        inner = Scope(scope)
+        if param is not None:
+            self.bind(param, JObj(name=Rt(r, 's')), inner, 'let')
+        self.exec(handler, inner)
+
     def exec_try(self, st, scope):
         _, blk, param, handler, fin = st
+        subject = self.rejection_pattern(blk) if handler is not None and fin is None else None
+        if subject is not None and self.pure_reference(subject):   # an expression with no effect of its own: it is evaluated again if the promise is not an Animation's
+            promise = self.eval(subject, scope)
+            if isinstance(promise, HostPromise):
+                self.exec_expected_rejection(promise, param, handler, scope)
+                return
         try:
             try:
                 self.try_depth += 1
@@ -1742,6 +1847,11 @@ class Interp:
                     pass
                 self.emit('cmp', r, {'===': 'eq', '!==': 'ne', '==': 'leq', '!=': 'lne'}[op], operand(a), operand(b))
                 return Rt(r, 'b')
+            if op in ('+', '-', '*', '/') and all(isinstance(x, float) or (isinstance(x, Rt) and x.time) for x in (a, b)):
+                # a time of the timeline that the page does arithmetic on (`document.timeline.currentTime - 100 * MS_PER_SEC`): the runner computes it (``calc``), as a number of the same kind
+                r = self.new_reg()
+                self.emit('calc', r, op, operand(a), operand(b))
+                return Rt(r, 'n', True)
             raise Unmodeled('computed-value-expression')
         if op == '===':
             return strict_eq(a, b)
@@ -3039,16 +3149,26 @@ def style_set(interp, st, key, value):
     interp.emit('sattrset', st.name, key, null_empty(value))
 
 
+# The legacy names of the codes of DOMException, which `assert_throws_dom` accepts for the name of the exception that has the code (testharness.js, `assert_throws_dom`: its table of code names).
+LEGACY_DOM_ERRORS = {
+    'INDEX_SIZE_ERR': 'IndexSizeError', 'HIERARCHY_REQUEST_ERR': 'HierarchyRequestError', 'WRONG_DOCUMENT_ERR': 'WrongDocumentError', 'INVALID_CHARACTER_ERR': 'InvalidCharacterError',
+    'NO_MODIFICATION_ALLOWED_ERR': 'NoModificationAllowedError', 'NOT_FOUND_ERR': 'NotFoundError', 'NOT_SUPPORTED_ERR': 'NotSupportedError', 'INUSE_ATTRIBUTE_ERR': 'InUseAttributeError',
+    'INVALID_STATE_ERR': 'InvalidStateError', 'SYNTAX_ERR': 'SyntaxError', 'INVALID_MODIFICATION_ERR': 'InvalidModificationError', 'NAMESPACE_ERR': 'NamespaceError',
+    'INVALID_ACCESS_ERR': 'InvalidAccessError', 'TYPE_MISMATCH_ERR': 'TypeMismatchError', 'SECURITY_ERR': 'SecurityError', 'NETWORK_ERR': 'NetworkError', 'ABORT_ERR': 'AbortError',
+    'URL_MISMATCH_ERR': 'URLMismatchError', 'QUOTA_EXCEEDED_ERR': 'QuotaExceededError', 'TIMEOUT_ERR': 'TimeoutError', 'INVALID_NODE_TYPE_ERR': 'InvalidNodeTypeError', 'DATA_CLONE_ERR': 'DataCloneError',
+}
 JS_ERRORS = ('TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'EvalError', 'URIError')
 CTOR_NAMES = {'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'EvalError', 'URIError', 'CSSRule', 'CSSStyleRule', 'CSSMediaRule', 'CSSImportRule', 'CSSNamespaceRule', 'CSSFontFaceRule', 'CSSPageRule', 'CSSKeyframesRule', 'CSSKeyframeRule', 'CSSSupportsRule',
               'CSSLayerBlockRule', 'CSSLayerStatementRule', 'CSSContainerRule', 'CSSScopeRule', 'CSSPropertyRule', 'CSSCounterStyleRule', 'CSSFontFeatureValuesRule', 'CSSStartingStyleRule',
               'CSSPositionTryRule', 'CSSNestedDeclarations', 'CSSStyleSheet', 'StyleSheet', 'MediaList'}
 
 
-def index_field(v, what):
-    """The field of an op for an index argument (an unsigned long)."""
+def index_field(v, what, runtime=False):
+    """The field of an op for an index argument (an unsigned long); with ``runtime`` a number the runner gave (`sheet.cssRules.length`) is the register that holds it."""
     if v is UNDEF:
         return 'u:'
+    if runtime and isinstance(v, Rt) and v.kind == 'n':
+        return 'r:' + v.reg
     if isinstance(v, float) and v == int(v) and 0 <= v < 4294967296:
         return 'n:' + str(int(v))
     raise Unmodeled('host-' + what + '-index')
@@ -3169,7 +3289,7 @@ def obj_get(interp, ob, key, for_call):
     if key == 'insertRule':
         def ins(i, a):
             r = i.new_reg()
-            i.emit('insertrule', r, ob.name, text_arg(a, 0, 'insertRule'), index_field(a[1] if len(a) > 1 else UNDEF, 'insertRule'))
+            i.emit('insertrule', r, ob.name, text_arg(a, 0, 'insertRule'), index_field(a[1] if len(a) > 1 else UNDEF, 'insertRule', True))
             return Rt(r, 'n')
         return BoundMethod(ins)
     if key in ('deleteRule', 'removeRule'):
@@ -3314,9 +3434,30 @@ def alist_get(interp, lst, key, for_call):
 
 
 # what an Animation's members read as (the library says the value; `any` is a number, null, a string or undefined)
-ANIM_READS = {'animationName': 'any', 'transitionProperty': 'any', 'playState': 's', 'pending': 'b', 'currentTime': 'any', 'id': 's'}   # `startTime` is the Animation state machine's: it is null until a frame the page does not control (Firefox answers a pending one both ways), and the frame that resolves it is W2's
+ANIM_READS = {'animationName': 'any', 'transitionProperty': 'any', 'playState': 's', 'pending': 'b', 'currentTime': 'any', 'id': 's', 'playbackRate': 'n', 'replaceState': 's'}   # `startTime` is read by no page of the model's: it is null until a frame the page does not control, and Firefox answers a pending one both ways
 TIMING_READS = {'delay': 'n', 'endDelay': 'n', 'fill': 's', 'iterationStart': 'n', 'iterations': 'n', 'duration': 'any', 'direction': 's', 'easing': 's'}
 COMPUTED_READS = dict(TIMING_READS, endTime='n', activeDuration='n', localTime='any', progress='any', currentIteration='any')
+# the methods of Animation (animation.h): the call is an op, whose failure is the exception of the IDL the status names
+ANIM_METHODS = {'play': 0, 'pause': 0, 'finish': 0, 'cancel': 0, 'reverse': 0, 'persist': 0, 'updatePlaybackRate': 1}
+# the members a page may set, and what a value of each may be (a number, or for the times also null)
+ANIM_SETS = {'currentTime': 'time', 'startTime': 'time', 'playbackRate': 'number'}
+
+
+def anim_call(interp, an, key):
+    nargs = ANIM_METHODS[key]
+
+    def call(i, a):
+        i.need_dom()
+        if len(a) < nargs:
+            raise Unmodeled('animation-method-argument')   # a TypeError of the page
+        args = []
+        for v in a[:nargs]:
+            if not (isinstance(v, float) or (isinstance(v, Rt) and v.kind in ('n', 'any'))):
+                raise Unmodeled('animation-method-argument')
+            args.append(operand(v))
+        i.emit('am', an.name, key, *args)
+        return UNDEF
+    return BoundMethod(call)
 
 
 def anim_get(interp, an, key, for_call):
@@ -3326,13 +3467,37 @@ def anim_get(interp, an, key, for_call):
         return Rt(r, ANIM_READS[key])
     if key == 'effect':
         return HostEffect(an.name)
-    raise Unmodeled('animation-' + key)   # the timeline, the promises and the methods that change an animation are the Animation state machine's
+    if key in ANIM_METHODS:
+        return anim_call(interp, an, key)
+    if key in ('ready', 'finished'):
+        interp.need_dom()
+        r = interp.new_reg()
+        interp.emit('pgen', r, an.name, key)
+        return HostPromise(an.name, key, Rt(r, 'n'))
+    if key == 'timeline':
+        return HostTimeline('timeline')   # the document timeline: `timeline = ...` is not modeled, so an animation here has the one it was made with
+    raise Unmodeled('animation-' + key)   # the other members (`onfinish`, `replaceState = ...`, `timeline = ...`) are not in the model's scoring yet
 
 
 def anim_set(interp, an, key, value):
     if key == 'id' and isinstance(value, str):
         interp.emit('aset', an.name, 'id', value)
         return
+    kind = ANIM_SETS.get(key)
+    if kind:
+        interp.need_dom()
+        if value is None and kind == 'time':
+            interp.emit('asetv', an.name, key, 'N:')
+            return
+        if isinstance(value, str):
+            number = to_num(value)   # the conversion of the IDL (`CSSNumberish`, `double`): a string is read as a number
+            if number != number:
+                raise Unmodeled('animation-set-' + key + '-value')
+            value = number
+        if isinstance(value, float) or (isinstance(value, Rt) and value.kind in ('n', 'any')):
+            interp.emit('asetv', an.name, key, operand(value))
+            return
+        raise Unmodeled('animation-set-' + key + '-value')   # a string or an object: the conversion of the IDL is the binding's
     raise Unmodeled('animation-set-' + key)
 
 
@@ -3367,7 +3532,7 @@ def timeline_get(interp, tl, key, for_call):
     if key == 'currentTime':
         r = interp.new_reg()
         interp.emit('tlnow', r)
-        return Rt(r, 'n')
+        return Rt(r, 'n', True)
     raise Unmodeled('dom-timeline-' + key)
 
 
@@ -3456,8 +3621,10 @@ class HostTimeline(Host):
     pass
 
 
-HOST_GET.update({HostWatcher: lambda i, h, k, c: i.watcher_get(h, k, c), HostEvent: event_get, HostTimeline: timeline_get})
+HOST_GET.update({HostWatcher: lambda i, h, k, c: i.watcher_get(h, k, c), HostEvent: event_get, HostTimeline: timeline_get,
+                 HostPromise: lambda i, h, k, c: i.loop.promise_member(i.loop.promise_resolve(h), k)})
 TRANSITION_EVENTS = ('transitionrun', 'transitionstart', 'transitionend', 'transitioncancel')
+ANIMATION_EVENTS = ('animationstart', 'animationiteration', 'animationend', 'animationcancel')   # `animationName` is read as the register `propertyName` is
 EVENT_FIELDS = (('type', 's'), ('propertyName', 's'), ('elapsedTime', 'n'), ('pseudoElement', 's'))
 FRAME_CAP = 625   # frames of 16 ms: the ten seconds after which the harness gives up on a test
 
@@ -3650,6 +3817,8 @@ class Loop:
     def promise_resolve(self, v):
         if isinstance(v, JPromise):
             return v
+        if isinstance(v, HostPromise):
+            return self.wait_promise('hostpromise', host=v, expect='')
         p = JPromise()
         self.resolve(p, v)
         return p
@@ -3788,7 +3957,14 @@ class Loop:
         events = [w for w in waits if w.kind in ('event', 'eventonce')]
         frames = [w for w in waits if w.kind in ('raf', 'frames')]
         timers = [w for w in waits if w.kind == 'timer']
-        if events:
+        hosts = [w for w in waits if w.kind == 'hostpromise']
+        if hosts:
+            # a promise of an Animation settles when the model settles it, which the runner decides by letting frames pass; it is the only wait the program can be waiting on, since an event or a frame that
+            # could end first would need the program to branch on a fact of the library
+            if len(hosts) != len(waits):
+                raise Unmodeled('concurrent-waits')
+            self.run_host_wait(hosts[0])
+        elif events:
             if len(waits) != 1:
                 raise Unmodeled('concurrent-waits')
             self.run_event_wait(events[0])
@@ -3832,6 +4008,16 @@ class Loop:
                     # the helper asks for the next frame after its callback has run: behind any callback that one registered
                     self.waits.remove(w)
                     self.waits.append(w)
+
+    def run_host_wait(self, w):
+        """The wait for a promise of an Animation: the runner lets time pass until the generation has settled (``pwait``); the page goes on if it was fulfilled, or if it was rejected and the page
+        expected it (`promise_rejects_dom`), and the test fails otherwise (the await of a rejected promise throws, and nothing of the page catches it)."""
+        it = self.it
+        h = w.host
+        it.emit('pwait', h.anim, h.which, operand(h.gen), w.expect, *([w.reg] if getattr(w, 'reg', None) else []))
+        w.pending = False
+        self.resolve(w.promise, HostAnim(h.anim) if not w.expect else UNDEF)
+        self.drain()
 
     def run_timer(self, w):
         it = self.it

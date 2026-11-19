@@ -2,9 +2,9 @@
 # tests the extractor gives each, the test calls the census counts on its own, the markers of the page and the helper scripts it loads. See the script for the columns.
 # pin	569958747e678ad0f7b5e8452c7ae3097e714bbe
 # pages	5585
-# tests	25434
+# tests	25437
 # calls	14691
-# calls-differ-pages	1142
+# calls-differ-pages	1140
 css/CSS2/abspos/adjacent-to-relpos-inline-in-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/adjacent-to-relpos-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/remove-block-between-inline-and-abspos.html	1	1	layout-geometry,reftest	
@@ -448,7 +448,7 @@ css/css-animations/CSSAnimation-animationName.tentative.html	3	3	animation-model
 css/css-animations/CSSAnimation-canceling.tentative.html	9	9	animation-model,computed,function,timing	support/testcommon.js
 css/css-animations/CSSAnimation-compositeOrder.tentative.html	2	2	animation-model,computed,function,timing	support/testcommon.js
 css/css-animations/CSSAnimation-effect.tentative.html	8	8	animation-model,computed,function,sheets,timing	support/testcommon.js
-css/css-animations/CSSAnimation-finished.tentative.html	4	3	animation-model,computed,function,timing	support/testcommon.js
+css/css-animations/CSSAnimation-finished.tentative.html	3	3	animation-model,computed,function,timing	support/testcommon.js
 css/css-animations/CSSAnimation-getCurrentTime.tentative.html	2	2	animation-model,computed,function,timing	support/testcommon.js
 css/css-animations/CSSAnimation-getKeyframes-crash.html	1	1	animation-model,crash,timing	
 css/css-animations/CSSAnimation-id.tentative.html	1	1	animation-model,function,timing	support/testcommon.js
@@ -472,8 +472,8 @@ css/css-animations/animation-base-response-003.html	1	1	computed,function,loop
 css/css-animations/animation-base-response-004.html	1	1	animation-model,computed,function,timing	
 css/css-animations/animation-before-initial-box-construction-001.html	3	1	animation-model,computed,function,timing	
 css/css-animations/animation-change-underlying-value-changed-in-flight.html	2	1	animation-model,computed,function,timing	support/testcommon.js
-css/css-animations/animation-composition-keyframes.html	2	1	animation-model,computed,function,loop,timing	support/testcommon.js
-css/css-animations/animation-composition.html	2	1	animation-model,computed,function,loop,timing	support/testcommon.js
+css/css-animations/animation-composition-keyframes.html	6	1	animation-model,computed,function,loop,timing	support/testcommon.js
+css/css-animations/animation-composition.html	6	1	animation-model,computed,function,loop,timing	support/testcommon.js
 css/css-animations/animation-css-variable-dependent-property.html	1	1	animation-model,computed,function,timing	support/testcommon.js
 css/css-animations/animation-css-variable-in-keyframe-adjusted.html	2	2	animation-model,computed,function,timing	support/testcommon.js
 css/css-animations/animation-delay-008.html	1	1	computed,function,reftest,timing	
@@ -4582,7 +4582,7 @@ css/css-values/integer_interpolation_round_half_001.html	1	1	computed,function
 css/css-values/integer_interpolation_round_half_002.html	1	1	computed,function	
 css/css-values/integer_interpolation_round_half_towards_positive_infinity_order.html	1	1	computed,function	
 css/css-values/integer_interpolation_round_half_towards_positive_infinity_z_index.html	1	1	computed,function	
-css/css-values/lh-rlh-on-root-001.html	12	8	computed,function	
+css/css-values/lh-rlh-on-root-001.html	8	8	computed,function	
 css/css-values/lh-rlh-percentage-line-height-with-zoom.html	6	1	function,layout-geometry,loop	
 css/css-values/lh-unit-004.html	1	1	computed,function	
 css/css-values/lh-unit-005.html	1	1	computed,function	

@@ -272,6 +272,23 @@ typedef struct animlist {
   size_t n;
 } animlist;
 
+/* What the page can do to an Animation (`play()`, `finish()`, `currentTime = ...`, `ready`) is done to the Animation of the model that holds the animation (animation/world.h,
+ * gtext_anim_world_control()), made the first time the program touches that animation. The promises of an Animation are generations (animation.h): the model says when each settles, in notes
+ * the runner drains after every step of time, and `pwait` lets frames pass until the generation it waits for has. */
+typedef struct {
+  uint32_t gen;
+  int state;                    /* 1 fulfilled, 2 rejected */
+} psettle;
+
+typedef struct ctl {
+  GTEXT_Anim_Kind kind;
+  uint64_t id;
+  GTEXT_Anim_Animation * a;     /* the world's, or the runner's own for an animation that had left the document before the program touched it (idle: it has no effect) */
+  int orphan;
+  psettle * p[2];               /* the promises that have settled: [0] ready, [1] finished */
+  size_t np[2], cap[2];
+} ctl;
+
 typedef struct {
   GTEXT_CSS_Registry * registry;
   GTEXT_CSS_Conditions * conditions;
@@ -320,6 +337,8 @@ typedef struct {
   size_t nahs, capahs;
   struct animlist * alists;    /* the results of getAnimations() */
   size_t nalists, capalists;
+  struct ctl * ctls;           /* the Animations the program has touched (an Animation of the model holds the timing state of the animation) and the promises each has settled */
+  size_t nctls, capctls;
 } world;
 
 /* The user agent's style sheet is the part of the HTML rendering section that the display and the body's margin need; the library has no user agent sheet of its own. */
@@ -1033,6 +1052,14 @@ static void world_close(world * w) {
     free(w->alists[i].name);
   }
   free(w->alists);
+  for (size_t i = 0; i < w->nctls; i++) {
+    if (w->ctls[i].orphan) {
+      gtext_anim_animation_free(w->ctls[i].a);
+    }
+    free(w->ctls[i].p[0]);
+    free(w->ctls[i].p[1]);
+  }
+  free(w->ctls);
   gtext_anim_world_free(w->anim);
   gtext_cssom_transition_tracker_free(w->tracker);
   gtext_cssom_document_release(w->doc);
@@ -1150,6 +1177,8 @@ static void put_reg(world * w, const char * name, value v) {
 /* The operand of an op. The value is a copy the caller frees. */
 static object * find_obj(world * w, const char * name);
 
+static animh * find_ah(world * w, const char * name);
+
 static value operand(world * w, const char * f, size_t l, int * ok) {
   *ok = 1;
   if (l >= 2 && f[1] == ':') {
@@ -1186,6 +1215,19 @@ static value operand(world * w, const char * f, size_t l, int * ok) {
         }
         char id[32];
         snprintf(id, sizeof id, "%p", ob->ptr);
+        return val('e', id, strlen(id));
+      }
+      break;
+    }
+    case 'a': {
+      /* an Animation object: two handles that found the same animation are the same object (the binding has one for each) */
+      animh * h = find_ah(w, f + 2);
+      if (h) {
+        if (h->missing) {
+          return val('u', "", 0);
+        }
+        char id[64];
+        snprintf(id, sizeof id, "animation:%d:%llu", (int)h->kind, (unsigned long long)h->id);
         return val('e', id, strlen(id));
       }
       break;
@@ -2685,7 +2727,20 @@ static int sheet_op(world * w, const op * o, int * program_error, char ** failur
   if (strcmp(name, "insertrule") == 0) {
     NEEDS(5);   /* insertrule R OBJ TEXT INDEX (u: for no index argument) */
     OBJ(ob, 2, 0);
-    const size_t index = o->f[4][0] == 'u' ? 0 : (size_t)strtoull(o->f[4] + 2, NULL, 10);
+    size_t index = o->f[4][0] == 'u' ? 0 : (size_t)strtoull(o->f[4] + 2, NULL, 10);
+    if (o->f[4][0] == 'r') {
+      /* the index is a number the program read earlier (`sheet.cssRules.length`) */
+      int index_ok;
+      value iv = operand(w, o->f[4], o->l[4], &index_ok);
+      if (!index_ok || iv.kind != 'n') {
+        value_free(&iv);
+        *program_error = 1;
+        *failure = dups("insertrule: the index is not a number the program made");
+        return 1;
+      }
+      index = (size_t)strtoull(iv.s, NULL, 10);
+      value_free(&iv);
+    }
     GTEXT_CSSOM_Rule * made = NULL;
     if (ob->kind == OBJ_SHEET) {
       st = gtext_cssom_sheet_insert_rule(ob->ptr, o->f[3], o->l[3], index, &made, &oc);
@@ -3270,6 +3325,9 @@ static char * run_frame(world * w) {
     if (!gtext_anim_events_at(events, i, &e)) {
       break;
     }
+    if (e.type >= GTEXT_ANIM_EVENT_FINISH) {
+      continue;   /* an AnimationPlaybackEvent is dispatched at the Animation, not at an element: no page of the program listens for one */
+    }
     qevent q;
     memset(&q, 0, sizeof q);
     for (size_t k = 0; k < w->nknown; k++) {
@@ -3286,6 +3344,10 @@ static char * run_frame(world * w) {
     queue_push(w, q);
   }
   gtext_anim_events_free(events);
+  /* the end of the frame's task is a microtask checkpoint: the finish notifications of the Animations the program holds run */
+  if (gtext_anim_world_checkpoint(w->anim) != GTEXT_ANIM_OK) {
+    return dups("the microtask checkpoint of the Animations failed");
+  }
   /* "Perform a stable sort of the animation events ... Sort the events by their scheduled event time ... Within events with equal scheduled event times, sort by their composite order": the library's list is in
      that order for the events of one element and of one frame of the tracker; across elements the composite order is the tree order of the owning elements (the tracker's order is the order it first saw them in),
      so this frame's events are sorted again, stably, by the time and then the tree order of the targets */
@@ -3779,7 +3841,7 @@ static int is_events_op(const char * name) {
 /* ---- animations ------------------------------------------------------------------------------------------------------------------------------- */
 
 static int is_anim_op(const char * name) {
-  static const char * const names[] = {"ga", "alen", "aat", "aget", "aset", "tget"};
+  static const char * const names[] = {"ga", "alen", "aat", "aget", "aset", "tget", "pgen", "pwait", "am", "asetv", "calc", "pfloat"};
   for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
     if (strcmp(name, names[i]) == 0) {
       return 1;
@@ -3861,9 +3923,453 @@ static const char * direction_name(GTEXT_Anim_Direction d) {
   }
 }
 
+
+/* ---- the Animation of the model ------------------------------------------------------------------------------------------------------------- */
+
+static ctl * ctl_find(world * w, GTEXT_Anim_Kind kind, uint64_t id) {
+  for (size_t i = 0; i < w->nctls; i++) {
+    if (w->ctls[i].kind == kind && w->ctls[i].id == id) {
+      return &w->ctls[i];
+    }
+  }
+  return NULL;
+}
+
+/* The Animation that holds an animation the program touches, made now if it is the first touch (an animation the program found with getAnimations() is touched at once: `aat`). An animation that has no
+ * record to hold (it is not in the tracker, which a handle the runner made before the model could hold it can be) has an Animation of the runner's own, idle. */
+static ctl * ctl_get(world * w, const animh * h) {
+  ctl * c = ctl_find(w, h->kind, h->id);
+  if (c) {
+    return c;
+  }
+  GTEXT_Anim_Animation * a = NULL;
+  int orphan = 0;
+  if (!w->anim || gtext_anim_world_control(w->anim, h->kind, h->id, &a) != GTEXT_ANIM_OK) {
+    if (gtext_anim_animation_new(NULL, GTEXT_ANIM_TIMELINE_DOCUMENT, &a) != GTEXT_ANIM_OK) {
+      return NULL;
+    }
+    orphan = 1;
+  }
+  if (w->nctls == w->capctls) {
+    w->capctls = w->capctls ? w->capctls * 2 : 8;
+    w->ctls = realloc(w->ctls, w->capctls * sizeof *w->ctls);
+    if (!w->ctls) {
+      abort();
+    }
+  }
+  c = &w->ctls[w->nctls++];
+  memset(c, 0, sizeof *c);
+  c->kind = h->kind;
+  c->id = h->id;
+  c->a = a;
+  c->orphan = orphan;
+  return c;
+}
+
+static void ctl_settle(ctl * c, int which, uint32_t gen, int state) {
+  for (size_t i = 0; i < c->np[which]; i++) {
+    if (c->p[which][i].gen == gen) {
+      c->p[which][i].state = state;
+      return;
+    }
+  }
+  if (c->np[which] == c->cap[which]) {
+    c->cap[which] = c->cap[which] ? c->cap[which] * 2 : 8;
+    c->p[which] = realloc(c->p[which], c->cap[which] * sizeof *c->p[which]);
+    if (!c->p[which]) {
+      abort();
+    }
+  }
+  c->p[which][c->np[which]++] = (psettle){gen, state};
+}
+
+/* The promises the Animation settled since the last look, in the order the model made them. */
+static void ctl_drain(ctl * c) {
+  for (size_t i = 0; i < gtext_anim_animation_note_count(c->a); i++) {
+    GTEXT_Anim_Note n;
+    if (!gtext_anim_animation_note_at(c->a, i, &n)) {
+      break;
+    }
+    const int which = n.kind == GTEXT_ANIM_NOTE_READY_RESOLVE || n.kind == GTEXT_ANIM_NOTE_READY_REJECT ? 0 : 1;
+    ctl_settle(c, which, n.generation, n.kind == GTEXT_ANIM_NOTE_READY_REJECT || n.kind == GTEXT_ANIM_NOTE_FINISHED_REJECT ? 2 : 1);
+  }
+  gtext_anim_animation_notes_clear(c->a);
+}
+
+/* A microtask checkpoint, and then every promise that settled is in the tables. */
+static char * ctl_drain_all(world * w) {
+  if (w->anim && gtext_anim_world_checkpoint(w->anim) != GTEXT_ANIM_OK) {
+    return dups("the microtask checkpoint of the Animations failed");
+  }
+  for (size_t i = 0; i < w->nctls; i++) {
+    if (w->ctls[i].orphan && gtext_anim_animation_checkpoint(w->ctls[i].a, (GTEXT_Anim_Time){true, w->now_ms}) != GTEXT_ANIM_OK) {
+      return dups("the microtask checkpoint of an Animation failed");   /* the world's checkpoint does not reach the runner's own */
+    }
+    ctl_drain(&w->ctls[i]);
+  }
+  return NULL;
+}
+
+/* The state of the promise of a generation: 0 pending, 1 fulfilled, 2 rejected. The current generation is the Animation's; an older one settled in a note (one with none was the initial ready promise,
+ * which is fulfilled). */
+static int ctl_promise_state(world * w, ctl * c, int which, uint32_t gen) {
+  GTEXT_Anim_Animation_State st;
+  (void)gtext_anim_animation_state(c->a, (GTEXT_Anim_Time){true, w->now_ms}, &st);
+  const uint32_t current = which == 0 ? st.ready_generation : st.finished_generation;
+  if (gen == current) {
+    const GTEXT_Anim_Promise_State ps = which == 0 ? st.ready : st.finished;
+    return ps == GTEXT_ANIM_PROMISE_PENDING ? 0 : ps == GTEXT_ANIM_PROMISE_RESOLVED ? 1 : 2;
+  }
+  for (size_t i = 0; i < c->np[which]; i++) {
+    if (c->p[which][i].gen == gen) {
+      return c->p[which][i].state;
+    }
+  }
+  /* a generation with no note: the initial ready promise (fulfilled, made so); a finished promise the model replaced was rejected by the cancel that replaced it, and a note says so */
+  return which == 0 ? 1 : 2;
+}
+
+/* "Name: message", the failure the DOMException or TypeError of the IDL is for a status of the model; a status that is the caller's mistake or an allocation is a fault of the program. */
+static char * anim_status_failure(const char * what, GTEXT_Anim_Status st, int * program_error) {
+  switch (st) {
+    case GTEXT_ANIM_TYPE_ERROR: return fmt("TypeError: %s", what);
+    case GTEXT_ANIM_RANGE_ERROR: return fmt("RangeError: %s", what);
+    case GTEXT_ANIM_INVALID_STATE: return fmt("InvalidStateError: %s", what);
+    case GTEXT_ANIM_NOT_SUPPORTED: return fmt("NotSupportedError: %s", what);
+    case GTEXT_ANIM_NO_MODIFICATION_ALLOWED: return fmt("NoModificationAllowedError: %s", what);
+    case GTEXT_ANIM_ABORT: return fmt("AbortError: %s", what);
+    default:
+      *program_error = 1;
+      return fmt("%s failed with status %d", what, (int)st);
+  }
+}
+
+/* one frame of the document: a step of time for a wait of the page (the same steps as the `frame` op) */
+static char * step_frame(world * w) {
+  if (w->test_frames >= FRAME_CAP) {
+    return dups("the test timed out: the page waited for more time than the harness gives a test");
+  }
+  char * failure = run_frame(w);
+  if (!failure) {
+    failure = dispatch_queue(w);
+  }
+  return failure;
+}
+
+/* parseFloat (ECMAScript, "parseFloat ( string )"): the longest prefix of the string, after white space, that is a StrDecimalLiteral (a sign, `Infinity`, or digits with a point and an exponent); NaN if
+ * there is none. "0px" is 0 and "0x10" is 0: the prefix is decimal. */
+static double js_parse_float(const char * s) {
+  while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r' || *s == '\f' || *s == '\v') {
+    s++;
+  }
+  const char * p = s;
+  int negative = 0;
+  if (*p == '+' || *p == '-') {
+    negative = *p == '-';
+    p++;
+  }
+  if (strncmp(p, "Infinity", 8) == 0) {
+    return negative ? -INFINITY : INFINITY;
+  }
+  const char * q = p;
+  size_t digits = 0;
+  while (isdigit((unsigned char)*q)) {
+    q++;
+    digits++;
+  }
+  if (*q == '.') {
+    q++;
+    while (isdigit((unsigned char)*q)) {
+      q++;
+      digits++;
+    }
+  }
+  if (!digits) {
+    return NAN;
+  }
+  if (*q == 'e' || *q == 'E') {
+    const char * e = q + 1;
+    if (*e == '+' || *e == '-') {
+      e++;
+    }
+    if (isdigit((unsigned char)*e)) {
+      while (isdigit((unsigned char)*e)) {
+        e++;
+      }
+      q = e;
+    }
+  }
+  char buf[400];
+  const size_t n = (size_t)(q - p) < sizeof buf - 1 ? (size_t)(q - p) : sizeof buf - 1;
+  memcpy(buf, p, n);
+  buf[n] = '\0';
+  const double v = strtod(buf, NULL);
+  return negative ? -v : v;
+}
+
+static double to_double(const value * v) {
+  return v->kind == 'n' ? strtod(v->s, NULL) : (v->kind == 'b' ? (strcmp(v->s, "true") == 0 ? 1.0 : 0.0) : 0.0);
+}
+
+/* the ops of the Animation of the model; NULL and *handled 0 for an op that is not one of them */
+static char * ctl_op(world * w, const op * o, int * program_error, int * handled) {
+  const char * name = o->f[0];
+  *handled = 1;
+  int ok;
+  if (strcmp(name, "calc") == 0) {
+    /* calc R OP A B: arithmetic on the numbers a page does on the times of the timeline */
+    if (o->n != 5) {
+      *program_error = 1;
+      return dups("calc has the wrong number of fields");
+    }
+    value a = operand(w, o->f[3], o->l[3], &ok), b;
+    if (!ok || (a.kind != 'n')) {
+      value_free(&a);
+      *program_error = 1;
+      return dups("calc: an operand that is not a number the program made");
+    }
+    b = operand(w, o->f[4], o->l[4], &ok);
+    if (!ok || b.kind != 'n') {
+      value_free(&a);
+      value_free(&b);
+      *program_error = 1;
+      return dups("calc: an operand that is not a number the program made");
+    }
+    const double x = to_double(&a), y = to_double(&b);
+    const char c = o->f[2][0];
+    const double r = c == '+' ? x + y : c == '-' ? x - y : c == '*' ? x * y : x / y;
+    put_reg(w, o->f[1], number_value(r));
+    value_free(&a);
+    value_free(&b);
+    return NULL;
+  }
+  if (strcmp(name, "pfloat") == 0) {
+    /* pfloat R S: parseFloat of a string (or of null, which is "null": NaN) */
+    if (o->n != 3) {
+      *program_error = 1;
+      return dups("pfloat has the wrong number of fields");
+    }
+    value a = operand(w, o->f[2], o->l[2], &ok);
+    if (!ok) {
+      *program_error = 1;
+      return dups("pfloat: an operand the program did not make");
+    }
+    double r = NAN;
+    if (a.kind == 's' || a.kind == 'n') {
+      r = js_parse_float(a.s);
+    }
+    put_reg(w, o->f[1], number_value(r));
+    value_free(&a);
+    return NULL;
+  }
+  *handled = 0;
+  if (strcmp(name, "pgen") != 0 && strcmp(name, "pwait") != 0 && strcmp(name, "am") != 0 && strcmp(name, "asetv") != 0) {
+    return NULL;
+  }
+  *handled = 1;
+  if (o->n < 3) {
+    *program_error = 1;
+    return fmt("%s has too few fields", name);
+  }
+  /* pgen R A which; pwait A which GEN EXPECT [R]; am A method [ARG]; asetv A member VALUE: the animation is the second field of pgen and the first of the others */
+  const char * an = strcmp(name, "pgen") == 0 ? o->f[2] : o->f[1];
+  animh * h = find_ah(w, an);
+  if (!h) {
+    *program_error = 1;
+    return fmt("%s names the animation %s, which the program did not make", name, an);
+  }
+  if (h->missing) {
+    return dups("TypeError: Cannot read properties of undefined");
+  }
+  if (!w->anim) {
+    return dups("an Animation was touched in a run with no animation world");
+  }
+  /* what a page reads of an animation or does to it is of the animation after the style change events that the page's changes to the style have made: a browser brings the style of the document up to
+   * date first (the page of a CSS animation changes `animation-play-state` and asks for its `ready` promise in the next statement) */
+  {
+    char * recalc_failure = style_recalc(w);
+    if (recalc_failure) {
+      return recalc_failure;
+    }
+  }
+  ctl * c = ctl_get(w, h);
+  if (!c) {
+    return dups("the Animation of the animation could not be made");
+  }
+  const GTEXT_Anim_Time now = {true, w->now_ms};
+  if (strcmp(name, "pgen") == 0) {
+    if (o->n != 4) {
+      *program_error = 1;
+      return dups("pgen has the wrong number of fields");
+    }
+    GTEXT_Anim_Animation_State st;
+    (void)gtext_anim_animation_state(c->a, now, &st);
+    put_reg(w, o->f[1], number_value((double)(strcmp(o->f[3], "ready") == 0 ? st.ready_generation : st.finished_generation)));
+    return NULL;
+  }
+  if (strcmp(name, "pwait") == 0) {
+    if (o->n != 5 && o->n != 6) {
+      *program_error = 1;
+      return dups("pwait has the wrong number of fields");
+    }
+    const int which = strcmp(o->f[2], "ready") == 0 ? 0 : 1;
+    value g = operand(w, o->f[3], o->l[3], &ok);
+    if (!ok || g.kind != 'n') {
+      value_free(&g);
+      *program_error = 1;
+      return dups("pwait: the generation is not a number the program made");
+    }
+    const uint32_t gen = (uint32_t)to_double(&g);
+    value_free(&g);
+    char * failure = dispatch_queue(w);
+    if (failure) {
+      return failure;
+    }
+    int state;
+    for (;;) {
+      failure = ctl_drain_all(w);
+      if (failure) {
+        return failure;
+      }
+      state = ctl_promise_state(w, c, which, gen);
+      if (state != 0) {
+        break;
+      }
+      failure = step_frame(w);
+      if (failure) {
+        return failure;
+      }
+    }
+    const char * expect = o->f[4];
+    if (strncmp(expect, "dom:", 4) == 0) {
+      if (state != 2) {
+        return fmt("promise_rejects_dom: the promise was fulfilled, expected a rejection with %s", expect + 4);
+      }
+      if (strcmp(expect + 4, "AbortError") != 0) {
+        return fmt("promise_rejects_dom: the promise was rejected with AbortError, expected %s", expect + 4);   /* the model rejects with an AbortError and nothing else */
+      }
+      return NULL;
+    }
+    if (strcmp(expect, "rej") == 0) {
+      if (state != 2) {
+        return dups("assert_unreached: the promise was fulfilled, and the test expected a rejection");
+      }
+      if (o->n == 6) {
+        put_reg(w, o->f[5], val('s', "AbortError", 10));
+      }
+      return NULL;
+    }
+    if (state == 2) {
+      return dups("AbortError: the promise was rejected");   /* the await of a rejected promise throws */
+    }
+    return NULL;
+  }
+  /* no microtask checkpoint here: a browser runs microtasks when the JavaScript stack is empty, which is where the page awaits or ends its task (a `pwait`, a frame), and not between the statements of one
+   * task (`a.currentTime = <the end>; a.currentTime = 0` finishes nothing: the notification of the first finds the second's state) */
+  GTEXT_Anim_Status st = GTEXT_ANIM_OK;
+  const char * what = name;
+  if (strcmp(name, "am") == 0) {
+    if (o->n < 3 || o->n > 4) {
+      *program_error = 1;
+      return dups("am has the wrong number of fields");
+    }
+    const char * m = o->f[2];
+    what = m;
+    double arg = 0;
+    if (o->n == 4) {
+      value v = operand(w, o->f[3], o->l[3], &ok);
+      if (!ok || v.kind != 'n') {
+        value_free(&v);
+        *program_error = 1;
+        return fmt("am: the argument of %s is not a number the program made", m);
+      }
+      arg = to_double(&v);
+      value_free(&v);
+    }
+    if (strcmp(m, "play") == 0) {
+      st = gtext_anim_animation_play(c->a, now);
+    }
+    else if (strcmp(m, "pause") == 0) {
+      st = gtext_anim_animation_pause(c->a, now);
+    }
+    else if (strcmp(m, "finish") == 0) {
+      st = gtext_anim_animation_finish(c->a, now);
+    }
+    else if (strcmp(m, "cancel") == 0) {
+      st = gtext_anim_animation_cancel(c->a, now);
+    }
+    else if (strcmp(m, "reverse") == 0) {
+      st = gtext_anim_animation_reverse(c->a, now);
+    }
+    else if (strcmp(m, "persist") == 0) {
+      st = gtext_anim_animation_persist(c->a);
+    }
+    else if (strcmp(m, "updatePlaybackRate") == 0 && o->n == 4) {
+      st = gtext_anim_animation_update_playback_rate(c->a, arg, now);
+    }
+    else {
+      *program_error = 1;
+      return fmt("am does not know the method %s", m);
+    }
+  }
+  else {
+    /* asetv A member VALUE */
+    if (o->n != 4) {
+      *program_error = 1;
+      return dups("asetv has the wrong number of fields");
+    }
+    value v = operand(w, o->f[3], o->l[3], &ok);
+    if (!ok) {
+      *program_error = 1;
+      return dups("asetv: an operand the program did not make");
+    }
+    what = o->f[2];
+    GTEXT_Anim_Time t = {v.kind == 'n', v.kind == 'n' ? to_double(&v) : 0.0};
+    if (v.kind != 'n' && v.kind != 'N') {
+      value_free(&v);
+      *program_error = 1;
+      return dups("asetv: the value is neither a number nor null");
+    }
+    if (strcmp(what, "currentTime") == 0) {
+      st = gtext_anim_animation_set_current_time(c->a, t, now);
+    }
+    else if (strcmp(what, "startTime") == 0) {
+      st = gtext_anim_animation_set_start_time(c->a, t, now);
+    }
+    else if (strcmp(what, "playbackRate") == 0) {
+      if (!t.resolved) {
+        value_free(&v);
+        *program_error = 1;   /* `playbackRate = null` is 0 in JavaScript (a `double`), which the evaluator does not write: it refuses a value that is not a number */
+        return dups("asetv: a null playbackRate is not a program the evaluator makes");
+      }
+      st = gtext_anim_animation_set_playback_rate(c->a, t.ms, now);
+    }
+    else {
+      value_free(&v);
+      *program_error = 1;
+      return fmt("asetv does not know the member %s", what);
+    }
+    value_free(&v);
+  }
+  if (!c->orphan) {
+    (void)gtext_anim_world_touch(w->anim);   /* what the Animation does reaches the style the page reads next */
+  }
+  if (st != GTEXT_ANIM_OK) {
+    return anim_status_failure(what, st, program_error);
+  }
+  return NULL;
+}
+
 static char * anim_op(world * w, const op * o, int * program_error) {
   const char * name = o->f[0];
   *program_error = 0;
+  {
+    int handled = 0;
+    char * result = ctl_op(w, o, program_error, &handled);
+    if (handled) {
+      return result;
+    }
+  }
   if (strcmp(name, "ga") == 0) {
     if (o->n != 5) {
       *program_error = 1;
@@ -3973,6 +4479,11 @@ static char * anim_op(world * w, const op * o, int * program_error) {
       h.easing = dups("");
       h.idtext = dups("");
     }
+    if (!h.missing && w->anim) {
+      /* the object exists from the moment getAnimations() returned it, and it is the Animation of the model that keeps what the animation does from then on (a transition that completes before the page asks
+         it anything is finished, and not a record that is gone) */
+      (void)ctl_get(w, &h);
+    }
     animh * old = find_ah(w, o->f[1]);
     if (old) {
       animh_free(old);
@@ -4018,6 +4529,12 @@ static char * anim_op(world * w, const op * o, int * program_error) {
   if (!w->anim) {
     return dups("an animation was read in a run with no animation world");
   }
+  if (strcmp(name, "aget") == 0 && o->n == 4 && strcmp(o->f[3], "className") != 0 && strcmp(o->f[3], "id") != 0 && strcmp(o->f[3], "animationName") != 0 && strcmp(o->f[3], "transitionProperty") != 0) {
+    char * recalc_failure = style_recalc(w);   /* as for the other reads of an animation (ctl_op) */
+    if (recalc_failure) {
+      return recalc_failure;
+    }
+  }
   if (gtext_anim_world_find(w->anim, h->kind, h->id, &found, &info) != GTEXT_ANIM_OK) {
     return dups("the animation could not be read");
   }
@@ -4034,6 +4551,40 @@ static char * anim_op(world * w, const op * o, int * program_error) {
     }
     else if (strcmp(member, "transitionProperty") == 0) {
       v = h->kind == GTEXT_ANIM_KIND_CSS_TRANSITION ? val('s', h->pname, strlen(h->pname)) : val('u', "", 0);
+    }
+    else if (strcmp(member, "className") == 0) {
+      const char * s = h->kind == GTEXT_ANIM_KIND_CSS_TRANSITION ? "CSSTransition" : "CSSAnimation";
+      v = val('s', s, strlen(s));
+    }
+    else if (ctl_find(w, h->kind, h->id) && (strcmp(member, "playState") == 0 || strcmp(member, "pending") == 0 || strcmp(member, "currentTime") == 0 || strcmp(member, "playbackRate") == 0 ||
+                                              strcmp(member, "replaceState") == 0)) {
+      /* the Animation of the model holds the animation once the program has touched it: it is the one that says, also when the animation has left the document's (a transition that completed) */
+      ctl * c = ctl_find(w, h->kind, h->id);
+      GTEXT_Anim_Animation_State as;
+      (void)gtext_anim_animation_state(c->a, (GTEXT_Anim_Time){true, w->now_ms}, &as);
+      if (strcmp(member, "playState") == 0) {
+        static const char * const states[] = {"idle", "running", "paused", "finished"};
+        v = val('s', states[as.play_state], strlen(states[as.play_state]));
+      }
+      else if (strcmp(member, "pending") == 0) {
+        v = val('b', as.pending ? "true" : "false", as.pending ? 4 : 5);
+      }
+      else if (strcmp(member, "currentTime") == 0) {
+        v = time_value(as.current_time);
+      }
+      else if (strcmp(member, "playbackRate") == 0) {
+        v = number_value(as.playback_rate);
+      }
+      else {
+        static const char * const replace[] = {"active", "removed", "persisted"};
+        v = val('s', replace[as.replace_state], strlen(replace[as.replace_state]));
+      }
+    }
+    else if (strcmp(member, "playbackRate") == 0) {
+      v = number_value(1.0);   /* an animation the program has not touched has the rate of 1: the style does not change it */
+    }
+    else if (strcmp(member, "replaceState") == 0) {
+      v = val('s', "active", 6);
     }
     else if (strcmp(member, "playState") == 0) {
       static const char * const states[] = {"idle", "running", "paused", "finished"};

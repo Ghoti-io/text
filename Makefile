@@ -2703,8 +2703,8 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=0
 # scored is listed (UNSCORED_COMPUTED), and the gate is made to fail (--controls). tools/conformance/run-css-computed.sh --regenerate writes the lists.
 CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4532 CSS_COMPUTED_MAX_DEFECTS=0
 CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=240
-CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX_DEFECTS=0 CSS_CSSOM_MIN_FRACTION=2405 \
-	CSS_CSSOM_SCRIPT_MIN_SCORED=5700 CSS_CSSOM_SCRIPT_MIN_PAGES=694 CSS_CSSOM_SCRIPT_MAX_DEFECTS=8 CSS_CSSOM_SCRIPT_MAX_LAYOUT=685 CSS_CSSOM_SCRIPT_MAX_TIMELINE=0 CSS_CSSOM_SCRIPT_MAX_UA=4
+CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX_DEFECTS=0 CSS_CSSOM_MIN_FRACTION=2428 \
+	CSS_CSSOM_SCRIPT_MIN_SCORED=5760 CSS_CSSOM_SCRIPT_MIN_PAGES=717 CSS_CSSOM_SCRIPT_MAX_DEFECTS=8 CSS_CSSOM_SCRIPT_MAX_LAYOUT=749 CSS_CSSOM_SCRIPT_MAX_TIMELINE=0 CSS_CSSOM_SCRIPT_MAX_UA=4
 # What moved with the pin of web-platform-tests of 2026-11-10 (CSS-PLAN.md C5e21): the scored counts and pages go up with the new pages that are read (a floor that goes up); the share of the touched
 # tests that is scored goes from 2196 to 2190 in ten thousand because 1,300 of the 1,500 added tests are reftests and layout tests, which no gate here scores (a floor that goes down, with its
 # reason); 27 pages need a layout that did not (the ceiling of layout tests goes from 631 to 658); and ONE defect is above the old ceiling of 0 (highlight-cascade-currentcolor-color-mix.html#0:
@@ -2726,6 +2726,11 @@ CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX
 # (694), 24 more tests (5,700; all pass), seven more need a layout (678 to 685: tests of the new pages that read a used `width`), and the share of the touched tests that is scored goes from 2418 to
 # 2405 in ten thousand (a floor that goes down: 240 tests of the pages that are read now were counted as one test each while their helper was not modeled, and the 24 scored are not as many as the 240).
 # What moved with the pin of the drafts of 2026-11-18: css-backgrounds-4 is pinned, so the two interpolated background-position tests are `served-text` (Backgrounds 4: the computed value keeps an origin keyword) and the ceiling of defects goes DOWN from 11 to 9. The attr() taint of a transitioned custom property is built (css-values/attr-security-transition.html#0 passes), so the ceiling goes DOWN again, 9 to 8.
+# What moved with the Animation state machine's scoring (an `Animation` object that script calls methods on, and promises the runner awaits): 60 more tests of 23 more pages are scored (5,760 tests of 717 pages;
+# all pass), the scored share goes from 2405 to 2428 in ten thousand (a floor that goes up), and 64 more tests need a layout (685 to 749: the ceiling of layout tests goes UP, because the pages of the
+# CSSAnimation and CSSTransition methods read `margin-left` and `transform` after they act on an animation, whose used values need a layout, and those tests are now read; each is a line of UNSCORED_LAYOUT).
+# The ceiling of defects stays 8: four defects the new pages found (the addition and the padding of filter lists, a `::before`, `::after` or `::marker` that is no longer generated keeping its transitions, `lh` in
+# `font-size`) were library defects and are fixed.
 
 conformance-css-computed: ## Score the computed values against the pinned WPT computed-value tests, and show the gate fails
 conformance-css-computed: $(CONFORMANCE_LIB)

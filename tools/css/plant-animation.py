@@ -24,7 +24,7 @@ edits of one defect, as lines of one name) to one file of src/css/ or src/animat
 touched). The edited file is compiled alone and linked ahead of the library's archive into the test programs the plant names, which are run; each
 must fail. The **control** is the same procedure with no edit, and all programs must pass.
 
-Columns (tab separated): name, file under src/css/, the text (exactly once), what replaces it (\\n is a line feed), the programs that must fail
+Columns (tab separated): name, file under src/css/ or src/animation/, the text (exactly once), what replaces it (\\n is a line feed), the programs that must fail
 (comma separated, a key of PROGRAMS).
 """
 import os

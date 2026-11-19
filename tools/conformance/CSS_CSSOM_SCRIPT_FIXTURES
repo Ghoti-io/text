@@ -408,3 +408,27 @@ O	end
 #expect	fixture/sheets-rules-and-media-from-script	2	PASS
 #expect	fixture/sheets-rules-and-media-from-script	3	FAIL
 #expect	fixture/sheets-rules-and-media-from-script	4	PASS
+P	fixture/parse-float-reads-the-leading-decimal-number	0	1
+H	<!DOCTYPE html><div id=a></div><script></script>
+O	script	40
+O	doc	40
+O	test	0	pfloat
+O	pfloat	r1	s:0px
+O	assert_equals	r:r1	n:0	zero
+O	pfloat	r2	s: 12.5e1px
+O	assert_equals	r:r2	n:125	exponent
+O	pfloat	r3	s:0x10
+O	assert_equals	r:r3	n:0	decimal only
+O	pfloat	r4	s:-.5em
+O	assert_equals	r:r4	n:-0.5	sign and point
+O	pfloat	r5	s:Infinity
+O	assert_equals	r:r5	n:Infinity	infinity
+O	pfloat	r6	s:auto
+O	assert_equals	r:r6	n:NaN	none
+O	pfloat	r7	s:1e
+O	assert_equals	r:r7	n:1	an exponent with no digits is not read
+O	pfloat	r8	N:
+O	assert_equals	r:r8	n:NaN	null
+O	cleanup
+O	end
+#expect	fixture/parse-float-reads-the-leading-decimal-number	0	PASS

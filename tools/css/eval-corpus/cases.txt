@@ -898,14 +898,18 @@ promise_test(async t => {
   await null;
 }, "other");
 </script>
-=== the-events-of-css-animations-are-the-model-of-web-animations
-tests 1
-outcome 0 unmodeled:animation-event-animationend
+=== the-events-of-css-animations-are-watched-as-those-of-transitions-are
+tests 2
+has lw|w2|e1|animationend$
+outcome 1 unmodeled:animation-event-animationbogus
 ---
 <!DOCTYPE html><title>t</title><div id=d></div><script>
 promise_test(async t => {
   const w = new EventWatcher(t, document.getElementById("d"), ["animationend"]);
 }, "animation");
+promise_test(async t => {
+  const w = new EventWatcher(t, document.getElementById("d"), ["animationbogus"]);
+}, "bogus");
 </script>
 === a-read-whose-value-is-dropped-is-a-flush-and-needs-no-layout
 tests 1
@@ -1046,12 +1050,144 @@ has assert_equals|r:r2|n:1|
 <!DOCTYPE html><title>t</title><div id=t></div><script>
 test(() => { assert_array_equals(t.getAnimations(), []); assert_equals(document.getAnimations().length, 1); }, "n");
 </script>
-=== an-animation-method-is-the-state-machines-and-is-refused-by-name
+=== the-methods-of-an-animation-are-ops-of-the-state-machine
 tests 1
-outcome 0 unmodeled:animation-play
+has am|a3|play$
+has am|a3|pause$
+has am|a3|finish$
+has am|a3|cancel$
+has am|a3|reverse$
+has am|a3|persist$
+has am|a3|updatePlaybackRate|n:2$
 ---
 <!DOCTYPE html><title>t</title><div id=t></div><script>
-test(() => { t.getAnimations()[0].play(); }, "n");
+test(() => { const a = t.getAnimations()[0]; a.play(); a.pause(); a.finish(); a.cancel(); a.reverse(); a.persist(); a.updatePlaybackRate(2); }, "n");
+</script>
+=== an-animation-member-that-is-set-is-an-op-and-a-string-is-read-as-a-number
+tests 1
+has asetv|a3|currentTime|n:50$
+has asetv|a3|startTime|N:$
+has asetv|a3|playbackRate|n:-2$
+has asetv|a3|currentTime|n:10$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => { const a = t.getAnimations()[0]; a.currentTime = 50; a.startTime = null; a.playbackRate = -2; a.currentTime = "10"; }, "n");
+</script>
+=== the-promises-of-an-animation-are-generations-waited-for-and-compared
+tests 2
+has pgen|r1|a3|ready$
+has pwait|a3|ready|r:r2|$
+has pgen|r3|a3|ready$
+has assert_not_equals|r:r3|r:r1|
+has pgen|r4|a6|finished$
+has pwait|a6|finished|r:r4|dom:AbortError$
+has pwait|a6|finished|r:r5|dom:NotSupportedError$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+promise_test(async t => {
+  const a = document.getElementById("t").getAnimations()[0];
+  const p = a.ready;
+  await a.ready;
+  assert_not_equals(a.ready, p, "new");
+}, "ready");
+promise_test(async t => {
+  const a = document.getElementById("t").getAnimations()[0];
+  await promise_rejects_dom(t, "AbortError", a.finished);
+  await promise_rejects_dom(t, "NotSupportedError", a.finished);
+}, "finished");
+</script>
+=== a-try-that-awaits-a-promise-and-expects-it-to-reject-is-a-wait-that-gives-the-name
+tests 1
+has pwait|a3|ready|r:r1|rej|r2$
+has assert_equals|r:r2|s:AbortError|
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+promise_test(async t => {
+  const a = document.getElementById("t").getAnimations()[0];
+  const p = a.ready;
+  try { await p; assert_unreached("fulfilled"); } catch (err) { assert_equals(err.name, "AbortError", "name"); }
+}, "n");
+</script>
+=== the-time-of-the-timeline-is-a-number-a-page-does-arithmetic-on
+tests 1
+has tlnow|r1$
+has calc|r2|-|r:r1|n:100$
+has asetv|a3|startTime|r:r2$
+has calc|r3|+|n:5|r:r2$
+has asetv|a3|currentTime|r:r3$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => {
+  const a = t.getAnimations()[0];
+  const now = document.timeline.currentTime;
+  const s = now - 100;
+  a.startTime = s;
+  const u = 5 + s;
+  a.currentTime = u;
+}, "n");
+</script>
+=== the-class-of-an-animation-and-the-number-in-a-string-the-library-gave
+tests 1
+has aget|r1|a3|className$
+has assert_equals|r:r1|s:CSSTransition|
+has pfloat|r3|r:r2$
+has assert_equals|r:r3|n:100|
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => {
+  const a = t.getAnimations()[0];
+  assert_class_string(a, "CSSTransition", "class");
+  assert_equals(parseFloat(getComputedStyle(t).marginLeft), 100);
+}, "n");
+</script>
+=== two-animation-objects-are-compared-by-the-animation-the-runner-knows
+tests 1
+has assert_equals|a:a6|a:a5|same
+has assert_not_equals|a:a7|a:a10|different
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => {
+  const l = t.getAnimations();
+  const x = t.getAnimations()[0];
+  assert_equals(l[0], x, "same");
+  assert_not_equals(l[0], t.getAnimations()[1], "different");
+}, "n");
+</script>
+=== the-index-of-insert-rule-may-be-a-number-the-library-gave
+tests 1
+has rlen|r1|o1$
+has insertrule|r2|o1|a{}|r:r1$
+---
+<!DOCTYPE html><title>t</title><style>b{}</style><script>
+test(() => { const s = document.styleSheets[0]; s.insertRule("a{}", s.cssRules.length); }, "n");
+</script>
+=== a-legacy-code-name-is-the-name-of-the-exception-that-has-the-code
+tests 1
+has throws|dom|NoModificationAllowedError$
+has throws|dom|InvalidStateError$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => {
+  const a = t.getAnimations()[0];
+  assert_throws_dom("NO_MODIFICATION_ALLOWED_ERR", () => { a.finish(); });
+  assert_throws_dom("INVALID_STATE_ERR", () => { a.finish(); });
+}, "n");
+</script>
+=== a-throw-assertion-may-have-a-description-after-the-function
+tests 1
+has throws|dom|InvalidStateError$
+has am|a3|finish$
+has endthrows$
+has throws|js|TypeError$
+has asetv|a3|currentTime|N:$
+has endthrows$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => {
+  const a = t.getAnimations()[0];
+  assert_throws_dom("InvalidStateError", () => { a.finish(); }, "finish");
+  assert_throws_js(TypeError, () => { a.currentTime = null; }, "set");
+}, "n");
 </script>
 === an-update-of-an-effects-timing-is-the-state-machines-and-is-refused-by-name
 tests 1

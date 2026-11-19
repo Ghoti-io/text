@@ -88,7 +88,7 @@ def lit(f):
         return 'R.r[%s]' % jstr(v)
     if kind == 'e':
         return 'R.e[%s]' % jstr(v)
-    if kind == 'o':
+    if kind in ('o', 'a'):   # an object, or an Animation (`R.o` holds both: an animation is the object getAnimations() gave)
         return 'R.o[%s]' % jstr(v)
     raise ValueError('operand %r' % f)
 
@@ -111,7 +111,16 @@ def O(name):
 
 def idx_arg(f):
     """An index argument of an op (`n:3`, or `u:` for none) as the argument of the call."""
+    if f.startswith('r:'):   # a number the program read (`sheet.cssRules.length`)
+        return Rg(f[2:])
     return '' if f.startswith('u:') else f[2:]
+
+
+def event_field(ev, field):
+    """The member of a transition or animation event that a register of the program reads: the name an animation event has is its `animationName`, which the program reads as the `propertyName` of a transition's."""
+    if field == 'propertyName':
+        return '(%s.propertyName !== undefined ? %s.propertyName : %s.animationName)' % (ev, ev, ev)
+    return '%s.%s' % (ev, field)
 
 
 def translate(op):
@@ -258,7 +267,26 @@ def translate(op):
     if n == 'aat':
         return 'R.o[%s] = R.l[%s][%s];' % (jstr(a[0]), jstr(a[1]), a[2])
     if n == 'aget':
+        if a[2] == 'className':   # `Object.prototype.toString.call(animation)`, which is what assert_class_string compares
+            return '%s = Object.prototype.toString.call(R.o[%s]).slice(8, -1);' % (Rg(a[0]), jstr(a[1]))
         return '%s = R.o[%s].%s;' % (Rg(a[0]), jstr(a[1]), a[2])
+    if n == 'pgen':   # the promise the Animation has now (`ready` or `finished`): the object itself, so that two reads can be compared for identity and a wait is for this one
+        return '%s = R.o[%s].%s;' % (Rg(a[0]), jstr(a[1]), a[2])
+    if n == 'pwait':
+        # pwait A which GEN EXPECT [REG]: the wait of the page for the promise it read (`await p`, `promise_rejects_dom`, or the try that expects a rejection)
+        if a[3] == '':
+            return 'await %s;' % lit(a[2])
+        if a[3].startswith('dom:'):
+            return 'await promise_rejects_dom(t, %s, %s);' % (jstr(a[3][4:]), lit(a[2]))
+        return 'try { await %s; assert_unreached("the promise was fulfilled, and the test expected a rejection"); } catch (err) { %s = err.name; }' % (lit(a[2]), Rg(a[4]))
+    if n == 'am':
+        return 'R.o[%s].%s(%s);' % (jstr(a[0]), a[1], ', '.join(lit(x) for x in a[2:]))
+    if n == 'asetv':
+        return 'R.o[%s].%s = %s;' % (jstr(a[0]), a[1], lit(a[2]))
+    if n == 'calc':
+        return '%s = (%s %s %s);' % (Rg(a[0]), lit(a[2]), a[1], lit(a[3]))
+    if n == 'pfloat':
+        return '%s = parseFloat(%s);' % (Rg(a[0]), lit(a[1]))
     if n == 'aset':
         return 'R.o[%s].%s = %s;' % (jstr(a[0]), a[1], jstr(a[2]))
     if n == 'tget':
@@ -405,7 +433,7 @@ def translate(op):
             regs = a[2:6]
             groups = [regs]
             call = 'await new Promise(function (resolve) { %s.addEventListener(%s, resolve, {once: true}); })' % (E(a[0]), jstr(a[1]))
-            return 'ev = [%s]; ' % call + ' '.join(('%s = ev[0].%s;' % (Rg(r), f)) for r, f in zip(regs, fields))
+            return 'ev = [%s]; ' % call + ' '.join(('%s = %s;' % (Rg(r), event_field('ev[0]', f))) for r, f in zip(regs, fields))
         count = int(a[3])
         types = a[4:4 + count]
         regs = a[4 + count:]
@@ -416,7 +444,7 @@ def translate(op):
             out.append('ev = [ev];')
         for i in range(count):
             for r, f in zip(regs[4 * i:4 * i + 4], fields):
-                out.append('%s = ev[%d].%s;' % (Rg(r), i if record else 0, f))
+                out.append('%s = %s;' % (Rg(r), event_field('ev[%d]' % (i if record else 0), f)))
         return ' '.join(out)
     if n == 'ebatch':
         count = int(a[1])
