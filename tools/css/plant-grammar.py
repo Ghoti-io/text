@@ -95,7 +95,7 @@ PLANTS = [
      ["  mo.unitless_length = true;", "(true && GTEXT_CSS_READING_ATTRIBUTE_NUMBER_SYMBOLS);"], ["style"]),
     ("a-style-declaration-takes-a-bare-angle", "css_property.c", "  mo.unitless_angle = attribute && GTEXT_CSS_READING_ATTRIBUTE_ANGLE_NUMBER;", "  mo.unitless_angle = true;", ["style"]),
     ("the-angle-option-is-not-read", "css_grammar_match.c", "if (t == NT_ANGLE && m->unitless_angle && tok(v, GTEXT_CSS_TOKEN_NUMBER)) {", "if (t == NT_ANGLE && tok(v, GTEXT_CSS_TOKEN_NUMBER)) {", ["grammar", "style"]),
-    ("a-bare-angle-is-a-length-in-px", "css_grammar_match.c", "        out->unit = GTEXT_CSS_UNIT_DEG; /* a bare number of a presentation attribute (unitless_angle) */", "        out->unit = GTEXT_CSS_UNIT_PX;", ["grammar", "style"]),
+    ("a-bare-angle-is-a-length-in-px", "css_grammar_match.c", "        out->unit = GTEXT_CSS_UNIT_DEG; /* a bare number of a presentation attribute (unitless_angle) */", "        out->unit = GTEXT_CSS_UNIT_PX;", ["grammar"]),
     ("the-nested-option-is-not-read", "css_grammar_match.c", "(m->unitless_nested || it->end == m->top_end)", "(it->end == m->top_end)", ["grammar", "style"]),
     # the transform attribute is written in SVG's syntax and in no other; an invalid attribute is the initial value (css_presentation.h)
     ("a-transform-in-css-syntax-is-an-attribute-value", "css_presentation.c", "        c->invalid = true;\n", "        c->invalid = false;\n", ["style"]),
