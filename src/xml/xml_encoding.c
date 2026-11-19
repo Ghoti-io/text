@@ -185,7 +185,7 @@ static int raw_pseudo(const unsigned char * s, size_t n, size_t * i,
 
 /* The encoding label of an XML declaration at the start of `s`, if there is
    one that is shaped like the production. */
-static int raw_label(const unsigned char * s, size_t n, size_t * at, size_t * len) {
+int xml_raw_label(const unsigned char * s, size_t n, size_t * at, size_t * len) {
   if (n < 6 || memcmp(s, "<?xml", 5) != 0 || !xml_is_space(s[5])) {
     return 0;
   }
@@ -643,7 +643,7 @@ int xml_sniff(const unsigned char * s, size_t n, xml_family * out_family,
        "<?xml" as ASCII and is read by its own conversion. */
     size_t at = 0;
     size_t len = 0;
-    if (raw_label(s, n, &at, &len)) {
+    if (xml_raw_label(s, n, &at, &len)) {
       const xml_label label = xml_classify_label(s + at, len, &legacy);
       if (label == XML_LABEL_LATIN1) {
         family = XML_FAMILY_LATIN1;

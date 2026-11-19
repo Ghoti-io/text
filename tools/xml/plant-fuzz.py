@@ -6,8 +6,9 @@
 A fuzzer that has never failed has not been shown to be able to. A plant whose defect has a
 permanent deterministic regression test (REPRODUCERS) is found by running that test; only the
 others are searched for.
-There are ten plants
-(seven for the fuzzers, three for the differential) and two controls. Each plant here is
+There are twenty plants
+(nine for the fuzzers, eight found by replaying a permanent regression test, three for the
+differential) and two controls. Each plant here is
 one edit to one line of the library, applied to a **copy** of this repository in a
 scratch directory (the working tree is never touched), and the harness it is meant
 for is run on the copy for the harness time budget (60 seconds by default, the same
@@ -46,6 +47,32 @@ for is run on the copy for the harness time budget (60 seconds by default, the s
   xhtml-strict-ignored  the writer's xhtml_strict stops refusing hazards: a tree with a
                    hazard is written as if it had none. fuzz_xml_writer's xhtml
                    properties (strict agrees with the hazard count).
+
+The encodings of the encoding module (a declaration naming Windows-1251, Shift_JIS, ...):
+
+  legacy-decode-differs  the converter reads the second byte of a two-byte UTF-8 sequence of the
+                   decoder's output wrongly, so some characters of every such document are
+                   wrong in the same way in every parse. The parsers agree with each other, and
+                   only fuzz_xml's comparison with the encoding module's own decoding sees it.
+  legacy-decoder-leak  the push parser does not release a legacy encoding's decoder. fuzz_xml
+                   (its allocator-failure runs, and LeakSanitizer).
+
+Each of these is found by replaying testXmlEncodings (see REPRODUCERS), which is the same
+every time:
+
+  legacy-replacement-kept  the converter writes the decoder's U+FFFD for an ill-formed
+                   sequence instead of refusing the document (XML 1.0 4.3.3).
+  legacy-offset    the error's original offset is one byte too far.
+  legacy-flush-dropped  the end of the input is not told to the decoder, so a document that
+                   ends inside a character is accepted.
+  legacy-iana-alias  `latin1` and the other IANA names of ISO-8859-1 are read as the Encoding
+                   standard reads them (windows-1252), not as IANA registers them.
+  legacy-replacement-label  a label that the Encoding standard makes `replacement` of is
+                   read as that, which is one U+FFFD and none of the text, and not declined.
+  utf16-order-ignored  a UTF-16 document labeled with the other byte order is accepted.
+  legacy-not-selected  a declaration that names a legacy encoding no longer selects its
+                   conversion, so the document is read as UTF-8.
+  legacy-decoder-leak-dom  the whole-input parse does not release the decoder.
 
 The scratch copy carries `src/`, `include/`, `tests/`, `tools/` and the Makefile, and is
 built there; it has none of this tree's build, and only the tracked seeds of the libFuzzer
@@ -86,6 +113,36 @@ PLANTS = {
     "xhtml-strict-ignored": ("xml-writer", "src/xml/xml_writer.c",
                              "  if (w->o.xhtml_strict) {\n    return refuse_x(w, n, why);\n  }\n  return GTEXT_XML_OK;",
                              "  return GTEXT_XML_OK;"),
+    "legacy-decode-differs": ("xml", "src/xml/xml_encoding.c",
+                              "      cp = ((cp & 0x1Fu) << 6) | (b[i + 1] & 0x3Fu);\n      width = 2;",
+                              "      cp = ((cp & 0x1Fu) << 6) | (b[i + 1] & 0x3Eu);\n      width = 2;"),
+    "legacy-decoder-leak": ("xml", "src/xml/xml_stream.c",
+                            "  xml_converter_release(&s->converter);\n  markup_buf_free(&s->input);",
+                            "  markup_buf_free(&s->input);"),
+    "legacy-replacement-kept": ("xml", "src/xml/xml_encoding.c",
+                                "    if (map->replaced[i]) {\n      c->sink_invalid = 1;",
+                                "    if (0 && map->replaced[i]) {\n      c->sink_invalid = 1;"),
+    "legacy-offset": ("xml", "src/xml/xml_encoding.c",
+                      "c->decoder_base + c->sink_invalid_at);",
+                      "c->decoder_base + c->sink_invalid_at + 1);"),
+    "legacy-flush-dropped": ("xml", "src/xml/xml_encoding.c",
+                             "n ? data : (const unsigned char *)\"\", n, final != 0, &sink, &r);",
+                             "n ? data : (const unsigned char *)\"\", n, 0, &sink, &r);"),
+    "legacy-iana-alias": ("xml", "src/xml/xml_encoding.c",
+                          "  if (name_in(s, n, latin1_names)) {",
+                          "  if (name_in(s, n, latin1_names) && ci_equals(s, n, \"ISO-8859-1\")) {"),
+    "legacy-replacement-label": ("xml", "src/xml/xml_encoding.c",
+                                 "    case GTEXT_ENCODING_NONE:\n    case GTEXT_ENCODING_REPLACEMENT:\n",
+                                 "    case GTEXT_ENCODING_NONE:\n"),
+    "utf16-order-ignored": ("xml", "src/xml/xml_encoding.c",
+                            "      agrees = named == XML_LABEL_UTF16 || named == XML_LABEL_UTF16BE;",
+                            "      agrees = named == XML_LABEL_UTF16 || named == XML_LABEL_UTF16BE\n          || named == XML_LABEL_UTF16LE;"),
+    "legacy-not-selected": ("xml", "src/xml/xml_encoding.c",
+                            "      else if (label == XML_LABEL_LEGACY) {\n        family = XML_FAMILY_LEGACY;\n      }",
+                            "      else if (label == XML_LABEL_LEGACY) {\n      }"),
+    "legacy-decoder-leak-dom": ("xml", "src/xml/xml_encoding.c",
+                                "  xml_converter_release(&c);\n  if (status != GTEXT_XML_OK) {",
+                                "  if (status != GTEXT_XML_OK) {"),
     "oracle-attr-prefix": ("oracle", "src/xml/xml_parser.c",
                            "    if (!xml_scope_lookup(p, (const char *)a->name_ptr, a->colon, &a->ns)) {\n      xml_scope_release(p, mark);\n      return xml_fail_at(p, GTEXT_XML_E_NAMESPACE,\n          \"the attribute's prefix is not bound to a namespace\", &a->where);\n    }",
                            "    if (!xml_scope_lookup(p, (const char *)a->name_ptr, a->colon, &a->ns)) {\n      a->ns = \"urn:unbound\";\n    }"),
@@ -120,6 +177,22 @@ def copy_tree(dest):
 REPRODUCERS = {
     "limit-after-run": ("testXmlStream",
                         "--gtest_filter=XmlStream.ALimitAndABadByteInOneRunAreReportedInInputOrderHoweverTheInputIsCut"),
+    "legacy-replacement-kept": ("testXmlEncodings",
+                                "--gtest_filter=XmlEncodings.AByteSequenceThatIsNotLegalInTheEncodingIsFatalAtItsFirstByte"),
+    "legacy-offset": ("testXmlEncodings",
+                      "--gtest_filter=XmlEncodings.AByteSequenceThatIsNotLegalInTheEncodingIsFatalAtItsFirstByte"),
+    "legacy-flush-dropped": ("testXmlEncodings",
+                             "--gtest_filter=XmlEncodings.AByteSequenceThatIsNotLegalInTheEncodingIsFatalAtItsFirstByte"),
+    "legacy-iana-alias": ("testXmlEncodings",
+                          "--gtest_filter=XmlEncodings.TheIanaNamesOfLatin1AndAsciiKeepTheirReading"),
+    "legacy-replacement-label": ("testXmlEncodings",
+                                 "--gtest_filter=XmlEncodings.UnknownAndEbcdicAreUnsupported"),
+    "utf16-order-ignored": ("testXmlEncodings",
+                            "--gtest_filter=XmlEncodings.ALabelThatIsNotTheDocumentsEncodingIsAMismatch"),
+    "legacy-not-selected": ("testXmlEncodings",
+                            "--gtest_filter=XmlEncodings.EveryEncodingOfTheEncodingModuleIsRead"),
+    "legacy-decoder-leak-dom": ("testXmlEncodings",
+                                "--gtest_filter=XmlEncodings.AllocationFailureWhileConverting"),
 }
 
 

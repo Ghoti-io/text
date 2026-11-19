@@ -697,6 +697,14 @@ void xml_converter_release(xml_converter * c);
 GTEXT_XML_Status xml_converter_feed(xml_converter * c,
     const unsigned char * data, size_t n, int final);
 
+/**
+ * The encoding label of an XML or text declaration at the start of `s`, read
+ * from the raw bytes as the first bytes of an ASCII-compatible document are:
+ * the label's offset and length. 0 if there is no declaration shaped like the
+ * production, or it has no `encoding` among its first three pseudo-attributes.
+ */
+int xml_raw_label(const unsigned char * s, size_t n, size_t * at, size_t * len);
+
 /** Classify an encoding label, case-insensitively. For XML_LABEL_LEGACY the
  *  encoding is in `*legacy` (which may be NULL). */
 xml_label xml_classify_label(

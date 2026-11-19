@@ -23,7 +23,8 @@ documents would teach the search nothing about refusals.
 
 Also written: one tiny document for each way of starting a document in an encoding
 (each byte order mark, a UTF-16 and a UTF-32 `<?`, an ISO-8859-1 and a US-ASCII
-declaration, a declaration that lies), since coverage of the encoding detector is
+declaration, a declaration that names one of the encoding module's encodings, a
+multi-byte character cut or broken, a declaration that lies), since coverage of the encoding detector is
 reached by the first four bytes and by nothing else.
 
 fuzz_xml_writer: a few dozen programs, which are bytes and nothing else. The
@@ -79,7 +80,20 @@ ENCODING_STARTS = {
     "label-lies-utf8": b"<?xml version=\"1.0\" encoding=\"UTF-16\"?><a/>",
     "lone-surrogate": b"\xff\xfe<\x00a\x00>\x00\x00\xd8<\x00/\x00a\x00>\x00",
     "ebcdic": b"\x4c\x6f\xa7\x94\x93",
-    "unsupported-label": b"<?xml version=\"1.0\" encoding=\"windows-1252\"?><a/>",
+    "unsupported-label": b"<?xml version=\"1.0\" encoding=\"hz-gb-2312\"?><a/>",
+    "windows-1252-declared": b"<?xml version=\"1.0\" encoding=\"windows-1252\"?><a b=\"\x80\">caf\xe9</a>",
+    "latin1-iana-alias": b"<?xml version=\"1.0\" encoding=\"latin1\"?><a b=\"\x80\">caf\xe9</a>",
+    "windows-1251-declared": b"<?xml version=\"1.0\" encoding=\"windows-1251\"?><a b=\"\xcf\xf0\">\xe8\xe2\xe5\xf2</a>",
+    "shift-jis-declared": b"<?xml version=\"1.0\" encoding=\"Shift_JIS\"?><a b=\"\x82\xa0\">\x93\xfa\x96\x7b</a>",
+    "euc-kr-declared": b"<?xml version=\"1.0\" encoding=\"EUC-KR\"?><a b=\"\xc7\xd1\">\xb1\xb9</a>",
+    "euc-jp-declared": b"<?xml version=\"1.0\" encoding=\"EUC-JP\"?><a b=\"\x8e\xb1\">\xc6\xfc</a>",
+    "iso-2022-jp-declared": b"<?xml version=\"1.0\" encoding=\"ISO-2022-JP\"?><a>x\x1b$B$\"$$\x1b(By</a>",
+    "gb18030-declared": b"<?xml version=\"1.0\" encoding=\"gb18030\"?><a>\x81\x30\x81\x30\xd6\xd0</a>",
+    "legacy-truncated": b"<?xml version=\"1.0\" encoding=\"Shift_JIS\"?><a>\x82\xa0\x82",
+    "legacy-bad-trail": b"<?xml version=\"1.0\" encoding=\"Shift_JIS\"?><a>\x82<b/></a>",
+    "legacy-label-lies-utf16": b"\xff\xfe<\x00?\x00x\x00m\x00l\x00 \x00v\x00e\x00r\x00s\x00i\x00o\x00n\x00=\x00\"\x001\x00.\x000\x00\"\x00 \x00e\x00n\x00c\x00o\x00d\x00i\x00n\x00g\x00=\x00\"\x00w\x00i\x00n\x00d\x00o\x00w\x00s\x00-\x001\x002\x005\x001\x00\"\x00?\x00>\x00<\x00a\x00/\x00>\x00",
+    "legacy-label-lies-utf8": b"\xef\xbb\xbf<?xml version=\"1.0\" encoding=\"Shift_JIS\"?><a/>",
+    "utf16-order-label": b"\xfe\xff\x00<\x00?\x00x\x00m\x00l\x00 \x00v\x00e\x00r\x00s\x00i\x00o\x00n\x00=\x00\"\x001\x00.\x000\x00\"\x00 \x00e\x00n\x00c\x00o\x00d\x00i\x00n\x00g\x00=\x00\"\x00U\x00T\x00F\x00-\x001\x006\x00L\x00E\x00\"\x00?\x00>\x00<\x00a\x00/\x00>",
     "version-11": b"<?xml version=\"1.1\"?><a/>",
 }
 

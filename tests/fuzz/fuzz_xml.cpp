@@ -26,6 +26,15 @@
  * 1, an attribute count of 1, a name of 3 bytes. A fuzzer left to find a
  * 10,000,000-node document would not.
  *
+ * **A document in one of the encoding module's encodings is what that module reads.** When
+ * the declaration names one (xml_sniff() says so), the bytes are decoded by the module in
+ * its replacement mode: a document with a replacement is refused as an invalid sequence,
+ * and one without is the same document as the decoded text in UTF-8 with the label
+ * changed to UTF-8 - the same refusal (the status, not the offset, which is in different
+ * bytes) or the same tree. A converter that reads a lead byte as two, loses a shift state
+ * or drops what it holds when the input ends is found by this and by nothing in the
+ * encoding's own tests, which never see it inside a document.
+ *
  * **Encodings come from the document's first bytes.** A byte order mark, a
  * UTF-16 or UTF-32 `<?`, an ISO-8859-1 declaration are all sequences a
  * coverage-guided search finds by itself from the seeds (tests/fuzz/corpus/xml,
@@ -60,6 +69,7 @@
 #include <vector>
 
 extern "C" {
+#include <ghoti.io/text/encoding.h>
 #include <ghoti.io/text/xml.h>
 }
 
@@ -265,6 +275,71 @@ void agree(const char * how, const std::string & input, GTEXT_XML_Status dom_sta
   }
 }
 
+// A document that declares one of the encoding module's encodings reads as the module's decoding of
+// its bytes, with the label made UTF-8; or it is refused, because the module would have replaced.
+void legacy_agreement(const std::string & input, const GTEXT_XML_Parse_Options & opts,
+    GTEXT_XML_Status dom_status, const GTEXT_Markup_Document * dom) {
+  const unsigned char * bytes = reinterpret_cast<const unsigned char *>(input.data());
+  xml_family family = XML_FAMILY_UTF8;
+  GTEXT_Encoding encoding = GTEXT_ENCODING_NONE;
+  size_t skip = 0;
+  int bom = 0;
+  if (xml_sniff(bytes, input.size(), &family, &encoding, &skip, &bom) || family != XML_FAMILY_LEGACY
+      || dom_status == GTEXT_XML_E_LIMIT_INPUT) {
+    return;
+  }
+  size_t at = 0;
+  size_t len = 0;
+  if (!xml_raw_label(bytes, input.size(), &at, &len) || bom || skip != 0) {
+    fail("a legacy family with no label or with a mark", "", input);
+  }
+  char * text = nullptr;
+  size_t text_len = 0;
+  GTEXT_Decoder_Result r;
+  GTEXT_Decoder_Options o = gtext_decoder_options_default();
+  if (gtext_encoding_decode_buffer(encoding, &o, input.data(), input.size(), &text, &text_len, &r)
+      != GTEXT_ENCODING_OK) {
+    gtext_encoding_buffer_free(text);
+    fail("the encoding module could not decode a document", gtext_encoding_name(encoding), input);
+  }
+  const std::string decoded(text, text_len);
+  gtext_encoding_buffer_free(text);
+  if (r.replacements != 0) {
+    if (dom_status != GTEXT_XML_E_INVALID_SEQUENCE) {
+      fail("a byte sequence the decoder replaces was not refused as an invalid sequence",
+          std::string(gtext_encoding_name(encoding)) + ": " + gtext_xml_status_string(dom_status), input);
+    }
+    return;
+  }
+  if (dom_status == GTEXT_XML_E_INVALID_SEQUENCE) {
+    fail("an invalid sequence where the decoder replaces nothing", gtext_encoding_name(encoding), input);
+  }
+  // The declaration is ASCII and stays where it was, unless an escape sequence of a stateful
+  // encoding is in its first bytes (only a version's value can hold one).
+  if (decoded.size() < at + len || decoded.compare(0, at + len, input, 0, at + len) != 0) {
+    return;
+  }
+  const std::string utf8 = decoded.substr(0, at) + "UTF-8" + decoded.substr(at + len);
+  GTEXT_XML_Parse_Options plain = opts;
+  plain.max_input_bytes = 0; // the original's length was what the limit counted
+  GTEXT_Markup_Document * back = nullptr;
+  GTEXT_XML_Error err;
+  const GTEXT_XML_Status status = gtext_xml_parse(utf8.data(), utf8.size(), &plain, &back, &err);
+  if (status != dom_status) {
+    gtext_markup_document_free(back);
+    fail("the document and its decoding in UTF-8 are refused differently",
+        std::string(gtext_encoding_name(encoding)) + ": " + gtext_xml_status_string(dom_status) + " against "
+            + gtext_xml_status_string(status), input);
+  }
+  if (status == GTEXT_XML_OK
+      && !gtext_markup_equal(gtext_markup_document_root(dom), gtext_markup_document_root(back))) {
+    gtext_markup_document_free(back);
+    fail("the document and its decoding in UTF-8 are different trees", gtext_encoding_name(encoding), input);
+  }
+  gtext_markup_document_free(back);
+  gtext_xml_error_free(&err);
+}
+
 const GTEXT_XML_Output_Encoding kEncodings[] = {GTEXT_XML_OUTPUT_UTF8, GTEXT_XML_OUTPUT_UTF16LE,
     GTEXT_XML_OUTPUT_UTF16BE, GTEXT_XML_OUTPUT_ISO_8859_1, GTEXT_XML_OUTPUT_US_ASCII};
 const char * kEncodingNames[] = {"utf-8", "utf-16le", "utf-16be", "iso-8859-1", "us-ascii"};
@@ -400,6 +475,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
           + " units for " + std::to_string(input.size()) + " bytes", input);
     }
   }
+
+  // ---- another encoding: the encoding module's reading ---------------------------
+  legacy_agreement(input, opts, dom_status, dom);
 
   // ---- encodings: what was accepted is written in five and read back --------
   if (dom_status == GTEXT_XML_OK && !tiny_limits) {
