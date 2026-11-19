@@ -18,7 +18,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """Write the seed corpus for fuzz_markup_tree.
 
-    tools/markup/make-fuzz-seeds.py
+    tools/markup/make-fuzz-seeds.py [DIRECTORY]
+
+With a DIRECTORY the seeds are written there instead of to tests/fuzz/corpus/markup-tree (`make check-fuzz-seed-generators` runs it so and fails when the committed seeds are not what it writes).
 
 The harness (tests/fuzz/fuzz_markup_tree.cpp) reads no document: its input is two option bytes and then a
 program for building and rearranging a tree, one opcode byte and its operand bytes at a time, where an
@@ -617,19 +619,24 @@ def _template_attached(p):
     p.ensure_template(t)
 
 
-def main():
+def main(argv):
+    """No argument: the corpus in place. A DIRECTORY: the seeds into it (the drift check of tools/css/check-fuzz-seed-generators.py runs it so)."""
+    if len(argv) > 2:
+        raise SystemExit("usage: make-fuzz-seeds.py [DIRECTORY]")
+    out = CORPUS if len(argv) == 1 else argv[1]
     produced = seeds()
     if not EXPECTED[0] <= len(produced) <= EXPECTED[1]:
         raise SystemExit("%d seeds, expected %d to %d: a selection that drifts out of the range is a mistake" % ((len(produced),) + EXPECTED))
-    os.makedirs(CORPUS, exist_ok=True)
-    for f in os.listdir(CORPUS):
+    os.makedirs(out, exist_ok=True)
+    for f in os.listdir(out):
         if f.endswith(".seed") and not f.startswith("reproducer-"):
-            os.remove(os.path.join(CORPUS, f))
+            os.remove(os.path.join(out, f))
     for name, data in sorted(produced.items()):
-        with open(os.path.join(CORPUS, name + ".seed"), "wb") as fh:
+        with open(os.path.join(out, name + ".seed"), "wb") as fh:
             fh.write(data)
-    print("%d seeds written to %s" % (len(produced), os.path.relpath(CORPUS, ROOT)))
+    print("%d seeds written to %s" % (len(produced), os.path.relpath(out, ROOT)))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main(sys.argv))

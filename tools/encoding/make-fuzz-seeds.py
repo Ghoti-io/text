@@ -18,7 +18,10 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """Write the seed corpus for fuzz_encoding, the Encoding module's fuzzer.
 
-    tools/encoding/make-fuzz-seeds.py
+    tools/encoding/make-fuzz-seeds.py [DIRECTORY]
+
+With a DIRECTORY the seeds are written there and nothing else is touched (`make check-fuzz-seed-generators` runs it so and fails when the committed seeds
+are not what it writes); with none they are written to tests/fuzz/corpus/encoding and the count is written to tools/encoding/FUZZ_SEED_COUNT.
 
 The seeds are tracked (tests/fuzz/corpus/.gitignore keeps `*.seed` and nothing else) and they are *derived*, the same bytes
 each time. Each is four option bytes and then the payload (the layout is in tests/fuzz/fuzz_encoding.cpp): o0 the encoding
@@ -53,6 +56,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 SUITE = os.path.join(ROOT, "third_party", "encoding", "wpt", "encoding")
 CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "encoding")
+OUT = CORPUS  # where the seeds are written; main() sets it from the argument
 NAMES = ["utf-8", "ibm866", "iso-8859-2", "iso-8859-3", "iso-8859-4", "iso-8859-5", "iso-8859-6", "iso-8859-7",
          "iso-8859-8", "iso-8859-8-i", "iso-8859-10", "iso-8859-13", "iso-8859-14", "iso-8859-15", "iso-8859-16",
          "koi8-r", "koi8-u", "macintosh", "windows-874", "windows-1250", "windows-1251", "windows-1252", "windows-1253",
@@ -198,14 +202,21 @@ def pick(table, key, salt):
 
 
 def write(name, o0, o1, o2, o3, payload, written):
-    path = os.path.join(CORPUS, name + ".seed")
+    path = os.path.join(OUT, name + ".seed")
     with open(path, "wb") as fh:
         fh.write(bytes([o0, o1, o2, o3]) + payload)
     written.add(os.path.basename(path))
 
 
-def main():
-    os.makedirs(CORPUS, exist_ok=True)
+def main(argv):
+    """No argument: the corpus in place, and the count the replay test reads. A DIRECTORY: the seeds into it and nothing else (the drift check of
+    tools/css/check-fuzz-seed-generators.py runs it so, into an empty scratch directory)."""
+    global OUT
+    if len(argv) > 2:
+        raise SystemExit("usage: make-fuzz-seeds.py [DIRECTORY]")
+    in_place = len(argv) == 1
+    OUT = CORPUS if in_place else argv[1]
+    os.makedirs(OUT, exist_ok=True)
     written = set()
     pl = payloads()
     for index, enc in enumerate(NAMES):
@@ -236,14 +247,17 @@ def main():
                                       ("sink-refuses", 0x00, 0x01, 0x18), ("sniff-removal", 0x06, 0x02, 0x00), ("bytewise", 0x01, 0x10, 0x00)):
                 write("%s-%s-%s" % (enc, pname, label), index, o1, o2, o3, pl[pname], written)
     # Remove seeds a previous run wrote and this one does not (a reproducer is kept).
-    for f in sorted(os.listdir(CORPUS)):
+    for f in sorted(os.listdir(OUT)):
         if f.endswith(".seed") and not f.startswith("reproducer-") and f not in written:
-            os.remove(os.path.join(CORPUS, f))
+            os.remove(os.path.join(OUT, f))
     print("%d seeds" % len(written))
+    if not in_place:
+        return 0
     # The count the replay test holds the corpus to (tests/test-encoding-fuzz-seeds.cpp): a seed that is deleted, or that the generator no longer writes, is a change to read.
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "FUZZ_SEED_COUNT"), "w") as fh:
         fh.write("%d\n" % len(written))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main(sys.argv))
