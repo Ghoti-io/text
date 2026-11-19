@@ -164,7 +164,7 @@ An attribute's value is mostly a CSS value, and where SVG gives it a spelling th
 
 | Option | The attribute |
 |--------|---------------|
-| `unitless_lengths` | a number is a length in user units and an angle in degrees, wherever the property's grammar has a `<length>`, a `<length-percentage>` or an `<angle>`: `stroke-width="2"` is `2px`, `filter="drop-shadow(blue 4 5 6) blur(2) hue-rotate(45)"`, `clip-path="circle(10 at 5 5)"` (below) |
+| `unitless_lengths` | a number is a length in user units, wherever the property's grammar has a `<length>` or a `<length-percentage>`: `stroke-width="2"` is `2px`, `filter="drop-shadow(blue 4 5 6) blur(2)"`, `clip-path="circle(10 at 5 5)"` (below) |
 | `invalid_is_initial` | an attribute that is not a value of its property is the property's initial value, not dropped: `fill="12px"` is black below a `g` of `fill="orange"` (below) |
 | `svg_transform` | `transform`, `gradientTransform` and `patternTransform` are SVG's list (`rotate(45 10 10)`, `translate(10,20)`, numbers without units), and no other syntax: `translate(10px)` is not a value of the attribute (below) |
 | `path_data` | `d` is path data, and the property `d` holds the string (the pin's grammar of `d` is `none | <string>`; engines that take `path("...")` need a caller that writes it) |
@@ -174,12 +174,14 @@ An attribute's value is mostly a CSS value, and where SVG gives it a spelling th
 [<length> | <number>]. Replace all instances of <length-percentage> in grammar with [<length-percentage> | <number>]. Replace all instances of <angle> in grammar
 with [<angle> | <number>]." (the grammar being the property's), "The insertion of the <number> symbols allows for unitless length and angles to be used in presentation
 attribute while disallowing them in corresponding property values." So the allowance is every `<length>`, `<length-percentage>` and `<angle>` of the grammar, inside a
-function's arguments too, and it is the attribute's alone: `drop-shadow(blue 4 5 6)`, `drop-shadow(10 15)`, `circle(10 at 5 5)`, `blur(4)` and `hue-rotate(45)` are valid in an
-attribute and compute to `4px 5px 6px`, `blur(4px)`, `hue-rotate(45deg)` and so on, and invalid in a `style` attribute and in a sheet. A percentage is no length
+function's arguments too, and it is the attribute's alone: `drop-shadow(blue 4 5 6)`, `drop-shadow(10 15)`, `circle(10 at 5 5)`, and `blur(4)` are valid in an
+attribute and compute to `4px 5px 6px`, `blur(4px)` and so on, and invalid in a `style` attribute and in a sheet. A percentage is no length
 here (`drop-shadow(blue 3% 4% 5%)`), a number inside `calc()` is a number (`calc(4)`: the contents of a math function are no symbol of the grammar), an extra value
 (`drop-shadow(blue 4 5 6 7)`), a comma-separated list (`drop-shadow(red, 10, 15)`) and an empty one (`drop-shadow()`) are what the grammar says. Chromium 156 and Firefox 158
 agree with the text on the lengths of `drop-shadow()` and of the basic shapes; **where they differ from it** is `blur(4)` (Firefox reads it as the text does, Chromium does not),
-`hue-rotate(45)` (neither reads it) and `calc(4)` as a length (Chromium reads it); the text decides. The reading is `GTEXT_CSS_READING_ATTRIBUTE_NUMBER_SYMBOLS`.
+and `calc(4)` as a length (Chromium reads it); the text decides. The reading is `GTEXT_CSS_READING_ATTRIBUTE_NUMBER_SYMBOLS`.
+
+**A bare number as an angle** is the one place the text loses: it says "Replace all instances of <angle> in grammar with [<angle> | <number>].", so `hue-rotate(45)` would be 45 degrees, and Chromium 154 and 156, Firefox 158, resvg 0.45.1 and Inkscape 1.4 all refuse it (a zero is valid everywhere). It is a reading of its own, `GTEXT_CSS_READING_ATTRIBUTE_ANGLE_NUMBER`, 0 (refused), with the text's 1 one word away; `hue-rotate(45)` is invalid in an attribute here, and `unitless_angle` of the matcher stays the mechanism.
 
 **An invalid attribute.** The same section says "When an attribute fails to parse according to the specified CSS Value Definition Syntax ... the attribute is assumed to
 have been specified as the given initial value", and that this "can override values that come from lower priority style sheet rules, such as those from the user agent style

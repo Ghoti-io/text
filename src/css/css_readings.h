@@ -102,20 +102,31 @@
 #define GTEXT_CSS_READING_ANIMATED_SRGB_ROUNDED 1
 
 /**
- * A bare number as a length or an angle wherever the grammar of the property of an SVG presentation attribute has one, as in `filter="drop-shadow(blue 4 5 6) blur(2) hue-rotate(45)"`
- * or `clip-path="circle(10 at 5 5)"`.
+ * A bare number as a length wherever the grammar of the property of an SVG presentation attribute has one, as in `filter="drop-shadow(blue 4 5 6) blur(2)"`
+ * or `clip-path="circle(10 at 5 5)"`. (A bare number as an angle is GTEXT_CSS_READING_ATTRIBUTE_ANGLE_NUMBER, below.)
  *
  * SVG 2, "Attribute syntax": "Replace all instances of <length> in grammar with [<length> | <number>]. Replace all instances of <length-percentage> in grammar with
  * [<length-percentage> | <number>]. Replace all instances of <angle> in grammar with [<angle> | <number>]." (the grammar is the one "given in the attribute definition table's Value column",
  * which for a presentation attribute is the property's), and "The insertion of the <number> symbols allows for unitless length and angles to be used in presentation attribute while
  * disallowing them in corresponding property values." So the allowance is not the top level of the value only (what this library read before the page was pinned, from the sentence of
  * SVG 2, 8.3 about `width` and `height` alone): it is every symbol of the grammar, inside a function's arguments too (a math function's contents are not symbols of the grammar, so
- * `calc(4)` is still a number and not a length). 1 reads it so, in px for a length and in degrees for an angle. 0 reads a bare number as a length at the top level of the value
+ * `calc(4)` is still a number and not a length). 1 reads it so, in px, for `<length>` and `<length-percentage>`. 0 reads a bare number as a length at the top level of the value
  * only. Chromium 156.0.8078.47 and Firefox 158.0.1 read the lengths of `drop-shadow()` and of the basic shapes of `clip-path`, and in the attribute only; Firefox reads `blur(4)`
- * as the text does and Chromium does not; neither reads `hue-rotate(45)`, which the text says is valid, so that one is the text's against both browsers. Used by the property layer's
- * attribute mode (css_property.c, run_match()); held by the tests CssPresentation.ADropShadowTakesBareNumbersAsUserUnits, CssPresentation.EveryLengthAndAngleOfTheGrammarTakesABareNumber
+ * as the text does and Chromium does not. Used by the property layer's
+ * attribute mode (css_property.c, run_match()); held by the tests CssPresentation.ADropShadowTakesBareNumbersAsUserUnits, CssPresentation.EveryLengthOfTheGrammarTakesABareNumber
  * and CssPresentation.ABareNumberIsNoLengthWhereTheTextAndTheBrowsersRefuseIt.
  */
 #define GTEXT_CSS_READING_ATTRIBUTE_NUMBER_SYMBOLS 1
+
+/**
+ * A bare number as an angle in an SVG presentation attribute, as in `filter="hue-rotate(45)"`.
+ *
+ * SVG 2, "Attribute syntax": "Replace all instances of <angle> in grammar with [<angle> | <number>]." So the text says a bare number is an angle in degrees, wherever the
+ * grammar has an <angle>, as it says for a <length>. Chromium 154 and 156.0.8078.47, Firefox 158.0.1, resvg 0.45.1 and Inkscape 1.4 all refuse `hue-rotate(45)` (the zero is valid
+ * everywhere), and the vector corpus (filters/filter-functions/hue-rotate-function-45.svg) expects it dropped: the text loses to four engines and is kept as a reading. 0 refuses
+ * a bare number where an angle is. 1 reads it as degrees (the text). Used by the property layer's attribute mode (css_property.c, run_match()); held by the tests
+ * CssPresentation.BlurTakesABareNumberAndHueRotateDoesNot and, flipped, by the plant reading-attribute-angle-number-is-read.
+ */
+#define GTEXT_CSS_READING_ATTRIBUTE_ANGLE_NUMBER 0
 
 #endif

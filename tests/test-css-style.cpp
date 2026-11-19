@@ -785,7 +785,7 @@ TEST(CssPresentation, TheFunctionsThatTakeABareNumberAreTheOnesBothBrowsersTake)
   EXPECT_EQ(p.value("r", "clip-path"), "polygon(0px 0px, 10px 10px, 0px 10px)");
 }
 
-TEST(CssPresentation, EveryLengthAndAngleOfTheGrammarTakesABareNumber) {
+TEST(CssPresentation, EveryLengthOfTheGrammarTakesABareNumber) {
   /* SVG 2, Attribute syntax: every <length>, <length-percentage> and <angle> of the grammar is [<length> | <number>] and so on, in whatever property of whatever table
      (a table of the caller's can name any property), inside a function too. */
   static const GTEXT_CSS_Presentation_Row rows[] = {
@@ -798,7 +798,7 @@ TEST(CssPresentation, EveryLengthAndAngleOfTheGrammarTakesABareNumber) {
   GTEXT_CSS_Style_Options o = gtext_css_style_options_default();
   o.presentation.table = &table;
   o.presentation.invalid_is_initial = false;
-  Doc d(svg("<rect id=\"r\" sh=\"circle(10)\" bf=\"drop-shadow(blue 4 5) hue-rotate(45)\" cp=\"drop-shadow(blue 4 5)\" fi=\"circle(10)\"/>"
+  Doc d(svg("<rect id=\"r\" sh=\"circle(10)\" bf=\"drop-shadow(blue 4 5) hue-rotate(45deg)\" cp=\"drop-shadow(blue 4 5)\" fi=\"circle(10)\"/>"
             "<rect id=\"q\" sh=\"circle(10px)\" bf=\"drop-shadow(blue 4px 5px)\" cp=\"circle(10)\" fi=\"drop-shadow(blue 4 5) blur(2)\"/>"),
       false, &o);
   ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
@@ -812,17 +812,17 @@ TEST(CssPresentation, EveryLengthAndAngleOfTheGrammarTakesABareNumber) {
   EXPECT_EQ(d.value("q", "filter"), "drop-shadow(blue 4px 5px 0px) blur(2px)");
 }
 
-TEST(CssPresentation, BlurAndHueRotateTakeABareNumberAsThePinnedTextSays) {
-  /* blur( <length>? ) and hue-rotate( [ <angle> | <zero> ]? ): SVG 2 makes the symbols of the grammar take a number. Firefox 158 reads blur(4) and Chromium 156 does not;
-     neither reads hue-rotate(45), so that one is the text's alone (css_readings.h). */
+TEST(CssPresentation, BlurTakesABareNumberAndHueRotateDoesNot) {
+  /* blur( <length>? ) and hue-rotate( [ <angle> | <zero> ]? ): SVG 2 makes the symbols of the grammar take a number. Firefox 158 reads blur(4) and Chromium 156 does not, so the text and Firefox decide;
+     no engine reads hue-rotate(45) (Chromium, Firefox, resvg, Inkscape), so the angle is the reading GTEXT_CSS_READING_ATTRIBUTE_ANGLE_NUMBER, 0 (css_readings.h). */
   struct C {
     const char * value;
     const char * expect;
   };
   const C cases[] = {
-      {"blur(4)", "blur(4px)"}, {"blur(2.5)", "blur(2.5px)"}, {"blur(0)", "blur(0px)"}, {"hue-rotate(45)", "hue-rotate(45deg)"}, {"hue-rotate(-90.5)", "hue-rotate(-90.5deg)"},
-      {"hue-rotate(0)", "hue-rotate(0deg)"}, {"hue-rotate(45deg)", "hue-rotate(45deg)"}, {"blur(4) hue-rotate(45) drop-shadow(red 1 2)", "blur(4px) hue-rotate(45deg) drop-shadow(red 1px 2px 0px)"},
-      {"BLUR(4)", "blur(4px)"}, {"hue-rotate(1e1)", "hue-rotate(10deg)"},
+      {"blur(4)", "blur(4px)"}, {"blur(2.5)", "blur(2.5px)"}, {"blur(0)", "blur(0px)"}, 
+      {"hue-rotate(45deg)", "hue-rotate(45deg)"}, {"blur(4) hue-rotate(45deg) drop-shadow(red 1 2)", "blur(4px) hue-rotate(45deg) drop-shadow(red 1px 2px 0px)"},
+      {"BLUR(4)", "blur(4px)"}, 
   };
   for (const C & c : cases) {
     Doc d(svg(std::string("<rect id=\"r\" filter=\"") + c.value + "\"/>"));
@@ -830,7 +830,7 @@ TEST(CssPresentation, BlurAndHueRotateTakeABareNumberAsThePinnedTextSays) {
     EXPECT_EQ(d.value("r", "filter"), c.expect) << c.value;
   }
   /* an angle is not a length and a length is not an angle: the symbol decides */
-  for (const char * v : {"blur(4deg)", "hue-rotate(45px)", "hue-rotate(45%)", "blur(-4)", "blur(4 5)", "hue-rotate(45 90)", "hue-rotate(calc(45))", "blur(calc(4))"}) {
+  for (const char * v : {"hue-rotate(45)", "hue-rotate(-90.5)", "hue-rotate(1e1)", "blur(4) hue-rotate(45)", "blur(4deg)", "hue-rotate(45px)", "hue-rotate(45%)", "blur(-4)", "blur(4 5)", "hue-rotate(45 90)", "hue-rotate(calc(45))", "blur(calc(4))"}) {
     Doc d(svg(std::string("<rect id=\"r\" filter=\"") + v + "\"/>"));
     ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
     EXPECT_EQ(d.value("r", "filter"), "none") << v << " is invalid: the initial value";

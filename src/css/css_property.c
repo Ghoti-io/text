@@ -153,7 +153,7 @@ static GTEXT_CSS_Status run_match(const GTEXT_CSS_Registry * registry, const GTE
   const bool attribute = options && options->unitless_lengths; /* attribute mode: SVG 2's replacement of <length>, <length-percentage> and <angle> in the grammar */
   mo.unitless_length = unitless || attribute;
   mo.unitless_length_nested = (unitless && name_is_clip) || (attribute && GTEXT_CSS_READING_ATTRIBUTE_NUMBER_SYMBOLS);
-  mo.unitless_angle = attribute && GTEXT_CSS_READING_ATTRIBUTE_NUMBER_SYMBOLS;
+  mo.unitless_angle = attribute && GTEXT_CSS_READING_ATTRIBUTE_ANGLE_NUMBER;
   mo.anchor_functions = anchors;
   mo.property = property;
   mo.property_length = property_length;

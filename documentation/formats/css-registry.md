@@ -309,7 +309,7 @@ Values 4, Appendix C (`GTEXT_CSS_PROP_QUIRK_UNITLESS`, listed with the sentence 
 `background` shorthand) nor inside `calc()` or any other function (`fit-content(10)` is not a length;
 `clip: rect(...)` is the one function that Appendix C names). The attribute mode of an SVG presentation attribute
 (`GTEXT_CSS_Property_Options::unitless_lengths`) is another reading, SVG 2's: a bare number is a `px` length at every `<length>` and `<length-percentage>` of the
-grammar, and a degree angle at every `<angle>`, inside a function too (`GTEXT_CSS_Match_Options::unitless_length_nested`, `::unitless_angle`), and not inside `calc()`;
+grammar, inside a function too (`GTEXT_CSS_Match_Options::unitless_length_nested`), and not inside `calc()`; a degree angle at every `<angle>` (`::unitless_angle`) is the reading `GTEXT_CSS_READING_ATTRIBUTE_ANGLE_NUMBER`, off;
 css-style.md quotes the text.
 
 **Descriptors.** With `GTEXT_CSS_Property_Options::at_rule` (`@font-face`) the name is a

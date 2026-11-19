@@ -123,8 +123,8 @@ typedef struct {
   /** Quirks mode: a unitless number is a length in the properties that allow it (GTEXT_CSS_PROP_QUIRK_UNITLESS). */
   bool quirks;
   /** Attribute mode (an SVG presentation attribute): SVG 2's "Attribute syntax" replaces every `<length>`, `<length-percentage>` and `<angle>` of the property's
-   *  grammar with the same or a `<number>`, so a unitless number is a length in user units, px, and an angle in degrees, wherever the grammar has one (`stroke-width="2"`,
-   *  `filter="drop-shadow(blue 4 5 6) blur(2) hue-rotate(45)"`, `clip-path="circle(10 at 5 5)"`), whether or not the property is one of the quirks list; not inside
+   *  grammar with the same or a `<number>`, so a unitless number is a length in user units, px, wherever the grammar has one (`stroke-width="2"`,
+   *  `filter="drop-shadow(blue 4 5 6) blur(2)"`, an angle in degrees only under GTEXT_CSS_READING_ATTRIBUTE_ANGLE_NUMBER, which is 0: `clip-path="circle(10 at 5 5)"`), whether or not the property is one of the quirks list; not inside
    *  a math function. The same text in a `style` attribute or a sheet is not (css_readings.h, GTEXT_CSS_READING_ATTRIBUTE_NUMBER_SYMBOLS). Appended after the fields above. */
   bool unitless_lengths;
 } GTEXT_CSS_Property_Options;

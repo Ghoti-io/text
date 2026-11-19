@@ -41,9 +41,9 @@
  * An attribute's value is mostly a CSS value, but SVG gives some attributes spellings that the property does not have. They are options of
  * @ref GTEXT_CSS_Presentation_Options, each on by default in gtext_css_presentation_options_default() and each off in a zeroed struct (decision
  * 11 of the plan: quirks are options, not forks):
- * - `unitless_lengths`: a number is a length in user units (`stroke-width="2"` is 2px) and an angle in degrees, wherever the property's grammar has a `<length>`,
- *   a `<length-percentage>` or an `<angle>`: SVG 2's "Attribute syntax" says "Replace all instances of <length> in grammar with [<length> | <number>]" (and the same for
- *   `<length-percentage>` and `<angle>`), so it reaches the arguments of a function too (`filter="drop-shadow(blue 4 5 6) blur(2) hue-rotate(45)"`,
+ * - `unitless_lengths`: a number is a length in user units (`stroke-width="2"` is 2px), wherever the property's grammar has a `<length>` or a
+ *   `<length-percentage>` (an angle too in degrees if GTEXT_CSS_READING_ATTRIBUTE_ANGLE_NUMBER is 1, which it is not: no engine reads one): SVG 2's "Attribute syntax" says "Replace all instances of <length> in grammar with [<length> | <number>]" (and the same for
+ *   `<length-percentage>` and `<angle>`), so it reaches the arguments of a function too (`filter="drop-shadow(blue 4 5 6) blur(2)"`,
  *   `clip-path="circle(10 at 5 5)"`) and not a math function's, whose contents are no symbols of the grammar (`calc(4)` is a number). The `style` attribute and a sheet do
  *   not read it (SVG 2: it is what "disallowing them in corresponding property values" says). A property gets this from the parse, not from a list of properties (the HTML
  *   quirk of Values 4, Appendix C has one);
