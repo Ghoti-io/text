@@ -255,10 +255,7 @@ bool anim_script_info(GTEXT_Anim_World * w, size_t control, GTEXT_Anim_Info * ou
   out->composite = gtext_anim_effect_get_composite(e);
   (void)gtext_anim_effect_get_computed_timing(e, now, &out->computed);
   /* "An animation is relevant if its associated effect is current or in effect, and its replace state is not removed" */
-  const GTEXT_Anim_Computed_Timing * c2 = &out->computed;
-  const bool in_play = c2->phase == GTEXT_ANIM_PHASE_ACTIVE && s.play_state != GTEXT_ANIM_PLAY_FINISHED;
-  const bool current = in_play || (c2->phase == GTEXT_ANIM_PHASE_BEFORE && s.playback_rate > 0) || (c2->phase == GTEXT_ANIM_PHASE_AFTER && s.playback_rate < 0);
-  *relevant = (current || c2->in_effect) && s.replace_state != GTEXT_ANIM_REPLACE_REMOVED;
+  *relevant = gtext_anim_effect_is_relevant(&out->computed, s.play_state, s.playback_rate) && s.replace_state != GTEXT_ANIM_REPLACE_REMOVED;
   return true;
 }
 

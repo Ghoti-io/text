@@ -141,3 +141,8 @@ sample-iteration-composite-not-applied	css_anim_sample.c	    e->iteration_accumu
 sample-effect-composite-ignored	css_anim_sample.c	    e->effect.composite = se->composite;	    e->effect.composite = GTEXT_CSS_ANIM_COMPOSITE_REPLACE;	animeffect
 sample-keyframe-composite-ignored	css_anim_sample.c	        e->comp[f] = se->composites ? se->composites[f] : -1;	        e->comp[f] = -1;	animeffect
 sample-single-endpoint-has-no-text	css_anim_sample.c	      st = val_ensure_text(s, &va);   /* an endpoint	      st = GTEXT_CSS_OK;   /* an endpoint	animeffect
+effect-relevance-after-phase-of-a-reversed-animation	timing.c	(c->phase == GTEXT_ANIM_PHASE_AFTER && playback_rate < 0.0)	(c->phase == GTEXT_ANIM_PHASE_AFTER && playback_rate > 0.0)	animeffect
+effect-relevance-before-phase-of-a-reversed-animation	timing.c	(c->phase == GTEXT_ANIM_PHASE_BEFORE && playback_rate > 0.0)	(c->phase == GTEXT_ANIM_PHASE_BEFORE && playback_rate < 100.0)	animeffect
+effect-transition-keyframes-are-swapped	effect.c	const GTEXT_CSS_String value = i ? info.end_value : info.start_value;	const GTEXT_CSS_String value = i ? info.start_value : info.end_value;	animeffect
+effect-css-view-composite-ignored	effect.c	      return info.composite;	      return GTEXT_ANIM_COMPOSITE_REPLACE;	animeffect
+effect-css-view-refuses-nothing	effect.c	  if (e->css_kind) {\n    return GTEXT_ANIM_NOT_SUPPORTED;\n  }\n  e->composite = c;	  e->composite = c;	animeffect

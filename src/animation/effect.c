@@ -1309,11 +1309,66 @@ static GTEXT_Anim_Keyframes * kf_clone(GTEXT_Anim_World * w, const GTEXT_Anim_Ke
   return k;
 }
 
+/// The keyframes of the effect of a CSS transition: two, at 0 and 1, of the property it transitions, with the computed values of its start and its end ("the transition's effect ... a keyframe effect with two keyframes",
+/// Transitions 2, "Animations"); their easing is linear (the transition's timing function is the effect's) and their composite operation is auto. A transition that has left the document has none.
+static GTEXT_Anim_Status transition_keyframes(GTEXT_Anim_Effect * e, GTEXT_Anim_Keyframes ** out) {
+  GTEXT_Anim_World * w = e->world;
+  bool found = false;
+  GTEXT_Anim_Info info;
+  GTEXT_Anim_Status st = gtext_anim_world_find(w, e->css_kind, e->css_id, &found, &info);
+  if (st != GTEXT_ANIM_OK) {
+    return st;
+  }
+  GTEXT_Anim_Keyframes * k = kf_new(&w->alloc);
+  if (!k) {
+    return GTEXT_ANIM_OOM;
+  }
+  for (size_t i = 0; found && i < 2 && st == GTEXT_ANIM_OK; i++) {
+    kframe * f = kf_push(k);
+    if (!f) {
+      st = GTEXT_ANIM_OOM;
+      break;
+    }
+    f->offset_null = false;
+    f->offset = f->computed = (double)i;
+    f->easing_text = dup_bytes(&w->alloc, "linear", 6);
+    f->easing_length = 6;
+    kprop p = {0};
+    const GTEXT_CSS_String value = i ? info.end_value : info.start_value;
+    p.name = dup_bytes(&w->alloc, info.name.data, info.name.length);
+    p.name_length = info.name.length;
+    p.value = dup_bytes(&w->alloc, value.data ? value.data : "", value.length);
+    p.value_length = value.length;
+    p.input = dup_bytes(&w->alloc, "", 0);
+    if (!f->easing_text || !p.name || !p.value || !p.input) {
+      st = GTEXT_ANIM_OOM;
+    }
+    else {
+      st = idl_from_property(w, p.name, p.name_length, &p.idl, &p.idl_length);
+    }
+    if (st == GTEXT_ANIM_OK && !kframe_add_prop(&w->alloc, f, &p)) {
+      st = GTEXT_ANIM_OOM;
+    }
+    if (st != GTEXT_ANIM_OK) {
+      kprop_free(&w->alloc, &p);
+    }
+  }
+  if (st != GTEXT_ANIM_OK) {
+    gtext_anim_keyframes_free(k);
+    return st;
+  }
+  *out = k;
+  return GTEXT_ANIM_OK;
+}
+
 GTEXT_Anim_Status gtext_anim_effect_get_keyframes(GTEXT_Anim_Effect * e, GTEXT_Anim_Keyframes ** out) {
   if (!e || !out) {
     return GTEXT_ANIM_INVALID;
   }
   *out = NULL;
+  if (e->css_kind == GTEXT_ANIM_KIND_CSS_TRANSITION) {
+    return transition_keyframes(e, out);
+  }
   if (e->css_kind) {
     return GTEXT_ANIM_NOT_SUPPORTED;
   }

@@ -75,8 +75,37 @@ Animation, no effect, and no style change brings it back; one that the style can
 succeeded, and one that completes at a style change event lets go of its Animation, which keeps its state while the effect is gone from the element. A transition that no ready frame has seen is pending, with its
 current time held at 0, until a frame runs the task. When the world is freed a transition is where its Animation was, running on at the rate of 1.
 
+# Keyframe effects and the animations script makes (`animation/effect.h`, `gtext_anim_world_animate()`)
+
+`KeyframeEffect` is a value the world owns (`gtext_anim_world_effect_new()`, `..._copy()`): a target (an element handle and a pseudo-element selector, `::before` for `:before`), the effect's composite operation and
+its iteration composite operation (Web Animations 2), its timing (its own until an animation holds the effect and the animation's from then on: `updateTiming()` goes through the animation either way), and its keyframes.
+
+**The `keyframes` argument is data.** A binding reads the JavaScript object and hands over what it read (`GTEXT_Anim_Keyframes_Argument`: an array of keyframe-like objects, or a property-indexed object of
+lists); "processing a keyframes argument" is run here (`gtext_anim_keyframes_process()`): the properties of a keyframe-like object are the animatable ones (an IDL name such as `marginLeft` or `cssFloat`, or a custom
+property) sorted by the code points of the names they were given under, the lists of the object form become keyframes (the offsets assigned in order, the easings and composite modes repeated, the ones that are over
+checked), the keyframes are sorted by their computed offset and merged when they share one, a value that does not parse for its property is discarded, an easing that does not parse is a `TypeError`, and the offsets
+nobody gave are computed ("compute missing keyframe offsets"). The result is what `getKeyframes()` returns (`gtext_anim_effect_get_keyframes()`), and `setKeyframes()` that throws leaves the keyframes as they were.
+
+**Script animations.** `gtext_anim_world_animate()` is `Element.animate()` (an effect, an Animation on the document timeline, played with the auto-rewind flag) and `gtext_anim_world_animation_new()` is
+`new Animation(effect, timeline)`. They are `GTEXT_ANIM_KIND_SCRIPT` animations, numbered from 2^40 so that no id is a tracker id, in the order they were made (the global animation list): `getAnimations()` lists them
+after the CSS animations, and the effect stack puts them above the effects of the `animation-name` list. Their pending play and pause tasks run at the next frame (`gtext_anim_world_update()`), where the world also
+removes the replaced animations ("Removing replaced animations": a finished animation whose every target property is covered by a finished animation above it on the same target becomes `removed`, with a `remove`
+event, and is out of every effect stack; `persist()` keeps it). **The sampler** (`GTEXT_CSS_Style_Animation::script_effects`) gets the keyframes of each effect with their computed offsets, the keyframe easings and
+composite operations, the effect's composite operation, the iteration composite operation and the iteration progress and index, and applies "The effect value of a keyframe effect": the interval endpoints (the first
+or last of the keyframes at 0 or 1 when the progress is below 0 or at least 1), the keyframe and effect composite operations against the underlying value, the iteration accumulation (by repeated squaring, not
+one step per iteration), and the interpolation. A shorthand in a keyframe is expanded, and a value computed, in the context of the target when the effect is sampled ("computed keyframes are live").
+
+**`commitStyles()`** is `gtext_anim_world_commit_styles()`: for each physical longhand the animation's effect targets, the computed value of the stack up to and including the animation, with the
+endpoint-inclusive active interval, as declarations for the binding to write to the target's style attribute (the library does not own it). It refuses a pseudo-element target (`NoModificationAllowedError`) and a target
+that is not being rendered (`InvalidStateError`).
+
+**The effect of a CSS animation or transition** (`gtext_anim_world_effect_of()`) is an object that reads the target, composite operation and timing the style gave the animation (`updateTiming()` on a CSS animation
+locks the members it names against the style, as CSS Animations 2 says), and for a transition its two keyframes. What would change what the style owns (`setKeyframes()`, `target =`, `composite =`, replacing the effect) and the
+computed keyframes of a CSS animation are `GTEXT_ANIM_NOT_SUPPORTED`: the sampler keeps one keyframe for each offset and the model of CSS Animations 2 groups declarations by offset, timing function and composite
+operation.
+
 # Checks
 
-`tests/test-anim-timing.cpp`, `test-anim-animation.cpp`, `test-anim-css.cpp` and `test-anim-world.cpp` (each rule a test that quotes its text, an allocation sweep, planted defects of every function in
+`tests/test-anim-timing.cpp`, `test-anim-animation.cpp`, `test-anim-css.cpp`, `test-anim-world.cpp` and `test-anim-effect.cpp` (each rule a test that quotes its text, an allocation sweep, planted defects of every function in
 `tools/conformance/CSS_ANIMATION_PLANTS` and `CSS_CSSOM_PLANTS`, each seen to fail); the pages of web-platform-tests that read `getAnimations()` and the effect's timing are scored by the CSSOM script gate against
 the recorded answers of both browsers.

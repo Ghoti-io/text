@@ -663,7 +663,7 @@ GTEXT_CSS_Status gtext_anim_css_set_info(const GTEXT_Anim_Css_Set * s, size_t in
   }
   out->play_state = c->m ? out->animation.play_state : play_state_of(c, out->current_time, out->computed.end_time);
   /* "An animation effect is current if ... in the before phase and ... a playback rate > 0", "in play" (active, not finished), or "in effect" */
-  out->relevant = out->computed.in_effect || out->computed.phase == GTEXT_ANIM_PHASE_BEFORE || (out->computed.phase == GTEXT_ANIM_PHASE_ACTIVE && out->play_state != GTEXT_ANIM_PLAY_FINISHED);
+  out->relevant = gtext_anim_effect_is_relevant(&out->computed, out->play_state, rate_of(c));
   return GTEXT_CSS_OK;
 }
 

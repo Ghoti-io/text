@@ -290,3 +290,12 @@ GTEXT_Anim_Status gtext_anim_computed_timing(const GTEXT_Anim_Effect_Timing * t,
   out->has_progress = true;
   return GTEXT_ANIM_OK;
 }
+
+bool gtext_anim_effect_is_relevant(const GTEXT_Anim_Computed_Timing * c, GTEXT_Anim_Play_State play_state, double playback_rate) {
+  if (!c) {
+    return false;
+  }
+  const bool in_play = c->phase == GTEXT_ANIM_PHASE_ACTIVE && play_state != GTEXT_ANIM_PLAY_FINISHED;
+  const bool current = in_play || (c->phase == GTEXT_ANIM_PHASE_BEFORE && playback_rate > 0.0) || (c->phase == GTEXT_ANIM_PHASE_AFTER && playback_rate < 0.0);
+  return current || c->in_effect;
+}

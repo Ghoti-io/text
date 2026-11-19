@@ -280,10 +280,11 @@ GTEXT_API GTEXT_Anim_Status gtext_anim_effect_update_timing(GTEXT_Anim_Effect * 
 GTEXT_API GTEXT_Anim_Status gtext_anim_effect_get_computed_timing(const GTEXT_Anim_Effect * effect, GTEXT_Anim_Time now, GTEXT_Anim_Computed_Timing * out);
 
 /**
- * @brief `getKeyframes()`: the keyframes of the effect with their computed offsets. For an effect of a CSS animation whose keyframes script has not replaced, the *computed keyframes* of the rule in the context
- * of the target (the values are computed values, shorthands expanded into longhands, and the keyframes of one offset, easing and composite operation merged); for an effect of a CSS transition, its two
- * keyframes; for any other the keyframes as the argument made them, with the offsets nobody gave computed.
- * @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID; GTEXT_ANIM_OOM.
+ * @brief `getKeyframes()`: the keyframes of the effect with their computed offsets. For an effect made by script, the keyframes as the argument made them; for an effect of a CSS transition, its two keyframes (the
+ * computed values of the property at its start and at its end, easing `linear`, composite `auto`). For an effect of a CSS animation the *computed keyframes* of its `@keyframes` rule (CSS Animations 2, "Keyframes":
+ * the declarations grouped by offset, timing function and composite operation, the initial and final keyframes generated, the values computed in the context of the target) are GTEXT_ANIM_NOT_SUPPORTED: the sampler
+ * keeps one keyframe for each offset, which is not that model.
+ * @return GTEXT_ANIM_OK; GTEXT_ANIM_NOT_SUPPORTED; GTEXT_ANIM_INVALID; GTEXT_ANIM_OOM.
  */
 GTEXT_API GTEXT_Anim_Status gtext_anim_effect_get_keyframes(GTEXT_Anim_Effect * effect, GTEXT_Anim_Keyframes ** out);
 

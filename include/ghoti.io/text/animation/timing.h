@@ -216,6 +216,17 @@ GTEXT_API GTEXT_Anim_Status gtext_anim_easing_parse(const GTEXT_CSS_Registry * r
 GTEXT_API GTEXT_Anim_Status gtext_anim_computed_timing(const GTEXT_Anim_Effect_Timing * timing, GTEXT_Anim_Time local_time, double playback_rate, bool endpoint_inclusive,
     GTEXT_Anim_Computed_Timing * out);
 
+/**
+ * @brief Whether an animation effect is *current* or *in effect* ("Relevant animations": an animation is relevant if its associated effect is current or in effect, and its replace state is not removed).
+ *
+ * An effect is current if it is in play (in its active phase, with an animation that is not finished), or in the before phase of an animation with a playback rate above zero, or in the after phase of
+ * one with a playback rate below zero: an animation that is reversed and has run back past its end is relevant though it applies nothing, because it is about to. It is in effect if its active time is resolved.
+ *
+ * @param computed The effect's timing at the animation's current time. @param play_state The animation's play state. @param playback_rate The animation's playback rate (1 with no animation).
+ * @return Whether it is current or in effect.
+ */
+GTEXT_API bool gtext_anim_effect_is_relevant(const GTEXT_Anim_Computed_Timing * computed, GTEXT_Anim_Play_State play_state, double playback_rate);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1045,3 +1045,84 @@ TEST(AnimEffectCommit, AReplacedAnimationStillCommits) {
   ASSERT_EQ(s.replace_state, GTEXT_ANIM_REPLACE_REMOVED);
   EXPECT_EQ(committed(w.world, first), "opacity: 0.5");
 }
+
+/* "An animation effect is current if ... in the after phase and is associated with an animation with a playback rate < 0": a finished animation with no fill is not relevant, and the same animation played backwards from its end is,
+   though it applies nothing yet (the same of a CSS animation: gtext_anim_effect_is_relevant()). */
+TEST(AnimEffectRelevance, AnEffectInItsAfterPhaseOfAnAnimationThatPlaysBackwardsIsCurrent) {
+  Ew w(PAGE);
+  w.at(0);
+  Arg a;
+  a.list("opacity", {"0", "1"});
+  GTEXT_Anim_Animation * an = w.animate("#a", a, 100);
+  w.frame();
+  w.at(200);
+  w.frame();
+  EXPECT_EQ(w.list("#a"), "") << "finished, no fill: not current, not in effect";
+  ASSERT_EQ(gtext_anim_animation_set_playback_rate(an, -1.0, {true, 200}), GTEXT_ANIM_OK);
+  gtext_anim_world_touch(w.world);
+  GTEXT_Anim_Animation_State s;
+  ASSERT_EQ(gtext_anim_animation_state(an, {true, 200}, &s), GTEXT_ANIM_OK);
+  EXPECT_EQ(s.play_state, GTEXT_ANIM_PLAY_RUNNING) << "it runs back from its end";
+  EXPECT_EQ(w.list("#a"), "S:0") << "after phase, rate below zero: current";
+  GTEXT_Anim_Computed_Timing c{};
+  c.phase = GTEXT_ANIM_PHASE_BEFORE;
+  EXPECT_FALSE(gtext_anim_effect_is_relevant(&c, GTEXT_ANIM_PLAY_RUNNING, -1.0)) << "before phase and a negative rate: not";
+  EXPECT_TRUE(gtext_anim_effect_is_relevant(&c, GTEXT_ANIM_PLAY_RUNNING, 1.0));
+  EXPECT_FALSE(gtext_anim_effect_is_relevant(nullptr, GTEXT_ANIM_PLAY_RUNNING, 1.0));
+}
+
+/* The effect of a CSS transition has two keyframes, at 0 and at 1, of the property it transitions, with the values it goes from and to (computed: a `var()` is its value); its easing is linear. A transition that is not in the
+   document has none; the effect of a CSS animation reads its target and composite from the style, and its keyframes are not built. */
+TEST(AnimEffectCssView, TheKeyframesOfATransitionAndTheMembersOfTheEffectOfAnAnimation) {
+  Ew w("<style>:root { --end: 100px } #t { left: 0px; position: relative; transition: left 100s steps(2) } #t.go { left: var(--end) } @keyframes k { to { opacity: 0 } } #k { animation: k 100s; animation-composition: add }</style><div id=t></div><div id=k></div>");
+  w.at(0);
+  w.flush("#t");
+  w.flush("#k");
+  GTEXT_CSSOM_Decl * unused = nullptr;
+  (void)unused;
+  GTEXT_Markup_Node * t = w.m.el("#t");
+  ASSERT_EQ(gtext_markup_element_set_attribute(t, nullptr, nullptr, "class", "go", 2), GTEXT_MARKUP_OK);
+  w.flush("#t");
+  GTEXT_Anim_List * l = nullptr;
+  ASSERT_EQ(gtext_anim_world_get_animations(w.world, w.h("#t"), nullptr, 0, false, &l), GTEXT_ANIM_OK);
+  GTEXT_Anim_Info info{};
+  ASSERT_TRUE(gtext_anim_list_at(l, 0, &info));
+  GTEXT_Anim_Animation * an = nullptr;
+  ASSERT_EQ(gtext_anim_world_control(w.world, info.kind, info.id, &an), GTEXT_ANIM_OK);
+  gtext_anim_list_free(l);
+  GTEXT_Anim_Effect * e = nullptr;
+  ASSERT_EQ(gtext_anim_world_effect_of(w.world, an, &e), GTEXT_ANIM_OK);
+  ASSERT_NE(e, nullptr);
+  GTEXT_Anim_Keyframes * k = nullptr;
+  ASSERT_EQ(gtext_anim_effect_get_keyframes(e, &k), GTEXT_ANIM_OK);
+  EXPECT_EQ(frames_text(k), "0.000000/0 linear left=0px | 1.000000/1 linear left=100px");
+  gtext_anim_keyframes_free(k);
+  const void * el = nullptr;
+  GTEXT_CSS_String ps;
+  ASSERT_EQ(gtext_anim_effect_get_target(e, &el, &ps), GTEXT_ANIM_OK);
+  EXPECT_EQ(el, w.h("#t"));
+  EXPECT_EQ(gtext_anim_effect_get_composite(e), GTEXT_ANIM_COMPOSITE_REPLACE);
+  EXPECT_EQ(gtext_anim_effect_set_composite(e, GTEXT_ANIM_COMPOSITE_ADD), GTEXT_ANIM_NOT_SUPPORTED) << "what the style owns is not changed by script yet";
+  GTEXT_Anim_Keyframes_Argument none{};
+  EXPECT_EQ(gtext_anim_effect_set_keyframes(e, &none), GTEXT_ANIM_NOT_SUPPORTED);
+  EXPECT_EQ(gtext_anim_effect_get_target(e, &el, &ps), GTEXT_ANIM_OK);
+  /* the effect of the CSS animation */
+  GTEXT_Anim_Animation * ka = nullptr;
+  ASSERT_EQ(gtext_anim_world_get_animations(w.world, w.h("#k"), nullptr, 0, false, &l), GTEXT_ANIM_OK);
+  ASSERT_TRUE(gtext_anim_list_at(l, 0, &info));
+  ASSERT_EQ(gtext_anim_world_control(w.world, info.kind, info.id, &ka), GTEXT_ANIM_OK);
+  gtext_anim_list_free(l);
+  GTEXT_Anim_Effect * ke = nullptr;
+  ASSERT_EQ(gtext_anim_world_effect_of(w.world, ka, &ke), GTEXT_ANIM_OK);
+  ASSERT_NE(ke, nullptr);
+  EXPECT_EQ(gtext_anim_effect_get_composite(ke), GTEXT_ANIM_COMPOSITE_ADD) << "animation-composition of its place in the list";
+  EXPECT_EQ(gtext_anim_effect_get_keyframes(ke, &k), GTEXT_ANIM_NOT_SUPPORTED);
+  GTEXT_Anim_Effect * again = nullptr;
+  ASSERT_EQ(gtext_anim_world_effect_of(w.world, ka, &again), GTEXT_ANIM_OK);
+  EXPECT_EQ(again, ke) << "one effect object for an animation";
+  GTEXT_Anim_Effect_Timing timing;
+  GTEXT_CSS_String easing;
+  ASSERT_EQ(gtext_anim_effect_get_timing(ke, &timing, &easing), GTEXT_ANIM_OK);
+  EXPECT_EQ(timing.duration, 100000);
+  EXPECT_EQ(std::string(easing.data, easing.length), "ease");
+}

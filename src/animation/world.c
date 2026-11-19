@@ -303,9 +303,8 @@ static GTEXT_Anim_Status collect(GTEXT_Anim_World * world, const void * element,
       r->generation = ta.generation;
       r->seq = v.element_seq;
       r->pseudo_rank = v.pseudo_rank;
-      /* "An animation effect is current if ... in the before phase ... or in play", or in effect */
-      const bool relevant = r->info.computed.in_effect || r->info.computed.phase == GTEXT_ANIM_PHASE_BEFORE ||
-          (r->info.computed.phase == GTEXT_ANIM_PHASE_ACTIVE && r->info.play_state != GTEXT_ANIM_PLAY_FINISHED);
+      /* "An animation effect is current if ... in the before phase (a playback rate above 0), or in the after phase (a rate below 0), or in play", or in effect */
+      const bool relevant = gtext_anim_effect_is_relevant(&r->info.computed, r->info.play_state, ta.adopted ? ta.animation.playback_rate : 1.0);
       if (relevant || !relevant_only) {
         n++;
       }
