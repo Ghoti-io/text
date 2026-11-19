@@ -657,38 +657,80 @@ TEST(CssGrammarTypes, ABareNumberIsALengthOnlyUnderTheQuirksOption) {
   EXPECT_EQ(angle.dump(), "no match");
 }
 
-TEST(CssGrammarTypes, ABareNumberIsALengthInTheOwnArgumentsOfTheFunctionsTheOptionNames) {
+TEST(CssGrammarTypes, ABareNumberIsALengthBelowTheTopLevelOnlyWhenTheOptionSaysSo) {
   Grammar g;
-  compile_into(g, "<length> | shape( <length>+ ) | other( <length>+ ) | wrap( shape( <length>+ ) )");
+  compile_into(g, "<length> | shape( <length>+ ) | wrap( shape( <length>+ ) ) | calc-less( <length-percentage>+ )");
   ASSERT_TRUE(g.ok());
   GTEXT_CSS_Match_Options o = gtext_css_match_options_default();
   o.unitless_length = true;
-  o.unitless_length_functions = "shape wrap";
-  Matched in_list;
-  match_into(in_list, g, "shape(1 2px)", &o);
-  EXPECT_TRUE(in_list.matched) << "a named function's own arguments";
+  Matched top;
+  match_into(top, g, "5", &o);
+  EXPECT_TRUE(top.matched) << "the top level of the value: the HTML quirk reads it so";
+  Matched inside;
+  match_into(inside, g, "shape(1 2px)", &o);
+  EXPECT_FALSE(inside.matched) << "Values 4, Appendix C: a quirky length is not valid inside functional notations";
+  o.unitless_length_nested = true;
+  Matched nested;
+  match_into(nested, g, "shape(1 2px)", &o);
+  EXPECT_TRUE(nested.matched) << "SVG 2, Attribute syntax: every <length> of the grammar";
   Matched upper;
   match_into(upper, g, "SHAPE(1)", &o);
-  EXPECT_TRUE(upper.matched) << "the name is ASCII case-insensitive";
-  Matched other;
-  match_into(other, g, "other(1)", &o);
-  EXPECT_FALSE(other.matched) << "a function that is not named";
-  Matched inner;
-  match_into(inner, g, "wrap(shape(1))", &o);
-  EXPECT_TRUE(inner.matched) << "shape() is named, whoever holds it";
-  Matched outer_only;
-  GTEXT_CSS_Match_Options p = o;
-  p.unitless_length_functions = "wrap";
-  match_into(outer_only, g, "wrap(shape(1))", &p);
-  EXPECT_FALSE(outer_only.matched) << "wrap() being named does not name the function inside it";
+  EXPECT_TRUE(upper.matched);
+  Matched deep;
+  match_into(deep, g, "wrap(shape(1))", &o);
+  EXPECT_TRUE(deep.matched) << "at any depth";
+  Matched pct;
+  match_into(pct, g, "calc-less(1 5% 2px)", &o);
+  EXPECT_TRUE(pct.matched) << "<length-percentage> too";
+  Matched math;
+  match_into(math, g, "shape(calc(1))", &o);
+  EXPECT_FALSE(math.matched) << "a math function's contents are no symbol of the grammar: calc(1) is a <number>";
   Matched off;
   GTEXT_CSS_Match_Options q = o;
   q.unitless_length = false;
   match_into(off, g, "shape(1)", &q);
-  EXPECT_FALSE(off.matched) << "without unitless_length the list is not read";
+  EXPECT_FALSE(off.matched) << "without unitless_length, the nested option reads nothing";
   Matched none;
   match_into(none, g, "shape(1)");
   EXPECT_FALSE(none.matched);
+}
+
+TEST(CssGrammarTypes, ABareNumberIsAnAngleInDegreesOnlyWhenTheOptionSaysSo) {
+  Grammar g;
+  compile_into(g, "<angle> | rot( <angle>+ ) | zero( <angle> | <zero> )");
+  ASSERT_TRUE(g.ok());
+  GTEXT_CSS_Match_Options o = gtext_css_match_options_default();
+  Matched off;
+  match_into(off, g, "45", &o);
+  EXPECT_FALSE(off.matched);
+  o.unitless_length = true;
+  o.unitless_length_nested = true;
+  Matched still_off;
+  match_into(still_off, g, "45", &o);
+  EXPECT_FALSE(still_off.matched) << "the length options are no angle option";
+  o.unitless_angle = true;
+  Matched top;
+  match_into(top, g, "45", &o);
+  ASSERT_TRUE(top.matched);
+  EXPECT_EQ(top.dump(), "dim:45deg");
+  Matched nested;
+  match_into(nested, g, "rot(1 2deg -3.5)", &o);
+  ASSERT_TRUE(nested.matched);
+  EXPECT_EQ(nested.dump(), "fn:rot(list/space(dim:1deg dim:2deg dim:-3.5deg))");
+  Matched zero;
+  match_into(zero, g, "0", &o);
+  EXPECT_EQ(zero.dump(), "dim:0deg") << "a bare zero is the number 0 of the replacement, 0deg";
+  Matched unit;
+  match_into(unit, g, "45px", &o);
+  EXPECT_FALSE(unit.matched) << "a length unit is no angle";
+  Matched math;
+  match_into(math, g, "calc(45)", &o);
+  EXPECT_FALSE(math.matched);
+  Grammar len;
+  compile_into(len, "<length>");
+  Matched l;
+  match_into(l, len, "45deg", &o);
+  EXPECT_FALSE(l.matched) << "an angle is no length";
 }
 
 TEST(CssGrammarTypes, EmptyInputMatchesOnlyWhatCanBeEmpty) {

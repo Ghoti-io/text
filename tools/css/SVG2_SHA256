@@ -1,0 +1,8 @@
+# The pages of Scalable Vector Graphics (SVG) 2 that this library reads and quotes, as tools/css/fetch.sh puts them in third_party/css/svg2/. They are the pages of the
+# Candidate Recommendation of 4 October 2018 at the dated address of tools/css/SVG2_URL: a dated recommendation does not change, which the editor's draft (svgwg.org) does.
+# The editor's draft's "Attribute syntax" paragraph was compared with this one when the pin was made and is the same text. Columns (tab separated): SHA-256 of the page, the
+# name it is kept under. The fetch keeps nothing that does not hash as pinned; an existing copy is checked offline. tools/css/check-pinned-quotes.py checks every sentence of
+# the sources and documents that is quoted from these pages. Adding a page, or moving to another edition, is a deliberate edit of this file and SVG2_URL in one commit.
+66a21db8037944850c05dbd67d4c65162115b415302bd4c641e5f2a65b02ffc5	styling.html
+6761c7b46c14539e4c157e3c5457ea337556c8c7fc8477126dc89e9f29a9cf85	types.html
+79f20813910f1866e40bf1548064ff2e47c095e425931a31063cf58f6c5334eb	coords.html

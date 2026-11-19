@@ -329,7 +329,8 @@ typedef struct {
   bool unitless_length;
   /** With `unitless_length`: also in the arguments of functions and in blocks. Values 4, Appendix C: a quirky length "is not valid ... inside
    *  functional notations such as calc(), except that they must be allowed in rect() in the clip property", so a value is quirky at its top
-   *  level only (`fit-content(10)` is not a length), and the property layer sets this for `clip` alone. Appended after the fields above.
+   *  level only (`fit-content(10)` is not a length), and the property layer sets this for `clip` alone and for a presentation attribute (where SVG 2's replacement
+   *  reaches every `<length>` of the grammar). Appended after the fields above.
    *  Default false. */
   bool unitless_length_nested;
   /** Most bytes of the text of one opaque value (`<any-value>`, a math function's arguments, a pending
@@ -355,11 +356,11 @@ typedef struct {
    *  `ua-PROPERTY` and `ua-PROPERTY-INDEX`), the INDEX counting the `random()` functions of the whole value from 1. NULL (the default) simplifies nothing. Appended after the fields above. */
   const char * property;
   size_t property_length;                ///< The length of `property`.
-  /** With `unitless_length`: the functions whose own arguments also read a bare number as a length, as a string of lower-case names separated by single spaces
-   *  (`"drop-shadow inset circle"`; the match is ASCII case-insensitive on the function's name). Only the function's direct arguments are read so, not the
-   *  arguments of a function inside it and not a math function's. NULL is none, and the default. The property layer sets it for an SVG presentation attribute, from
-   *  the property (css_readings.h). The string is not copied: it must outlive the match, and the registry that holds these options. Appended after the fields above. */
-  const char * unitless_length_functions;
+  /** A bare number also matches `<angle>`, as that many degrees. The property layer sets it, with `unitless_length` and `unitless_length_nested`, for an SVG presentation
+   *  attribute: SVG 2 ("Attribute syntax") replaces every `<length>`, `<length-percentage>` and `<angle>` of the attribute's grammar with `[<length> | <number>]`,
+   *  `[<length-percentage> | <number>]` and `[<angle> | <number>]`, wherever they stand in the grammar (inside a function too, not inside a math function, which is not a
+   *  symbol of the grammar). Appended after the fields above. Default false. */
+  bool unitless_angle;
 } GTEXT_CSS_Match_Options;
 
 /** @brief The defaults, spelled out. */

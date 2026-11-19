@@ -42,6 +42,7 @@ GTEXT_CSS_Presentation_Options gtext_css_presentation_options_default(void) {
   GTEXT_CSS_Presentation_Options o;
   memset(&o, 0, sizeof o);
   o.unitless_lengths = true;
+  o.invalid_is_initial = true;
   o.svg_transform = true;
   o.path_data = true;
   o.trim_whitespace = true;
@@ -173,26 +174,86 @@ static bool is_digit(char c) {
   return c >= '0' && c <= '9';
 }
 
-/** Scan a number (SVG 1.1 / 2: sign, digits with or without a point, exponent). Returns false with `bad` set when there is none. */
+/**
+ * Whether the decimal number 0.d1d2d3... x 10^(`n` + `exp10`) -- the `n` significant digits `d` (no leading zeros) with the decimal point after `exp10` more places -- is
+ * more than the largest finite float, 340282346638528859811704183484516925440 (3.4028234663852886e38 to 17 places). Both browsers refuse a number of the transform
+ * attribute that does not fit a float (`translate(1e39)`) and the text does not say what a number token out of range is; the largest float itself is read, as Firefox does.
+ * `more` says that there were nonzero digits after the `n` that were kept.
+ */
+static bool beyond_float(const char * d, size_t n, long exp10, bool more) {
+  static const char max[] = "340282346638528859811704183484516925440"; /* 39 digits: the first digit is 10^38 */
+  const size_t max_digits = sizeof max - 1;
+  if (n == 0) {
+    return false;
+  }
+  const long first = (long)n - 1 + exp10; /* the decimal exponent of the first digit */
+  if (first != 38) {
+    return first > 38;
+  }
+  for (size_t i = 0; i < n && i < max_digits; i++) {
+    if (d[i] != max[i]) {
+      return d[i] > max[i];
+    }
+  }
+  /* equal as far as both go: it is more only if it has a nonzero digit after the 39th */
+  for (size_t i = max_digits; i < n; i++) {
+    if (d[i] != '0') {
+      return true;
+    }
+  }
+  return more;
+}
+
+/**
+ * Scan a <number-token> of CSS Syntax, which is what CSS Transforms 1 says the numbers of the transform attribute are: a sign, digits, a point that is followed by digits, an
+ * exponent. `5.` is not one (the point ends the number, and what follows it is not a transform); a number beyond a float's range is refused. Returns false with `bad` set when
+ * there is none.
+ */
 static bool sv_number(svg_in * in, size_t * start, size_t * end) {
   size_t i = in->i;
   const size_t s = i;
   if (i < in->n && (in->p[i] == '+' || in->p[i] == '-')) {
     i++;
   }
+  char sig[48]; /* the significant digits that matter for the range check: the first 48 after the leading zeros (FLT_MAX has 39) */
+  size_t nsig = 0;
+  bool more = false; /* a nonzero digit after those was left out */
+  long exp10 = 0;
   size_t digits = 0;
+  bool leading = true;
   while (i < in->n && is_digit(in->p[i])) {
+    if (!(leading && in->p[i] == '0')) {
+      leading = false;
+      if (nsig < sizeof sig) {
+        sig[nsig++] = in->p[i];
+      }
+      else {
+        exp10++;
+        more = more || in->p[i] != '0';
+      }
+    }
     i++;
     digits++;
   }
-  if (i < in->n && in->p[i] == '.') {
+  if (i + 1 < in->n && in->p[i] == '.' && is_digit(in->p[i + 1])) {
     i++;
-    size_t frac = 0;
     while (i < in->n && is_digit(in->p[i])) {
+      if (!(leading && in->p[i] == '0')) {
+        leading = false;
+        if (nsig < sizeof sig) {
+          sig[nsig++] = in->p[i];
+          exp10--;
+        }
+        else {
+          more = more || in->p[i] != '0';
+        }
+      }
+      else if (leading) {
+        exp10--;
+      }
       i++;
-      frac++;
+      digits++;
     }
-    digits += frac;
   }
   if (digits == 0) {
     in->i = s;
@@ -200,15 +261,31 @@ static bool sv_number(svg_in * in, size_t * start, size_t * end) {
   }
   if (i < in->n && (in->p[i] == 'e' || in->p[i] == 'E')) {
     size_t j = i + 1;
+    bool eneg = false;
     if (j < in->n && (in->p[j] == '+' || in->p[j] == '-')) {
+      eneg = in->p[j] == '-';
       j++;
     }
     if (j < in->n && is_digit(in->p[j])) {
+      long e = 0;
       while (j < in->n && is_digit(in->p[j])) {
+        if (e < 100000) {
+          e = e * 10 + (in->p[j] - '0');
+        }
         j++;
       }
+      exp10 += eneg ? -e : e;
       i = j;
     }
+  }
+  /* trailing zeros of the significant digits only raise the count: strip them into the exponent */
+  while (nsig > 0 && sig[nsig - 1] == '0') {
+    nsig--;
+    exp10++;
+  }
+  if (beyond_float(sig, nsig, exp10, more)) {
+    in->i = s;
+    return sv_fail(in);
   }
   *start = s;
   *end = i;
@@ -452,6 +529,7 @@ typedef struct {
   size_t value_offset; ///< The trimmed value's place in the attribute value.
   size_t value_length;
   size_t error;        ///< Where the attribute-only syntax failed, or (size_t)-1.
+  bool invalid;        ///< The attribute-only syntax failed: the value is not one of the attribute (it is never the property's own, which the attribute does not use).
 } converted;
 
 static GTEXT_CSS_Status convert(const GTEXT_CSS_Presentation_Row * row, const char * value, size_t length, const GTEXT_CSS_Presentation_Options * options,
@@ -488,9 +566,11 @@ static GTEXT_CSS_Status convert(const GTEXT_CSS_Presentation_Row * row, const ch
         return GTEXT_CSS_E_OOM;
       }
       if (rc == 0) {
-        /* not SVG's syntax: the property's own is tried, and the place SVG's failed is kept for the diagnostic */
+        /* not SVG's syntax. CSS Transforms 1: "the syntax of the transform, patternTransform, gradientTransform attributes differ from the syntax of the 'transform' CSS
+           property", and a value that is not in it (`translate(10px)`) is no value of the attribute, however the property would read it; the place SVG's failed is the diagnostic's */
         gtext_allocator_free(alloc, out.data);
         c->error = error;
+        c->invalid = true;
         return GTEXT_CSS_OK;
       }
     }
@@ -517,6 +597,9 @@ GTEXT_CSS_Status gtext_css_presentation_value_text(const GTEXT_CSS_Presentation_
   }
   if (error_offset) {
     *error_offset = c.error == (size_t)-1 ? c.error : c.value_offset + c.error;
+  }
+  if (c.invalid) {
+    return GTEXT_CSS_E_INVALID;
   }
   if (!c.owned) {
     char * copy = gtext_allocator_malloc(allocator, c.length + 1);
@@ -579,7 +662,14 @@ GTEXT_CSS_Status gtext_css_candidates_add_presentation(GTEXT_CSS_Candidates * se
   memset(&po, 0, sizeof po);
   po.unitless_lengths = options->unitless_lengths;
   GTEXT_CSS_Property_Outcome outcome = GTEXT_CSS_PROP_RESULT_UNKNOWN;
-  st = gtext_css_candidates_add_text(set, &k, row->property, strlen(row->property), c.text, c.length, &po, &outcome, result);
+  if (c.invalid) {
+    /* the attribute-only syntax refused it, and the property's own is not tried: a value no property takes goes through the same call as any other invalid value, which
+       checks the set and the property and records the diagnostic (the place SVG's syntax stopped is the diagnostic's offset, below) */
+    st = gtext_css_candidates_add_text(set, &k, row->property, strlen(row->property), "!", 1, &po, &outcome, result);
+  }
+  else {
+    st = gtext_css_candidates_add_text(set, &k, row->property, strlen(row->property), c.text, c.length, &po, &outcome, result);
+  }
   gtext_allocator_free(alloc, c.owned);
   if (st == GTEXT_CSS_E_UNSUPPORTED) {
     diagnostic->outcome = GTEXT_CSS_PRESENTATION_UNJUDGEABLE;
@@ -596,6 +686,20 @@ GTEXT_CSS_Status gtext_css_candidates_add_presentation(GTEXT_CSS_Candidates * se
   else if (outcome == GTEXT_CSS_PROP_RESULT_INVALID) {
     diagnostic->outcome = GTEXT_CSS_PRESENTATION_INVALID_VALUE;
     diagnostic->offset = c.error == (size_t)-1 ? diagnostic->value_offset : diagnostic->value_offset + c.error;
+    if (options->invalid_is_initial && row->svg_namespace_only) {
+      /* SVG 2, "Attribute syntax": "When an attribute fails to parse according to the specified CSS Value Definition Syntax ... the attribute is assumed to have been
+         specified as the given initial value", the initial value of the property: a declaration of `initial` at the attribute's place in the cascade. It is SVG's rule, so
+         a row that is not SVG's (HTML's presentational hints) is ignored when it does not parse. `result` stays what the invalid value's call made it. */
+      GTEXT_CSS_Property_Outcome again = GTEXT_CSS_PROP_RESULT_UNKNOWN;
+      GTEXT_CSS_Cascade_Result second;
+      st = gtext_css_candidates_add_text(set, &k, row->property, strlen(row->property), "initial", 7, &po, &again, &second);
+      if (st != GTEXT_CSS_OK) {
+        if (result) {
+          *result = second;
+        }
+        return st;
+      }
+    }
   }
   return GTEXT_CSS_OK;
 }

@@ -115,16 +115,17 @@ GTEXT_API const char * gtext_css_wide_keyword_name(GTEXT_CSS_Wide_Keyword keywor
 typedef struct {
   /** The allocator of the match and of the value set, or NULL for the registry's. */
   const GTEXT_Allocator * allocator;
-  /** The limits of the match (css_grammar.h), or NULL for the registry's. Its allocator and `unitless_length` are replaced. */
+  /** The limits of the match (css_grammar.h), or NULL for the registry's. Its allocator, `unitless_length`, `unitless_length_nested` and `unitless_angle` are replaced. */
   const GTEXT_CSS_Match_Options * match;
   /** NULL: the name is a property. Otherwise the name of an at-rule (`@font-face`, ASCII case-insensitive) and the name
    *  is a descriptor of it. */
   const char * at_rule;
   /** Quirks mode: a unitless number is a length in the properties that allow it (GTEXT_CSS_PROP_QUIRK_UNITLESS). */
   bool quirks;
-  /** Attribute mode (an SVG presentation attribute): a unitless number is a length in user units, px, in every property that takes a `<length>`
-   *  (GTEXT_CSS_VFLAG_UNITLESS_LENGTH), whether or not the property is one of the quirks list; and in the own arguments of `drop-shadow()` of
-   *  `filter` and of the basic shapes of `clip-path` (css_grammar.h, `unitless_length_functions`). Appended after the fields above. */
+  /** Attribute mode (an SVG presentation attribute): SVG 2's "Attribute syntax" replaces every `<length>`, `<length-percentage>` and `<angle>` of the property's
+   *  grammar with the same or a `<number>`, so a unitless number is a length in user units, px, and an angle in degrees, wherever the grammar has one (`stroke-width="2"`,
+   *  `filter="drop-shadow(blue 4 5 6) blur(2) hue-rotate(45)"`, `clip-path="circle(10 at 5 5)"`), whether or not the property is one of the quirks list; not inside
+   *  a math function. The same text in a `style` attribute or a sheet is not (css_readings.h, GTEXT_CSS_READING_ATTRIBUTE_NUMBER_SYMBOLS). Appended after the fields above. */
   bool unitless_lengths;
 } GTEXT_CSS_Property_Options;
 

@@ -42,9 +42,12 @@
 #
 #   drafts/             The Editors' Drafts of CSS modules that the served-text class of the scoring interpreter quotes (css-values-5, css-fonts-4,
 #                       css-mixins-1, css-grid-3, css-writing-modes-4, css-forms-1, css-color-4, css-values-4, css-pseudo-4, css-lists-3, css-text-decor-4,
-#                       css-text-4, css-tables-3, css-ui-4, css-multicol-2, css-flexbox-1, cssom-1, css-syntax-3, css-animations-1, css-animations-2, web-animations-1, css-easing-1, css-easing-2, css-backgrounds-4, scroll-animations-1, web-animations-2, css-variables-2, css-env-1, css-color-5, css-align-3, css-content-3, css-link-params-1, css-ruby-1), as the Bikeshed sources (Overview.bs) of w3c/csswg-drafts at the commit
+#                       css-text-4, css-tables-3, css-ui-4, css-multicol-2, css-flexbox-1, cssom-1, css-syntax-3, css-animations-1, css-animations-2, web-animations-1, css-easing-1, css-easing-2, css-backgrounds-4, scroll-animations-1, web-animations-2, css-variables-2, css-env-1, css-color-5, css-align-3, css-content-3, css-link-params-1, css-ruby-1, css-transforms-1), as the Bikeshed sources (Overview.bs) of w3c/csswg-drafts at the commit
 #                       in tools/css/DRAFTS_COMMIT, each pinned by SHA-256 in tools/css/DRAFTS_SHA256. A commit does not move; the rendered pages at drafts.csswg.org do.
 #                       A file already fetched is checked offline.
+#
+#   svg2/               The pages of SVG 2 (Candidate Recommendation of 2018-10-04: styling, types, coords) that the presentation attributes are read from, by the dated
+#                       address in tools/css/SVG2_URL and each pinned by SHA-256 in tools/css/SVG2_SHA256.
 #
 # None is committed: all are reproducible from a pin and a URL. Each
 # checkout is verified to be exactly its commit, and a mismatch leaves
@@ -255,6 +258,52 @@ else
 	done < "$houdini_manifest"
 	rm -rf "$drafts.hsrc"
 	houdini_ok || { printf 'houdini draft: the source does not hash as pinned (tools/css/HOUDINI_SHA256)\n' >&2; exit 1; }
+fi
+
+# ---- SVG 2: the pages that the presentation attributes are read from --------------------------------------------------------------------
+# tools/css/SVG2_URL is the dated address of a Candidate Recommendation and tools/css/SVG2_SHA256 lists, for each page, the SHA-256 it must have and the name it is kept
+# under, in third_party/css/svg2/. A dated address does not change. Nothing is kept unless every page hashes as pinned, and a copy that is here is checked offline.
+svg2_manifest="$root/tools/css/SVG2_SHA256"
+svg2_url=$(cat "$root/tools/css/SVG2_URL")
+svg2="$dest/svg2"
+svg2_verify() { # dir: every manifest page present and hashing as pinned, and nothing else in it
+	bad=0
+	while read -r sum file; do
+		case "$sum" in '#'*|'') continue ;; esac
+		if [ ! -f "$1/$file" ]; then
+			bad=1
+		elif [ "$(sha256sum "$1/$file" | cut -d' ' -f1)" != "$sum" ]; then
+			printf 'svg2: %s does not hash as pinned (%s)\n' "$file" "$sum" >&2
+			bad=1
+		fi
+	done < "$svg2_manifest"
+	for f in "$1"/*; do
+		[ -e "$f" ] || continue
+		awk -v n="$(basename "$f")" '$1 !~ /^#/ && $2 == n { found = 1 } END { exit !found }' "$svg2_manifest" || { printf 'svg2: %s is not in tools/css/SVG2_SHA256\n' "$(basename "$f")" >&2; bad=1; }
+	done
+	return $bad
+}
+if [ -d "$svg2" ] && svg2_verify "$svg2"; then
+	printf 'have    svg2 @ %s (tools/css/SVG2_SHA256)\n' "$svg2_url"
+else
+	printf 'fetch   svg2 (the pages of tools/css/SVG2_SHA256) @ %s\n' "$svg2_url"
+	rm -rf "$svg2.partial"
+	mkdir -p "$svg2.partial"
+	while read -r sum file; do
+		case "$sum" in '#'*|'') continue ;; esac
+		curl --fail --silent --show-error --location -o "$svg2.partial/$file" "$svg2_url/$file" || {
+			rm -rf "$svg2.partial"
+			printf 'svg2: %s could not be fetched from %s. Nothing was kept.\n' "$file" "$svg2_url" >&2
+			exit 1
+		}
+	done < "$svg2_manifest"
+	if ! svg2_verify "$svg2.partial"; then
+		rm -rf "$svg2.partial"
+		printf 'svg2: a page does not hash as pinned. Nothing was kept. Raising the pin is a deliberate edit of tools/css/SVG2_URL and SVG2_SHA256.\n' >&2
+		exit 1
+	fi
+	rm -rf "$svg2"
+	mv "$svg2.partial" "$svg2"
 fi
 
 # ---- the @webref/css package, the second reading of the same data -------------------------------------------------

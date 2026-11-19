@@ -108,7 +108,6 @@ typedef struct {
   uint32_t badd;    ///< The same for `<declaration-value>`, which also refuses a top-level `;` and `!`.
   bool ws_before;   ///< White space preceded it.
   bool in_anchor;   ///< It is an argument of an anchor() or anchor-size() function (where an anchor function may stand as a fallback).
-  bool unitless_arg; ///< It is an argument of a function of GTEXT_CSS_Match_Options::unitless_length_functions (a bare number is a length here).
 } mitem;
 
 /// An interval of positions, inclusive.
@@ -180,7 +179,7 @@ typedef struct {
   GTEXT_CSS_Status status;
   bool unitless;
   bool unitless_nested;             ///< ... also below the top level of the value.
-  const char * unitless_functions;  ///< ... also in the arguments of these functions (GTEXT_CSS_Match_Options::unitless_length_functions).
+  bool unitless_angle;              ///< A bare number is also an angle, in degrees (GTEXT_CSS_Match_Options::unitless_angle).
   uint32_t top_end;                 ///< The end item of the top-level view.
   size_t max_text;                  ///< Most bytes of the text of an opaque value (css_serialize.h's output limit).
   size_t max_math_depth, max_math_nodes; ///< The limits of one math function (0: the math layer's defaults).
@@ -601,32 +600,6 @@ static bool is_bad_for_decl(const GTEXT_CSS_Component_Value * v) {
       && (v->type == GTEXT_CSS_TOKEN_SEMICOLON || (v->type == GTEXT_CSS_TOKEN_DELIM && v->delim == '!'));
 }
 
-/// Whether the name of a function is in a list of lower-case names separated by single spaces (ASCII case-insensitive on the name).
-static bool function_in_list(const char * list, const GTEXT_CSS_String * name) {
-  if (!list || !name->data) {
-    return false;
-  }
-  const char * p = list;
-  while (*p) {
-    const char * end = strchr(p, ' ');
-    const size_t n = end ? (size_t)(end - p) : strlen(p);
-    if (n == name->length) {
-      size_t i = 0;
-      while (i < n && (name->data[i] | (name->data[i] >= 'A' && name->data[i] <= 'Z' ? 0x20 : 0)) == p[i]) {
-        i++;
-      }
-      if (i == n) {
-        return true;
-      }
-    }
-    if (!end) {
-      break;
-    }
-    p = end + 1;
-  }
-  return false;
-}
-
 static bool build_items(M * m, const GTEXT_CSS_Component_Value * values, size_t count) {
   pending_view * q = NULL;
   size_t qn = 0, qcap = 0, qi = 0;
@@ -672,7 +645,6 @@ static bool build_items(M * m, const GTEXT_CSS_Component_Value * values, size_t 
       if (pv.parent != NO_ITEM) {
         const GTEXT_CSS_Component_Value * pcv = m->items[pv.parent].cv;
         item->in_anchor = pcv->kind == GTEXT_CSS_VALUE_FUNCTION && (css_ascii_ieq(&pcv->value, "anchor") || css_ascii_ieq(&pcv->value, "anchor-size"));
-        item->unitless_arg = m->unitless && pcv->kind == GTEXT_CSS_VALUE_FUNCTION && function_in_list(m->unitless_functions, &pcv->value);
       }
       ws = false;
       const uint32_t index = (uint32_t)m->nitems++;
@@ -1557,13 +1529,17 @@ static int native_one(M * m, const gnode * g, uint32_t pos) {
       if (v->number == 0) {
         return range_for_dimension(g, t) ? in_range(g, 0.0) : 1;
       }
-      return m->unitless && (m->unitless_nested || it->end == m->top_end || it->unitless_arg) && (range_for_dimension(g, t) ? in_range(g, v->number) : 1);
+      return m->unitless && (m->unitless_nested || it->end == m->top_end) && (range_for_dimension(g, t) ? in_range(g, v->number) : 1);
     }
     /* fall through */
   case NT_ANGLE: case NT_TIME: case NT_FREQUENCY: case NT_RESOLUTION: case NT_FLEX: case NT_DECIBEL: case NT_SEMITONES:
   case NT_ANGLE_PERCENTAGE: case NT_TIME_PERCENTAGE: case NT_FREQUENCY_PERCENTAGE: {
     if (native_is_percentage_mixed(t) && tok(v, GTEXT_CSS_TOKEN_PERCENTAGE)) {
       return range_for_percentage(g) ? in_range(g, v->number) : 1;
+    }
+    if (t == NT_ANGLE && m->unitless_angle && tok(v, GTEXT_CSS_TOKEN_NUMBER)) {
+      /* a presentation attribute: SVG 2 "Attribute syntax" replaces every <angle> of the grammar with [<angle> | <number>], and the number is in degrees */
+      return range_for_dimension(g, t) ? in_range(g, v->number) : 1;
     }
     if (!tok(v, GTEXT_CSS_TOKEN_DIMENSION)) {
       return 0;
@@ -2919,8 +2895,13 @@ static bool terminal_value(builder * B, uint32_t node, uint32_t pos, uint32_t en
     value_init(out, GTEXT_CSS_VAL_DIMENSION, node, v);
     out->number = v->number;
     if (tok(v, GTEXT_CSS_TOKEN_NUMBER)) {
-      out->unit = GTEXT_CSS_UNIT_PX;
-      out->flags |= v->number == 0 ? GTEXT_CSS_VFLAG_ZERO_LENGTH : GTEXT_CSS_VFLAG_UNITLESS_LENGTH;
+      if (t == NT_ANGLE) {
+        out->unit = GTEXT_CSS_UNIT_DEG; /* a bare number of a presentation attribute (unitless_angle) */
+      }
+      else {
+        out->unit = GTEXT_CSS_UNIT_PX;
+        out->flags |= v->number == 0 ? GTEXT_CSS_VFLAG_ZERO_LENGTH : GTEXT_CSS_VFLAG_UNITLESS_LENGTH;
+      }
     }
     else {
       out->unit = unit_of(v);
@@ -3698,7 +3679,7 @@ GTEXT_CSS_Status gtext_css_match(const GTEXT_CSS_Compiled * compiled, const GTEX
   m.max_text = (options && options->max_text_bytes) ? options->max_text_bytes : ((size_t)256 << 20);
   m.unitless = options && options->unitless_length;
   m.unitless_nested = options && options->unitless_length_nested;
-  m.unitless_functions = options ? options->unitless_length_functions : NULL;
+  m.unitless_angle = options && options->unitless_angle;
   m.max_math_depth = options ? options->max_math_depth : 0;
   m.max_math_nodes = options ? options->max_math_nodes : 0;
   m.max_color_nesting = options ? options->max_color_nesting : 0;

@@ -38,7 +38,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 
-SMALL, HTML, CIRCLE, ENV = 4, 8, 16, 32
+SMALL, HTML, CIRCLE, ENV, INITIAL = 4, 8, 16, 32, 64   # INITIAL: an invalid presentation attribute is the initial value (bit 6 of o0)
 ALL = 0x3F          # every spelling, both sources
 ENTRIES_ONLY = 0
 
@@ -58,6 +58,7 @@ scenario("important", cs="fill: red !important", ca="fill=blue")
 scenario("rule-beats-hint", ca="stroke-width=2\nfill=red", en="0|stroke-width: 7px")
 scenario("hint-beats-nothing", ca="opacity=0.5\nfont-size=12")
 scenario("bad-attribute", 1, pa="fill=orange", ca="fill=12px\nstroke=nonsense\nstroke-width=wide")
+scenario("bad-attribute-important", 1, pa="fill=orange\nstroke-width=4", ca="fill=red !important\nstroke-width=\nopacity=1 2")
 scenario("unitless", ca="stroke-width=2\nfont-size=12\nletter-spacing=-1\nstroke-dasharray=4,5 6\nx=7\nwidth=8\nr=3\ncx=4")
 scenario("geometry-elements", ca="cx=1\ncy=2\nr=3\nrx=4\nry=5\nwidth=6\nheight=7\nx=8\ny=9")
 scenario("geometry-circle", ca="cx=1\ncy=2\nr=3\nrx=4")
@@ -109,6 +110,8 @@ scenario("unitless-functions", ca="filter=drop-shadow(blue 4 5 6)\nclip-path=cir
 scenario("unitless-functions-mixed", ca="filter=drop-shadow(4px 5 6px) drop-shadow(red calc(1px) 2)")
 scenario("unitless-functions-refused", ca="filter=drop-shadow(blue 4 5 6 7)\nclip-path=circle(calc(10))")
 scenario("unitless-functions-blur", ca="filter=blur(4)")
+scenario("unitless-angles", ca="filter=hue-rotate(45) blur(2)\nclip-path=polygon(0 0, 1 1, 0 1)")
+scenario("transform-syntax-only", ca="transform=translate(10px)\npatternTransform=rotate(45deg)\ngradientTransform=translate(5.) scale(1e39)")
 scenario("unitless-functions-style", cs="filter: drop-shadow(blue 4 5 6); clip-path: inset(1 2)", ca="filter=drop-shadow(4 5)")
 scenario("transform-origin", ca="transform-origin=10 20\nbaseline-shift=sub\nalignment-baseline=middle\ndominant-baseline=hanging")
 scenario("lighting", ca="flood-color=red\nflood-opacity=0.5\nlighting-color=blue\nstop-color=green\nstop-opacity=0.2\ncolor-interpolation=linearRGB")
@@ -157,6 +160,7 @@ def main():
         put(name + "-html", seed(shape | HTML, ALL, 0, parts))
         put(name + "-circle", seed(shape | CIRCLE, ALL, 0, parts))
         put(name + "-env", seed(shape | ENV, ALL, 0, parts))
+        put(name + "-initial", seed(shape | INITIAL, ALL, 0, parts))
         put(name + "-plain", seed(shape, 0x38, 0, parts))   # the spellings off: attributes are declarations
         put(name + "-style-only", seed(shape, 0x28, 0, parts))
         put(name + "-attributes-only", seed(shape, 0x1F, 0, parts))

@@ -2299,10 +2299,11 @@ check-css-package:
 	$(call REQUIRE_DATA,$(CSS_DATA_DIR)/webref-css/package,tools/css/fetch.sh); \
 	tools/css/run-registry-gates.sh package
 
-check-css-presentation: ## Fail if the table of presentation attributes is not what tools/css/svg_presentation.tsv says, or does not agree with the properties that must be computable
+check-css-presentation: ## Fail if the table of presentation attributes is not what tools/css/svg_presentation.tsv says, does not agree with the properties that must be computable, or a sentence of SVG 2 or CSS Transforms 1 that the sources quote is not in the pinned page
 check-css-presentation:
 	@$(REQUIRE_PYTHON3); \
-	python3 tools/css/gen-presentation-table.py --check --controls
+	$(call REQUIRE_DATA,$(CSS_DATA_DIR)/svg2,tools/css/fetch.sh); \
+	python3 tools/css/gen-presentation-table.py --check --controls && python3 tools/css/check-pinned-quotes.py && python3 tools/css/check-pinned-quotes.py --control
 
 check-css-color: ## Fail if the color space tables are not what tools/css/color_spaces.tsv generates, or a space of Color 4 has no row, and show the gate refuse each
 check-css-color:

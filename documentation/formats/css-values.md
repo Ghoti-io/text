@@ -218,8 +218,8 @@ representation.
 - **`0`** matches `<length>` as `0px` (Values 4, 6.2) and not `<angle>`, `<time>` or
   `<percentage>`. A bare non-zero number matches `<length>` only under the
   `unitless_length` option (HTML's quirk); which properties enable it is the
-  property layer's decision. `unitless_length_functions` names the functions whose own arguments also
-  read one (the property layer's attribute mode).
+  property layer's decision. `unitless_length_nested` lets the arguments of functions read one too, and `unitless_angle` lets a bare number match `<angle>`
+  as degrees (the property layer's attribute mode, which is SVG 2's replacement of `<length>`, `<length-percentage>` and `<angle>` in the grammar).
 - **A literal out of its range does not match.** A math function (`calc()`,
   `min()`, ..., `sign()`) matches **by name** every type the draft lets it stand for
   (`<length> <frequency> <angle> <time> <flex> <resolution> <percentage> <number> <integer>`,

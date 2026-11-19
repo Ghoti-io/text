@@ -52,8 +52,9 @@
  *
  * ## Errors in the document
  *
- * A declaration or an attribute that is not valid is **dropped**, as CSS says, and is a diagnostic (gtext_css_computed_diagnostic()); a lower-priority
- * declaration, the inherited value or the initial value stands. Dropping is not a failure: the call returns GTEXT_CSS_OK. A failure is a limit, memory,
+ * A declaration that is not valid is **dropped**, as CSS says, and is a diagnostic (gtext_css_computed_diagnostic()); a lower-priority declaration, the inherited value or the
+ * initial value stands. An SVG presentation attribute that is not valid is a diagnostic too and, by default, the property's initial value, which SVG 2 says it is
+ * (`presentation.invalid_is_initial`, css_presentation.h; with it off the attribute is dropped like a declaration). Neither is a failure: the call returns GTEXT_CSS_OK. A failure is a limit, memory,
  * a callback the environment or the element interface lacks (GTEXT_CSS_E_UNSUPPORTED, naming it), or a declared property the engine cannot compute.
  *
  * ## The dump and the hash

@@ -31,6 +31,8 @@
  *       bit 2 the limits are small (a few candidates, a few hundred tokens of substitution) so that every limit path is reached;
  *       bit 3 the child is an HTML element (not in the SVG namespace: it has no presentation attributes); bit 4 the child is a `circle`;
  *       bit 5 the substitution environment answers (`env()`, a condition, the sibling position);
+ *       bit 6 an invalid presentation attribute is the property's initial value (SVG 2, Attribute syntax) and not dropped (the check that an attribute and a declaration are
+ *       one thing always runs without it);
  *   o1  bits 0-3 the attribute-only spellings (unitless lengths, SVG transform syntax, path data, trimming); bit 4 the presentation attributes are read;
  *       bit 5 the `style` attribute is read (a zero byte reads neither: only the entries count); bit 6 the element is animated: the style options carry the `@keyframes`
  *       `a`, `b`, `c` and `d` and a clock that gives every effect a time from its name and index (bit 7: an effect of an odd index has no time, so that the untimed path is
@@ -378,7 +380,7 @@ GTEXT_CSS_Status fuzz_clock(void * user, GTEXT_CSS_Element_Handle, const GTEXT_C
   return GTEXT_CSS_OK;
 }
 
-GTEXT_CSS_Style_Options style_options_of(uint8_t o1) {
+GTEXT_CSS_Style_Options style_options_of(uint8_t o1, uint8_t o0) {
   static const bool kUntimedOdd = true, kAllTimed = false;
   static GTEXT_CSS_Style_Animation animation[2];
   GTEXT_CSS_Style_Options o = gtext_css_style_options_default();
@@ -387,6 +389,7 @@ GTEXT_CSS_Style_Options style_options_of(uint8_t o1) {
   o.presentation.svg_transform = o1 & 2;
   o.presentation.path_data = o1 & 4;
   o.presentation.trim_whitespace = o1 & 8;
+  o.presentation.invalid_is_initial = o0 & 64;
   o.layers = layer_registry();
   if (o1 & 64) {
     GTEXT_CSS_Style_Animation & a = animation[(o1 >> 7) & 1];
@@ -486,7 +489,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   }
   Entries entries;
   entries.make(sec[4]);
-  const GTEXT_CSS_Style_Options so = style_options_of(o1);
+  const GTEXT_CSS_Style_Options so = style_options_of(o1, o0);
 
   FaultAllocator fa;
   GTEXT_CSS_Compute_Context * ctx = nullptr;

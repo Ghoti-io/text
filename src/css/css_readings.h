@@ -102,17 +102,20 @@
 #define GTEXT_CSS_READING_ANIMATED_SRGB_ROUNDED 1
 
 /**
- * A bare number as a length inside the functions of an SVG presentation attribute, as in `filter="drop-shadow(blue 4 5 6)"` or `clip-path="circle(10 at 5 5)"`.
+ * A bare number as a length or an angle wherever the grammar of the property of an SVG presentation attribute has one, as in `filter="drop-shadow(blue 4 5 6) blur(2) hue-rotate(45)"`
+ * or `clip-path="circle(10 at 5 5)"`.
  *
- * SVG 2, 6.6 says a presentation attribute's value "is parsed as a value of that property", and the attribute-syntax section's allowance of a unitless `<length>` (a
- * user unit, px) is read here to reach the top level of the value (`stroke-width="2"`, `x="7"`, `transform-origin="10 20"`); nothing it quotes in the text this library has reaches
- * into a function's arguments. Chromium 156.0.8078.47 and Firefox 158.0.1 both do, in two groups of functions, and only for the attribute (the same text in a `style` attribute or in
- * a stylesheet is invalid in both): the basic shapes of `clip-path` (`inset()`, `circle()`, `ellipse()`, `polygon()`, `rect()`, `xywh()`, `shape()`) and `drop-shadow()` of `filter`, and no other property is known
- * to (`shape-outside` and `backdrop-filter` are not presentation attributes).
- * `blur()` takes one in Firefox and not in Chromium, and the text has none, so it is not valid. 1 reads a bare number as a length, in px, in the direct arguments of those functions in
- * those two properties of the attribute only. 0 reads one at the top level of the value only, which is what the text says. Used by the property layer's attribute mode (css_property.c, run_match());
- * held by the tests CssPresentation.ADropShadowTakesBareNumbersAsUserUnits and CssPresentation.TheFunctionsThatTakeABareNumberAreTheOnesBothBrowsersTake and CssPresentation.ABareNumberIsNoLengthWhereTheBrowsersAndTheTextRefuseIt.
+ * SVG 2, "Attribute syntax": "Replace all instances of <length> in grammar with [<length> | <number>]. Replace all instances of <length-percentage> in grammar with
+ * [<length-percentage> | <number>]. Replace all instances of <angle> in grammar with [<angle> | <number>]." (the grammar is the one "given in the attribute definition table's Value column",
+ * which for a presentation attribute is the property's), and "The insertion of the <number> symbols allows for unitless length and angles to be used in presentation attribute while
+ * disallowing them in corresponding property values." So the allowance is not the top level of the value only (what this library read before the page was pinned, from the sentence of
+ * SVG 2, 8.3 about `width` and `height` alone): it is every symbol of the grammar, inside a function's arguments too (a math function's contents are not symbols of the grammar, so
+ * `calc(4)` is still a number and not a length). 1 reads it so, in px for a length and in degrees for an angle. 0 reads a bare number as a length at the top level of the value
+ * only. Chromium 156.0.8078.47 and Firefox 158.0.1 read the lengths of `drop-shadow()` and of the basic shapes of `clip-path`, and in the attribute only; Firefox reads `blur(4)`
+ * as the text does and Chromium does not; neither reads `hue-rotate(45)`, which the text says is valid, so that one is the text's against both browsers. Used by the property layer's
+ * attribute mode (css_property.c, run_match()); held by the tests CssPresentation.ADropShadowTakesBareNumbersAsUserUnits, CssPresentation.EveryLengthAndAngleOfTheGrammarTakesABareNumber
+ * and CssPresentation.ABareNumberIsNoLengthWhereTheTextAndTheBrowsersRefuseIt.
  */
-#define GTEXT_CSS_READING_ATTRIBUTE_FUNCTION_UNITLESS_LENGTH 1
+#define GTEXT_CSS_READING_ATTRIBUTE_NUMBER_SYMBOLS 1
 
 #endif

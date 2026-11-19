@@ -147,9 +147,10 @@ The **parent** is the style of the element that this one *inherits from*, which 
 a `<use>` instantiates (SVG 2): the caller passes the style it computed for that element, and the call asks the tree nothing about it. A style shares what it
 inherits with its parent's, so a chain of n elements costs O(n).
 
-An attribute or a declaration that is not valid is **dropped**, as CSS says, and is a diagnostic (`gtext_css_computed_diagnostic()`): its kind, the property or
-attribute, and where it was, as an offset into the attribute's value plus the base offset the options give (so a caller maps it to its document). A lower-priority
-declaration, the inherited value or the initial value stands. A property the engine cannot compute is `GTEXT_CSS_E_UNSUPPORTED`, and the result names it.
+A declaration that is not valid is **dropped**, as CSS says, and is a diagnostic (`gtext_css_computed_diagnostic()`): its kind, the property, and where it was, as an offset
+into the declaration list. A lower-priority declaration, the inherited value or the initial value stands. An SVG presentation attribute that is not valid is a diagnostic as well (its
+offset is into the attribute's value plus the base offset the options give, so a caller maps it to its document) and by default the property's initial value (below), because
+SVG 2 says so; with `invalid_is_initial` off it is dropped like a declaration. A property the engine cannot compute is `GTEXT_CSS_E_UNSUPPORTED`, and the result names it.
 
 ## Presentation attributes
 
@@ -163,19 +164,38 @@ An attribute's value is mostly a CSS value, and where SVG gives it a spelling th
 
 | Option | The attribute |
 |--------|---------------|
-| `unitless_lengths` | a number is a length in user units, in every property that takes a `<length>`: `stroke-width="2"` is `2px`; and, in `filter` inside `drop-shadow()` and in `clip-path` inside `inset()`, `circle()`, `ellipse()`, `polygon()`, `rect()`, `xywh()` and `shape()`, in their own arguments: `filter="drop-shadow(blue 4 5 6)"`, `clip-path="circle(10 at 5 5)"` (below) |
-| `svg_transform` | `transform`, `gradientTransform` and `patternTransform` are SVG's list (`rotate(45 10 10)`, `translate(10,20)`, numbers without units); a value that is not one is read as CSS's |
+| `unitless_lengths` | a number is a length in user units and an angle in degrees, wherever the property's grammar has a `<length>`, a `<length-percentage>` or an `<angle>`: `stroke-width="2"` is `2px`, `filter="drop-shadow(blue 4 5 6) blur(2) hue-rotate(45)"`, `clip-path="circle(10 at 5 5)"` (below) |
+| `invalid_is_initial` | an attribute that is not a value of its property is the property's initial value, not dropped: `fill="12px"` is black below a `g` of `fill="orange"` (below) |
+| `svg_transform` | `transform`, `gradientTransform` and `patternTransform` are SVG's list (`rotate(45 10 10)`, `translate(10,20)`, numbers without units), and no other syntax: `translate(10px)` is not a value of the attribute (below) |
 | `path_data` | `d` is path data, and the property `d` holds the string (the pin's grammar of `d` is `none | <string>`; engines that take `path("...")` need a caller that writes it) |
 | `trim_whitespace` | the white space at both ends of a value is not part of it |
 
-**A bare number inside a function.** SVG 2 says a presentation attribute's value is parsed as a value of the property, and a number is a
-length at the top of that value. Inside a function the text says nothing, and Chromium 156 and Firefox 158 both read one in two groups of functions
-and only in the attribute (the same text in a `style` attribute or a stylesheet is invalid in both): the basic shapes of `clip-path` and
-`drop-shadow()` of `filter`. The attribute mode reads exactly those, in the function's own arguments and in those two properties (`backdrop-filter`, `shape-outside` and the rest are not attributes of the browsers): `drop-shadow(blue 4 5 6)`,
-`drop-shadow(4 5 6 blue)`, `drop-shadow(10 15)` and `circle(10 at 5 5)` are valid and compute to `4px 5px 6px` and so on. It does not reach `blur(4)`
-(Firefox reads it, Chromium and the text do not), a percentage (`drop-shadow(blue 3% 4% 5%)`), a number inside `calc()` (`calc(4)`; Chromium reads
-it, Firefox and the text do not), an extra value (`drop-shadow(blue 4 5 6 7)`), a comma-separated list (`drop-shadow(red, 10, 15)`) or an empty
-one (`drop-shadow()`), and the `style` attribute and sheets never read it. The reading is `GTEXT_CSS_READING_ATTRIBUTE_FUNCTION_UNITLESS_LENGTH`.
+**A bare number.** The pinned text of SVG 2 ("Attribute syntax") says how a presentation attribute is parsed: "Replace all instances of <length> in grammar with
+[<length> | <number>]. Replace all instances of <length-percentage> in grammar with [<length-percentage> | <number>]. Replace all instances of <angle> in grammar
+with [<angle> | <number>]." (the grammar being the property's), "The insertion of the <number> symbols allows for unitless length and angles to be used in presentation
+attribute while disallowing them in corresponding property values." So the allowance is every `<length>`, `<length-percentage>` and `<angle>` of the grammar, inside a
+function's arguments too, and it is the attribute's alone: `drop-shadow(blue 4 5 6)`, `drop-shadow(10 15)`, `circle(10 at 5 5)`, `blur(4)` and `hue-rotate(45)` are valid in an
+attribute and compute to `4px 5px 6px`, `blur(4px)`, `hue-rotate(45deg)` and so on, and invalid in a `style` attribute and in a sheet. A percentage is no length
+here (`drop-shadow(blue 3% 4% 5%)`), a number inside `calc()` is a number (`calc(4)`: the contents of a math function are no symbol of the grammar), an extra value
+(`drop-shadow(blue 4 5 6 7)`), a comma-separated list (`drop-shadow(red, 10, 15)`) and an empty one (`drop-shadow()`) are what the grammar says. Chromium 156 and Firefox 158
+agree with the text on the lengths of `drop-shadow()` and of the basic shapes; **where they differ from it** is `blur(4)` (Firefox reads it as the text does, Chromium does not),
+`hue-rotate(45)` (neither reads it) and `calc(4)` as a length (Chromium reads it); the text decides. The reading is `GTEXT_CSS_READING_ATTRIBUTE_NUMBER_SYMBOLS`.
+
+**An invalid attribute.** The same section says "When an attribute fails to parse according to the specified CSS Value Definition Syntax ... the attribute is assumed to
+have been specified as the given initial value", and that this "can override values that come from lower priority style sheet rules, such as those from the user agent style
+sheet" (its example is `overflow="invalid"` on `svg`, which is `visible`, not the `hidden` of the user agent sheet). The attribute is therefore a declaration of `initial`:
+`fill="12px"` below a `g` of `fill="orange"` is black, and the diagnostic is the same as for a dropped declaration. Chromium and Firefox both ignore such an attribute
+instead (the parent's `orange`, the user agent sheet's `hidden`); the text decides, and `invalid_is_initial = false` is the other reading. It is SVG's rule: it applies to the
+rows of a table that are `svg_namespace_only` (all of SVG 2's), so a table of HTML's presentational hints, whose attributes that do not parse are ignored, is not affected. The initial value
+is a candidate of its own and counts against `candidates.max_candidates`.
+
+**The transform attributes.** CSS Transforms 1 says "For backwards compatibility reasons, the syntax of the transform, patternTransform, gradientTransform attributes differ from
+the syntax of the 'transform' CSS property" and gives the grammar: `matrix`, `translate`, `scale`, `rotate` (with an optional center), `skewX` and `skewY`, written in exactly
+that case, each argument a CSS number token (no unit, no `5.`, no `calc()`), separated by white space or a comma, in a list separated by white space or a comma. The
+functions that only the property has (`translateX()`, `skew()`, `rotate3d()` and the rest) are not supported by the attribute, and `none` is not in the grammar. With
+`svg_transform` the attribute is read in that syntax and in no other: `transform="translate(10px)"` is invalid (the initial value `none`, a diagnostic at the `px`), as it is in
+Chromium and Firefox, which agree with the text, and the same text in a `style` attribute is CSS and is read. A number that does not fit a float (`translate(1e39)`) is
+refused as well, as both browsers do; the text does not say (Firefox also accepts `translate(10) , , rotate(45)`, which the grammar does not: a comma needs a transform after it).
 
 The HTML Standard's presentational hints are the same mechanism with a table of the caller's; the library ships SVG's only.
 

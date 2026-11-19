@@ -209,11 +209,11 @@ TEST(CssStyleRequirements, AnAuthorRuleBeatsAPresentationAttribute) {
   gtext_css_computed_free(s);
 }
 
-TEST(CssStyleRequirements, ABadAttributeIsDroppedWithADiagnosticAndTheValueIsInherited) {
-  /* | Bad attribute | `fill="12px"` | dropped, `fill` inherited or initial | diagnostic with offset into the value | */
+TEST(CssStyleRequirements, ABadAttributeIsTheInitialValueWithADiagnostic) {
+  /* | Bad attribute | `fill="12px"` | the initial value of `fill` | diagnostic with offset into the value | */
   Doc d(svg("<g id=\"g\" fill=\"orange\"><rect id=\"r\" fill=\"12px\"/></g><rect id=\"alone\" fill=\"12px\"/>"));
   ASSERT_EQ(d.status, GTEXT_CSS_OK);
-  EXPECT_EQ(d.value("r", "fill"), "orange");
+  EXPECT_EQ(d.value("r", "fill"), "black") << "SVG 2, Attribute syntax: an attribute that fails to parse \"is assumed to have been specified as the given initial value\", not inherited";
   EXPECT_EQ(d.value("alone", "fill"), "black") << "initial";
   GTEXT_CSS_Style_Diagnostic diag;
   ASSERT_EQ(gtext_css_computed_diagnostic_total(d.at("r")->style), 1u);
@@ -223,6 +223,44 @@ TEST(CssStyleRequirements, ABadAttributeIsDroppedWithADiagnosticAndTheValueIsInh
   EXPECT_EQ(std::string(diag.name.data, diag.name.length), "fill");
   EXPECT_EQ(diag.offset, 0u) << "the place in the attribute's value";
   EXPECT_FALSE(gtext_css_computed_diagnostic(d.at("r")->style, 1, &diag));
+}
+
+TEST(CssStyleRequirements, AnInvalidAttributeIsTheInitialValueAndTheOptionDropsItInstead) {
+  /* SVG 2, Attribute syntax: "When an attribute fails to parse ... the attribute is assumed to have been specified as the given initial value." Chromium and Firefox drop the
+     attribute instead (probed, 2026-11-19); the pinned text is the default and the option is the other reading. */
+  const std::string markup = "<g id=\"g\" fill=\"orange\" stroke-width=\"5\" opacity=\"0.5\"><rect id=\"r\" fill=\"\" stroke-width=\"bogus\" opacity=\"2x\"/>"
+                             "<rect id=\"i\" fill=\"red !important\"/><rect id=\"ok\" fill=\"blue\"/></g>";
+  Doc d(svg(markup));
+  ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+  EXPECT_EQ(d.value("r", "fill"), "black") << "an empty value is not a paint; it is the initial value, not the parent's";
+  EXPECT_EQ(d.value("r", "stroke-width"), "1px");
+  EXPECT_EQ(d.value("r", "opacity"), "1") << "(opacity is not inherited: the initial value is what it was anyway)";
+  EXPECT_EQ(d.value("i", "fill"), "black") << "\"an !important declaration within a presentation attribute will cause it to have an invalid value\"";
+  EXPECT_EQ(d.value("ok", "fill"), "blue");
+  EXPECT_EQ(gtext_css_computed_diagnostic_total(d.at("r")->style), 3u) << "the diagnostics are the same: each attribute is invalid";
+  GTEXT_CSS_Style_Options o = gtext_css_style_options_default();
+  o.presentation.invalid_is_initial = false;
+  Doc e(svg(markup), false, &o);
+  ASSERT_EQ(e.status, GTEXT_CSS_OK) << e.result.name;
+  EXPECT_EQ(e.value("r", "fill"), "orange") << "dropped: the inherited value stands";
+  EXPECT_EQ(e.value("r", "stroke-width"), "5px");
+  EXPECT_EQ(e.value("i", "fill"), "orange");
+  EXPECT_EQ(gtext_css_computed_diagnostic_total(e.at("r")->style), 3u);
+  /* the rule is SVG's: a table's rows that are not svg_namespace_only (HTML's presentational hints) are ignored when they do not parse, with the option on */
+  static const GTEXT_CSS_Presentation_Row rows[] = {{"fill", "fill", false, NULL, GTEXT_CSS_PRESENTATION_CSS}};
+  GTEXT_CSS_Presentation_Table table = {rows, 1};
+  GTEXT_CSS_Style_Options h = gtext_css_style_options_default();
+  h.presentation.table = &table;
+  ASSERT_TRUE(h.presentation.invalid_is_initial);
+  Doc g(svg(markup), false, &h);
+  ASSERT_EQ(g.status, GTEXT_CSS_OK) << g.result.name;
+  EXPECT_EQ(g.value("r", "fill"), "orange") << "a row that is not SVG's is dropped";
+  /* the options of a zeroed struct have none of the spellings, this one included */
+  GTEXT_CSS_Style_Options z = gtext_css_style_options_default();
+  memset(&z.presentation, 0, sizeof z.presentation);
+  Doc f(svg(markup), false, &z);
+  ASSERT_EQ(f.status, GTEXT_CSS_OK) << f.result.name;
+  EXPECT_EQ(f.value("r", "fill"), "orange");
 }
 
 TEST(CssStyleRequirements, ADiagnosticIsAnOffsetIntoTheValuePlusTheBase) {
@@ -572,28 +610,65 @@ TEST(CssPresentation, TheSvgTransformSyntaxIsCssTransformFunctions) {
   EXPECT_EQ(text_of("transform", "rotate(45, -10, 0)"), "translate(-10px, 0px) rotate(45deg) translate(10px, 0px)");
   EXPECT_EQ(text_of("transform", "skewX(30)skewY(-5)"), "skewX(30deg) skewY(-5deg)");
   EXPECT_EQ(text_of("transform", "matrix(1 0 0 1 5 6)"), "matrix(1, 0, 0, 1, 5, 6)");
-  EXPECT_EQ(text_of("transform", "matrix(1,0,0,1,5.,.5)"), "matrix(1, 0, 0, 1, 5.0, .5)") << "CSS does not read `5.`";
+  EXPECT_EQ(text_of("transform", "matrix(1,0,0,1,5,.5)"), "matrix(1, 0, 0, 1, 5, .5)");
   EXPECT_EQ(text_of("transform", "translate(1e1-2)"), "translate(1e1px, -2px)") << "numbers need no separator before a sign";
   EXPECT_EQ(text_of("transform", "  "), "none");
   EXPECT_EQ(text_of("transform", " translate(1 2) , rotate(3) "), "translate(1px, 2px) rotate(3deg)");
   EXPECT_EQ(text_of("patternTransform", "scale(2)"), "scale(2)");
 }
 
-TEST(CssPresentation, AValueThatIsNotSvgSyntaxIsLeftForThePropertyToJudgeAndSaysWhereSvgFailed) {
+TEST(CssPresentation, AValueThatIsNotSvgSyntaxIsNoValueOfTheTransformAttributeAndSaysWhereSvgFailed) {
+  /* CSS Transforms 1: "the syntax of the transform, patternTransform, gradientTransform attributes differ from the syntax of the 'transform' CSS property"; Chromium 156 and
+     Firefox 158.0.1 refuse each of these in the attribute (they answer `none`) and read the same text in a `style` attribute where the property takes it. */
   size_t err = 0;
-  EXPECT_EQ(text_of("transform", "translate(10px)", nullptr, &err), "translate(10px)");
+  EXPECT_EQ(text_of("transform", "translate(10px)", nullptr, &err), "<invalid argument>");
   EXPECT_EQ(err, 12u) << "at the `px` after the number";
-  EXPECT_EQ(text_of("transform", "rotate(1 2)", nullptr, &err), "rotate(1 2)") << "two arguments are no rotate";
+  EXPECT_EQ(text_of("transform", "rotate(1 2)", nullptr, &err), "<invalid argument>") << "two arguments are no rotate";
   EXPECT_EQ(err, 0u);
-  EXPECT_EQ(text_of("transform", "translate(1,)", nullptr, &err), "translate(1,)");
-  EXPECT_EQ(text_of("transform", "translate(1) ,", nullptr, &err), "translate(1) ,");
-  EXPECT_EQ(text_of("transform", "bogus(1)", nullptr, &err), "bogus(1)");
+  EXPECT_EQ(text_of("transform", "translate(1,)", nullptr, &err), "<invalid argument>");
+  EXPECT_EQ(text_of("transform", "translate(1) ,", nullptr, &err), "<invalid argument>");
+  EXPECT_EQ(text_of("transform", "bogus(1)", nullptr, &err), "<invalid argument>");
+  for (const char * v : {"translate(10px,20px)", "translate(10%)", "rotate(45deg)", "rotate(45deg 10 20)", "scale(2px)", "skewX(30deg)", "skew(30)", "skewx(30)", "SKEWX(30)",
+           "TRANSLATE(10)", "translateX(10)", "translateY(10px)", "scaleX(2)", "translate3d(1,2,3)", "rotateZ(45deg)", "perspective(10px)", "matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1)",
+           "matrix(1,0,0,1,10)", "none", "inherit", "translate(calc(10))", "translate(var(--x))", "translate(10) /*c*/ rotate(5)", "translate(10) , , rotate(45)", "translate(10) bogus(1)",
+           "translate(10.)", "translate(1e)", "translate(1 2 3)", "translate()", "rotate(1 2 3 4)", "translate(10 px)"}) {
+    EXPECT_EQ(text_of("transform", v, nullptr, &err), "<invalid argument>") << v;
+    EXPECT_NE(err, (size_t)-1) << v;
+  }
   size_t ok = 7;
   EXPECT_EQ(text_of("transform", "scale(2)", nullptr, &ok), "scale(2)");
   EXPECT_EQ(ok, (size_t)-1);
   GTEXT_CSS_Presentation_Options o = gtext_css_presentation_options_default();
   o.svg_transform = false;
   EXPECT_EQ(text_of("transform", "translate(10)", &o), "translate(10)") << "without the option the value is the property's own";
+  EXPECT_EQ(text_of("transform", "translate(10px)", &o), "translate(10px)");
+}
+
+TEST(CssPresentation, TheTransformAttributeIsReadInSvgSyntaxAndInNoOtherAndTheStyleAttributeIsCss) {
+  /* the three attributes of the text, in the SVG syntax, are the CSS functions; in the CSS syntax they are invalid (the initial value, `none`), as in both browsers */
+  Doc d(svg("<rect id=\"a\" transform=\"translate(10 20)\"/><rect id=\"b\" transform=\"translate(10px)\"/><rect id=\"c\" transform=\"rotate(45)\"/>"
+            "<rect id=\"d\" transform=\"rotate(45deg)\"/><rect id=\"e\" transform=\"scale(2) skewX(30)\"/><rect id=\"f\" transform=\"translateX(10)\"/>"
+            "<rect id=\"s\" style=\"transform: translate(10px)\"/><rect id=\"t\" transform=\"translate(1)\" style=\"transform: translate(10px)\"/>"
+            "<rect id=\"u\" transform=\"translate(10px)\" style=\"transform: translate(2px)\"/>"
+            "<pattern id=\"p\" patternTransform=\"scale(2)\"/><linearGradient id=\"l\" gradientTransform=\"rotate(30 5 5)\"/><linearGradient id=\"m\" gradientTransform=\"scale(2px)\"/>"));
+  ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+  EXPECT_EQ(d.value("a", "transform"), "translate(10px, 20px)");
+  EXPECT_EQ(d.value("b", "transform"), "none") << "translate(10px) is no value of the attribute";
+  EXPECT_EQ(d.value("c", "transform"), "rotate(45deg)");
+  EXPECT_EQ(d.value("d", "transform"), "none");
+  EXPECT_EQ(d.value("e", "transform"), "scale(2) skewX(30deg)");
+  EXPECT_EQ(d.value("f", "transform"), "none") << "translateX() is not a function of the attribute";
+  EXPECT_EQ(d.value("s", "transform"), "translate(10px)") << "the style attribute is a declaration: the CSS syntax";
+  EXPECT_EQ(d.value("t", "transform"), "translate(10px)") << "...and it is above the attribute";
+  EXPECT_EQ(d.value("u", "transform"), "translate(2px)");
+  EXPECT_EQ(d.value("p", "transform"), "scale(2)");
+  EXPECT_EQ(d.value("l", "transform"), "translate(5px, 5px) rotate(30deg) translate(-5px, -5px)");
+  EXPECT_EQ(d.value("m", "transform"), "none");
+  EXPECT_EQ(gtext_css_computed_diagnostic_total(d.at("b")->style), 1u);
+  GTEXT_CSS_Style_Diagnostic g;
+  ASSERT_TRUE(gtext_css_computed_diagnostic(d.at("b")->style, 0, &g));
+  EXPECT_EQ(g.kind, GTEXT_CSS_STYLE_DIAG_INVALID_VALUE);
+  EXPECT_EQ(g.offset, 12u) << "the `px`, where the syntax of the attribute stopped";
 }
 
 TEST(CssPresentation, PathDataIsAString) {
@@ -710,8 +785,9 @@ TEST(CssPresentation, TheFunctionsThatTakeABareNumberAreTheOnesBothBrowsersTake)
   EXPECT_EQ(p.value("r", "clip-path"), "polygon(0px 0px, 10px 10px, 0px 10px)");
 }
 
-TEST(CssPresentation, TheFunctionsAreThoseOfTheTwoPropertiesAndNoOtherPropertyHasThem) {
-  /* a table of the caller's can name any property: a bare number is a length in a function of filter and clip-path, which are what the browsers do it in */
+TEST(CssPresentation, EveryLengthAndAngleOfTheGrammarTakesABareNumber) {
+  /* SVG 2, Attribute syntax: every <length>, <length-percentage> and <angle> of the grammar is [<length> | <number>] and so on, in whatever property of whatever table
+     (a table of the caller's can name any property), inside a function too. */
   static const GTEXT_CSS_Presentation_Row rows[] = {
       {"sh", "shape-outside", false, NULL, GTEXT_CSS_PRESENTATION_CSS},
       {"bf", "backdrop-filter", false, NULL, GTEXT_CSS_PRESENTATION_CSS},
@@ -721,37 +797,71 @@ TEST(CssPresentation, TheFunctionsAreThoseOfTheTwoPropertiesAndNoOtherPropertyHa
   GTEXT_CSS_Presentation_Table table = {rows, 4};
   GTEXT_CSS_Style_Options o = gtext_css_style_options_default();
   o.presentation.table = &table;
-  Doc d(svg("<rect id=\"r\" sh=\"circle(10)\" bf=\"drop-shadow(blue 4 5)\" cp=\"drop-shadow(blue 4 5)\" fi=\"circle(10)\"/>"
-            "<rect id=\"q\" sh=\"circle(10px)\" bf=\"drop-shadow(blue 4px 5px)\" cp=\"circle(10)\" fi=\"drop-shadow(blue 4 5)\"/>"),
+  o.presentation.invalid_is_initial = false;
+  Doc d(svg("<rect id=\"r\" sh=\"circle(10)\" bf=\"drop-shadow(blue 4 5) hue-rotate(45)\" cp=\"drop-shadow(blue 4 5)\" fi=\"circle(10)\"/>"
+            "<rect id=\"q\" sh=\"circle(10px)\" bf=\"drop-shadow(blue 4px 5px)\" cp=\"circle(10)\" fi=\"drop-shadow(blue 4 5) blur(2)\"/>"),
       false, &o);
   ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
-  EXPECT_EQ(d.value("r", "shape-outside"), "none") << "not a property the browsers read it in";
-  EXPECT_EQ(d.value("r", "backdrop-filter"), "none");
+  EXPECT_EQ(d.value("r", "shape-outside"), "circle(10px)") << "no browser has the attribute; the grammar of the property has a <length> there";
+  EXPECT_EQ(d.value("r", "backdrop-filter"), "drop-shadow(blue 4px 5px 0px) hue-rotate(45deg)");
   EXPECT_EQ(d.value("r", "clip-path"), "none") << "drop-shadow() is not a shape";
   EXPECT_EQ(d.value("r", "filter"), "none") << "circle() is not a filter function";
   EXPECT_EQ(d.value("q", "shape-outside"), "circle(10px)");
   EXPECT_EQ(d.value("q", "backdrop-filter"), "drop-shadow(blue 4px 5px 0px)");
   EXPECT_EQ(d.value("q", "clip-path"), "circle(10px)");
-  EXPECT_EQ(d.value("q", "filter"), "drop-shadow(blue 4px 5px 0px)");
+  EXPECT_EQ(d.value("q", "filter"), "drop-shadow(blue 4px 5px 0px) blur(2px)");
 }
 
-TEST(CssPresentation, ABareNumberIsNoLengthWhereTheBrowsersAndTheTextRefuseIt) {
-  /* the cases of the resvg suite that keep their outcome, and the forms that are not the leniency */
+TEST(CssPresentation, BlurAndHueRotateTakeABareNumberAsThePinnedTextSays) {
+  /* blur( <length>? ) and hue-rotate( [ <angle> | <zero> ]? ): SVG 2 makes the symbols of the grammar take a number. Firefox 158 reads blur(4) and Chromium 156 does not;
+     neither reads hue-rotate(45), so that one is the text's alone (css_readings.h). */
+  struct C {
+    const char * value;
+    const char * expect;
+  };
+  const C cases[] = {
+      {"blur(4)", "blur(4px)"}, {"blur(2.5)", "blur(2.5px)"}, {"blur(0)", "blur(0px)"}, {"hue-rotate(45)", "hue-rotate(45deg)"}, {"hue-rotate(-90.5)", "hue-rotate(-90.5deg)"},
+      {"hue-rotate(0)", "hue-rotate(0deg)"}, {"hue-rotate(45deg)", "hue-rotate(45deg)"}, {"blur(4) hue-rotate(45) drop-shadow(red 1 2)", "blur(4px) hue-rotate(45deg) drop-shadow(red 1px 2px 0px)"},
+      {"BLUR(4)", "blur(4px)"}, {"hue-rotate(1e1)", "hue-rotate(10deg)"},
+  };
+  for (const C & c : cases) {
+    Doc d(svg(std::string("<rect id=\"r\" filter=\"") + c.value + "\"/>"));
+    ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+    EXPECT_EQ(d.value("r", "filter"), c.expect) << c.value;
+  }
+  /* an angle is not a length and a length is not an angle: the symbol decides */
+  for (const char * v : {"blur(4deg)", "hue-rotate(45px)", "hue-rotate(45%)", "blur(-4)", "blur(4 5)", "hue-rotate(45 90)", "hue-rotate(calc(45))", "blur(calc(4))"}) {
+    Doc d(svg(std::string("<rect id=\"r\" filter=\"") + v + "\"/>"));
+    ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+    EXPECT_EQ(d.value("r", "filter"), "none") << v << " is invalid: the initial value";
+    EXPECT_EQ(gtext_css_computed_diagnostic_total(d.at("r")->style), 1u) << v;
+  }
+}
+
+TEST(CssPresentation, ABareNumberIsNoLengthWhereTheTextAndTheBrowsersRefuseIt) {
+  /* the cases that keep their outcome: the forms that are not the leniency */
   const char * const refused[] = {
       "filter=\"drop-shadow(4)\"", "filter=\"drop-shadow(blue 4 5 6 7)\"", "filter=\"drop-shadow(red, 10, 15)\"", "filter=\"drop-shadow()\"",
       "filter=\"drop-shadow(blue 3% 4% 5%)\"", "filter=\"drop-shadow(blue 4 5 -6)\"", "filter=\"drop-shadow(blue calc(1px + 3) 5)\"", "filter=\"drop-shadow(blue calc(4) 5)\"",
-      "filter=\"blur(4)\"", "filter=\"drop-shadow(4 blue 5)\"", "filter=\"drop-shadow(blue 4 5 blur(1))\"", "filter=\"hue-rotate(45)\"",
+      "filter=\"drop-shadow(4 blue 5)\"", "filter=\"drop-shadow(blue 4 5 blur(1))\"", "filter=\"blur(4deg)\"", "filter=\"hue-rotate(45px)\"",
       "clip-path=\"circle(calc(10))\"", "clip-path=\"circle(-10)\"", "clip-path=\"polygon(0 0 10 10)\""};
   for (const char * a : refused) {
     Doc d(svg(std::string("<rect id=\"r\" ") + a + "/>"));
     ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
-    EXPECT_EQ(gtext_css_computed_diagnostic_total(d.at("r")->style), 1u) << a << " is dropped, with a diagnostic";
+    EXPECT_EQ(gtext_css_computed_diagnostic_total(d.at("r")->style), 1u) << a << " is invalid, with a diagnostic";
   }
   /* the same text is not a length in a style attribute or in a sheet */
   Doc s(svg("<style>#q{filter:drop-shadow(blue 4 5 6)}</style><rect id=\"r\" style=\"filter:drop-shadow(blue 4 5 6)\"/><rect id=\"q\"/>"));
   ASSERT_EQ(s.status, GTEXT_CSS_OK) << s.result.name;
   EXPECT_EQ(s.value("r", "filter"), "none");
   EXPECT_EQ(s.value("q", "filter"), "none");
+  /* ... nor a bare angle, nor a bare number in a function of any property */
+  Doc t(svg("<style>#q{filter:hue-rotate(45); clip-path: circle(10)}</style><rect id=\"r\" style=\"filter:hue-rotate(45); clip-path: inset(1)\"/><rect id=\"q\"/>"));
+  ASSERT_EQ(t.status, GTEXT_CSS_OK) << t.result.name;
+  EXPECT_EQ(t.value("r", "filter"), "none");
+  EXPECT_EQ(t.value("r", "clip-path"), "none");
+  EXPECT_EQ(t.value("q", "filter"), "none");
+  EXPECT_EQ(t.value("q", "clip-path"), "none");
 }
 
 TEST(CssPresentation, TheStyleAttributeOfAnHtmlElementIsReadAndItsAttributesAreNotPresentation) {
@@ -779,7 +889,7 @@ TEST(CssPresentation, AddingAnAttributeToACandidateSetMakesAHint) {
   EXPECT_EQ(pd.outcome, GTEXT_CSS_PRESENTATION_OK);
   ASSERT_EQ(gtext_css_candidates_add_presentation(set, &keys, row, "nonsense", 8, nullptr, &pd, nullptr), GTEXT_CSS_OK);
   EXPECT_EQ(pd.outcome, GTEXT_CSS_PRESENTATION_INVALID_VALUE);
-  EXPECT_EQ(gtext_css_candidates_count(set), 1u);
+  EXPECT_EQ(gtext_css_candidates_count(set), 2u) << "the attribute, and the initial value that SVG 2 makes of an invalid one";
   GTEXT_CSS_Cascade_Entry e;
   ASSERT_TRUE(gtext_css_candidates_entry(set, 0, &e));
   EXPECT_TRUE(e.presentational_hint);
@@ -787,6 +897,14 @@ TEST(CssPresentation, AddingAnAttributeToACandidateSetMakesAHint) {
   EXPECT_FALSE(e.element_attached);
   EXPECT_EQ(e.specificity.a, 0u);
   EXPECT_EQ(e.origin, GTEXT_CSS_ORIGIN_AUTHOR);
+  ASSERT_TRUE(gtext_css_candidates_entry(set, 1, &e));
+  EXPECT_TRUE(e.presentational_hint) << "the initial value is a hint of the same kind";
+  EXPECT_EQ(e.specificity.a, 0u);
+  GTEXT_CSS_Presentation_Options drop = gtext_css_presentation_options_default();
+  drop.invalid_is_initial = false;
+  ASSERT_EQ(gtext_css_candidates_add_presentation(set, &keys, row, "nonsense", 8, &drop, &pd, nullptr), GTEXT_CSS_OK);
+  EXPECT_EQ(pd.outcome, GTEXT_CSS_PRESENTATION_INVALID_VALUE);
+  EXPECT_EQ(gtext_css_candidates_count(set), 2u) << "dropped: nothing is added";
   EXPECT_EQ(gtext_css_candidates_add_presentation(nullptr, &keys, row, "red", 3, nullptr, &pd, nullptr), GTEXT_CSS_E_INVALID);
   EXPECT_EQ(gtext_css_candidates_add_presentation(set, &keys, nullptr, "red", 3, nullptr, &pd, nullptr), GTEXT_CSS_E_INVALID);
   gtext_css_candidates_free(set);
@@ -1101,26 +1219,46 @@ TEST(CssPresentation, TheEscapesOfAPathAreTheLineBreaksOfCss) {
   EXPECT_EQ(text_of("d", "M0 0 \\ L"), "\"M0 0 \\\\ L\"");
 }
 
-TEST(CssPresentation, TheNumbersOfAnSvgTransformKeepTheirExponentsAndGetTheirZeros) {
-  EXPECT_EQ(text_of("transform", "translate(1.e2)"), "translate(1.0e2px)") << "CSS reads no `1.e2`";
-  EXPECT_EQ(text_of("transform", "translate(5.)"), "translate(5.0px)");
-  EXPECT_EQ(text_of("transform", "translate(-5.)"), "translate(-5.0px)");
+TEST(CssPresentation, TheNumbersOfAnSvgTransformAreCssNumberTokensThatFitAFloat) {
+  /* CSS Transforms 1: the numbers of the attribute are the <number-token> of CSS Syntax: `5.` and `1.e2` are not (both browsers refuse them), a number that does not fit
+     a float is refused by both too (the text does not say). */
   EXPECT_EQ(text_of("transform", "translate(1E+2, 3e-1)"), "translate(1E+2px, 3e-1px)");
+  EXPECT_EQ(text_of("transform", "translate(1e1.5)"), "translate(1e1px, .5px)") << "the exponent ends the number; `.5` is the next";
+  EXPECT_EQ(text_of("transform", "translate(1.5.5)"), "translate(1.5px, .5px)");
+  EXPECT_EQ(text_of("transform", "translate(.5.5)"), "translate(.5px, .5px)");
+  EXPECT_EQ(text_of("transform", "translate(1-2)"), "translate(1px, -2px)");
   size_t err = 0;
-  EXPECT_EQ(text_of("transform", "translate(1e)", nullptr, &err), "translate(1e)") << "an exponent with no digits is not part of the number: the `e` is what fails";
-  EXPECT_EQ(err, 11u);
-  EXPECT_EQ(text_of("transform", "translate(1e+)", nullptr, &err), "translate(1e+)");
+  for (const char * v : {"translate(5.)", "translate(-5.)", "translate(1.e2)", "scale(2. 3)", "rotate(1. 2 3)", "translate(1e)", "translate(1e+)", "translate(-)", "translate(+.)"}) {
+    EXPECT_EQ(text_of("transform", v, nullptr, &err), "<invalid argument>") << v;
+  }
+  EXPECT_EQ(text_of("transform", "translate(5.)", nullptr, &err), "<invalid argument>");
+  EXPECT_EQ(err, 11u) << "at the point that no digit follows: the number ends before it";
+  EXPECT_EQ(text_of("transform", "translate(1e)", nullptr, &err), "<invalid argument>") << "an exponent with no digits is not part of the number: the `e` is what fails";
   EXPECT_EQ(err, 11u);
   EXPECT_EQ(text_of("transform", "rotate(10 0 0)"), "translate(0px, 0px) rotate(10deg) translate(0px, 0px)") << "a zero has no sign when it is negated";
   EXPECT_EQ(text_of("transform", "rotate(10 -0 0.0)"), "translate(-0px, 0.0px) rotate(10deg) translate(0px, 0.0px)") << "...but the written one keeps its sign";
+  /* the range of a float, 3.4028234663852886e38 */
+  for (const char * ok : {"translate(1e38)", "translate(3.4e38)", "translate(340282346638528859811704183484516925440)", "translate(0.000000000000000000000000000000000000000000001)",
+           "translate(1e-400)", "translate(0.0e999)", "translate(00000000000000000000000000000000000000001)", "translate(0.340282346638528859811704183484516925440e39)",
+           "translate(340282346638528859811704183484516925440.0000000000000000000000000000000000000000000000000000)",
+           "translate(340282346638528859811704183484516925440000000000000000000000000e-24)"}) {
+    EXPECT_NE(text_of("transform", ok), "<invalid argument>") << ok;
+  }
+  for (const char * bad : {"translate(3.5e38)", "translate(1e39)", "translate(1e400)", "translate(-1e39)", "scale(1e39)", "rotate(1e39)", "rotate(1 1e39 0)", "matrix(1e39 0 0 1 0 0)",
+           "translate(340282346638528860000000000000000000001)", "translate(3402823466385288600000000000000000000000)", "translate(0.34028236e39)", "translate(34028236e31)",
+           "translate(3.4028236e38)", "translate(3.4028234663852886e38)", "translate(340282346638528859811704183484516925440.1)", "translate(340282346638528859811704183484516925441)",
+           "translate(3402823466385288598117041834845169254400000000000000000000000000000001e-31)",
+           "translate(340282346638528859811704183484516925440.0000000000000000000000000000000000000000000000000001)"}) {
+    EXPECT_EQ(text_of("transform", bad, nullptr, &err), "<invalid argument>") << bad;
+  }
 }
 
 TEST(CssPresentation, ACommaNeedsANumberAfterItAndSaysWhere) {
   size_t err = 99;
-  EXPECT_EQ(text_of("transform", "translate(1,)", nullptr, &err), "translate(1,)");
+  EXPECT_EQ(text_of("transform", "translate(1,)", nullptr, &err), "<invalid argument>");
   EXPECT_EQ(err, 12u) << "at the parenthesis after the comma";
   err = 99;
-  EXPECT_EQ(text_of("transform", "translate(1) ,", nullptr, &err), "translate(1) ,");
+  EXPECT_EQ(text_of("transform", "translate(1) ,", nullptr, &err), "<invalid argument>");
   EXPECT_EQ(err, 14u) << "at the end, where the transform the comma needs is not";
   err = 99;
   EXPECT_EQ(text_of("transform", "translate(1),scale(2)", nullptr, &err), "translate(1px) scale(2)") << "a comma between transforms is allowed";
@@ -1441,7 +1579,7 @@ TEST(CssStyleFixturesSpot, TheValuesThatTheStandardGivesForTheFixtures) {
   EXPECT_EQ(d.value("style-wins", "stroke-width"), "5px");
   EXPECT_EQ(d.value("important", "fill"), "green");
   EXPECT_EQ(d.value("bad-attribute", "fill"), "black");
-  EXPECT_EQ(d.value("bad-inherits", "fill"), "orange");
+  EXPECT_EQ(d.value("bad-inherits", "fill"), "black") << "an invalid attribute is the initial value, not the parent's (SVG 2, Attribute syntax)";
   EXPECT_EQ(d.value("explicit-inherit", "stroke"), "none");
   EXPECT_EQ(d.value("initial", "stroke-width"), "1px");
   EXPECT_EQ(d.value("text-units", "font-size"), "12px");
