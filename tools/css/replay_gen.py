@@ -88,7 +88,7 @@ def lit(f):
         return 'R.r[%s]' % jstr(v)
     if kind == 'e':
         return 'R.e[%s]' % jstr(v)
-    if kind in ('o', 'a'):   # an object, or an Animation (`R.o` holds both: an animation is the object getAnimations() gave)
+    if kind in ('o', 'a', 'f'):   # an object, an Animation or an effect (`R.o` holds them: an animation is the object getAnimations() gave, an effect the one the page made or read)
         return 'R.o[%s]' % jstr(v)
     raise ValueError('operand %r' % f)
 
@@ -121,6 +121,71 @@ def event_field(ev, field):
     if field == 'propertyName':
         return '(%s.propertyName !== undefined ? %s.propertyName : %s.animationName)' % (ev, ev, ev)
     return '%s.%s' % (ev, field)
+
+
+def js_num(x):
+    """A number of the JSON the evaluator writes (Infinity and NaN are bare words) as a JavaScript literal."""
+    if isinstance(x, float) and x != x:
+        return 'NaN'
+    if x in (float('inf'), float('-inf')):
+        return 'Infinity' if x > 0 else '-Infinity'
+    return json.dumps(x)
+
+
+def js_value(v):
+    if isinstance(v, str):
+        return jstr(v)
+    if v is None:
+        return 'null'
+    if isinstance(v, bool):
+        return 'true' if v else 'false'
+    if isinstance(v, (int, float)):
+        return js_num(v)
+    if isinstance(v, list):
+        return '[' + ', '.join(js_value(x) for x in v) + ']'
+    raise ValueError('value %r' % (v,))
+
+
+def kf_js(text):
+    """The `keyframes` argument of an op, as the JavaScript the page wrote it (the values are the strings the conversion of the IDL makes of them)."""
+    v = json.loads(text, parse_constant=lambda c: float(c.replace('Infinity', 'inf').replace('NaN', 'nan')))
+    if v['k'] == 'null':
+        return 'null'
+    if v['k'] == 'array':
+        out = []
+        for f in v['frames']:
+            if f is None:
+                out.append('null')
+                continue
+            members = []
+            if 'offset' in f:
+                members.append('offset: ' + js_value(f['offset']))
+            if 'easing' in f:
+                members.append('easing: ' + js_value(f['easing']))
+            if 'composite' in f:
+                members.append('composite: ' + js_value(f['composite']))
+            members += ['[%s]: %s' % (jstr(n), js_value(x)) for n, x in f['props']]
+            out.append('{' + ', '.join(members) + '}')
+        return '[' + ', '.join(out) + ']'
+    members = []
+    for k in ('offset', 'easing', 'composite'):
+        if v[k]:
+            members.append('%s: %s' % (k, js_value(v[k])))
+    members += ['[%s]: %s' % (jstr(n), js_value(x)) for n, x in v['props']]
+    return '{' + ', '.join(members) + '}'
+
+
+def timing_js(t):
+    return '{' + ', '.join('%s: %s' % (k, js_value(x)) for k, x in t.items()) + '}'
+
+
+def options_js(text):
+    v = json.loads(text, parse_constant=lambda c: float(c.replace('Infinity', 'inf').replace('NaN', 'nan')))
+    members = [(k, x) for k, x in v['timing'].items()]
+    for k in ('composite', 'iterationComposite', 'pseudoElement'):
+        if k in v:
+            members.append((k, v[k]))
+    return '{' + ', '.join('%s: %s' % (k, js_value(x)) for k, x in members) + '}'
 
 
 def translate(op):
@@ -290,7 +355,48 @@ def translate(op):
     if n == 'aset':
         return 'R.o[%s].%s = %s;' % (jstr(a[0]), a[1], jstr(a[2]))
     if n == 'tget':
+        if a[1].startswith('f'):   # an effect handle: `animation.effect` read, or a KeyframeEffect the page made
+            return '%s = R.o[%s].%s().%s;' % (Rg(a[0]), jstr(a[1]), 'getTiming' if a[2] == 'timing' else 'getComputedTiming', a[3])
         return '%s = R.o[%s].effect.%s().%s;' % (Rg(a[0]), jstr(a[1]), 'getTiming' if a[2] == 'timing' else 'getComputedTiming', a[3])
+    if n == 'anew':
+        return 'R.o[%s] = %s.animate(%s, %s);' % (jstr(a[0]), E(a[1][2:]) if a[1].startswith('e:') else 'null', kf_js(a[2]), options_js(a[3]))
+    if n == 'animnew':
+        effect = lit(a[1])
+        timeline = {'d': ', document.timeline', 'n': ', null', 'u': ''}[a[2]]
+        return 'R.o[%s] = new Animation(%s%s);' % (jstr(a[0]), effect, timeline)
+    if n == 'enew':
+        return 'R.o[%s] = new KeyframeEffect(%s, %s, %s);' % (jstr(a[0]), lit(a[1]), kf_js(a[2]), options_js(a[3]))
+    if n == 'ecopy':
+        return 'R.o[%s] = new KeyframeEffect(%s);' % (jstr(a[0]), lit(a[1]))
+    if n == 'aeff':
+        return 'R.o[%s] = R.o[%s].effect;' % (jstr(a[0]), jstr(a[1]))
+    if n == 'asettl':
+        return 'R.o[%s].timeline = %s;' % (jstr(a[0]), 'null' if a[1] == 'n' else 'document.timeline')
+    if n == 'aseteff':
+        return 'R.o[%s].effect = %s;' % (jstr(a[0]), lit(a[1]))
+    if n == 'eget':
+        return '%s = R.o[%s].%s;' % (Rg(a[0]), jstr(a[1]), a[2])
+    if n == 'eset':
+        return 'R.o[%s].%s = %s;' % (jstr(a[0]), a[1], lit(a[2]))
+    if n == 'etarget':
+        return '%s = R.o[%s].target;' % (E(a[0]), jstr(a[1]))
+    if n == 'esettarget':
+        return 'R.o[%s].target = %s;' % (jstr(a[0]), lit(a[1]))
+    if n == 'ekf':
+        return 'R.l[%s] = R.o[%s].getKeyframes();' % (jstr(a[0]), jstr(a[1]))
+    if n == 'kflen':
+        return '%s = R.l[%s].length;' % (Rg(a[0]), jstr(a[1]))
+    if n == 'kfget':
+        return '%s = R.l[%s][%s][%s];' % (Rg(a[0]), jstr(a[1]), a[2], jstr(a[3]))
+    if n == 'kfhas':
+        return '%s = R.l[%s][%s].hasOwnProperty(%s);' % (Rg(a[0]), jstr(a[1]), a[2], jstr(a[3]))
+    if n == 'kfcmp':
+        want = json.loads(a[2])
+        return 'assert_frames_equal(R.l[%s][%s], %s, %s);' % (jstr(a[0]), a[1], '{' + ', '.join('%s: %s' % (jstr(k), js_value(x)) for k, x in want.items()) + '}', jstr(a[3]))
+    if n == 'esetkf':
+        return 'R.o[%s].setKeyframes(%s);' % (jstr(a[0]), kf_js(a[1]))
+    if n == 'eupdate':
+        return 'R.o[%s].updateTiming(%s);' % (jstr(a[0]), timing_js(json.loads(a[1])['timing']))
     if n == 'iftrue':
         return 'if (%s) {' % lit(a[0])
     if n == 'iffalse':

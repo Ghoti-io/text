@@ -50,6 +50,7 @@ browsers (tools/oracle/css_page_record.py) is the third: the gate requires all o
 """
 import collections
 import html.parser
+import json
 import math
 import os
 import re
@@ -264,6 +265,8 @@ def truthy(v):
         raise Unmodeled('computed-value-expression')
     if isinstance(v, (HostElem, HostObj)) and v.nullable:
         raise Unmodeled('host-node-may-be-null')
+    if isinstance(v, HostEffect) and v.nullable:
+        raise Unmodeled('host-effect-may-be-null')   # `animation.effect` may be null: a fact of the library
     if v is UNDEF or v is None or v is False:
         return False
     if isinstance(v, float):
@@ -294,6 +297,8 @@ def typeof(v):
 def strict_eq(a, b):
     if isinstance(a, Rt) or isinstance(b, Rt):
         raise Unmodeled('computed-value-expression')
+    if isinstance(a, HostEffect) or isinstance(b, HostEffect):
+        raise Unmodeled('animation-effect-identity')   # every read of `animation.effect` is a fresh handle here: the identity is the library's (assert_equals asks it)
     if isinstance(a, bool) or isinstance(b, bool):
         return isinstance(a, bool) and isinstance(b, bool) and a == b
     if isinstance(a, float) and isinstance(b, float):
@@ -310,6 +315,8 @@ def strict_eq(a, b):
 def loose_eq(a, b):
     if isinstance(a, Rt) or isinstance(b, Rt):
         raise Unmodeled('computed-value-expression')
+    if isinstance(a, HostEffect) or isinstance(b, HostEffect):
+        raise Unmodeled('animation-effect-identity')
     if (a is None or a is UNDEF) and (b is None or b is UNDEF):
         return True
     if a is None or a is UNDEF or b is None or b is UNDEF:
@@ -374,6 +381,8 @@ def operand(v):
         return 'o:' + v.name
     if isinstance(v, HostAnim):
         return 'a:' + v.name   # an Animation object: two are the same when they are the same animation, which the runner knows
+    if isinstance(v, HostEffect):
+        return 'f:' + v.anim   # an effect: two are the same when they are the same effect, which the runner knows
     if isinstance(v, str):
         return 's:' + v
     if isinstance(v, bool):
@@ -483,11 +492,26 @@ class HostPromise(Host):
 
 
 class HostEffect(Host):
-    """`animation.effect`: of the animation named ``anim``."""
+    """An effect: `animation.effect` (``aeff``: the effect the animation has now, which may be null) or `new KeyframeEffect(...)` (``enew``). ``anim`` is its name in the program (an effect handle the runner
+    keeps; the field keeps the name it had when only `animation.effect` made one). ``nullable``: it came from `animation.effect`, which the library may say is null."""
 
-    def __init__(self, anim):
+    def __init__(self, anim, nullable=False):
         Host.__init__(self, 'effect')
         self.anim = anim
+        self.nullable = nullable
+
+
+class HostKfList(Host):
+    """The result of `effect.getKeyframes()`: a static array whose length only the library knows (``ekf`` made it)."""
+
+
+class HostKfFrame(Host):
+    """One keyframe of a ``HostKfList``: its members are read from the library when they are read."""
+
+    def __init__(self, lst, index):
+        Host.__init__(self, 'kfframe')
+        self.lst = lst
+        self.index = index
 
 
 class HostTiming(Host):
@@ -743,7 +767,7 @@ class Interp:
         for name in ('test', 'promise_test', 'setup', 'assert_equals', 'assert_not_equals', 'assert_true', 'assert_false', 'assert_array_equals', 'assert_approx_equals', 'assert_greater_than',
                      'assert_less_than', 'assert_greater_than_equal', 'assert_less_than_equal', 'assert_in_array', 'assert_unreached', 'assert_regexp_match', 'assert_class_string',
                      'add_completion_callback', 'done', 'getComputedStyle', 'parseInt', 'parseFloat', 'isNaN', 'String', 'Number', 'Boolean', 'Array', 'Object', 'JSON', 'isFinite',
-                     'assert_throws_dom', 'assert_throws_js', 'assert_throws_exactly', 'assert_implements', 'assert_implements_optional', 'promise_rejects_dom'):
+                     'assert_throws_dom', 'assert_throws_js', 'assert_throws_exactly', 'assert_implements', 'assert_implements_optional', 'promise_rejects_dom', 'assert_own_property'):
             g[name] = Native(getattr(self, 'n_' + name, None) or self.n_unsupported(name), name)
 
     def n_matchMedia(self, interp, this, args):
@@ -779,7 +803,9 @@ class Interp:
         a read, a sort of values only the library has, a comparison of two times) are the runner's."""
         if 'query_is_css_parseable' in scope.vars and isinstance(scope.vars['query_is_css_parseable'], Func):
             scope.vars['query_is_css_parseable'] = Native(self.n_query_is_css_parseable, 'query_is_css_parseable')
-        for name, native in (('waitForAnimationFrames', self.n_waitForAnimationFrames), ('waitForNextFrame', self.n_waitForNextFrame), ('assert_end_event_batch_equal', self.n_assert_end_event_batch_equal)):
+        for name, native in (('waitForAnimationFrames', self.n_waitForAnimationFrames), ('waitForNextFrame', self.n_waitForNextFrame), ('assert_end_event_batch_equal', self.n_assert_end_event_batch_equal),
+                             ('assert_frames_equal', self.n_assert_frames_equal), ('assert_frame_lists_equal', self.n_assert_frame_lists_equal), ('armTimeoutWhenReady', self.n_armTimeoutWhenReady),
+                             ('assert_own_property', self.n_assert_own_property)):
             if isinstance(scope.vars.get(name), Func):
                 scope.vars[name] = Native(native, name)
 
@@ -985,7 +1011,7 @@ class Interp:
             raise Unmodeled('host-EventWatcher-types')
         self.need_event_types(types)
         timeout = args[3] if len(args) > 3 and args[3] is not UNDEF else None
-        if timeout is not None and not isinstance(timeout, Func):
+        if timeout is not None and not isinstance(timeout, (Func, Native)):
             raise Unmodeled('host-EventWatcher-timeout')
         name = self.new_node('w')
         self.emit('lw', name, args[1].name, *types)
@@ -1088,6 +1114,8 @@ class Interp:
             return self.promise_identity('assert_equals', a, msg)
         if isinstance(a[0], HostAnim) or isinstance(a[1], HostAnim):
             return self.animation_identity('assert_equals', a, msg)
+        if isinstance(a[0], HostEffect) or isinstance(a[1], HostEffect):
+            return self.effect_identity('assert_equals', a, msg)
         if isinstance(a[0], Rt) or isinstance(a[1], Rt) or (isinstance(a[0], (HostElem, HostObj)) and a[0] is not a[1]) or (isinstance(a[1], (HostElem, HostObj)) and a[0] is not a[1]):
             if any(not isinstance(x, (Rt, str, float, bool, HostElem, HostObj)) and x is not None and x is not UNDEF for x in a[:2]):
                 raise Unmodeled('computed-value-compared-with-object')
@@ -1106,6 +1134,8 @@ class Interp:
             return self.promise_identity('assert_not_equals', a, msg)
         if isinstance(a[0], HostAnim) or isinstance(a[1], HostAnim):
             return self.animation_identity('assert_not_equals', a, msg)
+        if isinstance(a[0], HostEffect) or isinstance(a[1], HostEffect):
+            return self.effect_identity('assert_not_equals', a, msg)
         if isinstance(a[0], Rt) or isinstance(a[1], Rt) or (isinstance(a[0], (HostElem, HostObj)) and a[0] is not a[1]) or (isinstance(a[1], (HostElem, HostObj)) and a[0] is not a[1]):
             if any(not isinstance(x, (Rt, str, float, bool, HostElem, HostObj)) and x is not None and x is not UNDEF for x in a[:2]):
                 raise Unmodeled('computed-value-compared-with-object')
@@ -1224,6 +1254,59 @@ class Interp:
         if not (isinstance(a[0], HostAnim) and isinstance(a[1], HostAnim)):
             raise Unmodeled('animation-object-identity')   # an Animation compared with a value of another kind
         self.runtime_assert(name, a[:2], msg)
+        return UNDEF
+
+    def effect_identity(self, name, a, msg):
+        """`assert_equals` and `assert_not_equals` of an effect with an effect or null: the same object when the library says they are the same effect (``f:`` operands, resolved when the op runs)."""
+        if not all(isinstance(x, HostEffect) or x is None for x in a[:2]):
+            raise Unmodeled('animation-effect-identity')
+        self.runtime_assert(name, a[:2], msg)
+        return UNDEF
+
+    def n_assert_frames_equal(self, interp, this, a):
+        """css-animations/support/testcommon.js `assert_frames_equal(actual, expected, name)`: the keys of the two sorted and equal, then each value (`offset` when a number and `computedOffset` within a
+        tolerance). The keys of a keyframe the library made are only known to it, so the runner compares (``kfcmp``) with the expected members as data."""
+        self.need_test()
+        if len(a) < 2 or not isinstance(a[0], HostKfFrame) or not isinstance(a[1], JObj):
+            raise Unmodeled('helper-assert_frames_equal-arguments')
+        name = to_str(a[2]) if len(a) > 2 and isinstance(a[2], str) else ''
+        want = {}
+        for k, v in a[1].items():
+            if not isinstance(v, (str, float)) and v is not None:
+                raise Unmodeled('helper-assert_frames_equal-arguments')
+            want[k] = v
+        self.emit('kfcmp', a[0].lst, a[0].index, json.dumps(want), name)
+        return UNDEF
+
+    def n_armTimeoutWhenReady(self, interp, this, args):
+        """testcommon.js `armTimeoutWhenReady(animation, timeoutPromise)`: the timeout function of an EventWatcher. The helper's function waits for `animation.ready` when the animation is pending and then starts
+        the timeout, so that the time a user agent takes to make the animation ready is not counted against the events; its own branch on `animation.pending` is a fact of the library. The model's `ready` is
+        the next frame, so the timeout here is the budget of the frames of `timeoutPromise` from the wait (one more frame than the helper gives an animation that is not pending, which only a timeout, never an
+        event, can tell apart); a test that passes has the events in the first frames in both."""
+        if len(args) < 2 or not isinstance(args[0], HostAnim) or not isinstance(args[1], (Func, Native)):
+            raise Unmodeled('helper-armTimeoutWhenReady-arguments')
+        return Native(lambda i, t, a: self.call(args[1], UNDEF, []), 'armTimeoutWhenReady')
+
+    def n_assert_own_property(self, interp, this, a):
+        """testharness.js `assert_own_property(object, property_name, description)` of a keyframe `getKeyframes()` returned: the keyframe has the property (``kfhas``)."""
+        self.need_test()
+        if len(a) < 2 or not isinstance(a[0], HostKfFrame) or not isinstance(a[1], str):
+            raise Unmodeled('harness-assert_own_property-argument')
+        r = self.new_reg()
+        self.emit('kfhas', r, a[0].lst, a[0].index, a[1])
+        self.runtime_assert('assert_true', [Rt(r, 'b')], 'expected property %s missing%s' % (a[1], (' ' + self.desc(a, 2)) if len(a) > 2 else ''))
+        return UNDEF
+
+    def n_assert_frame_lists_equal(self, interp, this, a):
+        """testcommon.js `assert_frame_lists_equal(actual, expected)`: the lengths, then each keyframe."""
+        self.need_test()
+        if len(a) < 2 or not isinstance(a[0], HostKfList) or not isinstance(a[1], JArr):
+            raise Unmodeled('helper-assert_frame_lists_equal-arguments')
+        r = self.new_reg()
+        self.emit('kflen', r, a[0].name)
+        self.runtime_assert('assert_equals', [Rt(r, 'n'), float(len(a[1]))], 'Number of keyframes should match')
+        for i, ex in enumerate(a[1]):
+            self.n_assert_frames_equal(interp, this, [HostKfFrame(a[0].name, str(i)), ex, 'Keyframe #%d' % i])
         return UNDEF
 
     def promise_identity(self, name, a, msg):
@@ -2043,6 +2126,33 @@ class Interp:
             n = self.new_node('o')
             self.emit('newsheet', n, media, disabled)
             return HostObj(n, 'sheet', False)
+        if name == 'KeyframeEffect':
+            self.need_dom()
+            if not args:
+                raise Unmodeled('new-KeyframeEffect-arguments')   # a TypeError of the page
+            n = self.new_node('f')
+            if isinstance(args[0], HostEffect):
+                self.emit('ecopy', n, args[0].anim)
+            elif args[0] is None or isinstance(args[0], HostElem):
+                self.emit('enew', n, operand(args[0]), kf_json(args[1] if len(args) > 1 else UNDEF), options_json(args[2] if len(args) > 2 else UNDEF))
+            else:
+                raise Unmodeled('new-KeyframeEffect-target')
+            return HostEffect(n)
+        if name == 'Animation':
+            self.need_dom()
+            if len(args) > 2 or (args and args[0] is not None and args[0] is not UNDEF and not isinstance(args[0], HostEffect)):
+                raise Unmodeled('new-Animation-arguments')
+            timeline = 'u'
+            if len(args) > 1:
+                if args[1] is None:
+                    timeline = 'n'
+                elif isinstance(args[1], HostTimeline):
+                    timeline = 'd'
+                elif args[1] is not UNDEF:
+                    raise Unmodeled('new-Animation-timeline')
+            n = self.new_node('a')
+            self.emit('animnew', n, operand(args[0]) if args and isinstance(args[0], HostEffect) else 'N:', timeline)
+            return HostAnim(n)
         if name == 'Promise':
             return self.loop.new_promise(args[0] if args else UNDEF)
         if name == 'EventWatcher':
@@ -2679,6 +2789,8 @@ def window_get(interp, w, key, for_call):
         return g[key]
     if key in g:
         return g[key]
+    if interp.in_helper and not key.startswith('on'):
+        return UNDEF   # a helper tests whether the window has the function it is about to define (`if (!window.assert_times_equal)`)
     raise Unmodeled('host-window-' + key)
 
 
@@ -2907,6 +3019,8 @@ def elem_get(interp, el, key, for_call):
         return BoundMethod(m_get_element_by_id(el))
     if key == 'getAnimations' and not el.root:
         return BoundMethod(m_get_animations(el.name))
+    if key == 'animate' and not el.root:
+        return BoundMethod(m_animate(el))
     if key == 'setHTMLUnsafe':
         return BoundMethod(m_set_html_unsafe(el))
     if key == 'addEventListener':
@@ -3158,7 +3272,7 @@ LEGACY_DOM_ERRORS = {
     'URL_MISMATCH_ERR': 'URLMismatchError', 'QUOTA_EXCEEDED_ERR': 'QuotaExceededError', 'TIMEOUT_ERR': 'TimeoutError', 'INVALID_NODE_TYPE_ERR': 'InvalidNodeTypeError', 'DATA_CLONE_ERR': 'DataCloneError',
 }
 JS_ERRORS = ('TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'EvalError', 'URIError')
-CTOR_NAMES = {'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'EvalError', 'URIError', 'CSSRule', 'CSSStyleRule', 'CSSMediaRule', 'CSSImportRule', 'CSSNamespaceRule', 'CSSFontFaceRule', 'CSSPageRule', 'CSSKeyframesRule', 'CSSKeyframeRule', 'CSSSupportsRule',
+CTOR_NAMES = {'KeyframeEffect', 'Animation', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'EvalError', 'URIError', 'CSSRule', 'CSSStyleRule', 'CSSMediaRule', 'CSSImportRule', 'CSSNamespaceRule', 'CSSFontFaceRule', 'CSSPageRule', 'CSSKeyframesRule', 'CSSKeyframeRule', 'CSSSupportsRule',
               'CSSLayerBlockRule', 'CSSLayerStatementRule', 'CSSContainerRule', 'CSSScopeRule', 'CSSPropertyRule', 'CSSCounterStyleRule', 'CSSFontFeatureValuesRule', 'CSSStartingStyleRule',
               'CSSPositionTryRule', 'CSSNestedDeclarations', 'CSSStyleSheet', 'StyleSheet', 'MediaList'}
 
@@ -3438,7 +3552,7 @@ ANIM_READS = {'animationName': 'any', 'transitionProperty': 'any', 'playState': 
 TIMING_READS = {'delay': 'n', 'endDelay': 'n', 'fill': 's', 'iterationStart': 'n', 'iterations': 'n', 'duration': 'any', 'direction': 's', 'easing': 's'}
 COMPUTED_READS = dict(TIMING_READS, endTime='n', activeDuration='n', localTime='any', progress='any', currentIteration='any')
 # the methods of Animation (animation.h): the call is an op, whose failure is the exception of the IDL the status names
-ANIM_METHODS = {'play': 0, 'pause': 0, 'finish': 0, 'cancel': 0, 'reverse': 0, 'persist': 0, 'updatePlaybackRate': 1}
+ANIM_METHODS = {'play': 0, 'pause': 0, 'finish': 0, 'cancel': 0, 'reverse': 0, 'persist': 0, 'updatePlaybackRate': 1, 'commitStyles': 0}
 # the members a page may set, and what a value of each may be (a number, or for the times also null)
 ANIM_SETS = {'currentTime': 'time', 'startTime': 'time', 'playbackRate': 'number'}
 
@@ -3466,7 +3580,10 @@ def anim_get(interp, an, key, for_call):
         interp.emit('aget', r, an.name, key)
         return Rt(r, ANIM_READS[key])
     if key == 'effect':
-        return HostEffect(an.name)
+        interp.need_dom()
+        n = interp.new_node('f')
+        interp.emit('aeff', n, an.name)
+        return HostEffect(n, True)
     if key in ANIM_METHODS:
         return anim_call(interp, an, key)
     if key in ('ready', 'finished'):
@@ -3482,6 +3599,18 @@ def anim_get(interp, an, key, for_call):
 def anim_set(interp, an, key, value):
     if key == 'id' and isinstance(value, str):
         interp.emit('aset', an.name, 'id', value)
+        return
+    if key == 'timeline':
+        interp.need_dom()
+        if value is not None and not isinstance(value, HostTimeline):
+            raise Unmodeled('animation-set-timeline')   # a scroll or view timeline, or a value that is not a timeline
+        interp.emit('asettl', an.name, 'n' if value is None else 'd')
+        return
+    if key == 'effect':
+        interp.need_dom()
+        if value is not None and not isinstance(value, HostEffect):
+            raise Unmodeled('animation-set-effect-value')   # a TypeError of the page: not an AnimationEffect
+        interp.emit('aseteff', an.name, operand(value))
         return
     kind = ANIM_SETS.get(key)
     if kind:
@@ -3501,11 +3630,224 @@ def anim_set(interp, an, key, value):
     raise Unmodeled('animation-set-' + key)
 
 
+EFFECT_READS = {'composite': 's', 'iterationComposite': 's', 'pseudoElement': 'sn'}
+EFFECT_SETS = {'composite', 'iterationComposite', 'pseudoElement'}
+
+
 def effect_get(interp, ef, key, for_call):
     if key in ('getTiming', 'getComputedTiming'):
         which = 'timing' if key == 'getTiming' else 'computed'
         return BoundMethod(lambda i, a: HostTiming(ef.anim, which))
+    interp.need_dom()
+    if key in EFFECT_READS:
+        r = interp.new_reg()
+        interp.emit('eget', r, ef.anim, key)
+        return Rt(r, EFFECT_READS[key])
+    if key == 'target':
+        n = interp.new_node('e')
+        interp.emit('etarget', n, ef.anim)
+        return HostElem(n, True)
+    if key == 'getKeyframes':
+        def f(i, a):
+            n = i.new_node('k')
+            i.emit('ekf', n, ef.anim)
+            return HostKfList(n)
+        return BoundMethod(f)
+    if key == 'setKeyframes':
+        def f(i, a):
+            i.emit('esetkf', ef.anim, kf_json(a[0] if a else UNDEF))
+            return UNDEF
+        return BoundMethod(f)
+    if key == 'updateTiming':
+        def f(i, a):
+            i.emit('eupdate', ef.anim, timing_json(a[0] if a else UNDEF))
+            return UNDEF
+        return BoundMethod(f)
     raise Unmodeled('animation-effect-' + key)
+
+
+def effect_set(interp, ef, key, value):
+    interp.need_dom()
+    if key in EFFECT_SETS:
+        if isinstance(value, Rt) or isinstance(value, Host) or isinstance(value, (JObj, JArr, Func)):
+            raise Unmodeled('animation-effect-set-value')
+        if key == 'pseudoElement' and value is UNDEF:
+            value = None   # `DOMString?`: undefined is null
+        # an enumeration attribute set to null or undefined is the string "null" or "undefined", which is not one of its values and is ignored
+        interp.emit('eset', ef.anim, key, operand(value if value is None and key == 'pseudoElement' else to_str(value)))
+        return
+    if key == 'target':
+        if value is not None and not isinstance(value, HostElem):
+            raise Unmodeled('animation-effect-set-target')
+        interp.emit('esettarget', ef.anim, operand(value))
+        return
+    raise Unmodeled('animation-effect-set-' + key)
+
+
+def kflist_get(interp, lst, key, for_call):
+    if re.fullmatch(r'\d+', key):
+        return HostKfFrame(lst.name, key)
+    if key == 'length':
+        r = interp.new_reg()
+        interp.emit('kflen', r, lst.name)
+        return Rt(r, 'n')
+    raise Unmodeled('animation-keyframes-' + key)
+
+
+def kfframe_get(interp, fr, key, for_call):
+    if key == 'hasOwnProperty':
+        def f(i, a):
+            if not a or not isinstance(a[0], str):
+                raise Unmodeled('animation-keyframe-hasOwnProperty-argument')
+            r = i.new_reg()
+            i.emit('kfhas', r, fr.lst, fr.index, a[0])
+            return Rt(r, 'b')
+        return BoundMethod(f)
+    if key in ('offset', 'computedOffset', 'easing', 'composite') or not for_call:
+        r = interp.new_reg()
+        interp.emit('kfget', r, fr.lst, fr.index, key)
+        return Rt(r, 'any')
+    raise Unmodeled('animation-keyframe-' + key)
+
+
+# ---- the arguments of animate(), KeyframeEffect and updateTiming: what the page wrote, as the JSON the runner reads (Infinity and NaN as the bare words Python writes) ----------------
+
+def js_dom_string(v):
+    """The conversion of a value to a DOMString that the keyframes argument makes of a property value (a number, a boolean and null are their JavaScript string). `undefined` is the string "undefined"
+    in the specification and a value an engine may skip: not written."""
+    if isinstance(v, (Rt, Host, Func, JObj)) or v is UNDEF:
+        raise Unmodeled('animate-argument-dynamic')
+    return to_str(v)
+
+
+def js_nullable_double(v):
+    """`double?`: null and undefined are null; any other is converted to a number (which the library refuses when it is not finite)."""
+    if v is None or v is UNDEF:
+        return None
+    if isinstance(v, (Rt, Host, Func, JObj, JArr)):
+        raise Unmodeled('animate-argument-dynamic')
+    return to_num(v)
+
+
+def js_double(v):
+    if isinstance(v, (Rt, Host, Func, JObj, JArr)):
+        raise Unmodeled('animate-argument-dynamic')
+    return to_num(v)
+
+
+def kf_frame(v):
+    """An element of the array form: a keyframe-like object."""
+    if v is None or v is UNDEF:
+        return None
+    if not isinstance(v, JObj):
+        raise Unmodeled('animate-keyframe-type')   # a TypeError of the page: the element is neither null nor an object
+    out = {'props': []}
+    for k, x in v.items():
+        if k == 'offset':
+            out['offset'] = js_nullable_double(x)
+        elif k == 'easing':
+            if x is not UNDEF:
+                out['easing'] = js_dom_string(x)
+        elif k == 'composite':
+            if x is not UNDEF:
+                out['composite'] = js_dom_string(x)
+        else:
+            if isinstance(x, (JArr, JObj)):
+                raise Unmodeled('animate-keyframe-property-value')
+            out['props'].append([k, js_dom_string(x)])
+    return out
+
+
+def kf_json(v):
+    """The `keyframes` argument: null, an array of keyframe-like objects, or a property-indexed object."""
+    if v is None or v is UNDEF:
+        return json.dumps({'k': 'null'})
+    if isinstance(v, JArr):
+        return json.dumps({'k': 'array', 'frames': [kf_frame(x) for x in v]})
+    if isinstance(v, JObj):
+        out = {'k': 'indexed', 'offset': [], 'easing': [], 'composite': [], 'props': []}
+        for k, x in v.items():
+            if k == 'offset':
+                out['offset'] = [js_nullable_double(y) for y in x] if isinstance(x, JArr) else ([] if x is UNDEF else [js_nullable_double(x)])
+            elif k == 'easing':
+                out['easing'] = [js_dom_string(y) for y in x] if isinstance(x, JArr) else ([] if x is UNDEF else [js_dom_string(x)])
+            elif k == 'composite':
+                out['composite'] = [js_dom_string(y) for y in x] if isinstance(x, JArr) else ([] if x is UNDEF else [js_dom_string(x)])
+            elif isinstance(x, JArr):
+                out['props'].append([k, [js_dom_string(y) for y in x]])
+            elif isinstance(x, JObj):
+                raise Unmodeled('animate-keyframe-property-value')
+            else:
+                out['props'].append([k, [js_dom_string(x)]])
+        return json.dumps(out)
+    raise Unmodeled('animate-keyframes-type')
+
+
+TIMING_NUMBERS = ('delay', 'endDelay', 'iterationStart', 'iterations')
+TIMING_STRINGS = ('fill', 'direction', 'easing')
+
+
+def timing_dict(v, out):
+    """The members of `EffectTiming` a dictionary has (undefined is absent): numbers as numbers, the enumerations and the easing as strings, `duration` as a number or the string it is."""
+    for k, x in v.items():
+        if x is UNDEF:
+            continue
+        if k in TIMING_NUMBERS:
+            out[k] = js_double(x)
+        elif k == 'duration':
+            if isinstance(x, (Rt, Host, Func, JObj, JArr)):
+                raise Unmodeled('animate-argument-dynamic')
+            # `(unrestricted double or DOMString)`: only a Number is a number; null and a boolean are converted as strings ("null", "true"), which the model refuses as the TypeError the page gets
+            out[k] = to_num(x) if isinstance(x, float) else to_str(x)
+        elif k in TIMING_STRINGS:
+            out[k] = js_dom_string(x)
+    return out
+
+
+def timing_json(v):
+    """The argument of `updateTiming()`."""
+    if v is UNDEF or v is None:
+        return json.dumps({'timing': {}})
+    if not isinstance(v, JObj):
+        raise Unmodeled('animate-options-type')
+    return json.dumps({'timing': timing_dict(v, {})})
+
+
+def options_json(v):
+    """The `options` argument of `animate()` and the constructor of `KeyframeEffect`: a number (the duration), or a dictionary."""
+    if v is UNDEF:
+        return json.dumps({'timing': {}})
+    if isinstance(v, float):
+        return json.dumps({'timing': {'duration': v}})
+    if not isinstance(v, JObj):
+        raise Unmodeled('animate-options-type')
+    out = {'timing': timing_dict(v, {})}
+    for k, x in v.items():
+        if x is UNDEF:
+            continue
+        if k in ('composite', 'iterationComposite'):
+            out[k] = js_dom_string(x)
+        elif k == 'pseudoElement':
+            out[k] = None if x is None else js_dom_string(x)
+        elif k == 'timeline':
+            raise Unmodeled('animate-options-timeline')
+        elif k in ('rangeStart', 'rangeEnd', 'trigger'):
+            raise Unmodeled('animate-options-' + k)
+    return json.dumps(out)
+
+
+def m_animate(el):
+    def f(interp, a):
+        interp.need_dom()
+        if not a:
+            raise Unmodeled('animate-arguments')   # a TypeError of the page: keyframes is required
+        n = interp.new_node('a')
+        options = a[1] if len(a) > 1 else UNDEF
+        interp.emit('anew', n, operand(el), kf_json(a[0]), options_json(options))
+        if isinstance(options, JObj) and options.get('id', UNDEF) is not UNDEF:
+            interp.emit('aset', n, 'id', js_dom_string(options['id']))   # `KeyframeAnimationOptions.id`: "assign the id member of options to animation's id attribute"
+        return HostAnim(n)
+    return f
 
 
 def timing_get(interp, t, key, for_call):
@@ -3517,7 +3859,7 @@ def timing_get(interp, t, key, for_call):
     raise Unmodeled('animation-timing-' + key)
 
 
-HOST_GET.update({HostAnimList: alist_get, HostAnim: anim_get, HostEffect: effect_get, HostTiming: timing_get})
+HOST_GET.update({HostAnimList: alist_get, HostAnim: anim_get, HostEffect: effect_get, HostTiming: timing_get, HostKfList: kflist_get, HostKfFrame: kfframe_get})
 
 
 def event_get(interp, ev, key, for_call):
@@ -3536,7 +3878,7 @@ def timeline_get(interp, tl, key, for_call):
     raise Unmodeled('dom-timeline-' + key)
 
 
-HOST_SET = {HostObj: obj_set, HostDoc: doc_set, HostWindow: window_set, HostElem: elem_set, HostStyle: style_set, HostAnim: anim_set}
+HOST_SET = {HostObj: obj_set, HostDoc: doc_set, HostWindow: window_set, HostElem: elem_set, HostStyle: style_set, HostAnim: anim_set, HostEffect: effect_set}
 
 
 # ---- promises, async functions and the event loop of a promise_test ----------------------------------------------------------------------------
@@ -4175,7 +4517,7 @@ HARNESS_SRC = ('testharness.js', 'testharnessreport.js')
 
 # The helper scripts of the pinned pages that the evaluator runs as part of the page, by base name: their source is read from the pin next to the page, and what a helper function does that the
 # evaluator cannot fold (a loop on a read, a try with a finally) is a native of MODELED_HELPER_NATIVES, which the helper's own declaration does not replace.
-MODELED_HELPER_FILES = ('css/mediaqueries/resources/matchmedia-utils.js', 'css/css-transitions/support/helper.js', 'css/css-animations/support/testcommon.js')
+MODELED_HELPER_FILES = ('css/mediaqueries/resources/matchmedia-utils.js', 'css/css-transitions/support/helper.js', 'css/css-animations/support/testcommon.js', 'web-animations/testcommon.js')
 MODELED_HELPERS = tuple(os.path.basename(f) for f in MODELED_HELPER_FILES)
 
 
@@ -4183,7 +4525,7 @@ def reads_timing(wpt, rel, text, helpers):
     """Whether a page that waits (promise_test, a frame, a timer, an event) is one the evaluator reads: the page loads the helper of the transition pages (css/css-transitions/support/helper.js,
     whose `waitForFrame`, `addDiv` and event assertions the page's tests are written with). A page that waits in another way stays with the reason it has; this is the set the event loop of Loop
     was built for, and it grows with the model (each page added is recorded in the browsers and replayed there)."""
-    return any((helper_path(wpt, rel, h) or '').endswith(('css-transitions/support/helper.js', 'css-animations/support/testcommon.js')) for h in helpers if wpt is not None)
+    return any((helper_path(wpt, rel, h) or '').endswith(('css-transitions/support/helper.js', 'css-animations/support/testcommon.js', 'web-animations/testcommon.js')) for h in helpers if wpt is not None)
 
 
 def is_modeled_helper(wpt, rel, src):

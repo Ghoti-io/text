@@ -72,6 +72,7 @@ CLASSES = ('served-text', 'wpt-wrong', 'browsers-differ', 'wpt-tentative', 'ua-d
 OWNERS = [
     (r'^css/css-pseudo/parsing/marker-supported-properties-in-animation', 'owner: animation sampling and transition sampling (a layer the library does not have: the value of a property at the middle of a paused animation or a running transition on ::marker)'),
     (r'^css/css-values/tree-counting/sibling-(index|count)-keyframe-', 'owner: animation sampling (a layer the library does not have: the value of a property under an animation at a time, here with sibling-index() in its keyframes)'),
+    (r'^css/css-transforms/animation/transform-interpolation', 'owner: src/css animation sampling of transform lists (two transform lists whose functions differ in name but share a family, translateY(0%) and translateX(50%), are interpolated as a discrete pair, where CSS Transforms 1 converts both to the common primitive, translate or translate3d, and interpolates it; the midpoint is then translate(25%), as in both engines)'),
     (r'^css/(css-shapes|css-masking/clip-path)/(basic-shape-)?interpolation', 'owner: animation sampling (a layer the library does not have: the value of a property midway through an interpolation)'),
     (r'^css/css-(animations|transitions|anchor-position)/', 'owner: animation sampling and anchor positioning (a layer the library does not have: computed values under a running animation, anchor() resolution)'),
     (r'^css/css-shadow/keyframes', 'owner: src/css keyframes and the cascade of a shadow tree (a `@keyframes` of a shadow tree\'s sheet is not collected: the library collects those of the document scope only)'),
@@ -155,6 +156,8 @@ def answer(msg):
 
 
 MESSAGE_OWNERS = [
+    (r'^NotSupportedError: (setKeyframes|getKeyframes)\(\) failed|replacing the effect of a CSS animation or transition is not built', 'owner: src/animation effect of a CSS animation or transition (the keyframes of an effect made by animation-name or by a transition are not an editable or readable object here: setKeyframes() and a replaced effect on one are refused, and getKeyframes() of a CSS animation is not built)'),
+    (r'CSS transition on both pseudo-elements and elements are returned', 'owner: src/css transition tracker (the ::marker of a list-item does not start its color transition at the style change event, so the document has one transition fewer than both engines report)'),
     (r'unsupported, needs (condition|container\.computed_style|sibling_index|sibling_count)', 'owner: src/css/css_markup.c, the element interface the Markup adapter provides (the callback the computed layer asks for is missing)'),
 ]
 

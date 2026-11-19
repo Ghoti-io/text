@@ -2,9 +2,9 @@
 # tests the extractor gives each, the test calls the census counts on its own, the markers of the page and the helper scripts it loads. See the script for the columns.
 # pin	569958747e678ad0f7b5e8452c7ae3097e714bbe
 # pages	5585
-# tests	25437
+# tests	25567
 # calls	14691
-# calls-differ-pages	1140
+# calls-differ-pages	1143
 css/CSS2/abspos/adjacent-to-relpos-inline-in-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/adjacent-to-relpos-inline-that-had-block.html	1	1	function,layout-geometry	
 css/CSS2/abspos/remove-block-between-inline-and-abspos.html	1	1	layout-geometry,reftest	
@@ -517,7 +517,7 @@ css/css-animations/display-none-prevents-starting-in-subtree.html	1	1	animation-
 css/css-animations/display-none-to-display-block-dont-cancel.tentative.html	1	1	animation-model,computed,function,timing	/css/css-animations/support/testcommon.js
 css/css-animations/display-none-to-display-block-while-running.tentative.html	1	1	animation-model,computed,function,loop,timing	
 css/css-animations/empty-pseudo-class-with-animation.html	1	1	computed,function,timing	/css/css-animations/support/testcommon.js
-css/css-animations/event-dispatch.tentative.html	33	33	animation-model,computed,function,timing	support/testcommon.js
+css/css-animations/event-dispatch.tentative.html	32	33	animation-model,computed,function,timing	support/testcommon.js
 css/css-animations/event-order.tentative.html	8	5	animation-model,function,loop,timing	support/testcommon.js
 css/css-animations/idlharness.html	1	1	animation-model,function,sheets,timing	/resources/WebIDLParser.js,/resources/idlharness.js
 css/css-animations/keyframes-rule-caching.html	1	1	function,sheets	
@@ -552,7 +552,7 @@ css/css-animations/text-decoration-inset-auto.html	4	10	animation-model,computed
 css/css-animations/transition-ready-time-offscreen.html	1	1	animation-model,function,timing	
 css/css-backgrounds/animations/background-color-animation-non-zero-size-element-change-to-zero.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-backgrounds/animations/background-color-animation-zero-size-element-change-to-non-zero.html	1	1	function,reftest,timing	/common/reftest-wait.js
-css/css-backgrounds/animations/background-color-transition-colormix.html	1	1	animation-model,computed,function,loop,timing	/web-animations/testcommon.js
+css/css-backgrounds/animations/background-color-transition-colormix.html	2	1	animation-model,computed,function,loop,timing	/web-animations/testcommon.js
 css/css-backgrounds/animations/background-color-transition.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-backgrounds/animations/border-color-interpolation.html	6	6	computed,function	/css/support/interpolation-testcommon.js
 css/css-backgrounds/animations/border-image-slice-interpolation-stability.html	1	1	animation-model,computed,function,timing	
@@ -1121,7 +1121,7 @@ css/css-contain/contain-style-dynamic-002.html	1	1	layout-geometry,reftest
 css/css-contain/contain-style-remove-element-crash.html	1	1	crash,function,layout-geometry	
 css/css-contain/container-iframe-resize-events.html	1	1	frame-or-popup,function,layout-geometry,reftest,timing	
 css/css-contain/container-type-important.html	1	1	function	
-css/css-contain/content-visibility/animation-display-lock.html	1	4	animation-model,computed,function,timing	/web-animations/testcommon.js
+css/css-contain/content-visibility/animation-display-lock.html	4	4	animation-model,computed,function,timing	/web-animations/testcommon.js
 css/css-contain/content-visibility/content-visibility-026.html	2	2	computed,function	
 css/css-contain/content-visibility/content-visibility-028.html	1	1	function,layout-geometry,reftest,shadow,timing	/common/reftest-wait.js
 css/css-contain/content-visibility/content-visibility-031.html	1	1	function,timing	
@@ -1141,13 +1141,13 @@ css/css-contain/content-visibility/content-visibility-097.html	1	1	function,reft
 css/css-contain/content-visibility/content-visibility-098.html	1	1	function,reftest,timing	/common/reftest-wait.js
 css/css-contain/content-visibility/content-visibility-anchor-positioning-001.html	1	1	function,layout-geometry,timing	/web-animations/testcommon.js
 css/css-contain/content-visibility/content-visibility-anchor-positioning-002.html	1	1	function,layout-geometry,timing	/web-animations/testcommon.js
-css/css-contain/content-visibility/content-visibility-anchor-positioning-004.html	1	1	function,layout-geometry,timing	/web-animations/testcommon.js
-css/css-contain/content-visibility/content-visibility-anchor-positioning-005.html	1	1	function,layout-geometry,timing	/web-animations/testcommon.js
-css/css-contain/content-visibility/content-visibility-anchor-positioning-006.html	1	1	function,layout-geometry,timing	/web-animations/testcommon.js
-css/css-contain/content-visibility/content-visibility-anchor-positioning-007.html	1	1	function,layout-geometry,timing	/web-animations/testcommon.js
+css/css-contain/content-visibility/content-visibility-anchor-positioning-004.html	2	1	function,layout-geometry,timing	/web-animations/testcommon.js
+css/css-contain/content-visibility/content-visibility-anchor-positioning-005.html	2	1	function,layout-geometry,timing	/web-animations/testcommon.js
+css/css-contain/content-visibility/content-visibility-anchor-positioning-006.html	2	1	function,layout-geometry,timing	/web-animations/testcommon.js
+css/css-contain/content-visibility/content-visibility-anchor-positioning-007.html	2	1	function,layout-geometry,timing	/web-animations/testcommon.js
 css/css-contain/content-visibility/content-visibility-animation-and-scroll.html	1	1	animation-model,function,reftest,timing	/common/reftest-wait.js
 css/css-contain/content-visibility/content-visibility-animation-becomes-visible.html	1	1	animation-model,function,reftest,timing	/common/reftest-wait.js
-css/css-contain/content-visibility/content-visibility-animation-in-auto-subtree.html	1	5	animation-model,computed,function,timing	/web-animations/testcommon.js
+css/css-contain/content-visibility/content-visibility-animation-in-auto-subtree.html	5	5	animation-model,computed,function,timing	/web-animations/testcommon.js
 css/css-contain/content-visibility/content-visibility-animation-with-scroll-timeline-in-auto-subtree.html	1	1	animation-model,computed,function,layout-geometry,timing	/web-animations/testcommon.js
 css/css-contain/content-visibility/content-visibility-animation-with-scroll-timeline-in-hidden-subtree.html	1	1	animation-model,computed,function,layout-geometry,timing	/web-animations/testcommon.js
 css/css-contain/content-visibility/content-visibility-auto-state-changed-first-observation.html	2	2	function,timing	
@@ -2669,7 +2669,7 @@ css/css-properties-values-api/animate-invalid.html	1	1	animation-model,computed,
 css/css-properties-values-api/animation/custom-property-animation-inherited-used-by-standard-property.html	1	1	animation-model,computed,function,register-property,timing	../resources/utils.js
 css/css-properties-values-api/animation/custom-property-animation-list-type-mismatch.html	7	1	animation-model,computed,function,register-property,timing	../resources/utils.js
 css/css-properties-values-api/animation/custom-property-animation-non-inherited-used-by-standard-property.html	1	1	animation-model,computed,function,register-property,timing	../resources/utils.js
-css/css-properties-values-api/animation/custom-property-animation-transform-list-multiple-values.html	1	3	animation-model,computed,function,register-property,timing	../resources/utils.js,/web-animations/testcommon.js
+css/css-properties-values-api/animation/custom-property-animation-transform-list-multiple-values.html	11	3	animation-model,computed,function,register-property,timing	../resources/utils.js,/web-animations/testcommon.js
 css/css-properties-values-api/animation/custom-property-animation-used-in-shorthand.html	1	1	computed,function	
 css/css-properties-values-api/animation/custom-property-transition-inherited-used-by-standard-property.html	1	1	computed,function,register-property	../resources/utils.js
 css/css-properties-values-api/animation/custom-property-transition-length.html	2	1	animation-model,computed,function,register-property,timing	../resources/utils.js
@@ -2915,7 +2915,7 @@ css/css-scroll-snap/snap-after-relayout/two-consecutive-resnaps.html	1	1	compute
 css/css-scroll-snap/snap-after-style-change-respects-scroll-behavior.html	1	1	function,layout-geometry,timing	/css/css-scroll-snap/support/common.js,/dom/events/scrolling/scroll_support.js
 css/css-scroll-snap/snap-area-capturing-add-scroll-container.html	3	2	function,layout-geometry	
 css/css-scroll-snap/snap-area-capturing-remove-scroll-container.html	1	1	function,layout-geometry	
-css/css-scroll-snap/snap-events/scrollsnapchange/scrollsnapchange-after-layout-change.tentative.html	1	4	function,layout-geometry,timing	/css/css-scroll-snap/snap-events/resources/common.js,/dom/events/scrolling/scroll_support.js,/web-animations/testcommon.js
+css/css-scroll-snap/snap-events/scrollsnapchange/scrollsnapchange-after-layout-change.tentative.html	6	4	function,layout-geometry,timing	/css/css-scroll-snap/snap-events/resources/common.js,/dom/events/scrolling/scroll_support.js,/web-animations/testcommon.js
 css/css-scroll-snap/snap-events/scrollsnapchange/scrollsnapchange-same-targets-after-layout-changed.html	2	2	function,layout-geometry,timing	/css/css-scroll-snap/snap-events/resources/common.js,/dom/events/scrolling/scroll_support.js
 css/css-scroll-snap/snap-events/scrollsnapchange/scrollsnapchange-scroll-snap-type-change.html	1	1	function,timing	/css/css-scroll-snap/support/common.js
 css/css-scroll-snap/snap-events/scrollsnapchanging/scrollsnapchanging-after-layout-change.tentative.html	1	1	computed,function,input-driver,layout-geometry,timing	/css/css-scroll-snap/snap-events/resources/common.js,/css/css-scroll-snap/snap-events/resources/user-scroll-common.js,/dom/events/scrolling/scroll_support.js,/resources/testdriver-actions.js,/web-animations/testcommon.js
@@ -3408,8 +3408,8 @@ css/css-transforms/2d-rotate-js.html	1	1	computed,function
 css/css-transforms/2d-transform-inline-js.html	1	1	computed,function,loop	
 css/css-transforms/3d-scene-with-iframe-001.html	1	1	frame-or-popup,function,reftest	
 css/css-transforms/animation/composited-transform.html	1	1	animation-model,computed,function,timing	
-css/css-transforms/animation/transform-interpolation-computed-value.html	1	2	animation-model,function,timing,typed-om	/web-animations/testcommon.js
-css/css-transforms/animation/transform-interpolation-inline-value.html	1	1	animation-model,function,timing	/web-animations/testcommon.js
+css/css-transforms/animation/transform-interpolation-computed-value.html	43	2	animation-model,function,timing,typed-om	/web-animations/testcommon.js
+css/css-transforms/animation/transform-interpolation-inline-value.html	41	1	animation-model,function,timing	/web-animations/testcommon.js
 css/css-transforms/animation/transform-interpolation-rotate3d-180deg-near-x-axis.html	1	1	animation-model,computed,function,timing	
 css/css-transforms/animation/transform-non-invertible-no-transition.html	1	1	animation-model,computed,function,timing	/css/css-transitions/support/helper.js
 css/css-transforms/change-perspective-property.html	1	1	function,reftest,timing	
@@ -3478,7 +3478,7 @@ css/css-transforms/transform_translate_zero.html	1	1	computed,function
 css/css-transforms/transformed-table-section-containing-block.html	6	2	function,layout-geometry,loop	
 css/css-transforms/transforms-support-calc.html	7	7	computed,function	
 css/css-transforms/translate-getComputedStyle.html	1	1	computed,function	
-css/css-transitions/AnimationEffect-getComputedTiming.tentative.html	1	22	animation-model,computed,function,timing	/web-animations/testcommon.js,support/helper.js
+css/css-transitions/AnimationEffect-getComputedTiming.tentative.html	22	22	animation-model,computed,function,timing	/web-animations/testcommon.js,support/helper.js
 css/css-transitions/CSSTransition-canceling.tentative.html	11	11	animation-model,computed,function,timing	support/helper.js
 css/css-transitions/CSSTransition-currentTime.tentative.html	5	5	animation-model,computed,function,timing	support/helper.js
 css/css-transitions/CSSTransition-effect.tentative.html	10	10	animation-model,computed,function,loop,timing	support/helper.js
@@ -3491,7 +3491,7 @@ css/css-transitions/Document-getAnimations.tentative.html	7	6	animation-model,co
 css/css-transitions/Element-getAnimations.tentative.html	7	7	animation-model,computed,function,timing	support/helper.js
 css/css-transitions/KeyframeEffect-getKeyframes-width-and-height-transition.tentative.html	2	2	animation-model,computed,function,timing	support/helper.js
 css/css-transitions/KeyframeEffect-getKeyframes.tentative.html	5	5	animation-model,computed,function,loop,timing	support/helper.js
-css/css-transitions/KeyframeEffect-setKeyframes.tentative.html	9	6	animation-model,computed,function,timing	support/helper.js
+css/css-transitions/KeyframeEffect-setKeyframes.tentative.html	8	6	animation-model,computed,function,timing	support/helper.js
 css/css-transitions/KeyframeEffect-target.tentative.html	3	3	animation-model,computed,function,timing	support/helper.js
 css/css-transitions/after-change-style-inherited-try-fallback.html	1	1	computed,function,layout-geometry	
 css/css-transitions/after-change-style-inherited.html	6	6	computed,function,layout-geometry	
@@ -4739,7 +4739,7 @@ css/css-view-transitions/dialog-in-top-layer-during-transition-new.html	1	1	fram
 css/css-view-transitions/dialog-in-top-layer-during-transition-old.html	1	1	frame-or-popup,function,reftest,timing,view-transition	/common/reftest-wait.js
 css/css-view-transitions/duplicate-tag-rejects-capture.html	1	1	function,timing,view-transition	
 css/css-view-transitions/duplicate-tag-rejects-start.html	1	1	function,timing,view-transition	/dom/events/scrolling/scroll_support.js
-css/css-view-transitions/dynamic-stylesheet-animations-timing-function.html	1	3	computed,function,sheets,timing,view-transition	/web-animations/testcommon.js
+css/css-view-transitions/dynamic-stylesheet-animations-timing-function.html	3	3	computed,function,sheets,timing,view-transition	/web-animations/testcommon.js
 css/css-view-transitions/dynamic-stylesheet-animations.html	3	3	computed,function,timing,view-transition	
 css/css-view-transitions/element-with-overflow.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js
 css/css-view-transitions/exit-transition-with-anonymous-layout-object.html	1	1	function,reftest,timing,view-transition	/common/reftest-wait.js

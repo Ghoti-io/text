@@ -272,6 +272,17 @@ typedef struct animlist {
   size_t n;
 } animlist;
 
+/* An effect the program holds (a `KeyframeEffect` it made, or `animation.effect` when it read it: NULL when the animation had none), and the list `getKeyframes()` returned. */
+typedef struct {
+  char * name;
+  GTEXT_Anim_Effect * e;
+} effh;
+
+typedef struct {
+  char * name;
+  GTEXT_Anim_Keyframes * k;
+} kfl;
+
 /* What the page can do to an Animation (`play()`, `finish()`, `currentTime = ...`, `ready`) is done to the Animation of the model that holds the animation (animation/world.h,
  * gtext_anim_world_control()), made the first time the program touches that animation. The promises of an Animation are generations (animation.h): the model says when each settles, in notes
  * the runner drains after every step of time, and `pwait` lets frames pass until the generation it waits for has. */
@@ -318,6 +329,7 @@ typedef struct {
   GTEXT_CSS_Element_Interface iface;   /* the adapter's, with the shadow trees */
   double now_ms;               /* the document timeline: the time of the last frame (0 before the first); a transition begun by the page starts at it */
   long test_frames;            /* frames run since the test began (the harness gives up on a test after ten seconds) */
+  int animates;                /* an op of the animation family has run: a read of a computed style is a style update of the whole document, as a script that makes or reads animations needs it to be */
   int async;                   /* a promise_test has run in this world: a read of a computed style is an update of the style of the whole document, as it is in a browser (a style change event for every element) */
   int recalc_done;             /* the style of every element has been brought up to date at these generations of the Markup and CSSOM documents */
   uint64_t recalc_markup, recalc_cssom;
@@ -337,6 +349,10 @@ typedef struct {
   size_t nahs, capahs;
   struct animlist * alists;    /* the results of getAnimations() */
   size_t nalists, capalists;
+  effh * effs;                 /* the effects the program holds */
+  size_t neffs, capeffs;
+  kfl * kfls;                  /* the keyframe lists getKeyframes() returned */
+  size_t nkfls, capkfls;
   struct ctl * ctls;           /* the Animations the program has touched (an Animation of the model holds the timing state of the animation) and the promises each has settled */
   size_t nctls, capctls;
 } world;
@@ -1060,6 +1076,15 @@ static void world_close(world * w) {
     free(w->ctls[i].p[1]);
   }
   free(w->ctls);
+  for (size_t i = 0; i < w->neffs; i++) {
+    free(w->effs[i].name);
+  }
+  free(w->effs);
+  for (size_t i = 0; i < w->nkfls; i++) {
+    free(w->kfls[i].name);
+    gtext_anim_keyframes_free(w->kfls[i].k);
+  }
+  free(w->kfls);
   gtext_anim_world_free(w->anim);
   gtext_cssom_transition_tracker_free(w->tracker);
   gtext_cssom_document_release(w->doc);
@@ -1178,6 +1203,8 @@ static void put_reg(world * w, const char * name, value v) {
 static object * find_obj(world * w, const char * name);
 
 static animh * find_ah(world * w, const char * name);
+static GTEXT_Markup_Node * node_of_handle(world * w, const void * handle);
+static effh * find_eh(world * w, const char * name);
 
 static value operand(world * w, const char * f, size_t l, int * ok) {
   *ok = 1;
@@ -1228,6 +1255,19 @@ static value operand(world * w, const char * f, size_t l, int * ok) {
         }
         char id[64];
         snprintf(id, sizeof id, "animation:%d:%llu", (int)h->kind, (unsigned long long)h->id);
+        return val('e', id, strlen(id));
+      }
+      break;
+    }
+    case 'f': {
+      /* an effect: two handles that are the same effect are the same object; an animation with no effect has null */
+      effh * h = find_eh(w, f + 2);
+      if (h) {
+        if (!h->e) {
+          return val('N', "", 0);
+        }
+        char id[40];
+        snprintf(id, sizeof id, "effect:%p", (void *)h->e);
         return val('e', id, strlen(id));
       }
       break;
@@ -3841,7 +3881,8 @@ static int is_events_op(const char * name) {
 /* ---- animations ------------------------------------------------------------------------------------------------------------------------------- */
 
 static int is_anim_op(const char * name) {
-  static const char * const names[] = {"ga", "alen", "aat", "aget", "aset", "tget", "pgen", "pwait", "am", "asetv", "calc", "pfloat"};
+  static const char * const names[] = {"ga", "alen", "aat", "aget", "aset", "tget", "pgen", "pwait", "am", "asetv", "calc", "pfloat", "anew", "animnew", "enew", "ecopy", "aeff", "aseteff", "asettl", "eget", "eset",
+                                       "etarget", "esettarget", "ekf", "kflen", "kfget", "kfcmp", "kfhas", "esetkf", "eupdate"};
   for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
     if (strcmp(name, names[i]) == 0) {
       return 1;
@@ -4304,6 +4345,30 @@ static char * ctl_op(world * w, const op * o, int * program_error, int * handled
     else if (strcmp(m, "persist") == 0) {
       st = gtext_anim_animation_persist(c->a);
     }
+    else if (strcmp(m, "commitStyles") == 0) {
+      /* "commit computed styles": the declarations are written to the inline style of the target, which flushes a style change event */
+      GTEXT_Anim_Style_Values * list = NULL;
+      st = gtext_anim_world_commit_styles(w->anim, c->a, &list);
+      if (st == GTEXT_ANIM_OK && gtext_anim_style_values_count(list)) {
+        const void * handle = gtext_anim_style_values_element(list);
+        GTEXT_Markup_Node * node = node_of_handle(w, handle);
+        GTEXT_CSSOM_Decl * d = NULL;
+        sync_world(w);
+        const GTEXT_CSS_Status is = node ? gtext_cssom_inline_style(w->doc, node, &w->attr, &d) : GTEXT_CSS_E_INVALID;
+        if (is != GTEXT_CSS_OK) {
+          gtext_anim_style_values_free(list);
+          *program_error = 1;
+          return dups("commitStyles: the inline style of the target could not be made");
+        }
+        for (size_t i = 0; i < gtext_anim_style_values_count(list); i++) {
+          GTEXT_CSS_String pn, pv;
+          (void)gtext_anim_style_values_at(list, i, &pn, &pv);
+          (void)gtext_cssom_decl_set_property(d, pn.data, pn.length, pv.data, pv.length, "", 0, NULL);
+        }
+        gtext_cssom_decl_release(d);
+      }
+      gtext_anim_style_values_free(list);
+    }
     else if (strcmp(m, "updatePlaybackRate") == 0 && o->n == 4) {
       st = gtext_anim_animation_update_playback_rate(c->a, arg, now);
     }
@@ -4360,9 +4425,1234 @@ static char * ctl_op(world * w, const op * o, int * program_error, int * handled
   return NULL;
 }
 
+/* The member of getTiming() (`computed` false) or getComputedTiming() of a timing, an easing text and the computed timing: 0 for a member it does not have. */
+static int timing_member(const char * member, int computed, const GTEXT_Anim_Effect_Timing * t, const char * easing, const GTEXT_Anim_Computed_Timing * ct, value * out) {
+  value v;
+  int known = 1;
+  if (strcmp(member, "delay") == 0) {
+    v = number_value(t->delay);
+  }
+  else if (strcmp(member, "endDelay") == 0) {
+    v = number_value(t->end_delay);
+  }
+  else if (strcmp(member, "fill") == 0) {
+    const char * s = fill_name(computed ? ct->timing.fill : t->fill);
+    v = val('s', s, strlen(s));
+  }
+  else if (strcmp(member, "iterationStart") == 0) {
+    v = number_value(t->iteration_start);
+  }
+  else if (strcmp(member, "iterations") == 0) {
+    v = number_value(t->iterations);
+  }
+  else if (strcmp(member, "duration") == 0) {
+    v = !computed && t->duration_auto ? val('s', "auto", 4) : number_value(computed ? ct->timing.duration : t->duration);
+  }
+  else if (strcmp(member, "direction") == 0) {
+    const char * s = direction_name(t->direction);
+    v = val('s', s, strlen(s));
+  }
+  else if (strcmp(member, "easing") == 0) {
+    v = val('s', easing, strlen(easing));
+  }
+  else if (computed && strcmp(member, "endTime") == 0) {
+    v = number_value(ct->end_time);
+  }
+  else if (computed && strcmp(member, "activeDuration") == 0) {
+    v = number_value(ct->active_duration);
+  }
+  else if (computed && strcmp(member, "localTime") == 0) {
+    v = time_value(ct->local_time);
+  }
+  else if (computed && strcmp(member, "progress") == 0) {
+    v = ct->has_progress ? number_value(ct->progress) : val('N', "", 0);
+  }
+  else if (computed && strcmp(member, "currentIteration") == 0) {
+    v = ct->has_current_iteration ? number_value(ct->current_iteration) : val('N', "", 0);
+  }
+  else {
+    known = 0;
+    v = val('u', "", 0);
+  }
+  *out = v;
+  return known;
+}
+
+/* ---- script animations and keyframe effects (animation/effect.h) ------------------------------------------------------------------------------- */
+
+/* The JSON the evaluator writes for the arguments of animate(), the constructor of KeyframeEffect and updateTiming(): null, true, false, numbers (Python writes Infinity and NaN as bare words), strings, arrays and
+ * objects. */
+typedef struct jv {
+  char kind;               /* N null, b boolean, n number, s string, a array, o object */
+  double num;
+  int boolean;
+  char * s;
+  size_t slen;
+  struct jv * items;
+  char ** keys;
+  size_t n;
+} jv;
+
+static void jv_free(jv * v) {
+  free(v->s);
+  for (size_t i = 0; i < v->n; i++) {
+    jv_free(&v->items[i]);
+    if (v->keys) {
+      free(v->keys[i]);
+    }
+  }
+  free(v->items);
+  free(v->keys);
+  memset(v, 0, sizeof *v);
+}
+
+static void jv_skip(const char ** p) {
+  while (**p == ' ' || **p == '\t' || **p == '\n' || **p == '\r') {
+    (*p)++;
+  }
+}
+
+static int jv_hex4(const char * p, unsigned * out) {
+  unsigned v = 0;
+  for (int i = 0; i < 4; i++) {
+    const char c = p[i];
+    v = v * 16 + (unsigned)(c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : 99);
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+      return 0;
+    }
+  }
+  *out = v;
+  return 1;
+}
+
+static size_t jv_utf8(unsigned cp, char * out) {
+  if (cp < 0x80) {
+    out[0] = (char)cp;
+    return 1;
+  }
+  if (cp < 0x800) {
+    out[0] = (char)(0xC0 | (cp >> 6));
+    out[1] = (char)(0x80 | (cp & 0x3F));
+    return 2;
+  }
+  if (cp < 0x10000) {
+    out[0] = (char)(0xE0 | (cp >> 12));
+    out[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    out[2] = (char)(0x80 | (cp & 0x3F));
+    return 3;
+  }
+  out[0] = (char)(0xF0 | (cp >> 18));
+  out[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+  out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+  out[3] = (char)(0x80 | (cp & 0x3F));
+  return 4;
+}
+
+static int jv_string(const char ** p, char ** out, size_t * len) {
+  if (**p != '"') {
+    return 0;
+  }
+  (*p)++;
+  size_t cap = 16, n = 0;
+  char * buf = malloc(cap);
+  while (**p && **p != '"') {
+    if (n + 8 > cap) {
+      cap *= 2;
+      buf = realloc(buf, cap);
+    }
+    if (**p == '\\') {
+      (*p)++;
+      const char c = **p;
+      if (c == '\0') {
+        free(buf);
+        return 0;
+      }
+      if (c == 'u') {
+        unsigned cp = 0;
+        if (!jv_hex4(*p + 1, &cp)) {
+          free(buf);
+          return 0;
+        }
+        *p += 4;
+        if (cp >= 0xD800 && cp < 0xDC00 && (*p)[1] == '\\' && (*p)[2] == 'u') {
+          unsigned lo = 0;
+          if (jv_hex4(*p + 3, &lo) && lo >= 0xDC00 && lo < 0xE000) {
+            cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+            *p += 6;
+          }
+        }
+        n += jv_utf8(cp, buf + n);
+      }
+      else {
+        buf[n++] = c == 'n' ? '\n' : c == 't' ? '\t' : c == 'r' ? '\r' : c == 'b' ? '\b' : c == 'f' ? '\f' : c;
+      }
+      (*p)++;
+    }
+    else {
+      buf[n++] = *(*p)++;
+    }
+  }
+  if (**p != '"') {
+    free(buf);
+    return 0;
+  }
+  (*p)++;
+  buf[n] = '\0';
+  *out = buf;
+  *len = n;
+  return 1;
+}
+
+static int jv_parse_value(const char ** p, jv * out, int depth) {
+  memset(out, 0, sizeof *out);
+  jv_skip(p);
+  if (depth > 40) {
+    return 0;
+  }
+  if (**p == '"') {
+    out->kind = 's';
+    return jv_string(p, &out->s, &out->slen);
+  }
+  if (**p == '[' || **p == '{') {
+    const int object = **p == '{';
+    out->kind = object ? 'o' : 'a';
+    (*p)++;
+    jv_skip(p);
+    size_t cap = 0;
+    if (**p == (object ? '}' : ']')) {
+      (*p)++;
+      return 1;
+    }
+    for (;;) {
+      if (out->n == cap) {
+        cap = cap ? cap * 2 : 4;
+        out->items = realloc(out->items, cap * sizeof *out->items);
+        if (object) {
+          out->keys = realloc(out->keys, cap * sizeof *out->keys);
+        }
+      }
+      char * key = NULL;
+      if (object) {
+        size_t kl;
+        jv_skip(p);
+        if (!jv_string(p, &key, &kl)) {
+          return 0;
+        }
+        jv_skip(p);
+        if (*(*p)++ != ':') {
+          free(key);
+          return 0;
+        }
+      }
+      if (!jv_parse_value(p, &out->items[out->n], depth + 1)) {
+        jv_free(&out->items[out->n]);   /* what the child had made before it failed */
+        free(key);
+        return 0;
+      }
+      if (object) {
+        out->keys[out->n] = key;
+      }
+      out->n++;
+      jv_skip(p);
+      if (**p == ',') {
+        (*p)++;
+        continue;
+      }
+      if (**p == (object ? '}' : ']')) {
+        (*p)++;
+        return 1;
+      }
+      return 0;
+    }
+  }
+  if (strncmp(*p, "null", 4) == 0) {
+    out->kind = 'N';
+    *p += 4;
+    return 1;
+  }
+  if (strncmp(*p, "true", 4) == 0 || strncmp(*p, "false", 5) == 0) {
+    out->kind = 'b';
+    out->boolean = **p == 't';
+    *p += out->boolean ? 4 : 5;
+    return 1;
+  }
+  char * end = NULL;
+  const double d = strncmp(*p, "Infinity", 8) == 0 ? INFINITY : strncmp(*p, "-Infinity", 9) == 0 ? -INFINITY : strncmp(*p, "NaN", 3) == 0 ? NAN : strtod(*p, &end);
+  if (strncmp(*p, "Infinity", 8) == 0) {
+    end = (char *)*p + 8;
+  }
+  else if (strncmp(*p, "-Infinity", 9) == 0) {
+    end = (char *)*p + 9;
+  }
+  else if (strncmp(*p, "NaN", 3) == 0) {
+    end = (char *)*p + 3;
+  }
+  if (!end || end == *p) {
+    return 0;
+  }
+  out->kind = 'n';
+  out->num = d;
+  *p = end;
+  return 1;
+}
+
+static int jv_parse(const char * text, jv * out) {
+  const char * p = text;
+  if (!jv_parse_value(&p, out, 0)) {
+    jv_free(out);
+    return 0;
+  }
+  jv_skip(&p);
+  return *p == '\0';
+}
+
+static jv * jv_get(jv * o, const char * key) {
+  if (o->kind != 'o') {
+    return NULL;
+  }
+  for (size_t i = 0; i < o->n; i++) {
+    if (strcmp(o->keys[i], key) == 0) {
+      return &o->items[i];
+    }
+  }
+  return NULL;
+}
+
+/* The storage the arguments the library takes point into. */
+typedef struct {
+  GTEXT_Anim_Keyframes_Argument arg;
+  GTEXT_Anim_Keyframe_Like * frames;
+  GTEXT_Anim_Keyframe_Property_Input ** props;
+  GTEXT_Anim_Property_Indexed idx;
+  GTEXT_Anim_Offset * offsets;
+  GTEXT_Anim_Text * easings;
+  GTEXT_Anim_Keyframe_Composite * composites;
+  GTEXT_Anim_Property_List_Input * lists;
+  GTEXT_Anim_Text ** values;
+  size_t nframes;
+} kfstore;
+
+static void kfstore_free(kfstore * k) {
+  if (k->props) {
+    for (size_t i = 0; i < k->nframes; i++) {
+      free(k->props[i]);
+    }
+  }
+  free(k->frames);
+  free(k->props);
+  free(k->offsets);
+  free(k->easings);
+  free(k->composites);
+  if (k->values) {
+    for (size_t i = 0; i < k->idx.property_count; i++) {
+      free(k->values[i]);
+    }
+  }
+  free(k->values);
+  free(k->lists);
+  memset(k, 0, sizeof *k);
+}
+
+static int composite_enum(const char * s, int allow_auto, GTEXT_Anim_Keyframe_Composite * out) {
+  if (strcmp(s, "replace") == 0) {
+    *out = GTEXT_ANIM_KF_COMPOSITE_REPLACE;
+  }
+  else if (strcmp(s, "add") == 0) {
+    *out = GTEXT_ANIM_KF_COMPOSITE_ADD;
+  }
+  else if (strcmp(s, "accumulate") == 0) {
+    *out = GTEXT_ANIM_KF_COMPOSITE_ACCUMULATE;
+  }
+  else if (allow_auto && strcmp(s, "auto") == 0) {
+    *out = GTEXT_ANIM_KF_COMPOSITE_AUTO;
+  }
+  else {
+    return 0;
+  }
+  return 1;
+}
+
+static GTEXT_Anim_Offset jv_offset(const jv * v) {
+  GTEXT_Anim_Offset o = {0, 0};
+  o.is_null = v->kind != 'n';
+  o.value = v->kind == 'n' ? v->num : 0;
+  return o;
+}
+
+/* "Process a keyframes argument" is the library's; this is the reading of what the evaluator wrote into the structs it takes. An enumeration that is not one of its values is a TypeError of the conversion of
+ * the IDL, before the library is called. NULL, or the failure. */
+static char * kf_build(jv * v, kfstore * k) {
+  memset(k, 0, sizeof *k);
+  jv * kind = jv_get(v, "k");
+  if (!kind || kind->kind != 's') {
+    return dups("the keyframes argument is not one the evaluator writes");
+  }
+  if (strcmp(kind->s, "null") == 0) {
+    k->arg.kind = GTEXT_ANIM_KEYFRAMES_NULL;
+    return NULL;
+  }
+  if (strcmp(kind->s, "array") == 0) {
+    jv * frames = jv_get(v, "frames");
+    if (!frames || frames->kind != 'a') {
+      return dups("the keyframes argument of the op has no frames");
+    }
+    k->arg.kind = GTEXT_ANIM_KEYFRAMES_ARRAY;
+    k->nframes = frames->n;
+    k->frames = calloc(frames->n ? frames->n : 1, sizeof *k->frames);
+    k->props = calloc(frames->n ? frames->n : 1, sizeof *k->props);
+    for (size_t i = 0; i < frames->n; i++) {
+      jv * f = &frames->items[i];
+      GTEXT_Anim_Keyframe_Like * out = &k->frames[i];
+      if (f->kind == 'N') {
+        out->null_entry = true;
+        out->offset.is_null = true;
+        continue;
+      }
+      out->offset.is_null = true;
+      jv * off = jv_get(f, "offset");
+      if (off) {
+        out->offset = jv_offset(off);
+      }
+      jv * ease = jv_get(f, "easing");
+      if (ease) {
+        out->easing = (GTEXT_Anim_Text){ease->s, ease->slen};
+      }
+      jv * comp = jv_get(f, "composite");
+      if (comp && !composite_enum(comp->s, 1, &out->composite)) {
+        kfstore_free(k);
+        return fmt("TypeError: '%s' is not a valid value for the enumeration CompositeOperationOrAuto", comp->s);
+      }
+      jv * props = jv_get(f, "props");
+      out->property_count = props->n;
+      k->props[i] = calloc(props->n ? props->n : 1, sizeof **k->props);
+      for (size_t j = 0; j < props->n; j++) {
+        jv * pair = &props->items[j];
+        k->props[i][j].name = (GTEXT_Anim_Text){pair->items[0].s, pair->items[0].slen};
+        k->props[i][j].value = (GTEXT_Anim_Text){pair->items[1].s, pair->items[1].slen};
+      }
+      out->properties = k->props[i];
+    }
+    k->arg.array = k->frames;
+    k->arg.array_count = frames->n;
+    return NULL;
+  }
+  /* indexed */
+  jv * offs = jv_get(v, "offset");
+  jv * eas = jv_get(v, "easing");
+  jv * cmp = jv_get(v, "composite");
+  jv * props = jv_get(v, "props");
+  if (!offs || !eas || !cmp || !props || offs->kind != 'a' || eas->kind != 'a' || cmp->kind != 'a' || props->kind != 'a') {
+    return dups("the keyframes argument of the op is not the property-indexed form the evaluator writes");
+  }
+  k->arg.kind = GTEXT_ANIM_KEYFRAMES_INDEXED;
+  k->offsets = calloc(offs->n ? offs->n : 1, sizeof *k->offsets);
+  for (size_t i = 0; i < offs->n; i++) {
+    k->offsets[i] = jv_offset(&offs->items[i]);
+  }
+  k->easings = calloc(eas->n ? eas->n : 1, sizeof *k->easings);
+  for (size_t i = 0; i < eas->n; i++) {
+    k->easings[i] = (GTEXT_Anim_Text){eas->items[i].s, eas->items[i].slen};
+  }
+  k->composites = calloc(cmp->n ? cmp->n : 1, sizeof *k->composites);
+  for (size_t i = 0; i < cmp->n; i++) {
+    if (!composite_enum(cmp->items[i].s, 1, &k->composites[i])) {
+      char * m = fmt("TypeError: '%s' is not a valid value for the enumeration CompositeOperationOrAuto", cmp->items[i].s);
+      kfstore_free(k);
+      return m;
+    }
+  }
+  k->lists = calloc(props->n ? props->n : 1, sizeof *k->lists);
+  k->values = calloc(props->n ? props->n : 1, sizeof *k->values);
+  k->idx.property_count = props->n;
+  for (size_t i = 0; i < props->n; i++) {
+    jv * pair = &props->items[i];
+    jv * vals = &pair->items[1];
+    k->values[i] = calloc(vals->n ? vals->n : 1, sizeof **k->values);
+    for (size_t j = 0; j < vals->n; j++) {
+      k->values[i][j] = (GTEXT_Anim_Text){vals->items[j].s, vals->items[j].slen};
+    }
+    k->lists[i].name = (GTEXT_Anim_Text){pair->items[0].s, pair->items[0].slen};
+    k->lists[i].values = k->values[i];
+    k->lists[i].value_count = vals->n;
+  }
+  k->idx.offsets = k->offsets;
+  k->idx.offset_count = offs->n;
+  k->idx.easings = k->easings;
+  k->idx.easing_count = eas->n;
+  k->idx.composites = k->composites;
+  k->idx.composite_count = cmp->n;
+  k->idx.properties = k->lists;
+  k->arg.indexed = &k->idx;
+  return NULL;
+}
+
+static int fill_enum(const char * s, GTEXT_Anim_Fill * out) {
+  static const char * const names[] = {"auto", "none", "forwards", "backwards", "both"};
+  for (int i = 0; i < 5; i++) {
+    if (strcmp(s, names[i]) == 0) {
+      *out = (GTEXT_Anim_Fill)i;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int direction_enum(const char * s, GTEXT_Anim_Direction * out) {
+  static const char * const names[] = {"normal", "reverse", "alternate", "alternate-reverse"};
+  for (int i = 0; i < 4; i++) {
+    if (strcmp(s, names[i]) == 0) {
+      *out = (GTEXT_Anim_Direction)i;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* The members of an `EffectTiming` the dictionary `t` has: the conversions of the IDL (an enumeration that is not one of its values, a `duration` string that is not `auto`) are TypeErrors. */
+static char * timing_build(jv * t, GTEXT_Anim_Optional_Timing * out, GTEXT_Anim_Text * easing) {
+  memset(out, 0, sizeof *out);
+  out->values = gtext_anim_timing_default();
+  for (size_t i = 0; t && i < t->n; i++) {
+    const char * k = t->keys[i];
+    jv * v = &t->items[i];
+    if (strcmp(k, "delay") == 0) {
+      out->present |= GTEXT_ANIM_TIMING_DELAY;
+      out->values.delay = v->num;
+    }
+    else if (strcmp(k, "endDelay") == 0) {
+      out->present |= GTEXT_ANIM_TIMING_END_DELAY;
+      out->values.end_delay = v->num;
+    }
+    else if (strcmp(k, "iterationStart") == 0) {
+      out->present |= GTEXT_ANIM_TIMING_ITERATION_START;
+      out->values.iteration_start = v->num;
+    }
+    else if (strcmp(k, "iterations") == 0) {
+      out->present |= GTEXT_ANIM_TIMING_ITERATIONS;
+      out->values.iterations = v->num;
+    }
+    else if (strcmp(k, "duration") == 0) {
+      out->present |= GTEXT_ANIM_TIMING_DURATION;
+      if (v->kind == 's') {
+        if (strcmp(v->s, "auto") != 0) {
+          return fmt("TypeError: duration must be a number or \"auto\", not \"%s\"", v->s);
+        }
+        out->values.duration_auto = true;
+        out->values.duration = 0;
+      }
+      else {
+        out->values.duration_auto = false;
+        out->values.duration = v->num;
+      }
+    }
+    else if (strcmp(k, "fill") == 0) {
+      out->present |= GTEXT_ANIM_TIMING_FILL;
+      if (!fill_enum(v->s, &out->values.fill)) {
+        return fmt("TypeError: '%s' is not a valid value for the enumeration FillMode", v->s);
+      }
+    }
+    else if (strcmp(k, "direction") == 0) {
+      out->present |= GTEXT_ANIM_TIMING_DIRECTION;
+      if (!direction_enum(v->s, &out->values.direction)) {
+        return fmt("TypeError: '%s' is not a valid value for the enumeration PlaybackDirection", v->s);
+      }
+    }
+    else if (strcmp(k, "easing") == 0) {
+      out->present |= GTEXT_ANIM_TIMING_EASING;
+      *easing = (GTEXT_Anim_Text){v->s, v->slen};
+    }
+  }
+  return NULL;
+}
+
+static char * options_build(jv * v, GTEXT_Anim_Effect_Options * out) {
+  memset(out, 0, sizeof *out);
+  GTEXT_Anim_Text easing = {NULL, 0};
+  char * failure = timing_build(jv_get(v, "timing"), &out->timing, &easing);
+  if (failure) {
+    return failure;
+  }
+  out->easing = easing;
+  jv * c = jv_get(v, "composite");
+  if (c) {
+    GTEXT_Anim_Keyframe_Composite kc;
+    if (!composite_enum(c->s, 0, &kc)) {
+      return fmt("TypeError: '%s' is not a valid value for the enumeration CompositeOperation", c->s);
+    }
+    out->has_composite = true;
+    out->composite = (GTEXT_Anim_Composite)(kc - GTEXT_ANIM_KF_COMPOSITE_REPLACE);
+  }
+  c = jv_get(v, "iterationComposite");
+  if (c) {
+    if (strcmp(c->s, "replace") != 0 && strcmp(c->s, "accumulate") != 0) {
+      return fmt("TypeError: '%s' is not a valid value for the enumeration IterationCompositeOperation", c->s);
+    }
+    out->has_iteration_composite = true;
+    out->iteration_composite = strcmp(c->s, "replace") == 0 ? GTEXT_ANIM_ITERATION_REPLACE : GTEXT_ANIM_ITERATION_ACCUMULATE;
+  }
+  c = jv_get(v, "pseudoElement");
+  if (c) {
+    out->has_pseudo = true;
+    if (c->kind == 's') {
+      out->pseudo = (GTEXT_Anim_Text){c->s, c->slen};
+    }
+  }
+  return NULL;
+}
+
+/* The effects and keyframe lists the program holds. */
+static effh * find_eh(world * w, const char * name) {
+  for (size_t i = w->neffs; i-- > 0;) {
+    if (strcmp(w->effs[i].name, name) == 0) {
+      return &w->effs[i];
+    }
+  }
+  return NULL;
+}
+
+static void put_eh(world * w, const char * name, GTEXT_Anim_Effect * e) {
+  effh * old = find_eh(w, name);
+  if (old) {
+    old->e = e;
+    return;
+  }
+  if (w->neffs == w->capeffs) {
+    w->capeffs = w->capeffs ? w->capeffs * 2 : 8;
+    w->effs = realloc(w->effs, w->capeffs * sizeof *w->effs);
+    if (!w->effs) {
+      abort();
+    }
+  }
+  w->effs[w->neffs].name = dups(name);
+  w->effs[w->neffs].e = e;
+  w->neffs++;
+}
+
+static kfl * find_kfl(world * w, const char * name) {
+  for (size_t i = w->nkfls; i-- > 0;) {
+    if (strcmp(w->kfls[i].name, name) == 0) {
+      return &w->kfls[i];
+    }
+  }
+  return NULL;
+}
+
+static void put_kfl(world * w, const char * name, GTEXT_Anim_Keyframes * k) {
+  kfl * old = find_kfl(w, name);
+  if (old) {
+    gtext_anim_keyframes_free(old->k);
+    old->k = k;
+    return;
+  }
+  if (w->nkfls == w->capkfls) {
+    w->capkfls = w->capkfls ? w->capkfls * 2 : 8;
+    w->kfls = realloc(w->kfls, w->capkfls * sizeof *w->kfls);
+    if (!w->kfls) {
+      abort();
+    }
+  }
+  w->kfls[w->nkfls].name = dups(name);
+  w->kfls[w->nkfls].k = k;
+  w->nkfls++;
+}
+
+static void put_ah(world * w, const char * name, GTEXT_Anim_Kind kind, uint64_t id) {
+  animh h;
+  memset(&h, 0, sizeof h);
+  h.name = dups(name);
+  h.kind = kind;
+  h.id = id;
+  h.pname = dups("");
+  h.easing = dups("");
+  h.idtext = dups("");
+  animh * old = find_ah(w, name);
+  if (old) {
+    animh_free(old);
+    *old = h;
+    return;
+  }
+  if (w->nahs == w->capahs) {
+    w->capahs = w->capahs ? w->capahs * 2 : 8;
+    w->ahs = realloc(w->ahs, w->capahs * sizeof *w->ahs);
+    if (!w->ahs) {
+      abort();
+    }
+  }
+  w->ahs[w->nahs++] = h;
+}
+
+/* An effect operand: `f:NAME` (an effect handle the program holds, or an animation's current effect) or `N:`. -1: a program fault; else 1 with `*e` the effect (NULL for null). */
+static int effect_operand(world * w, const char * f, GTEXT_Anim_Effect ** e) {
+  *e = NULL;
+  if (strncmp(f, "N:", 2) == 0) {
+    return 1;
+  }
+  if (strncmp(f, "f:", 2) != 0) {
+    return -1;
+  }
+  effh * h = find_eh(w, f + 2);
+  if (!h) {
+    return -1;
+  }
+  *e = h->e;
+  return 1;
+}
+
+/* The element an operand names (`e:NAME`) or null (`N:`): the tree's handle. */
+static int element_operand(world * w, const char * f, const void ** handle, char ** failure) {
+  *handle = NULL;
+  *failure = NULL;
+  if (strncmp(f, "N:", 2) == 0) {
+    return 1;
+  }
+  if (strncmp(f, "e:", 2) != 0) {
+    return -1;
+  }
+  elem * e = find_elem(w, f + 2);
+  if (!e) {
+    return -1;
+  }
+  if (!e->node || !is_element(e->node)) {
+    *failure = dups("TypeError: the target is not an element");
+    return 1;
+  }
+  *handle = gtext_css_markup_handle(e->node);
+  return 1;
+}
+
+/* The node of an element handle the library gave back (an effect's target), found among the elements the runner knows. */
+static GTEXT_Markup_Node * node_of_handle(world * w, const void * handle) {
+  for (size_t i = 0; i < w->nelems; i++) {
+    if (w->elems[i].node && gtext_css_markup_handle(w->elems[i].node) == handle) {
+      return w->elems[i].node;
+    }
+  }
+  for (size_t i = 0; i < w->nknown; i++) {
+    if (w->known[i] && gtext_css_markup_handle(w->known[i]) == handle) {
+      return w->known[i];
+    }
+  }
+  for (size_t i = 0; i < w->ntracked; i++) {
+    if (w->tracked[i] && gtext_css_markup_handle(w->tracked[i]) == handle) {
+      return w->tracked[i];
+    }
+  }
+  return NULL;
+}
+
+static const char * script_status_name(GTEXT_Anim_Status st) {
+  return st == GTEXT_ANIM_SYNTAX_ERROR ? "SyntaxError" : NULL;
+}
+
+/* "Name: message" for a status of an effect call; a SyntaxError of a pseudoElement is the DOMException of that name. */
+static char * effect_failure(const char * what, GTEXT_Anim_Status st, int * program_error) {
+  const char * special = script_status_name(st);
+  if (special) {
+    return fmt("%s: %s", special, what);
+  }
+  return anim_status_failure(what, st, program_error);
+}
+
+static const char * composite_name(GTEXT_Anim_Composite c) {
+  return c == GTEXT_ANIM_COMPOSITE_ADD ? "add" : c == GTEXT_ANIM_COMPOSITE_ACCUMULATE ? "accumulate" : "replace";
+}
+
+static const char * kf_composite_name(GTEXT_Anim_Keyframe_Composite c) {
+  return c == GTEXT_ANIM_KF_COMPOSITE_ADD ? "add" : c == GTEXT_ANIM_KF_COMPOSITE_ACCUMULATE ? "accumulate" : c == GTEXT_ANIM_KF_COMPOSITE_REPLACE ? "replace" : "auto";
+}
+
+static int cmp_str(const void * a, const void * b) {
+  return strcmp(*(char * const *)a, *(char * const *)b);
+}
+
+static int is_script_op(const char * name) {
+  static const char * const names[] = {"anew", "animnew", "enew", "ecopy", "aeff", "aseteff", "asettl", "eget", "eset", "etarget", "esettarget", "ekf", "kflen", "kfget", "kfcmp", "kfhas", "esetkf", "eupdate"};
+  for (size_t i = 0; i < sizeof names / sizeof *names; i++) {
+    if (strcmp(name, names[i]) == 0) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static char * script_op(world * w, const op * o, int * program_error) {
+  const char * name = o->f[0];
+  *program_error = 0;
+  if (!w->anim) {
+    *program_error = 1;
+    return dups("an animation op in a run with no animation world");
+  }
+#define NEEDN(n_) do { if (o->n != (n_)) { *program_error = 1; return fmt("the op %s has %zu fields, not %d", name, o->n, (n_)); } } while (0)
+  if (strcmp(name, "anew") == 0 || strcmp(name, "enew") == 0) {
+    /* anew A E KF OPT | enew F E KF OPT */
+    NEEDN(5);
+    const void * target = NULL;
+    char * failure = NULL;
+    if (element_operand(w, o->f[2], &target, &failure) < 0) {
+      *program_error = 1;
+      return fmt("%s names the element %s, which the program did not make", name, o->f[2]);
+    }
+    if (failure) {
+      return failure;
+    }
+    jv kjson, ojson;
+    if (!jv_parse(o->f[3], &kjson) || !jv_parse(o->f[4], &ojson)) {
+      *program_error = 1;
+      return dups("the keyframes or the options of the op are not JSON");
+    }
+    kfstore ks;
+    GTEXT_Anim_Effect_Options opt;
+    failure = kf_build(&kjson, &ks);
+    if (!failure) {
+      failure = options_build(&ojson, &opt);
+      if (failure) {
+        kfstore_free(&ks);
+      }
+    }
+    if (failure) {
+      jv_free(&kjson);
+      jv_free(&ojson);
+      return failure;
+    }
+    sync_world(w);
+    GTEXT_Anim_Effect * e = NULL;
+    GTEXT_Anim_Status st;
+    if (strcmp(name, "anew") == 0) {
+      if (!target) {
+        jv_free(&kjson);
+        jv_free(&ojson);
+        kfstore_free(&ks);
+        return dups("TypeError: animate() was called on null");
+      }
+      GTEXT_Anim_Animation * a = NULL;
+      uint64_t id = 0;
+      st = gtext_anim_world_animate(w->anim, target, &ks.arg, &opt, &e, &id, &a);
+      if (st == GTEXT_ANIM_OK) {
+        put_ah(w, o->f[1], GTEXT_ANIM_KIND_SCRIPT, id);
+        (void)ctl_get(w, find_ah(w, o->f[1]));
+      }
+    }
+    else {
+      st = gtext_anim_world_effect_new(w->anim, target, &ks.arg, &opt, &e);
+      if (st == GTEXT_ANIM_OK) {
+        put_eh(w, o->f[1], e);
+      }
+    }
+    jv_free(&kjson);
+    jv_free(&ojson);
+    kfstore_free(&ks);
+    if (st != GTEXT_ANIM_OK) {
+      return effect_failure(strcmp(name, "anew") == 0 ? "animate() failed" : "the KeyframeEffect could not be made", st, program_error);
+    }
+    return NULL;
+  }
+  if (strcmp(name, "ecopy") == 0) {
+    NEEDN(3);
+    GTEXT_Anim_Effect * src = NULL;
+    if (effect_operand(w, o->f[2], &src) < 0 || !src) {
+      *program_error = 1;
+      return dups("ecopy names an effect the program did not make");
+    }
+    GTEXT_Anim_Effect * e = NULL;
+    const GTEXT_Anim_Status st = gtext_anim_world_effect_copy(w->anim, src, &e);
+    if (st != GTEXT_ANIM_OK) {
+      return effect_failure("the KeyframeEffect could not be copied", st, program_error);
+    }
+    put_eh(w, o->f[1], e);
+    return NULL;
+  }
+  if (strcmp(name, "animnew") == 0) {
+    /* animnew A F TL */
+    NEEDN(4);
+    GTEXT_Anim_Effect * e = NULL;
+    if (effect_operand(w, o->f[2], &e) < 0) {
+      *program_error = 1;
+      return dups("animnew names an effect the program did not make");
+    }
+    GTEXT_Anim_Animation * a = NULL;
+    uint64_t id = 0;
+    const GTEXT_Anim_Status st = gtext_anim_world_animation_new(w->anim, e, o->f[3][0] == 'n' ? GTEXT_ANIM_TIMELINE_NONE : GTEXT_ANIM_TIMELINE_DOCUMENT, &id, &a);
+    if (st != GTEXT_ANIM_OK) {
+      return effect_failure("the Animation could not be made", st, program_error);
+    }
+    put_ah(w, o->f[1], GTEXT_ANIM_KIND_SCRIPT, id);
+    (void)ctl_get(w, find_ah(w, o->f[1]));
+    return NULL;
+  }
+  if (strcmp(name, "asettl") == 0) {
+    /* asettl A d|n: animation.timeline = document.timeline | null ("Setting the timeline of an animation") */
+    NEEDN(3);
+    animh * h = find_ah(w, o->f[1]);
+    if (!h) {
+      *program_error = 1;
+      return fmt("asettl names the animation %s, which the program did not make", o->f[1]);
+    }
+    if (h->missing) {
+      return dups("TypeError: Cannot set properties of undefined");
+    }
+    ctl * c = ctl_get(w, h);
+    if (!c) {
+      return dups("the Animation could not be held");
+    }
+    const GTEXT_Anim_Status st = gtext_anim_animation_set_timeline(c->a, o->f[2][0] == 'n' ? GTEXT_ANIM_TIMELINE_NONE : GTEXT_ANIM_TIMELINE_DOCUMENT, (GTEXT_Anim_Time){true, w->now_ms});
+    (void)gtext_anim_world_touch(w->anim);
+    return st == GTEXT_ANIM_OK ? NULL : effect_failure("timeline could not be set", st, program_error);
+  }
+  if (strcmp(name, "aeff") == 0 || strcmp(name, "aseteff") == 0) {
+    /* aeff F A | aseteff A F */
+    NEEDN(3);
+    animh * h = find_ah(w, o->f[strcmp(name, "aeff") == 0 ? 2 : 1]);
+    if (!h) {
+      *program_error = 1;
+      return fmt("%s names the animation %s, which the program did not make", name, o->f[strcmp(name, "aeff") == 0 ? 2 : 1]);
+    }
+    if (h->missing) {
+      return dups("TypeError: Cannot read properties of undefined");
+    }
+    ctl * c = ctl_get(w, h);
+    if (!c) {
+      return dups("the Animation could not be held");
+    }
+    GTEXT_Anim_Effect * e = NULL;
+    GTEXT_Anim_Status st;
+    if (strcmp(name, "aeff") == 0) {
+      st = gtext_anim_world_effect_of(w->anim, c->a, &e);
+      if (st != GTEXT_ANIM_OK) {
+        return effect_failure("the effect could not be read", st, program_error);
+      }
+      put_eh(w, o->f[1], e);
+      return NULL;
+    }
+    if (effect_operand(w, o->f[2], &e) < 0) {
+      *program_error = 1;
+      return dups("aseteff names an effect the program did not make");
+    }
+    if (h->kind != GTEXT_ANIM_KIND_SCRIPT) {
+      return dups("NotSupportedError: replacing the effect of a CSS animation or transition is not built");
+    }
+    st = gtext_anim_animation_set_effect_object(c->a, e, (GTEXT_Anim_Time){true, w->now_ms});
+    (void)gtext_anim_world_touch(w->anim);
+    if (st != GTEXT_ANIM_OK) {
+      return effect_failure("the effect could not be set", st, program_error);
+    }
+    return NULL;
+  }
+  /* the rest name an effect first (the second field, or the first for a write) */
+  const int write = strcmp(name, "eset") == 0 || strcmp(name, "esettarget") == 0 || strcmp(name, "esetkf") == 0 || strcmp(name, "eupdate") == 0;
+  if (strcmp(name, "kflen") == 0 || strcmp(name, "kfget") == 0 || strcmp(name, "kfcmp") == 0 || strcmp(name, "kfhas") == 0) {
+    NEEDN(strcmp(name, "kflen") == 0 ? 3 : 5);
+    const char * listname = strcmp(name, "kfcmp") == 0 ? o->f[1] : o->f[2];
+    kfl * l = find_kfl(w, listname);
+    if (!l) {
+      *program_error = 1;
+      return fmt("%s names the list %s, which the program did not make", name, listname);
+    }
+    if (strcmp(name, "kflen") == 0) {
+      NEEDN(3);
+      put_reg(w, o->f[1], number_value((double)gtext_anim_keyframes_count(l->k)));
+      return NULL;
+    }
+    const size_t index = (size_t)strtoull(strcmp(name, "kfcmp") == 0 ? o->f[2] : o->f[3], NULL, 10);
+    GTEXT_Anim_Keyframe_Info ki;
+    if (strcmp(name, "kfhas") == 0) {
+      /* kfhas R L I NAME: the keyframe has the property as an own property of the object getKeyframes() made of it */
+      NEEDN(5);
+      if (!gtext_anim_keyframes_at(l->k, index, &ki)) {
+        return dups("TypeError: Cannot read properties of undefined");
+      }
+      static const char * const own[] = {"offset", "computedOffset", "easing", "composite"};
+      int has = 0;
+      for (size_t i = 0; i < 4; i++) {
+        has = has || strcmp(o->f[4], own[i]) == 0;
+      }
+      for (size_t i = 0; i < ki.property_count && !has; i++) {
+        GTEXT_CSS_String pn, idl, pv;
+        (void)gtext_anim_keyframes_property_at(l->k, index, i, &pn, &idl, &pv);
+        has = idl.length == strlen(o->f[4]) && memcmp(idl.data, o->f[4], idl.length) == 0;
+      }
+      put_reg(w, o->f[1], val('b', has ? "true" : "false", has ? 4 : 5));
+      return NULL;
+    }
+    if (strcmp(name, "kfget") == 0) {
+      NEEDN(5);
+      if (!gtext_anim_keyframes_at(l->k, index, &ki)) {
+        return dups("TypeError: Cannot read properties of undefined");
+      }
+      const char * member = o->f[4];
+      value v;
+      if (strcmp(member, "offset") == 0) {
+        v = ki.offset_null ? val('N', "", 0) : number_value(ki.offset);
+      }
+      else if (strcmp(member, "computedOffset") == 0) {
+        v = number_value(ki.computed_offset);
+      }
+      else if (strcmp(member, "easing") == 0) {
+        v = val('s', ki.easing.data, ki.easing.length);
+      }
+      else if (strcmp(member, "composite") == 0) {
+        const char * s = kf_composite_name(ki.composite);
+        v = val('s', s, strlen(s));
+      }
+      else {
+        v = val('u', "", 0);
+        for (size_t i = 0; i < ki.property_count; i++) {
+          GTEXT_CSS_String pn, idl, pv;
+          (void)gtext_anim_keyframes_property_at(l->k, index, i, &pn, &idl, &pv);
+          if (idl.length == strlen(member) && memcmp(idl.data, member, idl.length) == 0) {
+            value_free(&v);
+            v = val('s', pv.data, pv.length);
+            break;
+          }
+        }
+      }
+      put_reg(w, o->f[1], v);
+      return NULL;
+    }
+    /* kfcmp L I JSON NAME: assert_frames_equal(actual, expected, name) */
+    NEEDN(5);
+    if (!gtext_anim_keyframes_at(l->k, index, &ki)) {
+      return dups("TypeError: Cannot convert undefined or null to object");
+    }
+    jv want;
+    if (!jv_parse(o->f[3], &want) || want.kind != 'o') {
+      *program_error = 1;
+      jv_free(&want);
+      return dups("kfcmp: the expected frame is not an object");
+    }
+    /* the keys of the keyframe: offset, computedOffset, easing, composite and its properties (by IDL name) */
+    size_t nkeys = 4 + ki.property_count;
+    char ** keys = calloc(nkeys, sizeof *keys);
+    keys[0] = dups("composite");
+    keys[1] = dups("computedOffset");
+    keys[2] = dups("easing");
+    keys[3] = dups("offset");
+    for (size_t i = 0; i < ki.property_count; i++) {
+      GTEXT_CSS_String pn, idl, pv;
+      (void)gtext_anim_keyframes_property_at(l->k, index, i, &pn, &idl, &pv);
+      keys[4 + i] = dupn(idl.data, idl.length);
+    }
+    char ** wkeys = calloc(want.n ? want.n : 1, sizeof *wkeys);
+    for (size_t i = 0; i < want.n; i++) {
+      wkeys[i] = dups(want.keys[i]);
+    }
+    qsort(keys, nkeys, sizeof *keys, cmp_str);
+    qsort(wkeys, want.n, sizeof *wkeys, cmp_str);
+    char * failure = NULL;
+    if (nkeys != want.n) {
+      failure = fmt("assert_array_equals: properties on %s should match: lengths differ, expected %zu got %zu", o->f[4], want.n, nkeys);
+    }
+    for (size_t i = 0; !failure && i < nkeys; i++) {
+      if (strcmp(keys[i], wkeys[i]) != 0) {
+        failure = fmt("assert_array_equals: properties on %s should match: expected \"%s\" but got \"%s\"", o->f[4], wkeys[i], keys[i]);
+      }
+    }
+    for (size_t i = 0; !failure && i < nkeys; i++) {
+      const char * key = keys[i];
+      jv * ev = jv_get(&want, key);
+      value got;
+      if (strcmp(key, "offset") == 0) {
+        got = ki.offset_null ? val('N', "", 0) : number_value(ki.offset);
+      }
+      else if (strcmp(key, "computedOffset") == 0) {
+        got = number_value(ki.computed_offset);
+      }
+      else if (strcmp(key, "easing") == 0) {
+        got = val('s', ki.easing.data, ki.easing.length);
+      }
+      else if (strcmp(key, "composite") == 0) {
+        const char * s = kf_composite_name(ki.composite);
+        got = val('s', s, strlen(s));
+      }
+      else {
+        got = val('u', "", 0);
+        for (size_t j = 0; j < ki.property_count; j++) {
+          GTEXT_CSS_String pn, idl, pv;
+          (void)gtext_anim_keyframes_property_at(l->k, index, j, &pn, &idl, &pv);
+          if (idl.length == strlen(key) && memcmp(idl.data, key, idl.length) == 0) {
+            value_free(&got);
+            got = val('s', pv.data, pv.length);
+            break;
+          }
+        }
+      }
+      value expected = ev->kind == 'n' ? number_value(ev->num) : ev->kind == 's' ? val('s', ev->s, ev->slen) : val('N', "", 0);
+      const int approx = ((strcmp(key, "offset") == 0 && got.kind == 'n') || strcmp(key, "computedOffset") == 0) && expected.kind == 'n' && got.kind == 'n';
+      int ok = approx ? fabs(strtod(got.s, NULL) - strtod(expected.s, NULL)) <= 0.00001 : same_as(&got, &expected, 1);
+      if (!ok) {
+        char m[300];
+        snprintf(m, sizeof m, "value for '%s' on %s should match", key, o->f[4]);
+        failure = mismatch("assert_equals", m, &expected, &got);
+      }
+      value_free(&got);
+      value_free(&expected);
+    }
+    for (size_t i = 0; i < nkeys; i++) {
+      free(keys[i]);
+    }
+    for (size_t i = 0; i < want.n; i++) {
+      free(wkeys[i]);
+    }
+    free(keys);
+    free(wkeys);
+    jv_free(&want);
+    return failure;
+  }
+  /* eget R F member | etarget N F | ekf L F | eset F member VALUE | esettarget F E | esetkf F KF | eupdate F JSON */
+  const size_t at = write ? 1 : 2;
+  if (o->n <= at) {
+    *program_error = 1;
+    return fmt("%s has too few fields", name);
+  }
+  GTEXT_Anim_Effect * e = NULL;
+  effh * eh = find_eh(w, o->f[at]);
+  if (!eh) {
+    *program_error = 1;
+    return fmt("%s names the effect %s, which the program did not make", name, o->f[at]);
+  }
+  e = eh->e;
+  if (!e) {
+    return dups("TypeError: Cannot read properties of null");
+  }
+  GTEXT_Anim_Status st;
+  if (strcmp(name, "eget") == 0) {
+    NEEDN(4);
+    const char * member = o->f[3];
+    value v;
+    if (strcmp(member, "composite") == 0) {
+      const char * s = composite_name(gtext_anim_effect_get_composite(e));
+      v = val('s', s, strlen(s));
+    }
+    else if (strcmp(member, "iterationComposite") == 0) {
+      const char * s = gtext_anim_effect_get_iteration_composite(e) == GTEXT_ANIM_ITERATION_ACCUMULATE ? "accumulate" : "replace";
+      v = val('s', s, strlen(s));
+    }
+    else if (strcmp(member, "pseudoElement") == 0) {
+      const void * el;
+      GTEXT_CSS_String ps;
+      (void)gtext_anim_effect_get_target(e, &el, &ps);
+      v = ps.length ? val('s', ps.data, ps.length) : val('N', "", 0);
+    }
+    else {
+      *program_error = 1;
+      return fmt("eget does not know the member %s", member);
+    }
+    put_reg(w, o->f[1], v);
+    return NULL;
+  }
+  if (strcmp(name, "etarget") == 0) {
+    NEEDN(3);
+    const void * el = NULL;
+    GTEXT_CSS_String ps;
+    (void)gtext_anim_effect_get_target(e, &el, &ps);
+    put_elem(w, o->f[1], el ? node_of_handle(w, el) : NULL);
+    return NULL;
+  }
+  if (strcmp(name, "ekf") == 0) {
+    NEEDN(3);
+    GTEXT_Anim_Keyframes * k = NULL;
+    st = gtext_anim_effect_get_keyframes(e, &k);
+    if (st != GTEXT_ANIM_OK) {
+      return effect_failure("getKeyframes() failed", st, program_error);
+    }
+    put_kfl(w, o->f[1], k);
+    return NULL;
+  }
+  if (strcmp(name, "eset") == 0) {
+    NEEDN(4);
+    const char * member = o->f[2];
+    const char * v = o->f[3];
+    const int is_null = strncmp(v, "N:", 2) == 0;
+    const char * text = is_null ? NULL : v + 2;
+    if (strcmp(member, "composite") == 0 && text) {
+      GTEXT_Anim_Keyframe_Composite kc;
+      if (composite_enum(text, 0, &kc)) {
+        st = gtext_anim_effect_set_composite(e, (GTEXT_Anim_Composite)(kc - GTEXT_ANIM_KF_COMPOSITE_REPLACE));
+        (void)gtext_anim_world_touch(w->anim);
+        return st == GTEXT_ANIM_OK ? NULL : effect_failure("composite could not be set", st, program_error);
+      }
+      return NULL;   /* an attribute set to a string that is not one of its enumeration values is ignored */
+    }
+    if (strcmp(member, "iterationComposite") == 0 && text) {
+      if (strcmp(text, "replace") == 0 || strcmp(text, "accumulate") == 0) {
+        st = gtext_anim_effect_set_iteration_composite(e, strcmp(text, "replace") == 0 ? GTEXT_ANIM_ITERATION_REPLACE : GTEXT_ANIM_ITERATION_ACCUMULATE);
+        (void)gtext_anim_world_touch(w->anim);
+        return st == GTEXT_ANIM_OK ? NULL : effect_failure("iterationComposite could not be set", st, program_error);
+      }
+      return NULL;
+    }
+    if (strcmp(member, "pseudoElement") == 0) {
+      st = gtext_anim_effect_set_pseudo(e, text, text ? strlen(text) : 0);
+      (void)gtext_anim_world_touch(w->anim);
+      return st == GTEXT_ANIM_OK ? NULL : effect_failure("pseudoElement could not be set", st, program_error);
+    }
+    *program_error = 1;
+    return fmt("eset does not know the member %s", member);
+  }
+  if (strcmp(name, "esettarget") == 0) {
+    NEEDN(3);
+    const void * target = NULL;
+    char * failure = NULL;
+    if (element_operand(w, o->f[2], &target, &failure) < 0) {
+      *program_error = 1;
+      return dups("esettarget names an element the program did not make");
+    }
+    if (failure) {
+      return failure;
+    }
+    sync_world(w);
+    st = gtext_anim_effect_set_target(e, target);
+    (void)gtext_anim_world_touch(w->anim);
+    return st == GTEXT_ANIM_OK ? NULL : effect_failure("target could not be set", st, program_error);
+  }
+  if (strcmp(name, "esetkf") == 0) {
+    NEEDN(3);
+    jv kjson;
+    if (!jv_parse(o->f[2], &kjson)) {
+      *program_error = 1;
+      return dups("the keyframes of the op are not JSON");
+    }
+    kfstore ks;
+    char * failure = kf_build(&kjson, &ks);
+    if (failure) {
+      jv_free(&kjson);
+      return failure;
+    }
+    st = gtext_anim_effect_set_keyframes(e, &ks.arg);
+    jv_free(&kjson);
+    kfstore_free(&ks);
+    (void)gtext_anim_world_touch(w->anim);
+    return st == GTEXT_ANIM_OK ? NULL : effect_failure("setKeyframes() failed", st, program_error);
+  }
+  if (strcmp(name, "eupdate") == 0) {
+    NEEDN(3);
+    jv tjson;
+    if (!jv_parse(o->f[2], &tjson)) {
+      *program_error = 1;
+      return dups("the timing of the op is not JSON");
+    }
+    GTEXT_Anim_Optional_Timing in;
+    GTEXT_Anim_Text easing = {NULL, 0};
+    char * failure = timing_build(jv_get(&tjson, "timing"), &in, &easing);
+    if (failure) {
+      jv_free(&tjson);
+      return failure;
+    }
+    st = gtext_anim_effect_update_timing(e, &in, &easing, (GTEXT_Anim_Time){true, w->now_ms});
+    jv_free(&tjson);
+    (void)gtext_anim_world_touch(w->anim);
+    return st == GTEXT_ANIM_OK ? NULL : effect_failure("updateTiming() failed", st, program_error);
+  }
+  *program_error = 1;
+  return fmt("the op %s is not one the runner knows", name);
+#undef NEEDN
+}
+
 static char * anim_op(world * w, const op * o, int * program_error) {
   const char * name = o->f[0];
   *program_error = 0;
+  if (is_script_op(name)) {
+    return script_op(w, o, program_error);
+  }
   {
     int handled = 0;
     char * result = ctl_op(w, o, program_error, &handled);
@@ -4500,11 +5790,47 @@ static char * anim_op(world * w, const op * o, int * program_error) {
     w->ahs[w->nahs++] = h;
     return NULL;
   }
-  /* aget, aset and tget name an animation */
+  /* aget, aset and tget name an animation; a tget may name an effect (an effect the program holds, or the one of an animation it read) */
   const size_t at = strcmp(name, "aset") == 0 ? 1 : 2;
   if (o->n <= at) {
     *program_error = 1;
     return fmt("%s has too few fields", name);
+  }
+  if (strcmp(name, "tget") == 0 && find_eh(w, o->f[at])) {
+    if (o->n != 5) {
+      *program_error = 1;
+      return dups("tget has the wrong number of fields");
+    }
+    GTEXT_Anim_Effect * e = find_eh(w, o->f[at])->e;
+    if (!e) {
+      return dups("TypeError: Cannot read properties of null");
+    }
+    char * failure = style_recalc(w);   /* what a page reads of an effect is of the animation after the style change events its changes made */
+    if (failure) {
+      return failure;
+    }
+    GTEXT_Anim_Effect_Timing t;
+    GTEXT_CSS_String easing = {NULL, 0};
+    GTEXT_Anim_Computed_Timing ct;
+    const int computed = strcmp(o->f[3], "computed") == 0;
+    GTEXT_Anim_Status ts = gtext_anim_effect_get_timing(e, &t, &easing);
+    char * easing_text = ts == GTEXT_ANIM_OK ? dupn(easing.data ? easing.data : "linear", easing.data ? easing.length : 6) : NULL;   /* before the next call, which may replace it */
+    if (ts == GTEXT_ANIM_OK) {
+      ts = gtext_anim_effect_get_computed_timing(e, (GTEXT_Anim_Time){true, w->now_ms}, &ct);
+    }
+    if (ts != GTEXT_ANIM_OK) {
+      free(easing_text);
+      return fmt("getTiming() failed (status %d)", (int)ts);
+    }
+    value v;
+    const int known = timing_member(o->f[4], computed, &t, easing_text, &ct, &v);
+    free(easing_text);
+    if (!known) {
+      *program_error = 1;
+      return fmt("tget does not know the member %s", o->f[4]);
+    }
+    put_reg(w, o->f[1], v);
+    return NULL;
   }
   animh * h = find_ah(w, o->f[at]);
   if (!h) {
@@ -4553,7 +5879,7 @@ static char * anim_op(world * w, const op * o, int * program_error) {
       v = h->kind == GTEXT_ANIM_KIND_CSS_TRANSITION ? val('s', h->pname, strlen(h->pname)) : val('u', "", 0);
     }
     else if (strcmp(member, "className") == 0) {
-      const char * s = h->kind == GTEXT_ANIM_KIND_CSS_TRANSITION ? "CSSTransition" : "CSSAnimation";
+      const char * s = h->kind == GTEXT_ANIM_KIND_CSS_TRANSITION ? "CSSTransition" : h->kind == GTEXT_ANIM_KIND_SCRIPT ? "Animation" : "CSSAnimation";
       v = val('s', s, strlen(s));
     }
     else if (ctl_find(w, h->kind, h->id) && (strcmp(member, "playState") == 0 || strcmp(member, "pending") == 0 || strcmp(member, "currentTime") == 0 || strcmp(member, "playbackRate") == 0 ||
@@ -4630,52 +5956,7 @@ static char * anim_op(world * w, const op * o, int * program_error) {
     (void)gtext_anim_computed_timing(t, (GTEXT_Anim_Time){false, 0.0}, 1.0, false, &ct);
   }
   value v;
-  int known = 1;
-  if (strcmp(member, "delay") == 0) {
-    v = number_value(t->delay);
-  }
-  else if (strcmp(member, "endDelay") == 0) {
-    v = number_value(t->end_delay);
-  }
-  else if (strcmp(member, "fill") == 0) {
-    const char * s = fill_name(computed ? ct.timing.fill : t->fill);
-    v = val('s', s, strlen(s));
-  }
-  else if (strcmp(member, "iterationStart") == 0) {
-    v = number_value(t->iteration_start);
-  }
-  else if (strcmp(member, "iterations") == 0) {
-    v = number_value(t->iterations);
-  }
-  else if (strcmp(member, "duration") == 0) {
-    v = !computed && t->duration_auto ? val('s', "auto", 4) : number_value(computed ? ct.timing.duration : t->duration);
-  }
-  else if (strcmp(member, "direction") == 0) {
-    const char * s = direction_name(t->direction);
-    v = val('s', s, strlen(s));
-  }
-  else if (strcmp(member, "easing") == 0) {
-    v = val('s', easing, strlen(easing));
-  }
-  else if (computed && strcmp(member, "endTime") == 0) {
-    v = number_value(ct.end_time);
-  }
-  else if (computed && strcmp(member, "activeDuration") == 0) {
-    v = number_value(ct.active_duration);
-  }
-  else if (computed && strcmp(member, "localTime") == 0) {
-    v = time_value(ct.local_time);
-  }
-  else if (computed && strcmp(member, "progress") == 0) {
-    v = ct.has_progress ? number_value(ct.progress) : val('N', "", 0);
-  }
-  else if (computed && strcmp(member, "currentIteration") == 0) {
-    v = ct.has_current_iteration ? number_value(ct.current_iteration) : val('N', "", 0);
-  }
-  else {
-    known = 0;
-    v = val('u', "", 0);
-  }
+  const int known = timing_member(member, computed, t, easing, &ct, &v);
   free(easing_copy);
   if (!known) {
     *program_error = 1;
@@ -4689,12 +5970,24 @@ static char * run_op(world * w, const op * o, testrun * t, int * program_error) 
   const char * name = o->f[0];
   *program_error = 0;
   int ok;
+  {
+    static const char * const family[] = {"anew", "enew", "animnew", "ecopy", "asettl", "aeff", "aseteff", "am", "pgen", "pwait", "asetv", "frame", "advance", "eupdate", "esetkf", "esettarget"};
+    for (size_t fi_ = 0; fi_ < sizeof family / sizeof family[0]; fi_++) {
+      if (strcmp(name, family[fi_]) == 0) {
+        w->animates = 1;
+        break;
+      }
+    }
+  }
 #define NEED(n_) do { if (o->n != (n_)) { *program_error = 1; return fmt("the op %s has %zu fields, not %d", name, o->n, (n_)); } } while (0)
 #define ELEM(var, fld) elem * var = find_elem(w, o->f[fld]); if (!var) { *program_error = 1; return fmt("the op %s names the element %s, which the program did not make", name, o->f[fld]); } \
   if (!var->node) { return dups("TypeError: the element is null"); } \
   if (!is_element(var->node)) { return dups("TypeError: the node is not an element"); }
 #define STYLE(var, fld) style * var = find_style(w, o->f[fld]); if (!var) { *program_error = 1; return fmt("the op %s names the style %s, which the program did not make", name, o->f[fld]); } \
-  if (var->computed && w->tracker) { sync_world(w); if (w->async) { char * recalc_failure = style_recalc(w); if (recalc_failure) { return recalc_failure; } } const GTEXT_CSS_Status flushed = gtext_cssom_transition_tracker_flush(w->tracker, gtext_css_markup_handle(var->node), var->pseudo, strlen(var->pseudo)); if (flushed != GTEXT_CSS_OK) { return status_failure("style change event", flushed); } }
+  if (var->computed && w->tracker) { sync_world(w); if (w->async || w->animates) { char * recalc_failure = style_recalc(w); if (recalc_failure) { return recalc_failure; } } const GTEXT_CSS_Status flushed = gtext_cssom_transition_tracker_flush(w->tracker, gtext_css_markup_handle(var->node), var->pseudo, strlen(var->pseudo)); if (flushed != GTEXT_CSS_OK) { return status_failure("style change event", flushed); } \
+    if (!*var->pseudo) { /* a read of a computed style is a style update of the document, and the pseudo-elements of the element are part of it: the transitions of its ::before, ::after and ::marker start at the same event */ \
+      static const char * const pe_[] = {"::before", "::after", "::marker"}; \
+      for (size_t pi_ = 0; pi_ < 3; pi_++) { const GTEXT_CSS_Status pf_ = gtext_cssom_transition_tracker_flush(w->tracker, gtext_css_markup_handle(var->node), pe_[pi_], strlen(pe_[pi_])); if (pf_ != GTEXT_CSS_OK) { return status_failure("style change event", pf_); } } } }
 
   {
     char * failure = NULL;

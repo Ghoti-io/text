@@ -2704,7 +2704,12 @@ CSS_PROPERTY_FLOOR := CSS_PROPERTY_MIN_SCORED=9301 CSS_PROPERTY_MAX_DEFECTS=0
 CSS_COMPUTED_FLOOR := CSS_COMPUTED_MIN_SCORED=4532 CSS_COMPUTED_MAX_DEFECTS=0
 CSS_CONDITIONS_FLOOR := CSS_CONDITIONS_MIN_SCORED=240
 CSS_CSSOM_FLOOR := CSS_CSSOM_MIN_SCORED=417 CSS_CSSOM_MIN_PAGES=97 CSS_CSSOM_MAX_DEFECTS=0 CSS_CSSOM_MIN_FRACTION=2428 \
-	CSS_CSSOM_SCRIPT_MIN_SCORED=5760 CSS_CSSOM_SCRIPT_MIN_PAGES=717 CSS_CSSOM_SCRIPT_MAX_DEFECTS=8 CSS_CSSOM_SCRIPT_MAX_LAYOUT=749 CSS_CSSOM_SCRIPT_MAX_TIMELINE=0 CSS_CSSOM_SCRIPT_MAX_UA=4
+	CSS_CSSOM_SCRIPT_MIN_SCORED=5863 CSS_CSSOM_SCRIPT_MIN_PAGES=731 CSS_CSSOM_SCRIPT_MAX_DEFECTS=42 CSS_CSSOM_SCRIPT_MAX_LAYOUT=773 CSS_CSSOM_SCRIPT_MAX_TIMELINE=0 CSS_CSSOM_SCRIPT_MAX_UA=4
+# What moved with animate() and the effects of Animations (CSS-PLAN.md C5e31): 103 more tests of 14 more pages are scored (5,863 of 731), 24 more tests need a layout (749 to 773: a reflow of the
+# page the script reads), and THIRTY-FOUR more tests are defects (the ceiling goes UP from 8 to 42, because pages that the interpreter could not read before are read now and answer where the library
+# is short: twenty of css-transforms/animation/transform-interpolation-inline-value.html, where two transform lists whose functions differ in name but share a family are interpolated as a discrete
+# pair; ten of the keyframes and the effect of a CSS animation or transition, which are read-only objects here; two of ::marker transitions at a document style update; two of getKeyframes() of a CSS
+# animation; each is a line of CSS_CSSOM_SCRIPT_EXCEPTIONS with its owner).
 # What moved with the pin of web-platform-tests of 2026-11-10 (CSS-PLAN.md C5e21): the scored counts and pages go up with the new pages that are read (a floor that goes up); the share of the touched
 # tests that is scored goes from 2196 to 2190 in ten thousand because 1,300 of the 1,500 added tests are reftests and layout tests, which no gate here scores (a floor that goes down, with its
 # reason); 27 pages need a layout that did not (the ceiling of layout tests goes from 631 to 658); and ONE defect is above the old ceiling of 0 (highlight-cascade-currentcolor-color-mix.html#0:

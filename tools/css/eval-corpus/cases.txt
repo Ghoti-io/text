@@ -1026,8 +1026,10 @@ has aat|a3|g2|1$
 has aget|r1|a3|animationName$
 has assert_equals|r:r1|s:x|
 has aset|a5|id|q$
-has tget|r3|a6|timing|duration$
-has tget|r4|a7|computed|endTime$
+has aeff|f7|a6
+has tget|r3|f7|timing|duration$
+has aeff|f9|a8
+has tget|r4|f9|computed|endTime$
 ---
 <!DOCTYPE html><title>t</title><div id=t></div><script>
 test(() => {
@@ -1189,10 +1191,96 @@ test(() => {
   assert_throws_js(TypeError, () => { a.currentTime = null; }, "set");
 }, "n");
 </script>
-=== an-update-of-an-effects-timing-is-the-state-machines-and-is-refused-by-name
+=== an-update-of-an-effects-timing-is-the-effects-and-is-written-as-data
 tests 1
-outcome 0 unmodeled:animation-effect-updateTiming
+has aeff|f4|a3
+has eupdate|f4|{"timing": {"duration": 5.0}}$
 ---
 <!DOCTYPE html><title>t</title><div id=t></div><script>
 test(() => { t.getAnimations()[0].effect.updateTiming({duration: 5}); }, "n");
+</script>
+=== animate-writes-its-keyframes-and-options-as-data
+tests 1
+has anew|a2|e:e1|{"k": "indexed", "offset": [], "easing": [], "composite": [], "props": [["opacity", ["0", "1"]]]}|{"timing": {"duration": 1000.0, "fill": "forwards"}}$
+has am|a2|commitStyles$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => { const a = t.animate({opacity: [0, 1]}, {duration: 1000, fill: "forwards"}); a.commitStyles(); }, "n");
+</script>
+=== animate-of-an-array-of-keyframes-with-offsets-and-null-elements
+tests 1
+has anew|a2|e:e1|{"k": "array", "frames": [{"props": [["opacity", "0.5"]], "offset": 0.0, "easing": "ease-in"}, null, {"props": [], "composite": "add"}]}|{"timing": {"duration": 3000.0}}$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => { t.animate([{opacity: 0.5, offset: 0, easing: "ease-in"}, null, {composite: "add"}], 3000); }, "n");
+</script>
+=== animate-of-a-single-value-is-a-list-of-one
+tests 1
+has anew|a2|e:e1|{"k": "indexed", "offset": [0.5], "easing": ["ease"], "composite": [], "props": [["opacity", ["0.5"]], ["left", ["10"]]]}|{"timing": {"duration": 1000.0}}$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => { t.animate({opacity: 0.5, offset: 0.5, easing: "ease", left: 10}, 1000); }, "n");
+</script>
+=== a-duration-that-is-null-or-a-boolean-is-converted-as-a-string-and-refused-by-the-library
+tests 1
+has anew|a2|e:e1|{"k": "null"}|{"timing": {"duration": "null"}}$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => { t.animate(null, {duration: null}); }, "n");
+</script>
+=== the-id-of-the-options-of-animate-is-the-animations-id
+tests 1
+has anew|a2|e:e1|{"k": "null"}|{"timing": {"duration": 100.0}}$
+has aset|a2|id|x$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => { t.animate(null, {duration: 100, id: "x"}); }, "n");
+</script>
+=== whether-an-animation-has-an-effect-is-a-fact-of-the-library
+tests 1
+outcome 0 unmodeled:host-effect-may-be-null
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => { const a = t.animate(null, 100); if (a.effect) { assert_true(true); } }, "n");
+</script>
+=== a-keyframe-effect-and-an-animation-of-it-are-made-by-ops
+tests 1
+has enew|f2|e:e1|{"k": "null"}|{"timing": {}, "composite": "add"}$
+has animnew|a3|f:f2|d$
+has aseteff|a3|N:$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => {
+  const e = new KeyframeEffect(t, null, {composite: "add"});
+  const a = new Animation(e, document.timeline);
+  a.effect = null;
+}, "n");
+</script>
+=== the-keyframes-of-an-effect-are-a-list-whose-length-only-the-library-knows
+tests 1
+has aeff|f3|a2
+has ekf|k4|f3
+has kflen|r1|k4$
+has kfget|r2|k4|0|computedOffset$
+has kfhas|r3|k4|1|opacity$
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => {
+  const k = t.animate({opacity: [0, 1]}, 100).effect.getKeyframes();
+  assert_equals(k.length, 2);
+  assert_equals(k[0].computedOffset, 0);
+  assert_true(k[1].hasOwnProperty("opacity"));
+}, "n");
+</script>
+=== an-animation-effect-read-is-an-effect-handle-and-identity-is-the-librarys
+tests 1
+has aeff|f3|a2
+has aeff|f4|a2
+has assert_equals|f:f3|f:f4|
+---
+<!DOCTYPE html><title>t</title><div id=t></div><script>
+test(() => {
+  const a = t.animate({opacity: [0, 1]}, 100);
+  assert_equals(a.effect, a.effect);
+}, "n");
 </script>
