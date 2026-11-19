@@ -7,7 +7,7 @@ A fuzzer that has never failed has not been shown to be able to. A plant whose d
 permanent deterministic regression test (REPRODUCERS) is found by running that test; only the
 others are searched for.
 There are twenty plants
-(nine for the fuzzers, eight found by replaying a permanent regression test, three for the
+(eight searched for by the fuzzers, nine found by replaying a permanent regression test, three for the
 differential) and two controls. Each plant here is
 one edit to one line of the library, applied to a **copy** of this repository in a
 scratch directory (the working tree is never touched), and the harness it is meant
@@ -52,8 +52,9 @@ The encodings of the encoding module (a declaration naming Windows-1251, Shift_J
 
   legacy-decode-differs  the converter reads the second byte of a two-byte UTF-8 sequence of the
                    decoder's output wrongly, so some characters of every such document are
-                   wrong in the same way in every parse. The parsers agree with each other, and
-                   only fuzz_xml's comparison with the encoding module's own decoding sees it.
+                   wrong in the same way in every parse. The parsers agree with each other, so
+                   fuzz_xml's comparison with the encoding module's own decoding is what sees
+                   it (the Windows-1251 test sees it too).
   legacy-decoder-leak  the push parser does not release a legacy encoding's decoder. fuzz_xml
                    (its allocator-failure runs, and LeakSanitizer).
 

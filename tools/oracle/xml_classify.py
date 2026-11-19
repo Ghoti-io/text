@@ -70,7 +70,7 @@ LEGACY_LABEL_ALIASES = {"cp1251": "windows-1251", "x-cp1251": "windows-1251", "s
                         "windows-31j": "shift_jis", "ms_kanji": "shift_jis", "cp1252": "windows-1252",
                         "koi8": "koi8-r", "csshiftjis": "shift_jis"}
 
-_RAW_LABEL = re.compile(rb"<\?xml[^>]*?\sencoding\s*=\s*[\"']([^\"']*)[\"']")
+_RAW_LABEL = re.compile(rb"<\?xml\s[^>]*?\sencoding\s*=\s*[\"']([^\"']*)[\"']")
 
 
 def legacy_declared(data):
@@ -91,7 +91,7 @@ _whatwg_labels = None
 
 def whatwg_labels():
     """Every label of the pinned Encoding standard's table that this parser must read: all but
-    `replacement`'s, and but the ones this parser gives their IANA readings."""
+    `replacement`'s (the ones it gives their IANA readings are in the table too, and are read)."""
     global _whatwg_labels
     if _whatwg_labels is None:
         import json
@@ -104,8 +104,10 @@ def whatwg_labels():
                     for enc in group["encodings"]:
                         if enc["name"] != "replacement":
                             labels.update(enc["labels"])
-        except OSError:
-            pass
+        except OSError as e:
+            # Without the table every declined label would be filed as scope-unsupported.
+            raise SystemExit("xml_classify: the Encoding standard's label table is not here (%s); "
+                             "fetch it: tools/encoding/fetch.sh" % e)
         _whatwg_labels = labels
     return _whatwg_labels
 
@@ -452,9 +454,13 @@ def classify(data, ours, ref, sig, detail, ctl, normalize, tags=()):
                          or 0x7f <= ord(c) <= 0x84 or 0x86 <= ord(c) <= 0x9f for c in text)
         xml2 = "A" if ref["xml2"]["wf"] and ref["xml2"]["ns"] else "R"
         expat = "A" if ref["expat"]["ok"] else "R"
-        if restricted and xml2 == "A" and (expat == "A" or legacy_declared(data)):
+        if restricted and xml2 == "A" and expat == "A":
             return "reference-wrong", ("XML 1.1 section 2.2 forbids RestrictedChar literals; the character must "
                                         "be written as a reference, but both pinned references accept it literally")
+        if restricted and xml2 == "A" and legacy_declared(data):
+            return "reference-wrong", ("XML 1.1 section 2.2 forbids RestrictedChar literals; the character must "
+                                        "be written as a reference, but libxml2 accepts it literally (expat has no "
+                                        "reader for the declared encoding, so its refusal says nothing)")
 
     if ours["verdict"] == "ACCEPT" and " dump=" in sig:
         found = xml11_line_end_difference(data, ours, ref, normalize)
