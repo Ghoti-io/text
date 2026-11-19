@@ -149,8 +149,8 @@ inherits with its parent's, so a chain of n elements costs O(n).
 
 A declaration that is not valid is **dropped**, as CSS says, and is a diagnostic (`gtext_css_computed_diagnostic()`): its kind, the property, and where it was, as an offset
 into the declaration list. A lower-priority declaration, the inherited value or the initial value stands. An SVG presentation attribute that is not valid is a diagnostic as well (its
-offset is into the attribute's value plus the base offset the options give, so a caller maps it to its document) and by default the property's initial value (below), because
-SVG 2 says so; with `invalid_is_initial` off it is dropped like a declaration. A property the engine cannot compute is `GTEXT_CSS_E_UNSUPPORTED`, and the result names it.
+offset is into the attribute's value plus the base offset the options give, so a caller maps it to its document) and is ignored like a dropped declaration, as in Chromium and
+Firefox; SVG 2 says it is the property's initial value, which `invalid_is_initial` turns on (below). A property the engine cannot compute is `GTEXT_CSS_E_UNSUPPORTED`, and the result names it.
 
 ## Presentation attributes
 
@@ -165,7 +165,7 @@ An attribute's value is mostly a CSS value, and where SVG gives it a spelling th
 | Option | The attribute |
 |--------|---------------|
 | `unitless_lengths` | a number is a length in user units, wherever the property's grammar has a `<length>` or a `<length-percentage>`: `stroke-width="2"` is `2px`, `filter="drop-shadow(blue 4 5 6) blur(2)"`, `clip-path="circle(10 at 5 5)"` (below) |
-| `invalid_is_initial` | an attribute that is not a value of its property is the property's initial value, not dropped: `fill="12px"` is black below a `g` of `fill="orange"` (below) |
+| `invalid_is_initial` | off by default: an attribute that is not a value of its property is the property's initial value instead of being ignored (SVG 2): `fill="12px"` is black below a `g` of `fill="orange"` (below) |
 | `svg_transform` | `transform`, `gradientTransform` and `patternTransform` are SVG's list (`rotate(45 10 10)`, `translate(10,20)`, numbers without units), and no other syntax: `translate(10px)` is not a value of the attribute (below) |
 | `path_data` | `d` is path data, and the property `d` holds the string (the pin's grammar of `d` is `none | <string>`; engines that take `path("...")` need a caller that writes it) |
 | `trim_whitespace` | the white space at both ends of a value is not part of it |
@@ -185,9 +185,9 @@ and `calc(4)` as a length (Chromium reads it); the text decides. The reading is 
 
 **An invalid attribute.** The same section says "When an attribute fails to parse according to the specified CSS Value Definition Syntax ... the attribute is assumed to
 have been specified as the given initial value", and that this "can override values that come from lower priority style sheet rules, such as those from the user agent style
-sheet" (its example is `overflow="invalid"` on `svg`, which is `visible`, not the `hidden` of the user agent sheet). The attribute is therefore a declaration of `initial`:
-`fill="12px"` below a `g` of `fill="orange"` is black, and the diagnostic is the same as for a dropped declaration. Chromium and Firefox both ignore such an attribute
-instead (the parent's `orange`, the user agent sheet's `hidden`); the text decides, and `invalid_is_initial = false` is the other reading. It is SVG's rule: it applies to the
+sheet" (its example is `overflow="invalid"` on `svg`, which is `visible`, not the `hidden` of the user agent sheet). Read so, the attribute is a declaration of `initial`:
+`fill="12px"` below a `g` of `fill="orange"` is black. Chromium 156, Firefox 158 and resvg all ignore such an attribute
+instead (the parent's `orange`, the user agent sheet's `hidden`), so the text loses and is a reading, `GTEXT_CSS_READING_ATTRIBUTE_INVALID_IS_INITIAL`, 0: the attribute is ignored and the diagnostic is the same as for a dropped declaration; `invalid_is_initial = true` is the text's. It is SVG's rule: it applies to the
 rows of a table that are `svg_namespace_only` (all of SVG 2's), so a table of HTML's presentational hints, whose attributes that do not parse are ignored, is not affected. The initial value
 is a candidate of its own and counts against `candidates.max_candidates`.
 

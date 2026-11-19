@@ -28,6 +28,7 @@
 #include <ghoti.io/text/css/css_presentation.h>
 
 #include "css_cascade_internal.h"
+#include "css_readings.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -42,7 +43,7 @@ GTEXT_CSS_Presentation_Options gtext_css_presentation_options_default(void) {
   GTEXT_CSS_Presentation_Options o;
   memset(&o, 0, sizeof o);
   o.unitless_lengths = true;
-  o.invalid_is_initial = true;
+  o.invalid_is_initial = GTEXT_CSS_READING_ATTRIBUTE_INVALID_IS_INITIAL;
   o.svg_transform = true;
   o.path_data = true;
   o.trim_whitespace = true;

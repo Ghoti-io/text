@@ -129,4 +129,18 @@
  */
 #define GTEXT_CSS_READING_ATTRIBUTE_ANGLE_NUMBER 0
 
+/**
+ * An SVG presentation attribute that is not a value of its property.
+ *
+ * SVG 2, "Attribute syntax": "When an attribute fails to parse according to the specified CSS Value Definition Syntax ... the attribute is assumed to have been specified as the given
+ * initial value", which "can override values that come from lower priority style sheet rules, such as those from the user agent style sheet". Chromium 154 and 156.0.8078.47, Firefox
+ * 158.0.1 and resvg 0.45.1 all ignore such an attribute instead: `<g fill="red"><rect fill="bogus"/></g>` is red, `overflow="invalid"` on a nested `svg` leaves the user agent sheet's
+ * value. So the text loses to every engine and is kept as a reading. 0 ignores the invalid attribute (no declaration: the cascaded or inherited value stands); 1 reads it as a declaration
+ * of `initial` (the text), for SVG rows only. The option GTEXT_CSS_Presentation_Options::invalid_is_initial takes its default from this. Used by gtext_css_presentation_options_default()
+ * (css_presentation.c); held by the tests CssStyleRequirements.ABadAttributeIsDroppedWithADiagnosticAndTheValueIsInherited and
+ * CssStyleRequirements.AnInvalidAttributeIsIgnoredAndTheOptionMakesItTheInitialValue (the option's value 1 is tested through it) and, flipped, by the plant
+ * the-default-options-read-an-invalid-attribute-as-initial.
+ */
+#define GTEXT_CSS_READING_ATTRIBUTE_INVALID_IS_INITIAL 0
+
 #endif

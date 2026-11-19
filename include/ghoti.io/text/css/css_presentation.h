@@ -47,13 +47,13 @@
  *   `clip-path="circle(10 at 5 5)"`) and not a math function's, whose contents are no symbols of the grammar (`calc(4)` is a number). The `style` attribute and a sheet do
  *   not read it (SVG 2: it is what "disallowing them in corresponding property values" says). A property gets this from the parse, not from a list of properties (the HTML
  *   quirk of Values 4, Appendix C has one);
- * - `invalid_is_initial`: an attribute that is not a value of its property is read as the property's initial value: "When an attribute fails to parse according to the
+ * - `invalid_is_initial` (off by default, GTEXT_CSS_READING_ATTRIBUTE_INVALID_IS_INITIAL): SVG 2's reading, that an attribute that is not a value of its property is read as the property's initial value: "When an attribute fails to parse according to the
  *   specified CSS Value Definition Syntax ... the attribute is assumed to have been specified as the given initial value", which "can override values that come from lower
  *   priority style sheet rules, such as those from the user agent style sheet" (`overflow="invalid"` on a nested `svg` is `visible`, not the `hidden` of the user agent
  *   sheet) and makes an inherited property the initial value, not the parent's (`fill="invalid"` is black below a red `g`). It is SVG's rule, so it is applied to the rows of
  *   a table that are `svg_namespace_only` (every row of SVG 2's) and to no other: an attribute of HTML's presentational hints that does not parse is ignored, whatever the
- *   option says. Without the option an invalid SVG attribute is dropped, as a declaration is, which is what both Chromium and Firefox do: the text's reading is the default
- *   because it is the pinned text. The initial value is a candidate of its own, so it counts against the limit of candidates of the set;
+ *   option says. Without the option an invalid SVG attribute is ignored, as a declaration is dropped, which is what Chromium, Firefox and resvg all do (`fill="invalid"` below a red
+ *   `g` is red) and is the default: the text loses to every engine and is kept as a reading. The initial value is a candidate of its own, so it counts against the limit of candidates of the set;
  * - `svg_transform`: the `transform`, `gradientTransform` and `patternTransform` attributes are written in SVG's transform list syntax, and in no other: CSS Transforms 1
  *   says "the syntax of the transform, patternTransform, gradientTransform attributes differ from the syntax of the 'transform' CSS property" and that for them "there is no
  *   support for additional <transform-function>s defined for the CSS 'transform' property". The syntax is numbers only (a CSS number token: `5.` is not one, and a number
@@ -66,7 +66,7 @@
  *
  * An attribute that is not a value of its property is **invalid**, and that is a diagnostic: its kind, the attribute, the property, and the offset into the attribute's value of
  * the place that was wrong (plus `base_offset`, so a caller maps it to its document). What the cascade sees of it is the `invalid_is_initial` option's: the property's initial
- * value (SVG 2's rule, the default), or nothing, so that a lower-priority declaration, the inherited value or the initial value stands (a declaration's).
+ * value (SVG 2's rule), or nothing (the default), so that a lower-priority declaration, the inherited value or the initial value stands (a declaration's).
  */
 
 #ifndef GHOTI_IO_GTEXT_CSS_CSS_PRESENTATION_H
@@ -117,7 +117,7 @@ GTEXT_API const GTEXT_CSS_Presentation_Table * gtext_css_presentation_table_svg2
 typedef struct {
   const GTEXT_CSS_Presentation_Table * table; ///< The table; NULL for gtext_css_presentation_table_svg2().
   bool unitless_lengths;                      ///< A number is a length in user units and an angle in degrees (see the file's description).
-  bool invalid_is_initial;                    ///< An attribute that is not a value of its property is the property's initial value, not dropped.
+  bool invalid_is_initial;                    ///< An attribute that is not a value of its property is the property's initial value (SVG 2) instead of being ignored (default off).
   bool svg_transform;                         ///< Transform attributes are written in SVG's syntax.
   bool path_data;                             ///< The `d` attribute is path data.
   bool trim_whitespace;                       ///< The white space at both ends of a value is not part of it.

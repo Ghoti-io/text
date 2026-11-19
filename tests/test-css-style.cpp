@@ -209,11 +209,11 @@ TEST(CssStyleRequirements, AnAuthorRuleBeatsAPresentationAttribute) {
   gtext_css_computed_free(s);
 }
 
-TEST(CssStyleRequirements, ABadAttributeIsTheInitialValueWithADiagnostic) {
-  /* | Bad attribute | `fill="12px"` | the initial value of `fill` | diagnostic with offset into the value | */
+TEST(CssStyleRequirements, ABadAttributeIsDroppedWithADiagnosticAndTheValueIsInherited) {
+  /* | Bad attribute | `fill="12px"` | ignored, `fill` inherited or initial (Chromium and Firefox) | diagnostic with offset into the value | */
   Doc d(svg("<g id=\"g\" fill=\"orange\"><rect id=\"r\" fill=\"12px\"/></g><rect id=\"alone\" fill=\"12px\"/>"));
   ASSERT_EQ(d.status, GTEXT_CSS_OK);
-  EXPECT_EQ(d.value("r", "fill"), "black") << "SVG 2, Attribute syntax: an attribute that fails to parse \"is assumed to have been specified as the given initial value\", not inherited";
+  EXPECT_EQ(d.value("r", "fill"), "orange") << "the attribute is ignored, as in Chromium and Firefox";
   EXPECT_EQ(d.value("alone", "fill"), "black") << "initial";
   GTEXT_CSS_Style_Diagnostic diag;
   ASSERT_EQ(gtext_css_computed_diagnostic_total(d.at("r")->style), 1u);
@@ -225,12 +225,15 @@ TEST(CssStyleRequirements, ABadAttributeIsTheInitialValueWithADiagnostic) {
   EXPECT_FALSE(gtext_css_computed_diagnostic(d.at("r")->style, 1, &diag));
 }
 
-TEST(CssStyleRequirements, AnInvalidAttributeIsTheInitialValueAndTheOptionDropsItInstead) {
-  /* SVG 2, Attribute syntax: "When an attribute fails to parse ... the attribute is assumed to have been specified as the given initial value." Chromium and Firefox drop the
-     attribute instead (probed, 2026-11-19); the pinned text is the default and the option is the other reading. */
+TEST(CssStyleRequirements, AnInvalidAttributeIsIgnoredAndTheOptionMakesItTheInitialValue) {
+  /* SVG 2, Attribute syntax: "When an attribute fails to parse ... the attribute is assumed to have been specified as the given initial value." Chromium 156 and Firefox 158 ignore the
+     attribute instead (probed, 2026-11-19: `<g fill=red><rect fill=bogus>` is red in both), so that is the reading (GTEXT_CSS_READING_ATTRIBUTE_INVALID_IS_INITIAL 0); the option is the text's. */
   const std::string markup = "<g id=\"g\" fill=\"orange\" stroke-width=\"5\" opacity=\"0.5\"><rect id=\"r\" fill=\"\" stroke-width=\"bogus\" opacity=\"2x\"/>"
                              "<rect id=\"i\" fill=\"red !important\"/><rect id=\"ok\" fill=\"blue\"/></g>";
-  Doc d(svg(markup));
+  GTEXT_CSS_Style_Options o = gtext_css_style_options_default();
+  EXPECT_FALSE(o.presentation.invalid_is_initial) << "the reading";
+  o.presentation.invalid_is_initial = true;
+  Doc d(svg(markup), false, &o);
   ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
   EXPECT_EQ(d.value("r", "fill"), "black") << "an empty value is not a paint; it is the initial value, not the parent's";
   EXPECT_EQ(d.value("r", "stroke-width"), "1px");
@@ -238,9 +241,7 @@ TEST(CssStyleRequirements, AnInvalidAttributeIsTheInitialValueAndTheOptionDropsI
   EXPECT_EQ(d.value("i", "fill"), "black") << "\"an !important declaration within a presentation attribute will cause it to have an invalid value\"";
   EXPECT_EQ(d.value("ok", "fill"), "blue");
   EXPECT_EQ(gtext_css_computed_diagnostic_total(d.at("r")->style), 3u) << "the diagnostics are the same: each attribute is invalid";
-  GTEXT_CSS_Style_Options o = gtext_css_style_options_default();
-  o.presentation.invalid_is_initial = false;
-  Doc e(svg(markup), false, &o);
+  Doc e(svg(markup));
   ASSERT_EQ(e.status, GTEXT_CSS_OK) << e.result.name;
   EXPECT_EQ(e.value("r", "fill"), "orange") << "dropped: the inherited value stands";
   EXPECT_EQ(e.value("r", "stroke-width"), "5px");
@@ -251,7 +252,7 @@ TEST(CssStyleRequirements, AnInvalidAttributeIsTheInitialValueAndTheOptionDropsI
   GTEXT_CSS_Presentation_Table table = {rows, 1};
   GTEXT_CSS_Style_Options h = gtext_css_style_options_default();
   h.presentation.table = &table;
-  ASSERT_TRUE(h.presentation.invalid_is_initial);
+  h.presentation.invalid_is_initial = true;
   Doc g(svg(markup), false, &h);
   ASSERT_EQ(g.status, GTEXT_CSS_OK) << g.result.name;
   EXPECT_EQ(g.value("r", "fill"), "orange") << "a row that is not SVG's is dropped";
@@ -887,8 +888,12 @@ TEST(CssPresentation, AddingAnAttributeToACandidateSetMakesAHint) {
   GTEXT_CSS_Presentation_Diagnostic pd;
   ASSERT_EQ(gtext_css_candidates_add_presentation(set, &keys, row, "red", 3, nullptr, &pd, nullptr), GTEXT_CSS_OK);
   EXPECT_EQ(pd.outcome, GTEXT_CSS_PRESENTATION_OK);
+  GTEXT_CSS_Presentation_Options initial = gtext_css_presentation_options_default();
+  initial.invalid_is_initial = true;
   ASSERT_EQ(gtext_css_candidates_add_presentation(set, &keys, row, "nonsense", 8, nullptr, &pd, nullptr), GTEXT_CSS_OK);
   EXPECT_EQ(pd.outcome, GTEXT_CSS_PRESENTATION_INVALID_VALUE);
+  EXPECT_EQ(gtext_css_candidates_count(set), 1u) << "ignored by default";
+  ASSERT_EQ(gtext_css_candidates_add_presentation(set, &keys, row, "nonsense", 8, &initial, &pd, nullptr), GTEXT_CSS_OK);
   EXPECT_EQ(gtext_css_candidates_count(set), 2u) << "the attribute, and the initial value that SVG 2 makes of an invalid one";
   GTEXT_CSS_Cascade_Entry e;
   ASSERT_TRUE(gtext_css_candidates_entry(set, 0, &e));
@@ -900,9 +905,7 @@ TEST(CssPresentation, AddingAnAttributeToACandidateSetMakesAHint) {
   ASSERT_TRUE(gtext_css_candidates_entry(set, 1, &e));
   EXPECT_TRUE(e.presentational_hint) << "the initial value is a hint of the same kind";
   EXPECT_EQ(e.specificity.a, 0u);
-  GTEXT_CSS_Presentation_Options drop = gtext_css_presentation_options_default();
-  drop.invalid_is_initial = false;
-  ASSERT_EQ(gtext_css_candidates_add_presentation(set, &keys, row, "nonsense", 8, &drop, &pd, nullptr), GTEXT_CSS_OK);
+  ASSERT_EQ(gtext_css_candidates_add_presentation(set, &keys, row, "nonsense", 8, nullptr, &pd, nullptr), GTEXT_CSS_OK);
   EXPECT_EQ(pd.outcome, GTEXT_CSS_PRESENTATION_INVALID_VALUE);
   EXPECT_EQ(gtext_css_candidates_count(set), 2u) << "dropped: nothing is added";
   EXPECT_EQ(gtext_css_candidates_add_presentation(nullptr, &keys, row, "red", 3, nullptr, &pd, nullptr), GTEXT_CSS_E_INVALID);
@@ -1579,7 +1582,7 @@ TEST(CssStyleFixturesSpot, TheValuesThatTheStandardGivesForTheFixtures) {
   EXPECT_EQ(d.value("style-wins", "stroke-width"), "5px");
   EXPECT_EQ(d.value("important", "fill"), "green");
   EXPECT_EQ(d.value("bad-attribute", "fill"), "black");
-  EXPECT_EQ(d.value("bad-inherits", "fill"), "black") << "an invalid attribute is the initial value, not the parent's (SVG 2, Attribute syntax)";
+  EXPECT_EQ(d.value("bad-inherits", "fill"), "orange") << "an invalid attribute is ignored: the parent's value stands (Chromium, Firefox)";
   EXPECT_EQ(d.value("explicit-inherit", "stroke"), "none");
   EXPECT_EQ(d.value("initial", "stroke-width"), "1px");
   EXPECT_EQ(d.value("text-units", "font-size"), "12px");

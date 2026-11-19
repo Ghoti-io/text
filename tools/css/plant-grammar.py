@@ -108,7 +108,7 @@ PLANTS = [
     ("the-float-range-compares-its-digits-the-wrong-way", "css_presentation.c", "      return d[i] > max[i];", "      return d[i] < max[i];", ["style"]),
     ("the-float-range-ignores-trailing-digits", "css_presentation.c", "    if (d[i] != '0') {\n      return true;", "    if (d[i] != '0') {\n      return false;", ["style"]),
     ("the-float-range-forgets-the-digits-it-left-out", "css_presentation.c", "  return more;\n}", "  return false;\n}", ["style"]),
-    ("the-default-options-drop-an-invalid-attribute", "css_presentation.c", "  o.invalid_is_initial = true;", "  o.invalid_is_initial = false;", ["style"]),
+    ("the-default-options-read-an-invalid-attribute-as-initial", "css_presentation.c", "  o.invalid_is_initial = GTEXT_CSS_READING_ATTRIBUTE_INVALID_IS_INITIAL;", "  o.invalid_is_initial = 1;", ["style"]),
     ("an-invalid-html-attribute-is-the-initial-value", "css_presentation.c", "    if (options->invalid_is_initial && row->svg_namespace_only) {", "    if (options->invalid_is_initial) {", ["style"]),
     # the computed drop-shadow (Filter Effects 1, "Computed Values of Filter Functions"; the color comes first because the value is written in the order of its grammar,
     # the plant grammar-order-is-input-order above, which the shape-compute test also sees)
