@@ -196,6 +196,17 @@ function with its arguments computed individually). The *resolved* value that `g
 `currentcolor` is the element's color; a caller that resolves a value puts the element's color in its place in the text and then asks
 `gtext_css_color_compute_text()` for the text the color computes to (`color(srgb 0 0.5 0.5)` for `color-mix(in srgb, rgb(0 255 0), blue)`).
 
+**Colors in a filter.** Filter Effects 1 says "The values in a <filter-function> are computed as specified, with these exceptions: Omitted values are included and compute to their
+defaults. drop-shadow() starts with the computed value of <color> followed by the computed value of the <length> values." and that to serialize one is to "serialize as per their individual
+grammars, in the order the grammars are written in". The computed `drop-shadow()` is therefore the color first, wherever the author wrote it (`drop-shadow(1px 2px red)` is
+`drop-shadow(red 1px 2px 0px)`), a missing color `currentcolor` (which "computes to itself", Color 4: `drop-shadow(1px 2px)` is `drop-shadow(currentcolor 1px 2px 0px)`) and a missing blur
+radius `0px`. The color itself is the computed color of every property of this layer: the declared form, a named color as its lower-case keyword (`red`), a hex color, `rgb()`, `hsl()` and
+`hwb()` as `rgb()` or `rgba()`, a mix or a `light-dark()` computed, `currentcolor` kept. Color 4 says the computed value of a named color "is the corresponding sRGB color", and this layer
+keeps the keyword for every property (`color`, `fill`, `text-shadow` and the rest), so that a caller reading the style reads the author's color and the CSSOM layer's *resolved* value, which
+is the used value ("The resolved value of a <color> is its used value"), is the one that writes `rgb(255, 0, 0)` for `red` and the element's color for `currentcolor`; it is what Chromium and
+Firefox answer for `getComputedStyle()` (`drop-shadow(rgb(255, 0, 0) 1px 2px 0px)`), case by case. A caller that wants the used color from a style puts the element's color in place of
+`currentcolor` and converts the text, as above.
+
 ## How a value is computed
 
 Every property of the pin has a **class** (`gtext_css_compute_class()`), taken from the sentence the pin gives for its computed value and held by a

@@ -281,8 +281,8 @@ TEST(CssImageCompute, AnImageSetOptionWithNoResolutionHasOneDppx) {
   });
 }
 
-// Filter Effects 1 (served 2026-10-30), 6.2: "Omitted values are included and compute to their defaults."; 6.1: "the default value for omitted values for grayscale(), sepia()
-// and invert() is 1", blur() "Default value when omitted is 0px.", "Values of amount over 100% are allowed but UAs must clamp the values to 1", "Negative values are not allowed."
+// Filter Effects 1, "Computed Values of Filter Functions": "Omitted values are included and compute to their defaults." and each function says its own ("Default value when omitted is 0px" of
+// blur(), 1 of brightness(), contrast(), grayscale(), invert(), opacity(), saturate() and sepia()); "Values of amount over 100% are allowed but UAs must clamp the values to 1" of grayscale().
 TEST(CssFilterCompute, OmittedArgumentsAreTheirDefaults) {
   expect_all({
       {"filter", "blur()", "blur(0px)"},
@@ -292,6 +292,29 @@ TEST(CssFilterCompute, OmittedArgumentsAreTheirDefaults) {
       {"backdrop-filter", "contrast()", "contrast(1)"},
       {"filter", "drop-shadow(1px 2px)", "drop-shadow(currentcolor 1px 2px 0px)"},
       {"filter", "drop-shadow(1px 2px 3px red)", "drop-shadow(red 1px 2px 3px)"},
+  });
+}
+
+// Filter Effects 1, "Computed Values of Filter Functions": "drop-shadow() starts with the computed value of <color> followed by the computed value of the <length> values", and "Serialization
+// of Filter Functions": "serialize as per their individual grammars, in the order the grammars are written in". The color is first wherever the author wrote it; a missing one is currentcolor,
+// which computes to itself; the color is the one the computed layer holds for every property (the declared form: a name stays its keyword, a hex color, rgb() and hsl() are `rgb()`).
+TEST(CssFilterCompute, TheDropShadowIsColorFirstWhereverTheColorWasWritten) {
+  expect_all({
+      {"filter", "drop-shadow(red 1px 2px)", "drop-shadow(red 1px 2px 0px)"},
+      {"filter", "drop-shadow(1px 2px red)", "drop-shadow(red 1px 2px 0px)"},
+      {"filter", "drop-shadow(1px 2px 3px red)", "drop-shadow(red 1px 2px 3px)"},
+      {"filter", "drop-shadow(red 1px 2px 3px)", "drop-shadow(red 1px 2px 3px)"},
+      {"filter", "drop-shadow(1px 2px)", "drop-shadow(currentcolor 1px 2px 0px)"},
+      {"filter", "drop-shadow(currentColor 1px 2px)", "drop-shadow(currentcolor 1px 2px 0px)"},
+      {"filter", "drop-shadow(1px 2px 3px CURRENTCOLOR)", "drop-shadow(currentcolor 1px 2px 3px)"},
+      {"filter", "drop-shadow(RED 1px 2px)", "drop-shadow(red 1px 2px 0px)"},
+      {"filter", "drop-shadow(#f00 1px 2px)", "drop-shadow(rgb(255, 0, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(hsl(120 100% 50%) 1px 2px)", "drop-shadow(rgb(0, 255, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(rgb(1 2 3 / 50%) 1px 2px)", "drop-shadow(rgba(1, 2, 3, 0.5) 1px 2px 0px)"},
+      {"filter", "drop-shadow(1px 2px light-dark(red, blue))", "drop-shadow(red 1px 2px 0px)"},
+      {"filter", "drop-shadow(1em 2em red)", "drop-shadow(red 16px 32px 0px)"},
+      {"filter", "blur(2px) drop-shadow(1px 2px red) drop-shadow(blue 3px 4px)", "blur(2px) drop-shadow(red 1px 2px 0px) drop-shadow(blue 3px 4px 0px)"},
+      {"backdrop-filter", "drop-shadow(1px 2px red)", "drop-shadow(red 1px 2px 0px)"},
   });
 }
 

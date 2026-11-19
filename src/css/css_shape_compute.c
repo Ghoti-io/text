@@ -931,9 +931,9 @@ static bool amount_value(span s, double * v) {
   return true;
 }
 
-/// Filter Effects 1, 6.2: "Omitted values are included and compute to their defaults." (6.1: the default of grayscale(), sepia() and invert() is 1, of blur()
-/// 0px; "Values of amount over 100% are allowed but UAs must clamp the values to 1" for grayscale(), sepia(), invert() and opacity(); "Negative values are not
-/// allowed"); a percentage is the number it is a hundredth of (6.4), which is how the pinned pages write a computed amount.
+/// Filter Effects 1, "Computed Values of Filter Functions": "Omitted values are included and compute to their defaults." (the default of grayscale(), sepia() and invert() is 1, of
+/// blur() 0px; "Values of amount over 100% are allowed but UAs must clamp the values to 1" for grayscale(), sepia(), invert() and opacity(); "Negative values are not allowed"); a
+/// percentage is the number it is a hundredth of, which is how the pinned pages write a computed amount.
 static bool fn_filter(sb * out, const char * name, span inner, int kind) {
   spv t = {out->a, NULL, 0, 0, false};
   split_top(&t, inner, ' ');
@@ -974,8 +974,12 @@ static bool fn_filter(sb * out, const char * name, span inner, int kind) {
 }
 
 
-/// drop-shadow( <color>? && <length>{2,3} ): "Omitted values are included and compute to their defaults" - the color is currentcolor (which a computed value keeps, Color 4
-/// 15.5, as the keyword), the blur radius 0px; the color is written first.
+/// drop-shadow( <color>? && <length>{2,3} ). Filter Effects 1, "Computed Values of Filter Functions": "The values in a <filter-function> are computed as specified, with these
+/// exceptions: Omitted values are included and compute to their defaults. drop-shadow() starts with the computed value of <color> followed by the computed value of the
+/// <length> values." and "Serialization of Filter Functions": "serialize as per their individual grammars, in the order the grammars are written in". So the color is written
+/// first, wherever the author wrote it, and a missing one is `currentcolor` (the default: "the missing used color is taken from the color property"), which a computed value keeps
+/// ("The currentcolor keyword computes to itself", Color 4); the blur radius is `0px`. The color is the computed color this library's computed layer holds for every property:
+/// the declared form, a named color its keyword (css_color.h); the used value, `rgb()` for a name and the element's color for `currentcolor`, is the resolved value (cssom_resolved.c).
 static bool fn_drop_shadow(sb * out, span inner) {
   spv t = {out->a, NULL, 0, 0, false};
   split_top(&t, inner, ' ');

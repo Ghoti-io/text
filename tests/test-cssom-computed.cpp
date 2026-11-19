@@ -946,6 +946,58 @@ TEST(CssomComputed, EveryColorInAValueIsItsUsedValue) {
   EXPECT_EQ(m.value("#a", "accent-color"), "auto") << "auto is not a color";
 }
 
+/* Filter Effects 1, "Computed Values of Filter Functions": "drop-shadow() starts with the computed value of <color>"; CSSOM and Color 4: "The resolved value of a <color> is its used value", so a named
+   color is its sRGB color (Color 4: "The computed and used value is the corresponding sRGB color"), `currentcolor` is the element's color, and a missing color is `currentcolor`. The cases are the
+   ones Chromium 156.0.8078.47 and Firefox 158.0.1 answered alike for `getComputedStyle(div).filter` on a `div` with `color: green` and `--c: blue` (probed 2026-11-19; they differ only on the
+   system colors, which the environment resolves). Each is a witness: the color first and as `rgb()` or `rgba()`, a color space as its function, the lengths absolute. */
+TEST(CssomComputed, TheResolvedValueOfADropShadowIsWhatBothBrowsersAnswer) {
+  struct C {
+    const char * property;
+    const char * specified;
+    const char * resolved;
+  };
+  const C cases[] = {
+      {"filter", "drop-shadow(red 1px 2px)", "drop-shadow(rgb(255, 0, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(1px 2px red)", "drop-shadow(rgb(255, 0, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(1px 2px)", "drop-shadow(rgb(0, 128, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(currentcolor 1px 2px)", "drop-shadow(rgb(0, 128, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(currentColor 1px 2px 3px)", "drop-shadow(rgb(0, 128, 0) 1px 2px 3px)"},
+      {"filter", "drop-shadow(1px 2px 3px currentcolor)", "drop-shadow(rgb(0, 128, 0) 1px 2px 3px)"},
+      {"filter", "drop-shadow(#f00 1px 2px)", "drop-shadow(rgb(255, 0, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(#f008 1px 2px)", "drop-shadow(rgba(255, 0, 0, 0.533) 1px 2px 0px)"},
+      {"filter", "drop-shadow(rgb(1 2 3) 1px 2px)", "drop-shadow(rgb(1, 2, 3) 1px 2px 0px)"},
+      {"filter", "drop-shadow(rgb(1 2 3 / 50%) 1px 2px)", "drop-shadow(rgba(1, 2, 3, 0.5) 1px 2px 0px)"},
+      {"filter", "drop-shadow(rgba(1,2,3,0.5) 1px 2px)", "drop-shadow(rgba(1, 2, 3, 0.5) 1px 2px 0px)"},
+      {"filter", "drop-shadow(hsl(120 100% 50%) 1px 2px)", "drop-shadow(rgb(0, 255, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(transparent 1px 2px)", "drop-shadow(rgba(0, 0, 0, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(lab(50% 20 30) 1px 2px)", "drop-shadow(lab(50 20 30) 1px 2px 0px)"},
+      {"filter", "drop-shadow(color(srgb 1 0 0) 1px 2px)", "drop-shadow(color(srgb 1 0 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(color(display-p3 1 0 0) 1px 2px)", "drop-shadow(color(display-p3 1 0 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(oklch(60% 0.2 30) 1px 2px)", "drop-shadow(oklch(0.6 0.2 30) 1px 2px 0px)"},
+      {"filter", "drop-shadow(light-dark(red, blue) 1px 2px)", "drop-shadow(rgb(255, 0, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(color-mix(in srgb, red, blue) 1px 2px)", "drop-shadow(color(srgb 0.5 0 0.5) 1px 2px 0px)"},
+      {"filter", "drop-shadow(var(--c) 1px 2px)", "drop-shadow(rgb(0, 0, 255) 1px 2px 0px)"},
+      {"filter", "drop-shadow(1px 2px var(--c))", "drop-shadow(rgb(0, 0, 255) 1px 2px 0px)"},
+      {"filter", "drop-shadow(rebeccapurple 1px 2px)", "drop-shadow(rgb(102, 51, 153) 1px 2px 0px)"},
+      {"filter", "drop-shadow(RED 1px 2px)", "drop-shadow(rgb(255, 0, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(red 1em 2em)", "drop-shadow(rgb(255, 0, 0) 16px 32px 0px)"},
+      {"filter", "drop-shadow(red 0 0)", "drop-shadow(rgb(255, 0, 0) 0px 0px 0px)"},
+      {"filter", "drop-shadow(red 1px 2px 0)", "drop-shadow(rgb(255, 0, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(red calc(1px + 2px) 2px)", "drop-shadow(rgb(255, 0, 0) 3px 2px 0px)"},
+      {"filter", "drop-shadow(red 1px 2px) blur(2px)", "drop-shadow(rgb(255, 0, 0) 1px 2px 0px) blur(2px)"},
+      {"filter", "blur(2px) drop-shadow(1px 2px)", "blur(2px) drop-shadow(rgb(0, 128, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(red 1px 2px) drop-shadow(blue 3px 4px)", "drop-shadow(rgb(255, 0, 0) 1px 2px 0px) drop-shadow(rgb(0, 0, 255) 3px 4px 0px)"},
+      {"filter", "hue-rotate(0) brightness(150%) contrast(2) grayscale(50%) invert(1) opacity(50%) saturate(2) sepia(1) blur(1px)", "hue-rotate(0deg) brightness(1.5) contrast(2) grayscale(0.5) invert(1) opacity(0.5) saturate(2) sepia(1) blur(1px)"},
+      {"filter", "url(#f) drop-shadow(red 1px 2px)", "url(\"#f\") drop-shadow(rgb(255, 0, 0) 1px 2px 0px)"},
+      {"filter", "drop-shadow(from-origin 1px 2px)", "none"},
+      {"filter", "none", "none"},
+  };
+  for (const C & c : cases) {
+    Cs m(std::string("<!DOCTYPE html><html><body><div id=a style=\"color:green;--c:blue;") + c.property + ":" + c.specified + "\"></div></body></html>");
+    EXPECT_EQ(m.value("#a", c.property), c.resolved) << c.property << ": " << c.specified;
+  }
+}
+
 /* CSSOM, "serialize a CSS value": "If component values can be omitted or replaced with a shorter representation without changing the meaning of the value, omit/replace them." The computed
    value of text-shadow is four lengths (a spread of 0px when none is written) and that of text-emphasis-style a pair of fill and shape; their resolved values are the shortest forms,
    which is what both browsers write (a zero spread is left out and `filled`, which a lone shape means, is left out). The spread stays when it is not zero, `open` stays, and the

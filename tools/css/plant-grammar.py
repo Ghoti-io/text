@@ -62,7 +62,7 @@ PROGRAMS = {"corpus": "test-css-grammar-corpus.cpp", "grammar": "test-css-gramma
             "cascade-seeds": "test-css-cascade-fuzz-seeds.cpp", "fixes": "test-css-cascade-fixes.cpp", "reference": "test-css-cascade-reference.cpp",
             "custom": "test-css-custom.cpp", "property-rule": "test-css-property-rule.cpp", "custom-oom": "test-css-custom-oom.cpp",
             "custom-seeds": "test-css-custom-fuzz-seeds.cpp", "custom-review": "test-css-custom-review.cpp",
-            "style": "test-css-style.cpp", "shorthand": "test-css-shorthand.cpp", "completion": "test-css-computed-completion.cpp", "style-oom": "test-css-style-oom.cpp", "style-seeds": "test-css-style-fuzz-seeds.cpp"}
+            "style": "test-css-style.cpp", "shape-compute": "test-css-shape-compute.cpp", "shorthand": "test-css-shorthand.cpp", "completion": "test-css-computed-completion.cpp", "style-oom": "test-css-style-oom.cpp", "style-seeds": "test-css-style-fuzz-seeds.cpp"}
 
 # (name, file under src/css/, old text (exactly once), new text, programs that must fail); old and new may be
 # lists of the same length, for a defect that takes more than one edit
@@ -109,6 +109,10 @@ PLANTS = [
     ("the-float-range-forgets-the-digits-it-left-out", "css_presentation.c", "  return more;\n}", "  return false;\n}", ["style"]),
     ("the-default-options-drop-an-invalid-attribute", "css_presentation.c", "  o.invalid_is_initial = true;", "  o.invalid_is_initial = false;", ["style"]),
     ("an-invalid-html-attribute-is-the-initial-value", "css_presentation.c", "    if (options->invalid_is_initial && row->svg_namespace_only) {", "    if (options->invalid_is_initial) {", ["style"]),
+    # the computed drop-shadow (Filter Effects 1, "Computed Values of Filter Functions"; the color comes first because the value is written in the order of its grammar,
+    # the plant grammar-order-is-input-order above, which the shape-compute test also sees)
+    ("drop-shadow-missing-color-is-not-currentcolor", "css_shape_compute.c", '        sb_puts(out, "currentcolor");', '        sb_puts(out, "black");', ["shape-compute"]),
+    ("drop-shadow-missing-blur-is-not-zero", "css_shape_compute.c", '        sb_puts(out, " 0px");', '        sb_puts(out, " 1px");', ["shape-compute"]),
     ("block-kind-is-not-checked", "css_grammar_match.c", "hit = v->kind == GTEXT_CSS_VALUE_BLOCK && v->type == (GTEXT_CSS_Token_Type)g->native;",
      "hit = v->kind == GTEXT_CSS_VALUE_BLOCK;", ["corpus", "grammar"]),
     ("slash-list-needs-no-slash", "css_grammar_match.c", "        if (literal_at(m, p, sep_char(g))) {\n          OKR(iset_add(m, &f->b, p + 1));",
@@ -129,7 +133,7 @@ PLANTS = [
     ("keywords-keep-the-inputs-spelling", "css_grammar_match.c", "    out->atom = g->atom;\n    return arena_text(B, m->c->text + g->str_off, g->str_len, &out->text) != NULL;",
      "    out->atom = g->atom;\n    return arena_text(B, v->value.data, v->value.length, &out->text) != NULL;", ["grammar", "values"]),
     ("grammar-order-is-input-order", "css_grammar_match.c", "      for (int64_t i = found - 1; b.n[i].parent != UINT32_MAX; i = b.n[i].parent) {\n        /* insert sorted",
-     "      for (int64_t i = found - 1; 0 && b.n[i].parent != UINT32_MAX; i = b.n[i].parent) {\n        /* insert sorted", ["corpus", "grammar"]),
+     "      for (int64_t i = found - 1; 0 && b.n[i].parent != UINT32_MAX; i = b.n[i].parent) {\n        /* insert sorted", ["corpus", "grammar", "shape-compute"]),
 
     # ---- what a review of the first build found (tests/test-css-grammar-edges.cpp, test-css-values.cpp) ----
     ("atoms-ignore-their-count-limit", "css_value.c", "if (t->count >= t->max_atoms || length >= t->max_bytes", "if (length >= t->max_bytes", ["values"]),

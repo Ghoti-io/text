@@ -16,12 +16,12 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-"""Fail when a sentence that the sources and the documentation quote from SVG 2 or CSS Transforms 1 is not in the pinned page, or is no longer where it is quoted.
+"""Fail when a sentence that the sources and the documentation quote from SVG 2, CSS Transforms 1, Filter Effects 1 or Color 4 is not in the pinned page, or is no longer where it is quoted.
 
     tools/css/check-pinned-quotes.py [--control]
 
-The presentation attributes are read by rules that rest on a few sentences: how a number becomes a length or an angle, what an attribute that does not parse is, how the
-transform attributes are written. Those sentences are quoted in comments and in the manual, and a quotation that is not the text is worse than none. Each entry of QUOTES names a pinned page
+The presentation attributes and the computed filter functions are read by rules that rest on a few sentences: how a number becomes a length or an angle, what an attribute that does not
+parse is, how the transform attributes are written, what a drop-shadow computes to. Those sentences are quoted in comments and in the manual, and a quotation that is not the text is worse than none. Each entry of QUOTES names a pinned page
 (third_party/css/svg2/*.html, pinned by tools/css/SVG2_SHA256; the Bikeshed sources of third_party/css/drafts, pinned by tools/css/DRAFTS_SHA256), a sentence, and the tracked files
 that quote it. The check requires the sentence (its parts, where `...` stands for text left out, in order) in the page's text, and every named file to hold it as well, after the comment
 markers and the line breaks of the file are read away. A page is read as the page shows it: tags dropped, entities decoded, white space and the typographic quotation marks plain.
@@ -42,12 +42,17 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 
 SVG2 = "third_party/css/svg2/"
 TRANSFORMS = "third_party/css/drafts/css-transforms-1.bs"
+FILTERS = "third_party/css/drafts/filter-effects-1.bs"
+CSS_COLOR = "third_party/css/drafts/css-color-4.bs"
 
 HEADER = "include/ghoti.io/text/css/css_presentation.h"
 READINGS = "src/css/css_readings.h"
 SOURCE = "src/css/css_presentation.c"
 MANUAL = "documentation/formats/css-style.md"
 TESTS = "tests/test-css-style.cpp"
+SHAPE = "src/css/css_shape_compute.c"
+SHAPE_TESTS = "tests/test-css-shape-compute.cpp"
+COMPUTED = "documentation/formats/css-computed.md"
 
 # (the pinned page, the sentence, the files that quote it)
 QUOTES = [
@@ -65,6 +70,18 @@ QUOTES = [
     (SVG2 + "styling.html", "an !important declaration within a presentation attribute will cause it to have an invalid value", [TESTS]),
     (TRANSFORMS, "the syntax of the transform, patternTransform, gradientTransform attributes differ from the syntax of the 'transform' CSS property", [HEADER, SOURCE, MANUAL]),
     (TRANSFORMS, "there is no support for additional <transform-function>s defined for the CSS 'transform' property", [HEADER]),
+ (FILTERS, "The values in a <filter-function> are computed as specified, with these exceptions: Omitted values are included and compute to their defaults. drop-shadow() starts "
+     "with the computed value of <color> followed by the computed value of the <length> values.", [SHAPE, COMPUTED]),
+    (FILTERS, "serialize as per their individual grammars, in the order the grammars are written in", [SHAPE, COMPUTED]),
+    (FILTERS, "drop-shadow() starts with the computed value of <color> followed by the computed value of the <length> values", [SHAPE_TESTS]),
+    (FILTERS, "the missing used color is taken from the color property", [SHAPE]),
+    (FILTERS, "Omitted values are included and compute to their defaults.", [SHAPE_TESTS]),
+    (FILTERS, "Values of amount over 100% are allowed but UAs must clamp the values to 1", [SHAPE]),
+    (FILTERS, "Negative values are not allowed", [SHAPE]),
+    (CSS_COLOR, "The currentcolor keyword computes to itself", [SHAPE]),
+    (CSS_COLOR, "computes to itself", [COMPUTED]),
+    (CSS_COLOR, "is the corresponding sRGB color", [COMPUTED]),
+    (CSS_COLOR, "The resolved value of a <color> is its used value", [COMPUTED]),
 ]
 
 
