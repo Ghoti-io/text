@@ -498,10 +498,6 @@ TEST(AnimEffectStack, AnOvershootingProgressTakesTheFirstOrTheLastOfTheKeyframes
   EXPECT_EQ(w.v("#a", "opacity"), "0.2") << "progress -0.5: the first of the keyframes at 0";
   w.at(1000);
   w.frame();
-  GTEXT_Anim_List * dl = nullptr;
-  gtext_anim_world_get_animations(w.world, nullptr, nullptr, 0, false, &dl);
-  GTEXT_Anim_Info di{};
-  gtext_anim_list_at(dl, 0, &di);
   EXPECT_EQ(w.v("#a", "opacity"), "0.8") << "progress 1.5: the last of the keyframes at 1";
 }
 
