@@ -145,6 +145,18 @@ static bool is_logical_inset_longhand(const GTEXT_CSS_Property_Info * info) {
   return false;
 }
 
+/// The functions whose own arguments read a bare number as a length in a presentation attribute of this property (css_readings.h): the two properties both browsers do it
+/// in, and no other. NULL for a value read without a property.
+static const char * attribute_unitless_functions(const char * property, size_t length) {
+  if (property && length == 6 && memcmp(property, "filter", 6) == 0) {
+    return "drop-shadow";
+  }
+  if (property && length == 9 && memcmp(property, "clip-path", 9) == 0) {
+    return "inset circle ellipse polygon rect xywh shape";
+  }
+  return NULL;
+}
+
 static GTEXT_CSS_Status run_match(const GTEXT_CSS_Registry * registry, const GTEXT_CSS_Compiled * compiled,
     const GTEXT_CSS_Component_Value * values, size_t count, const GTEXT_CSS_Property_Options * options, bool unitless, bool name_is_clip,
     unsigned anchors, const char * property, size_t property_length, GTEXT_CSS_Property_Value * out) {
@@ -152,7 +164,8 @@ static GTEXT_CSS_Status run_match(const GTEXT_CSS_Registry * registry, const GTE
   mo.allocator = options && options->allocator ? options->allocator : css_registry_allocator(registry);
   mo.unitless_length = unitless || (options && options->unitless_lengths); /* attribute mode: every property that takes a length */
   mo.unitless_length_nested = unitless && name_is_clip;
-  mo.unitless_length_functions = GTEXT_CSS_READING_ATTRIBUTE_FUNCTION_UNITLESS_LENGTH && options && options->unitless_lengths ? GTEXT_CSS_ATTRIBUTE_UNITLESS_FUNCTIONS : NULL;
+  mo.unitless_length_functions = GTEXT_CSS_READING_ATTRIBUTE_FUNCTION_UNITLESS_LENGTH && options && options->unitless_lengths
+      ? attribute_unitless_functions(property, property_length) : NULL;
   mo.anchor_functions = anchors;
   mo.property = property;
   mo.property_length = property_length;

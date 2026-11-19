@@ -138,7 +138,7 @@ def check(only=None):
 def control(name=None):
     """The check has to see a seed that moved and a seed that is missing, in a CSS generator's corpus and in the XML one."""
     if name is None:
-        return control("compute") or control("xml") or control_build()
+        return control("compute") or control("xml") or control("xml-writer") or control_build()
     corpus = next(g[1] for g in GENERATORS if g[0] == name)
     scratch = tempfile.mkdtemp(prefix="seed-gen-")
     try:

@@ -123,8 +123,8 @@ typedef struct {
   /** Quirks mode: a unitless number is a length in the properties that allow it (GTEXT_CSS_PROP_QUIRK_UNITLESS). */
   bool quirks;
   /** Attribute mode (an SVG presentation attribute): a unitless number is a length in user units, px, in every property that takes a `<length>`
-   *  (GTEXT_CSS_VFLAG_UNITLESS_LENGTH), whether or not the property is one of the quirks list; and in the own arguments of `drop-shadow()`
-   *  and of the basic shapes of `clip-path` (css_grammar.h, `unitless_length_functions`). Appended after the fields above. */
+   *  (GTEXT_CSS_VFLAG_UNITLESS_LENGTH), whether or not the property is one of the quirks list; and in the own arguments of `drop-shadow()` of
+   *  `filter` and of the basic shapes of `clip-path` (css_grammar.h, `unitless_length_functions`). Appended after the fields above. */
   bool unitless_lengths;
 } GTEXT_CSS_Property_Options;
 

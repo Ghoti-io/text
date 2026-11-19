@@ -309,7 +309,7 @@ Values 4, Appendix C (`GTEXT_CSS_PROP_QUIRK_UNITLESS`, listed with the sentence 
 `background` shorthand) nor inside `calc()` or any other function (`fit-content(10)` is not a length;
 `clip: rect(...)` is the one function that Appendix C names). The attribute mode of an SVG presentation attribute
 (`GTEXT_CSS_Property_Options::unitless_lengths`) is another reading: at the top level of every length property, and inside the functions
-of `GTEXT_CSS_Match_Options::unitless_length_functions` (`drop-shadow()` and the basic shapes; css-style.md says why those).
+of `GTEXT_CSS_Match_Options::unitless_length_functions` that the property layer names for `filter` (`drop-shadow()`) and `clip-path` (the basic shapes); css-style.md says why those.
 
 **Descriptors.** With `GTEXT_CSS_Property_Options::at_rule` (`@font-face`) the name is a
 descriptor of that at-rule. A descriptor takes no CSS-wide keyword and no substitution (it is not

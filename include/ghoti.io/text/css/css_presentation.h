@@ -41,7 +41,7 @@
  * @ref GTEXT_CSS_Presentation_Options, each on by default in gtext_css_presentation_options_default() and each off in a zeroed struct (decision
  * 11 of the plan: quirks are options, not forks):
  * - `unitless_lengths`: a number is a length in user units (`stroke-width="2"` is 2px), in every property that takes a `<length>` or a
- *   `<length-percentage>`; and in the own arguments of `drop-shadow()` and of the basic shapes of `clip-path` (`filter="drop-shadow(blue 4 5 6)"`,
+ *   `<length-percentage>`; and in the own arguments of `drop-shadow()` in `filter` and of the basic shapes in `clip-path` (`filter="drop-shadow(blue 4 5 6)"`,
  *   `clip-path="circle(10 at 5 5)"`), which both Chromium and Firefox read and the `style` attribute and a sheet do not. A property gets this from the parse,
  *   not from a list of properties (the HTML quirk of Values 4, Appendix C has one);
  * - `svg_transform`: the `transform`, `gradientTransform` and `patternTransform` attributes are written in SVG's transform list syntax

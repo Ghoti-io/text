@@ -332,11 +332,6 @@ typedef struct {
    *  level only (`fit-content(10)` is not a length), and the property layer sets this for `clip` alone. Appended after the fields above.
    *  Default false. */
   bool unitless_length_nested;
-  /** With `unitless_length`: the functions whose own arguments also read a bare number as a length, as a string of lower-case names separated by single spaces
-   *  (`"drop-shadow inset circle"`; the match is ASCII case-insensitive on the function's name). Only the function's direct arguments are read so, not the
-   *  arguments of a function inside it and not a math function's. NULL is none. Used by the property layer for an SVG presentation attribute. Appended after the
-   *  fields above. */
-  const char * unitless_length_functions;
   /** Most bytes of the text of one opaque value (`<any-value>`, a math function's arguments, a pending
    *  value): the output limit of the serializer that makes it. Default 256 MiB. One more is
    *  GTEXT_CSS_E_LIMIT_OUTPUT. Appended after the fields above. */
@@ -360,6 +355,11 @@ typedef struct {
    *  `ua-PROPERTY` and `ua-PROPERTY-INDEX`), the INDEX counting the `random()` functions of the whole value from 1. NULL (the default) simplifies nothing. Appended after the fields above. */
   const char * property;
   size_t property_length;                ///< The length of `property`.
+  /** With `unitless_length`: the functions whose own arguments also read a bare number as a length, as a string of lower-case names separated by single spaces
+   *  (`"drop-shadow inset circle"`; the match is ASCII case-insensitive on the function's name). Only the function's direct arguments are read so, not the
+   *  arguments of a function inside it and not a math function's. NULL is none, and the default. The property layer sets it for an SVG presentation attribute, from
+   *  the property (css_readings.h). The string is not copied: it must outlive the match, and the registry that holds these options. Appended after the fields above. */
+  const char * unitless_length_functions;
 } GTEXT_CSS_Match_Options;
 
 /** @brief The defaults, spelled out. */

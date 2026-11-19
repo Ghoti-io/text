@@ -695,12 +695,44 @@ TEST(CssPresentation, ADropShadowTakesBareNumbersAsUserUnits) {
 }
 
 TEST(CssPresentation, TheFunctionsThatTakeABareNumberAreTheOnesBothBrowsersTake) {
-  const char * const accepted[] = {"inset(10)", "circle(10)", "circle(10 at 5 5)", "ellipse(5 6)", "polygon(0 0, 10 10, 0 10)", "inset(10 round 5)", "xywh(0 0 10 10)"};
+  const char * const accepted[] = {"inset(10)", "circle(10)", "circle(10 at 5 5)", "ellipse(5 6)", "polygon(0 0, 10 10, 0 10)", "inset(10 round 5)", "xywh(0 0 10 10)",
+      "rect(0 10 10 0)", "shape(from 0 0, line to 10 10)", "INSET(1 2)", "circle(10) fill-box"};
   for (const char * v : accepted) {
     Doc d(svg(std::string("<rect id=\"r\" clip-path=\"") + v + "\"/>"));
     ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
-    EXPECT_NE(d.value("r", "clip-path"), "none") << v;
+    const std::string got = d.value("r", "clip-path");
+    EXPECT_NE(got, "none") << v;
+    EXPECT_NE(got.find("px"), std::string::npos) << v << " -> " << got << ": the numbers are px lengths";
   }
+  Doc c(svg("<rect id=\"r\" clip-path=\"circle(10 at 5 5)\"/>"));
+  EXPECT_EQ(c.value("r", "clip-path"), "circle(10px at 5px 5px)");
+  Doc p(svg("<rect id=\"r\" clip-path=\"polygon(0 0, 10 10, 0 10)\"/>"));
+  EXPECT_EQ(p.value("r", "clip-path"), "polygon(0px 0px, 10px 10px, 0px 10px)");
+}
+
+TEST(CssPresentation, TheFunctionsAreThoseOfTheTwoPropertiesAndNoOtherPropertyHasThem) {
+  /* a table of the caller's can name any property: a bare number is a length in a function of filter and clip-path, which are what the browsers do it in */
+  static const GTEXT_CSS_Presentation_Row rows[] = {
+      {"sh", "shape-outside", false, NULL, GTEXT_CSS_PRESENTATION_CSS},
+      {"bf", "backdrop-filter", false, NULL, GTEXT_CSS_PRESENTATION_CSS},
+      {"cp", "clip-path", false, NULL, GTEXT_CSS_PRESENTATION_CSS},
+      {"fi", "filter", false, NULL, GTEXT_CSS_PRESENTATION_CSS},
+  };
+  GTEXT_CSS_Presentation_Table table = {rows, 4};
+  GTEXT_CSS_Style_Options o = gtext_css_style_options_default();
+  o.presentation.table = &table;
+  Doc d(svg("<rect id=\"r\" sh=\"circle(10)\" bf=\"drop-shadow(blue 4 5)\" cp=\"drop-shadow(blue 4 5)\" fi=\"circle(10)\"/>"
+            "<rect id=\"q\" sh=\"circle(10px)\" bf=\"drop-shadow(blue 4px 5px)\" cp=\"circle(10)\" fi=\"drop-shadow(blue 4 5)\"/>"),
+      false, &o);
+  ASSERT_EQ(d.status, GTEXT_CSS_OK) << d.result.name;
+  EXPECT_EQ(d.value("r", "shape-outside"), "none") << "not a property the browsers read it in";
+  EXPECT_EQ(d.value("r", "backdrop-filter"), "none");
+  EXPECT_EQ(d.value("r", "clip-path"), "none") << "drop-shadow() is not a shape";
+  EXPECT_EQ(d.value("r", "filter"), "none") << "circle() is not a filter function";
+  EXPECT_EQ(d.value("q", "shape-outside"), "circle(10px)");
+  EXPECT_EQ(d.value("q", "backdrop-filter"), "drop-shadow(blue 4px 5px 0px)");
+  EXPECT_EQ(d.value("q", "clip-path"), "circle(10px)");
+  EXPECT_EQ(d.value("q", "filter"), "drop-shadow(blue 4px 5px 0px)");
 }
 
 TEST(CssPresentation, ABareNumberIsNoLengthWhereTheBrowsersAndTheTextRefuseIt) {
