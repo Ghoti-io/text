@@ -2379,14 +2379,13 @@ static GTEXT_XML_Status external_text_declaration(xml_ctx * p) {
 
 static GTEXT_XML_Status dtd_record_external_source(xml_ctx *p,
     uint32_t source_id, const char *base_uri, uintptr_t resolver_identity_token,
-    xml_family family,
     const void *bytes, size_t length) {
   if (!p->doc) return GTEXT_XML_OK;
   unsigned char digest[32];
   if (gsec_sha256(bytes, length, digest) != GSEC_OK)
     return xml_fail(p, GTEXT_XML_E_LIMIT_WORK,
         "external source fingerprint length exceeded SHA-256 limits");
-  const char *encoding = xml_family_name(family);
+  const char *encoding = xml_ctx_encoding_name(p);
   const GTEXT_Markup_Status recorded = markup_source_set_external_metadata(
       p->doc, source_id, base_uri, encoding, resolver_identity_token,
       length, digest);
@@ -2415,7 +2414,7 @@ GTEXT_XML_Status xml_parse_external_subset(xml_ctx * p,
     status = dtd_record_external_source(&ext,
         ext.sources[ext.source_count - 1].source_id, base_uri,
         (uintptr_t)ext.sources[ext.source_count - 1].identity,
-        ext.enc_family, bytes, length);
+        bytes, length);
   if (status == GTEXT_XML_OK) {
     /* The source frame records the active decoded coordinates for location
        queries while the resolver-owned source is still open. */
@@ -2553,8 +2552,7 @@ GTEXT_XML_Status xml_activate_external_parameter_entity(xml_ctx * p,
         ext.sources[ext.source_count - 1].source_id,
         resource->source.base_uri,
         (uintptr_t)ext.sources[ext.source_count - 1].identity,
-        ext.enc_family, resource->bytes.data,
-        resource->bytes.length);
+        resource->bytes.data, resource->bytes.length);
   if (status == GTEXT_XML_OK) status = external_text_declaration(&ext);
   if (status == GTEXT_XML_OK
       && resource->source_kind == XML_SOURCE_EXTERNAL_ENTITY) {

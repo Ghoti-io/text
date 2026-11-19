@@ -2619,7 +2619,7 @@ XML_ROUNDTRIP_FLOORS := XMLCONF_MIN_ROUNDTRIP_10=872 XMLCONF_MIN_ROUNDTRIP_11=64
 conformance-xml: ## Score the XML parser against the pinned W3C XML Conformance Test Suite
 conformance-xml: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(XML_DATA_DIR)/xmlconf,tools/xml/fetch.sh)
-	@$(CONFORMANCE_ENV) XMLCONF_MIN_SCORED_10=1400 XMLCONF_MIN_SCORED_11=220 $(XML_ROUNDTRIP_FLOORS) XMLCONF_MAX_ROUNDTRIP_REFUSED=20 XMLCONF_MAX_ENTITY=103 XMLCONF_MAX_DECLINED=8 tools/conformance/run-xml.sh
+	@$(CONFORMANCE_ENV) XMLCONF_MIN_SCORED_10=1400 XMLCONF_MIN_SCORED_11=220 $(XML_ROUNDTRIP_FLOORS) XMLCONF_MAX_ROUNDTRIP_REFUSED=22 XMLCONF_MAX_ENTITY=103 XMLCONF_MAX_DECLINED=0 tools/conformance/run-xml.sh
 
 # The target itself is outside TEST_GATES (its scoring half runs in check-conformance-vectors, below): it wants the pinned vectors,
 # which a fresh clone does not have until tools/html/fetch.sh has run. With the
@@ -2852,7 +2852,7 @@ check-conformance-vectors: $(CONFORMANCE_LIB)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/serializer,tools/html/fetch.sh)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/html5lib-tests/encoding,tools/html/fetch.sh)
 	@$(call REQUIRE_DATA,$(HTML_DATA_DIR)/wpt/html/syntax/parsing/resources,tools/html/fetch.sh)
-	@$(CONFORMANCE_ENV) XMLCONF_MIN_SCORED_10=1400 XMLCONF_MIN_SCORED_11=220 $(XML_ROUNDTRIP_FLOORS) XMLCONF_MAX_ROUNDTRIP_REFUSED=20 XMLCONF_MAX_ENTITY=103 XMLCONF_MAX_DECLINED=8 tools/conformance/run-xml.sh
+	@$(CONFORMANCE_ENV) XMLCONF_MIN_SCORED_10=1400 XMLCONF_MIN_SCORED_11=220 $(XML_ROUNDTRIP_FLOORS) XMLCONF_MAX_ROUNDTRIP_REFUSED=22 XMLCONF_MAX_ENTITY=103 XMLCONF_MAX_DECLINED=0 tools/conformance/run-xml.sh
 	@$(CONFORMANCE_ENV) HTML_TOKENIZER_MIN_SCORED=7000 tools/conformance/run-html-tokenizer.sh
 	@$(CONFORMANCE_ENV) tools/conformance/run-html-tree.sh
 	@$(CONFORMANCE_ENV) tools/conformance/run-html-encoding.sh

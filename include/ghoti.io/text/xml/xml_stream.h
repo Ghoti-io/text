@@ -67,7 +67,7 @@
  * would give. Two verdicts depend on how much has been seen and are reported at
  * the call that sees it: a mistake early in a construct is found when the
  * construct is complete (or at finish), not at the byte itself, and bytes that
- * are invalid in a UTF-16, UTF-32, ISO-8859-1 or US-ASCII document are reported
+ * are invalid in a document that is not UTF-8 are reported
  * as they arrive, so a syntax error earlier in the document is reported if it
  * was found first. gtext_xml_parse() converts the whole input before reading it
  * and so reports the invalid bytes in preference to an earlier syntax error;

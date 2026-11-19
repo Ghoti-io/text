@@ -478,9 +478,14 @@ TEST_F(XmlParse, VersionsAndEncodingsAreStatementsAboutTheParser) {
   GTEXT_Markup_Standalone standalone;
   EXPECT_STREQ(gtext_markup_document_xml_version(r.doc, &standalone), "1.1");
   EXPECT_EQ(parse("<?xml version=\"1.2\"?><a/>").status, GTEXT_XML_E_UNSUPPORTED_VERSION);
-  r = parse("<?xml version=\"1.0\" encoding=\"windows-1252\"?><a/>");
+  // A label that names no encoding the library decodes is a statement about the
+  // parser; one that it decodes (the encoding module's, test-xml-encodings.cpp)
+  // is read.
+  r = parse("<?xml version=\"1.0\" encoding=\"x-no-such-encoding\"?><a/>");
   EXPECT_EQ(r.status, GTEXT_XML_E_UNSUPPORTED_ENCODING);
   EXPECT_EQ(r.err.byte_offset, 30u);  // The value: <?xml version="1.0" encoding="
+  EXPECT_EQ(parse("<?xml version=\"1.0\" encoding=\"windows-1252\"?><a/>").status,
+      GTEXT_XML_OK);
   // A UTF-8 document labeled UTF-16 is a mismatch the specification makes fatal.
   r = parse("<?xml version=\"1.0\" encoding=\"UTF-16\"?><a/>");
   EXPECT_EQ(r.status, GTEXT_XML_E_ENCODING_MISMATCH);

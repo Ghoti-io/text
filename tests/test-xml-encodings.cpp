@@ -22,9 +22,11 @@
  * @file
  *
  * gtext_xml_parse() across encodings: UTF-16 and UTF-32 (by mark or by the first
- * bytes), declared ISO-8859-1 and US-ASCII, the declaration's label checked
- * against what the document is in, malformed units, positions, and allocation
- * failure while converting.
+ * bytes), declared ISO-8859-1 and US-ASCII, every other encoding of the
+ * encoding module (Windows-1251, Shift_JIS, EUC-KR, GBK, ...) by its declared
+ * label, the declaration's label checked against what the document is in,
+ * malformed units and byte sequences, positions, and allocation failure while
+ * converting.
  *
  * The strongest check is the round trip: a generated document is encoded in each
  * supported encoding, parsed, and its tree compared with the tree of the same
@@ -40,6 +42,7 @@
 
 #include <gtest/gtest.h>
 
+#include <ghoti.io/text/encoding.h>
 #include <ghoti.io/text/xml.h>
 
 #include "../src/markup/markup_internal.h"
@@ -146,6 +149,33 @@ std::string single_byte(const std::string & utf8) {
   for (uint32_t cp : code_points(utf8)) {
     out += (char)cp;
   }
+  return out;
+}
+
+// The bytes of `utf8` in `encoding`, by the encoding module's encoder (which
+// stops at a character the encoding does not have, so a test cannot pass by
+// accident on a replaced one).
+std::string encode_as(GTEXT_Encoding encoding, const std::string & utf8) {
+  char * out = nullptr;
+  size_t n = 0;
+  GTEXT_Encoder_Options o = gtext_encoder_options_default();
+  GTEXT_Encoder_Result r;
+  const GTEXT_Encoding_Status st = gtext_encoding_encode_buffer(encoding, &o,
+      utf8.data(), utf8.size(), &out, &n, &r);
+  EXPECT_EQ(st, GTEXT_ENCODING_OK) << gtext_encoding_name(encoding) << " " << utf8;
+  std::string bytes = st == GTEXT_ENCODING_OK ? std::string(out, n) : std::string();
+  gtext_encoding_buffer_free(out);
+  return bytes;
+}
+
+// The text of the root element (the whole of its text, descendants included).
+std::string root_text(Doc * doc) {
+  char * text = nullptr;
+  size_t n = 0;
+  EXPECT_EQ(gtext_markup_node_text_content(gtext_markup_document_element(doc), nullptr, &text, &n),
+      GTEXT_MARKUP_OK);
+  std::string out = text ? std::string(text, n) : std::string();
+  gtext_markup_string_free(nullptr, text);
   return out;
 }
 
@@ -272,24 +302,287 @@ TEST_F(XmlEncodings, MismatchesAreFatal) {
   // A mark outranks a single-byte label.
   EXPECT_EQ(parse("\xEF\xBB\xBF<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a/>").status,
       GTEXT_XML_E_ENCODING_MISMATCH);
-  // A bare UTF-16 or UTF-32 label matches either order, and a label of a
-  // family the parser has no reader for is unsupported, not a mismatch.
+  // A bare UTF-16 or UTF-32 label matches either order. A label of an encoding
+  // the library reads that is not the document's is a mismatch, and one that
+  // names no encoding it reads is unsupported.
   EXPECT_EQ(parse(utf16("<?xml version=\"1.0\" encoding=\"UTF-16\"?><a/>", true, false)).status,
       GTEXT_XML_OK);
   EXPECT_EQ(parse(utf16("<?xml version=\"1.0\" encoding=\"windows-1252\"?><a/>", false, true)).status,
+      GTEXT_XML_E_ENCODING_MISMATCH);
+  EXPECT_EQ(parse(utf16("<?xml version=\"1.0\" encoding=\"x-no-such-encoding\"?><a/>", false, true)).status,
       GTEXT_XML_E_UNSUPPORTED_ENCODING);
   EXPECT_EQ(parse(utf32("<?xml version=\"1.0\" encoding=\"UTF-16\"?><a/>", false, true)).status,
       GTEXT_XML_E_ENCODING_MISMATCH);
 }
 
-TEST_F(XmlEncodings, OtherAndEbcdicAreUnsupported) {
-  EXPECT_EQ(parse("<?xml version=\"1.0\" encoding=\"windows-1252\"?><a/>").status,
-      GTEXT_XML_E_UNSUPPORTED_ENCODING);
-  EXPECT_EQ(parse("<?xml version=\"1.0\" encoding=\"Shift_JIS\"?><a/>").status,
-      GTEXT_XML_E_UNSUPPORTED_ENCODING);
+TEST_F(XmlEncodings, UnknownAndEbcdicAreUnsupported) {
+  // A label that names nothing the encoding module decodes, one that it makes
+  // `replacement` of (which reads none of the text), and UTF-32's relatives.
+  for (const char * label : {"x-no-such-encoding", "UTF-7", "UCS-4", "hz-gb-2312",
+           "iso-2022-kr", "csiso2022kr", "EBCDIC-US"}) {
+    Result r = parse(std::string("<?xml version=\"1.0\" encoding=\"") + label + "\"?><a/>");
+    EXPECT_EQ(r.status, GTEXT_XML_E_UNSUPPORTED_ENCODING) << label;
+    EXPECT_EQ(r.err.byte_offset, 30u) << label;  // at the label
+    EXPECT_EQ(r.err.column, 31u) << label;
+  }
   Result r = parse(std::string("\x4C\x6F\xA7\x94", 4));
   EXPECT_EQ(r.status, GTEXT_XML_E_UNSUPPORTED_ENCODING);
   EXPECT_EQ(r.err.byte_offset, 0u);
+}
+
+// ---- the encodings of the encoding module ---------------------------------
+
+struct Sample {
+  const char * label;
+  GTEXT_Encoding encoding;
+  const char * text;  // UTF-8
+};
+
+// Text that each of these encodes, in more than one byte where the encoding is
+// a multi-byte one (a Cyrillic word is one byte a letter in the single-byte ones).
+const Sample samples[] = {
+    {"Windows-1251", GTEXT_ENCODING_WINDOWS_1251,
+        "\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82 \xD0\xBC\xD0\xB8\xD1\x80"},  // Привет мир
+    {"KOI8-R", GTEXT_ENCODING_KOI8_R,
+        "\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82"},
+    {"windows-1252", GTEXT_ENCODING_WINDOWS_1252, "caf\xC3\xA9 \xE2\x82\xAC"},  // café €
+    {"ISO-8859-7", GTEXT_ENCODING_ISO_8859_7, "\xCE\x95\xCE\xBB\xCE\xBB\xCE\xAC\xCE\xB4\xCE\xB1"},
+    {"Shift_JIS", GTEXT_ENCODING_SHIFT_JIS, "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E \xE3\x81\x82"},
+    {"EUC-JP", GTEXT_ENCODING_EUC_JP, "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E \xEF\xBD\xB1"},
+    {"ISO-2022-JP", GTEXT_ENCODING_ISO_2022_JP, "abc \xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E def"},
+    {"EUC-KR", GTEXT_ENCODING_EUC_KR, "\xED\x95\x9C\xEA\xB5\xAD\xEC\x96\xB4"},
+    {"GBK", GTEXT_ENCODING_GBK, "\xE4\xB8\xAD\xE6\x96\x87"},
+    {"gb18030", GTEXT_ENCODING_GB18030, "\xE4\xB8\xAD\xE6\x96\x87 \xF0\x9F\x98\x80"},
+    {"Big5", GTEXT_ENCODING_BIG5, "\xE4\xB8\xAD\xE6\x96\x87"},
+    {"x-user-defined", GTEXT_ENCODING_X_USER_DEFINED, "abc"},
+};
+
+std::string declaration(const std::string & label) {
+  return "<?xml version=\"1.0\" encoding=\"" + label + "\"?>\n";
+}
+
+TEST_F(XmlEncodings, EveryEncodingOfTheEncodingModuleIsRead) {
+  for (const Sample & sample : samples) {
+    const std::string utf8 = declaration(sample.label) + "<a>" + sample.text + "</a>";
+    Result r = parse(encode_as(sample.encoding, utf8));
+    ASSERT_EQ(r.status, GTEXT_XML_OK) << sample.label << ": " << r.err.message;
+    EXPECT_EQ(root_text(r.doc), sample.text) << sample.label;
+    // The same tree as the UTF-8 form, and the label as the document wrote it.
+    Result same = parse(declaration("UTF-8") + "<a>" + sample.text + "</a>");
+    ASSERT_EQ(same.status, GTEXT_XML_OK) << sample.label;
+    EXPECT_EQ(dump(r.doc), dump(same.doc)) << sample.label;
+    GTEXT_Markup_Encoding_Source source;
+    EXPECT_EQ(encoding_of(r.doc, &source), sample.label);
+    EXPECT_EQ(source, GTEXT_MARKUP_ENCODING_DECLARATION) << sample.label;
+  }
+  // The bytes are what they say: Windows-1251 puts a letter in one byte.
+  const std::string cp1251 = declaration("windows-1251") + "<a>\xCF\xF0\xE8\xE2\xE5\xF2</a>";
+  Result r = parse(cp1251);
+  ASSERT_EQ(r.status, GTEXT_XML_OK);
+  EXPECT_EQ(root_text(r.doc), "\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82");
+}
+
+TEST_F(XmlEncodings, ALabelIsTheEncodingStandardsLabelInAnyCase) {
+  const std::string want = "\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82";
+  for (const char * label : {"windows-1251", "WINDOWS-1251", "Windows-1251", "cp1251",
+           "x-cp1251"}) {
+    Result r = parse(declaration(label) + "<a>\xCF\xF0\xE8\xE2\xE5\xF2</a>");
+    ASSERT_EQ(r.status, GTEXT_XML_OK) << label << ": " << r.err.message;
+    EXPECT_EQ(root_text(r.doc), want) << label;
+    GTEXT_Markup_Encoding_Source source;
+    EXPECT_EQ(encoding_of(r.doc, &source), label);  // as written
+  }
+  const std::string kana = "\x82\xA0";  // Shift_JIS: あ
+  for (const char * label : {"shift_jis", "SHIFT_JIS", "sjis", "ms_kanji", "csshiftjis",
+           "windows-31j", "x-sjis"}) {
+    Result r = parse(declaration(label) + "<a>" + kana + "</a>");
+    ASSERT_EQ(r.status, GTEXT_XML_OK) << label << ": " << r.err.message;
+    EXPECT_EQ(root_text(r.doc), "\xE3\x81\x82") << label;
+  }
+  // The shape of the declaration: single quotes, white space, a standalone.
+  Result r = parse("<?xml  version = '1.0'\n\tencoding\n=\n'windows-1251' standalone=\"yes\" ?><a>\xCF</a>");
+  ASSERT_EQ(r.status, GTEXT_XML_OK) << r.err.message;
+  EXPECT_EQ(root_text(r.doc), "\xD0\x9F");
+}
+
+TEST_F(XmlEncodings, TheIanaNamesOfLatin1AndAsciiKeepTheirReading) {
+  // XML 1.0 4.3.3 sends an IANA name to the encoding IANA registers for it. The
+  // Encoding standard reads these as windows-1252, which differs in 0x80-0x9F.
+  const std::string c1 = "<a>\x80\xE9</a>";
+  for (const char * label : {"ISO-8859-1", "iso-8859-1", "latin1", "LATIN1", "l1",
+           "ISO_8859-1", "iso-ir-100", "IBM819", "CP819", "csISOLatin1"}) {
+    Result r = parse(declaration(label) + c1);
+    ASSERT_EQ(r.status, GTEXT_XML_OK) << label << ": " << r.err.message;
+    EXPECT_EQ(root_text(r.doc), "\xC2\x80\xC3\xA9") << label;
+  }
+  // windows-1252, which is not the same, is what its name says.
+  Result r = parse(declaration("windows-1252") + c1);
+  ASSERT_EQ(r.status, GTEXT_XML_OK);
+  EXPECT_EQ(root_text(r.doc), "\xE2\x82\xAC\xC3\xA9");
+  // US-ASCII under any of its IANA names has no byte above 0x7F...
+  for (const char * label : {"US-ASCII", "us-ascii", "ANSI_X3.4-1968", "ANSI_X3.4-1986",
+           "iso-ir-6", "ISO646-US", "us", "IBM367", "cp367", "csASCII"}) {
+    EXPECT_EQ(parse(declaration(label) + "<a>abc</a>").status, GTEXT_XML_OK) << label;
+    Result bad = parse(declaration(label) + "<a>\xE9</a>");
+    EXPECT_EQ(bad.status, GTEXT_XML_E_INVALID_SEQUENCE) << label;
+  }
+  // ...and "ascii", which is the Encoding standard's and not IANA's, is what
+  // that standard says (windows-1252).
+  r = parse(declaration("ascii") + "<a>\xE9</a>");
+  ASSERT_EQ(r.status, GTEXT_XML_OK);
+  EXPECT_EQ(root_text(r.doc), "\xC3\xA9");
+}
+
+TEST_F(XmlEncodings, AByteSequenceThatIsNotLegalInTheEncodingIsFatalAtItsFirstByte) {
+  const std::string head = declaration("Shift_JIS");
+  const size_t prolog = head.size();  // the declaration and its line end
+  // A lead byte, then '<': the lead byte is the ill-formed sequence.
+  Result r = parse(head + "<a>\x82\xA0\x82<b/></a>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  EXPECT_TRUE(r.err.has_raw_byte_offset);
+  EXPECT_EQ(r.err.raw_byte_offset, prolog + 3 + 2u);
+  EXPECT_EQ(r.err.byte_offset, prolog + 3 + 3u);  // in UTF-8: the kana is three bytes
+  EXPECT_EQ(r.err.line, 2u);
+  EXPECT_EQ(r.err.column, 5u);  // "<a>" and one character
+  // The document ends inside the character.
+  r = parse(head + "<a>\x82\xA0\x82");
+  EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  EXPECT_EQ(r.err.raw_byte_offset, prolog + 3 + 2u);
+  // A byte that no Shift_JIS character starts with.
+  r = parse(head + "<a>\xFF</a>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  EXPECT_EQ(r.err.raw_byte_offset, prolog + 3u);
+  EXPECT_EQ(r.err.column, 4u);
+  // Single-byte encodings with bytes that map to nothing, and EUC-KR's 0xFF.
+  r = parse(declaration("ISO-8859-3") + "<a>\xA5</a>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  r = parse(declaration("EUC-KR") + "<a>\xFF</a>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  r = parse(declaration("GBK") + "<a>\x81</a>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  // ISO-2022-JP: a byte above 0x7F, and an escape sequence that is not one.
+  r = parse(declaration("ISO-2022-JP") + "<a>\xE9</a>");
+  EXPECT_EQ(r.status, GTEXT_XML_E_INVALID_SEQUENCE);
+  // The decoder's replacement character is never part of a document: it would
+  // be a character the document did not contain.
+  EXPECT_NE(r.status, GTEXT_XML_OK);
+  // A byte that decodes to a character XML does not have is the parser's, as for
+  // UTF-8: NUL is the same in every encoding.
+  r = parse(declaration("windows-1251") + std::string("<a>\0</a>", 8));
+  EXPECT_EQ(r.status, GTEXT_XML_E_CHARACTER);
+}
+
+TEST_F(XmlEncodings, ALabelThatIsNotTheDocumentsEncodingIsAMismatch) {
+  // The bytes are UTF-16 or UTF-8 with a mark: whatever the label says, the
+  // first bytes decided, and a label of another encoding is not a reading.
+  for (const char * label : {"windows-1251", "Shift_JIS", "EUC-KR", "GBK", "ISO-2022-JP",
+           "x-user-defined"}) {
+    const std::string text = declaration(label) + "<a/>";
+    Result r = parse(utf16(text, false, true));
+    EXPECT_EQ(r.status, GTEXT_XML_E_ENCODING_MISMATCH) << label;
+    EXPECT_EQ(r.err.byte_offset, 30u) << label;
+    r = parse(utf16(text, true, false));
+    EXPECT_EQ(r.status, GTEXT_XML_E_ENCODING_MISMATCH) << label;
+    r = parse(utf32(text, false, true));
+    EXPECT_EQ(r.status, GTEXT_XML_E_ENCODING_MISMATCH) << label;
+    r = parse("\xEF\xBB\xBF" + text);
+    EXPECT_EQ(r.status, GTEXT_XML_E_ENCODING_MISMATCH) << label;
+    EXPECT_EQ(r.err.byte_offset, 33u) << label;
+    EXPECT_EQ(r.err.column, 31u) << label;
+  }
+  // A document that is UTF-8 with no mark and says UTF-16 in any of its names.
+  for (const char * label : {"UTF-16LE", "UTF-16BE", "UCS-2", "unicode", "ISO-10646-UCS-2"}) {
+    EXPECT_EQ(parse(declaration(label) + "<a/>").status, GTEXT_XML_E_ENCODING_MISMATCH) << label;
+  }
+  // Two encodings that are not the same: a document is in the one it names, so
+  // a label that is a different name for the same encoding is the same.
+  EXPECT_EQ(parse(declaration("x-cp1251") + "<a>\xCF</a>").status, GTEXT_XML_OK);
+  // UTF-16's labels with an order: the document's own, or a mismatch.
+  for (bool big : {false, true}) {
+    const std::string own = big ? "UTF-16BE" : "UTF-16LE";
+    const std::string other = big ? "UTF-16LE" : "UTF-16BE";
+    EXPECT_EQ(parse(utf16(declaration(own) + "<a/>", big, true)).status, GTEXT_XML_OK) << own;
+    EXPECT_EQ(parse(utf16(declaration(own) + "<a/>", big, false)).status, GTEXT_XML_OK) << own;
+    EXPECT_EQ(parse(utf16(declaration(other) + "<a/>", big, true)).status,
+        GTEXT_XML_E_ENCODING_MISMATCH) << other;
+    for (const char * label : {"UTF-16", "UCS-2", "unicode", "ISO-10646-UCS-2"}) {
+      EXPECT_EQ(parse(utf16(declaration(label) + "<a/>", big, true)).status, GTEXT_XML_OK)
+          << label;
+    }
+  }
+  // "utf8" is UTF-8 by the Encoding standard's label.
+  EXPECT_EQ(parse(declaration("utf8") + "<a/>").status, GTEXT_XML_OK);
+  EXPECT_EQ(parse("\xEF\xBB\xBF" + declaration("utf8") + "<a/>").status, GTEXT_XML_OK);
+}
+
+TEST_F(XmlEncodings, PositionsAfterAMultiByteCharacterCountCharactersAndUtf8Bytes) {
+  // Two characters before <c/> on its line; each is two or three bytes of UTF-8
+  // and one or two bytes of the original.
+  const char * labels[] = {"Shift_JIS", "EUC-KR", "GBK", "Big5", "EUC-JP", "ISO-2022-JP",
+      "windows-1251"};
+  const char * words[] = {"\xE6\x97\xA5\xE6\x9C\xAC", "\xED\x95\x9C\xEA\xB5\xAD",
+      "\xE4\xB8\xAD\xE6\x96\x87", "\xE4\xB8\xAD\xE6\x96\x87", "\xE6\x97\xA5\xE6\x9C\xAC",
+      "\xE6\x97\xA5\xE6\x9C\xAC", "\xD0\x9F\xD1\x80"};
+  const GTEXT_Encoding encodings[] = {GTEXT_ENCODING_SHIFT_JIS, GTEXT_ENCODING_EUC_KR,
+      GTEXT_ENCODING_GBK, GTEXT_ENCODING_BIG5, GTEXT_ENCODING_EUC_JP,
+      GTEXT_ENCODING_ISO_2022_JP, GTEXT_ENCODING_WINDOWS_1251};
+  for (size_t i = 0; i < sizeof(labels) / sizeof(labels[0]); i++) {
+    const std::string utf8 = declaration(labels[i]) + "<a>\n<b>" + words[i] + "<c/></b></a>";
+    Result r = parse(encode_as(encodings[i], utf8));
+    ASSERT_EQ(r.status, GTEXT_XML_OK) << labels[i] << ": " << r.err.message;
+    GTEXT_Markup_Node * a = gtext_markup_document_element(r.doc);
+    GTEXT_Markup_Node * b = nullptr;
+    for (GTEXT_Markup_Node * k = gtext_markup_node_first_child(a); k; k = gtext_markup_node_next_sibling(k)) {
+      if (gtext_markup_node_kind(k) == GTEXT_MARKUP_KIND_ELEMENT) {
+        b = k;
+      }
+    }
+    ASSERT_NE(b, nullptr);
+    GTEXT_Markup_Node * c = nullptr;
+    for (GTEXT_Markup_Node * k = gtext_markup_node_first_child(b); k; k = gtext_markup_node_next_sibling(k)) {
+      if (gtext_markup_node_kind(k) == GTEXT_MARKUP_KIND_ELEMENT) {
+        c = k;
+      }
+    }
+    ASSERT_NE(c, nullptr);
+    GTEXT_Markup_Location where;
+    ASSERT_TRUE(gtext_markup_node_location(c, &where));
+    EXPECT_EQ(where.line, 3u) << labels[i];
+    EXPECT_EQ(where.column, 6u) << labels[i];  // "<b>" and two characters
+    EXPECT_EQ(where.offset, utf8.find("<c/>")) << labels[i];  // bytes of the UTF-8 form
+    // An error after them is at the same place.
+    const std::string broken = declaration(labels[i]) + "<a>\n<b>" + words[i] + "</a>";
+    r = parse(encode_as(encodings[i], broken));
+    EXPECT_EQ(r.status, GTEXT_XML_E_MISMATCHED_TAG) << labels[i];
+    EXPECT_EQ(r.err.line, 3u) << labels[i];
+    EXPECT_EQ(r.err.column, 6u) << labels[i];
+    EXPECT_EQ(r.err.byte_offset, broken.find("</a>")) << labels[i];
+  }
+}
+
+TEST_F(XmlEncodings, TheInputLimitCountsTheOriginalBytesOfALegacyDocument) {
+  GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
+  const std::string doc = declaration("windows-1251") + "<a>\xCF\xF0\xE8</a>";
+  o.max_input_bytes = doc.size();
+  EXPECT_EQ(parse(doc, &o).status, GTEXT_XML_OK);
+  o.max_input_bytes = doc.size() - 1;
+  EXPECT_EQ(parse(doc, &o).status, GTEXT_XML_E_LIMIT_INPUT);
+}
+
+TEST_F(XmlEncodings, ADeclarationThatNamesALegacyEncodingIsReadInAnAsciiCompatibleReading) {
+  // Appendix F: the first bytes "<?xm" in ASCII are every encoding that keeps
+  // ASCII where it is, and the declaration says which. Not so when the bytes are
+  // not those of "<?": a document in UTF-16 with no mark and no "<?" first is
+  // read as UTF-8 and refused, whatever it declares.
+  EXPECT_NE(parse(utf16("<a/>", false, false)).status, GTEXT_XML_OK);
+  // A label further into the declaration than the encoding's own name.
+  Result r = parse("<?xml version=\"1.0\" encoding=\"windows-1251\" standalone=\"no\"?><a>\xCF</a>");
+  EXPECT_EQ(r.status, GTEXT_XML_OK);
+  // Only a declaration that is at the start of the document counts: in a
+  // document that starts with a comment, the "declaration" is a processing
+  // instruction that no document may have there.
+  r = parse("<!-- x --><?xml version=\"1.0\" encoding=\"windows-1251\"?><a/>");
+  EXPECT_NE(r.status, GTEXT_XML_OK);
 }
 
 TEST_F(XmlEncodings, BadUnitsAreRefused) {
@@ -412,8 +705,15 @@ void put_utf8(std::string & s, uint32_t cp) {
   }
 }
 
+// When set, the characters other than ASCII come from here (a legacy encoding's
+// own characters), and `max` does not apply to them.
+const std::vector<uint32_t> * active_pool = nullptr;
+
 // A random character that is legal in text and attribute values, at most `max`.
 uint32_t random_char(Rng & rng, uint32_t max) {
+  if (active_pool && rng.below(3) == 0) {
+    return (*active_pool)[rng.below((uint32_t)active_pool->size())];
+  }
   static const uint32_t pool[] = {0x41, 0x7A, 0x20, 0x0A, 0x09, 0x30, 0x7E, 0xE9, 0xFF, 0xA0,
       0x100, 0x3A9, 0x7FF, 0x800, 0x65E5, 0xD7FF, 0xE000, 0xFEFF, 0xFFFD, 0x10000,
       0x1F600, 0x10FFFF};
@@ -514,6 +814,63 @@ TEST_F(XmlEncodings, EveryEncodingParsesToTheSameTreeAsUtf8) {
   }
 }
 
+// Whether `encoding` has the character and reads it back as itself (the encoder,
+// in its fatal mode, says the first; ISO-2022-JP writes a half-width katakana as
+// the full-width one, which is the second).
+bool encodable(GTEXT_Encoding encoding, uint32_t cp) {
+  std::string utf8;
+  put_utf8(utf8, cp);
+  char * out = nullptr;
+  size_t n = 0;
+  GTEXT_Encoder_Options o = gtext_encoder_options_default();
+  GTEXT_Encoder_Result r;
+  if (gtext_encoding_encode_buffer(encoding, &o, utf8.data(), utf8.size(), &out, &n, &r)
+      != GTEXT_ENCODING_OK) {
+    return false;
+  }
+  char * back = nullptr;
+  size_t back_n = 0;
+  GTEXT_Decoder_Options d = gtext_decoder_options_default();
+  d.error_mode = GTEXT_DECODER_FATAL;
+  GTEXT_Decoder_Result dr;
+  const bool ok = gtext_encoding_decode_buffer(encoding, &d, out, n, &back, &back_n, &dr)
+          == GTEXT_ENCODING_OK
+      && std::string(back, back_n) == utf8;
+  gtext_encoding_buffer_free(out);
+  gtext_encoding_buffer_free(back);
+  return ok;
+}
+
+TEST_F(XmlEncodings, EveryLegacyEncodingParsesToTheSameTreeAsUtf8) {
+  // Characters of several scripts; each encoding keeps those it has.
+  static const uint32_t scripts[] = {0xE9, 0xA0, 0x20AC, 0x3A9, 0x416, 0x44F, 0x5D0, 0xE01,
+      0x65E5, 0x672C, 0x3042, 0x30A2, 0xFF71, 0xD55C, 0xAD6D, 0x4E2D, 0x6587, 0x2026, 0x1F600};
+  Rng rng{777};
+  for (const Sample & sample : samples) {
+    if (sample.encoding == GTEXT_ENCODING_X_USER_DEFINED) {
+      continue;
+    }
+    std::vector<uint32_t> pool;
+    for (uint32_t cp : scripts) {
+      if (encodable(sample.encoding, cp)) {
+        pool.push_back(cp);
+      }
+    }
+    ASSERT_FALSE(pool.empty()) << sample.label;
+    active_pool = &pool;
+    for (int round = 0; round < 60; round++) {
+      const std::string body = random_document(rng, 0x7F, "");
+      const std::string utf8 = declaration(sample.label) + body;
+      Result b = parse(body);
+      ASSERT_EQ(b.status, GTEXT_XML_OK) << body;
+      Result r = parse(encode_as(sample.encoding, utf8));
+      ASSERT_EQ(r.status, GTEXT_XML_OK) << sample.label << " " << round << ": " << r.err.message;
+      EXPECT_EQ(dump(r.doc), dump(b.doc)) << sample.label << " " << round;
+    }
+    active_pool = nullptr;
+  }
+}
+
 // ---- allocation failure --------------------------------------------------
 
 TEST_F(XmlEncodings, AllocationFailureWhileConverting) {
@@ -524,12 +881,18 @@ TEST_F(XmlEncodings, AllocationFailureWhileConverting) {
     s.replace(s.find("ENC"), 3, label);
     return s;
   };
-  const std::string inputs[] = {
+  std::vector<std::string> inputs = {
       utf16(with_label("UTF-16"), false, true),
       utf16(with_label("UTF-16"), true, false),
       utf32(with_label("UTF-32"), false, true),
       std::string("<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><r a=\"\xE9\">caf\xE9</r>"),
   };
+  // The encodings of the encoding module, each in text it has.
+  for (const Sample & sample : samples) {
+    const std::string t = sample.text;
+    inputs.push_back(encode_as(sample.encoding, declaration(sample.label) + "<r a=\"" + t
+        + "\"><b>" + t + " " + t + "</b><!--c--></r>"));
+  }
   for (const std::string & text : inputs) {
     FaultAllocator fa;
     GTEXT_XML_Parse_Options o = gtext_xml_parse_options_default();
@@ -577,9 +940,9 @@ TEST_F(XmlEncodings, ReviewPins) {
     EXPECT_NE(parse(utf16("<a/>", big, false)).status, GTEXT_XML_OK) << big;
     // A bare mark and nothing else: an empty document, not a crash.
     EXPECT_EQ(parse(utf16("", big, true)).status, GTEXT_XML_E_UNEXPECTED_EOF) << big;
-    // The byte-order-qualified labels are declined on purpose.
+    // The byte-order-qualified label is the document's own order, or a mismatch.
     EXPECT_EQ(parse(utf16("<?xml version=\"1.0\" encoding=\"UTF-16LE\"?><a/>", big, false)).status,
-        GTEXT_XML_E_UNSUPPORTED_ENCODING) << big;
+        big ? GTEXT_XML_E_ENCODING_MISMATCH : GTEXT_XML_OK) << big;
   }
   // The raw label scan agrees with the real parser on legal declaration shapes.
   const char * shapes[] = {

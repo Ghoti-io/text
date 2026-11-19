@@ -216,6 +216,78 @@ TEST(XmlGeneralEntity, CallerResolvedExternalReplacementUsesTheSharedParser) {
   gtext_markup_document_free(document);
 }
 
+TEST(XmlGeneralEntity, AnExternalEntityInAnotherEncodingIsReadByItsTextDeclaration) {
+  // Windows-1251 and Shift_JIS, each declared by the entity's own text
+  // declaration (XML 1.0 4.3.3: an entity carries its own encoding).
+  struct Case {
+    const char * bytes;
+    const char * text;
+  };
+  const Case cases[] = {
+      {"<?xml version='1.0' encoding='windows-1251'?><child>\xCF\xF0\xE8\xE2\xE5\xF2</child>",
+          "\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82"},
+      {"<?xml encoding='Shift_JIS'?><child>\x93\xFA\x96\x7B</child>", "\xE6\x97\xA5\xE6\x9C\xAC"},
+  };
+  for (const Case & c : cases) {
+    ExternalEntity source;
+    source.bytes = c.bytes;
+    const std::string input =
+        "<!DOCTYPE root [<!ENTITY ext SYSTEM 'memory:entity'>]><root>&ext;</root>";
+    auto options = gtext_xml_parse_options_default();
+    options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+    options.resolver = resolve_entity;
+    options.resolver_user_data = &source;
+    GTEXT_Markup_Document * document = nullptr;
+    GTEXT_XML_Error error{};
+    ASSERT_EQ(gtext_xml_parse(input.data(), input.size(), &options, &document, &error),
+        GTEXT_XML_OK) << c.bytes << ": " << error.message;
+    ASSERT_EQ(source.closes, 1u);
+    Node * child = gtext_markup_node_first_child(gtext_markup_document_element(document));
+    ASSERT_NE(child, nullptr);
+    char * text = nullptr;
+    size_t n = 0;
+    ASSERT_EQ(gtext_markup_node_text_content(child, nullptr, &text, &n), GTEXT_MARKUP_OK);
+    EXPECT_EQ(std::string(text, n), c.text);
+    gtext_markup_string_free(nullptr, text);
+    gtext_markup_document_free(document);
+  }
+  // An entity whose declaration names an encoding its bytes are not in is
+  // fatal, and so is one with bytes the encoding does not have; the source is
+  // closed once either way.
+  auto wide = [](const std::string & ascii) {  // UTF-16BE with a mark
+    std::string out("\xFE\xFF", 2);
+    for (char c : ascii) {
+      out += '\0';
+      out += c;
+    }
+    return out;
+  };
+  const std::string bad[] = {
+      wide("<?xml version='1.0' encoding='windows-1251'?><child/>"),
+      "<?xml version='1.0' encoding='Shift_JIS'?><child>\x82</child>",
+  };
+  for (const std::string & bytes : bad) {
+    ExternalEntity source;
+    source.bytes = bytes;
+    const std::string input =
+        "<!DOCTYPE root [<!ENTITY ext SYSTEM 'memory:entity'>]><root>&ext;</root>";
+    auto options = gtext_xml_parse_options_default();
+    options.dtd_mode = GTEXT_XML_DTD_PROCESS;
+    options.external_access = GTEXT_XML_EXTERNAL_ACCESS_ALLOW;
+    options.resolver = resolve_entity;
+    options.resolver_user_data = &source;
+    GTEXT_Markup_Document * document = nullptr;
+    GTEXT_XML_Error error{};
+    const GTEXT_XML_Status status =
+        gtext_xml_parse(input.data(), input.size(), &options, &document, &error);
+    EXPECT_TRUE(status == GTEXT_XML_E_ENCODING_MISMATCH || status == GTEXT_XML_E_INVALID_SEQUENCE)
+        << status << " " << (error.message ? error.message : "");
+    EXPECT_EQ(document, nullptr);
+    EXPECT_EQ(source.closes, 1u);
+  }
+}
+
 TEST(XmlGeneralEntity, CallerResolvedExternalReplacementWorksInBothReaders) {
   const std::string input =
       "<!DOCTYPE root [<!ENTITY ext SYSTEM 'memory:entity'>]>"

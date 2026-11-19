@@ -57,6 +57,7 @@
 
 #include <gtest/gtest.h>
 
+#include <ghoti.io/text/encoding.h>
 #include <ghoti.io/text/xml.h>
 
 #include "../src/markup/markup_internal.h"
@@ -2041,6 +2042,174 @@ TEST(XmlStream, AUnitCutInTheMiddleIsCarriedToTheNextFeed) {
       EXPECT_EQ(run.rec.log, whole.rec.log) << "cut " << cut;
     }
   }
+}
+
+// The bytes of `utf8` in one of the encoding module's encodings (its encoder,
+// which refuses a character the encoding lacks, so a sample cannot be quietly
+// replaced).
+std::string encode_as(GTEXT_Encoding encoding, const std::string & utf8) {
+  char * out = nullptr;
+  size_t n = 0;
+  GTEXT_Encoder_Options o = gtext_encoder_options_default();
+  GTEXT_Encoder_Result r;
+  const GTEXT_Encoding_Status st = gtext_encoding_encode_buffer(encoding, &o,
+      utf8.data(), utf8.size(), &out, &n, &r);
+  EXPECT_EQ(st, GTEXT_ENCODING_OK) << gtext_encoding_name(encoding);
+  std::string bytes = st == GTEXT_ENCODING_OK ? std::string(out, n) : std::string();
+  gtext_encoding_buffer_free(out);
+  return bytes;
+}
+
+struct LegacySample {
+  const char * label;
+  GTEXT_Encoding encoding;
+  const char * body;  // UTF-8; characters of two or three bytes, and an ASCII tail
+};
+
+const LegacySample legacy_samples[] = {
+    {"windows-1251", GTEXT_ENCODING_WINDOWS_1251,
+        "<a k=\"\xD0\x9F\xD1\x80\">\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82<!--\xD0\xBC--></a>"},
+    {"Shift_JIS", GTEXT_ENCODING_SHIFT_JIS,
+        "<a k=\"\xE6\x97\xA5\"><b>\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E</b>\xE3\x81\x82 x</a>"},
+    {"EUC-KR", GTEXT_ENCODING_EUC_KR,
+        "<a>\xED\x95\x9C\xEA\xB5\xAD\xEC\x96\xB4<?p \xED\x95\x9C?></a>"},
+    {"GBK", GTEXT_ENCODING_GBK, "<a>\xE4\xB8\xAD\xE6\x96\x87<![CDATA[\xE4\xB8\xAD]]></a>"},
+    {"gb18030", GTEXT_ENCODING_GB18030, "<a>\xE4\xB8\xAD \xF0\x9F\x98\x80 \xE6\x96\x87</a>"},
+    {"Big5", GTEXT_ENCODING_BIG5, "<a>\xE4\xB8\xAD\xE6\x96\x87</a>"},
+    {"EUC-JP", GTEXT_ENCODING_EUC_JP, "<a>\xE6\x97\xA5\xE6\x9C\xAC \xEF\xBD\xB1</a>"},
+    {"ISO-2022-JP", GTEXT_ENCODING_ISO_2022_JP, "<a>x \xE6\x97\xA5\xE6\x9C\xAC y</a>"},
+};
+
+TEST(XmlStream, EveryLegacyEncodingGivesTheDomParsesTreeHoweverItIsCut) {
+  for (const LegacySample & sample : legacy_samples) {
+    const std::string bytes = encode_as(sample.encoding, declared(sample.body, sample.label));
+    Dom dom;
+    run_dom(dom, bytes);
+    ASSERT_EQ(dom.status, GTEXT_XML_OK) << sample.label;
+    Parsed whole;
+    run_stream(whole, bytes, {});
+    expect_agrees(std::string(sample.label) + " whole", whole, dom);
+    Parsed one;
+    run_stream(one, bytes, Chunks{1});
+    expect_agrees(std::string(sample.label) + " bytes", one, dom);
+    EXPECT_EQ(one.rec.log, whole.rec.log) << sample.label;
+    // And the text it delivers is the UTF-8 text, cut anywhere: the same events
+    // as the same document in UTF-8.
+    Parsed utf8;
+    run_stream(utf8, declared(sample.body, "UTF-8"), {});
+    ASSERT_EQ(utf8.status, GTEXT_XML_OK);
+    EXPECT_EQ(one.rec.log.size(), utf8.rec.log.size()) << sample.label;
+    for (size_t cut = 0; cut <= bytes.size(); cut++) {
+      Parsed run;
+      run_stream(run, bytes, {cut, bytes.size()});
+      EXPECT_EQ(run.rec.log, whole.rec.log) << sample.label << " cut " << cut;
+    }
+    std::mt19937 rng(11);
+    for (int round = 0; round < 20; round++) {
+      Parsed run;
+      run_stream(run, bytes, random_chunks(rng, 5));
+      EXPECT_EQ(run.rec.log, whole.rec.log) << sample.label << " round " << round;
+    }
+  }
+}
+
+TEST(XmlStream, ALegacyCharacterFedByteByByteIsOneCharacterOfText) {
+  // A Shift_JIS character is two bytes and the first alone is nothing: no text
+  // is delivered for it until the second arrives, and the position afterwards is
+  // of characters.
+  const std::string doc = encode_as(GTEXT_ENCODING_SHIFT_JIS,
+      declared("<a>\xE6\x97\xA5\xE6\x9C\xAC<b/></a>", "Shift_JIS"));
+  Recorder rec;
+  GTEXT_XML_Stream * s = gtext_xml_stream_new(nullptr, record, &rec);
+  ASSERT_NE(s, nullptr);
+  for (size_t i = 0; i < doc.size(); i++) {
+    ASSERT_EQ(gtext_xml_stream_feed(s, doc.data() + i, 1, nullptr), GTEXT_XML_OK) << i;
+  }
+  ASSERT_EQ(gtext_xml_stream_finish(s, nullptr), GTEXT_XML_OK);
+  gtext_xml_stream_free(s);
+  bool text = false;
+  for (const std::string & line : rec.log) {
+    text = text || line.find("TEXT '\\xE6\\x97\\xA5\\xE6\\x9C\\xAC'") == 0;
+  }
+  EXPECT_TRUE(text);
+  // The position of <b/>: after the declaration, "<a>" and two characters. The
+  // offset counts bytes of the UTF-8 form (three a character), the column
+  // characters of the original.
+  const size_t prolog = declared("", "Shift_JIS").size();
+  const std::string want = "START {-}-:'b' @" + std::to_string(prolog + 3 + 6) + ":1:"
+      + std::to_string(prolog + 3 + 2 + 1);
+  bool at = false;
+  for (const std::string & line : rec.log) {
+    at = at || line.find(want) == 0;
+  }
+  EXPECT_TRUE(at) << want;
+}
+
+TEST(XmlStream, BytesThatAreNotValidInALegacyEncodingAreRefusedAsTheDomParseRefusesThem) {
+  const std::vector<std::string> bad = {
+      declared("<a>\x82\xA0\x82<b/></a>", "Shift_JIS"),  // a lead byte, then '<'
+      declared("<a>\x82\xA0\x82", "Shift_JIS"),           // the document ends inside
+      declared("<a>\xFF</a>", "Shift_JIS"),
+      declared("<a>\xA5</a>", "ISO-8859-3"),                // a byte with no character
+      declared("<a>\xFF</a>", "EUC-KR"),
+      declared("<a>\x81</a>", "GBK"),
+      declared("<a>\xE9</a>", "ISO-2022-JP"),
+  };
+  for (const std::string & doc : bad) {
+    Dom dom;
+    run_dom(dom, doc);
+    ASSERT_EQ(dom.status, GTEXT_XML_E_INVALID_SEQUENCE) << show(doc);
+    Parsed whole;
+    run_stream(whole, doc, {});
+    expect_agrees("whole " + show(doc), whole, dom);
+    Parsed bytes;
+    run_stream(bytes, doc, Chunks{1});
+    expect_agrees("bytes " + show(doc), bytes, dom);
+    for (size_t cut = 0; cut <= doc.size(); cut++) {
+      Parsed run;
+      run_stream(run, doc, {cut, doc.size()});
+      expect_agrees("cut " + std::to_string(cut) + " " + show(doc), run, dom);
+    }
+  }
+  // A label that disagrees with the first bytes, and one that names nothing.
+  for (const std::string & doc : {utf16(declared("<a/>", "windows-1251"), false, true),
+           std::string("\xEF\xBB\xBF") + declared("<a/>", "Shift_JIS"),
+           declared("<a/>", "x-no-such-encoding"), declared("<a/>", "hz-gb-2312")}) {
+    Dom dom;
+    run_dom(dom, doc);
+    ASSERT_TRUE(dom.status == GTEXT_XML_E_ENCODING_MISMATCH
+        || dom.status == GTEXT_XML_E_UNSUPPORTED_ENCODING) << show(doc);
+    Parsed bytes;
+    run_stream(bytes, doc, Chunks{1});
+    expect_agrees("bytes " + show(doc), bytes, dom);
+    for (size_t cut = 0; cut <= doc.size(); cut++) {
+      Parsed run;
+      run_stream(run, doc, {cut, doc.size()});
+      expect_agrees("cut " + std::to_string(cut) + " " + show(doc), run, dom);
+    }
+  }
+}
+
+TEST(XmlStream, DetectionWaitsForADeclarationThatMayNameALegacyEncoding) {
+  const std::string doc = encode_as(GTEXT_ENCODING_WINDOWS_1251,
+      declared("<a>\xD0\x9F\xD1\x80</a>", "windows-1251"));
+  Recorder rec;
+  GTEXT_XML_Stream * s = gtext_xml_stream_new(nullptr, record, &rec);
+  ASSERT_NE(s, nullptr);
+  const size_t declaration_end = doc.find("?>") + 2;
+  for (size_t i = 0; i < doc.size(); i++) {
+    ASSERT_EQ(gtext_xml_stream_feed(s, doc.data() + i, 1, nullptr), GTEXT_XML_OK) << i;
+    if (i + 1 < declaration_end) {
+      EXPECT_TRUE(rec.log.empty()) << i;
+    }
+  }
+  ASSERT_EQ(gtext_xml_stream_finish(s, nullptr), GTEXT_XML_OK);
+  gtext_xml_stream_free(s);
+  bool found = false;
+  for (const std::string & line : rec.log) {
+    found = found || line.find("TEXT '\\xD0\\x9F\\xD1\\x80'") == 0;
+  }
+  EXPECT_TRUE(found);
 }
 
 TEST(XmlStream, BytesThatAreNotValidInTheEncodingAreRefusedAsTheDomParseRefusesThem) {

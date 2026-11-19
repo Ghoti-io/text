@@ -82,8 +82,10 @@ typedef enum {
   GTEXT_XML_E_DOCTYPE, ///< A malformed or unterminated document type
                        ///< declaration.
   GTEXT_XML_E_UNSUPPORTED_ENCODING, ///< EBCDIC (by its first bytes), or
-                       ///< an XML declaration whose `encoding` is none of
-                       ///< UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII.
+                       ///< an XML declaration whose `encoding` names none of
+                       ///< UTF-8, UTF-16, UTF-32, ISO-8859-1, US-ASCII and
+                       ///< the encodings the encoding module decodes (an
+                       ///< unknown name, or one of `replacement`'s).
                        ///< Not a verdict on the document: it may be
                        ///< well-formed.
   GTEXT_XML_E_UNSUPPORTED_VERSION, ///< An XML declaration with a version other
@@ -103,12 +105,15 @@ typedef enum {
                        ///< encoding: a lone or reversed UTF-16 surrogate, a
                        ///< UTF-32 unit past U+10FFFF or in the surrogate
                        ///< range, a document that ends inside a code unit, a
-                       ///< byte above 0x7F under `US-ASCII`. The position is
-                       ///< the offending unit's.
+                       ///< byte above 0x7F under `US-ASCII`, a byte sequence
+                       ///< another encoding does not have. The position is
+                       ///< the offending unit's, or the first byte of the
+                       ///< ill-formed sequence.
   GTEXT_XML_E_ENCODING_MISMATCH, ///< The declaration's `encoding` names a
                        ///< different family from the one the document is in
-                       ///< (a UTF-16 document labeled UTF-8, a UTF-8 document
-                       ///< labeled UTF-16). The position is the label's.
+                       ///< (a UTF-16 document labeled UTF-8 or Windows-1251, a
+                       ///< UTF-8 document labeled UTF-16). The position is
+                       ///< the label's.
 
   GTEXT_XML_E_INCOMPLETE, ///< Event parsers only: the pull reader has no event
                        ///< to give until it is fed more input. Not an error

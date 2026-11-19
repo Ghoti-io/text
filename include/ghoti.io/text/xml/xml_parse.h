@@ -114,15 +114,19 @@ extern "C" {
  *
  * **Encodings.** UTF-8 (a byte order mark is accepted and skipped), UTF-16 and
  * UTF-32 in either byte order (by their mark, or by the first bytes of
- * `<?xml` as in XML 1.0 Appendix F), and documents whose declaration says
- * `ISO-8859-1` or `US-ASCII`. Anything else that is named is
- * GTEXT_XML_E_UNSUPPORTED_ENCODING, as is EBCDIC; that says nothing about
- * whether the document is well-formed. Input that is not UTF-8 is converted
+ * `<?xml` as in XML 1.0 Appendix F), and documents whose declaration names
+ * `ISO-8859-1`, `US-ASCII` or any other encoding that the encoding module
+ * decodes (`Windows-1251`, `Shift_JIS`, `EUC-KR`, `GBK`, ...; the label is read
+ * as the Encoding standard reads one, with the IANA names of ISO-8859-1 and
+ * US-ASCII keeping their own readings). A name that is none of those (or is the
+ * Encoding standard's `replacement`) is GTEXT_XML_E_UNSUPPORTED_ENCODING, as is
+ * EBCDIC; that says nothing about whether the document is well-formed. Input that is not UTF-8 is converted
  * to UTF-8 first: lines and columns still count characters of the original,
  * but a byte offset counts bytes of the UTF-8 form. The document's encoding
  * and its source describe the original. A declared `encoding` naming another
- * family than the document is in is GTEXT_XML_E_ENCODING_MISMATCH, and bytes
- * that are not valid in the encoding are GTEXT_XML_E_INVALID_SEQUENCE. An XML
+ * encoding than the document is in is GTEXT_XML_E_ENCODING_MISMATCH, and bytes
+ * that are not valid in the encoding are GTEXT_XML_E_INVALID_SEQUENCE (at the
+ * first byte of the ill-formed sequence). An XML
  * declaration with a version other than 1.0 or 1.1 returns
  * GTEXT_XML_E_UNSUPPORTED_VERSION.
  *

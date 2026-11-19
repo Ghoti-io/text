@@ -1331,8 +1331,8 @@ GTEXT_XML_Status xml_parse_xml_declaration(xml_ctx * p) {
 
   if (p->stream) {
     return xml_emit_document_start(p, version,
-        label ? label : xml_family_name(p->enc_family),
-        label ? label_length : strlen(xml_family_name(p->enc_family)),
+        label ? label : xml_ctx_encoding_name(p),
+        label ? label_length : strlen(xml_ctx_encoding_name(p)),
         p->enc_bom ? GTEXT_MARKUP_ENCODING_BOM
                    : (label ? GTEXT_MARKUP_ENCODING_DECLARATION
                             : GTEXT_MARKUP_ENCODING_DEFAULT),
@@ -1347,8 +1347,8 @@ GTEXT_XML_Status xml_parse_xml_declaration(xml_ctx * p) {
   markup_buf copy;
   markup_buf_init(&copy, p->allocator);
   status = label ? xml_append(p, &copy, label, label_length)
-                 : xml_append(p, &copy, xml_family_name(p->enc_family),
-                       strlen(xml_family_name(p->enc_family)));
+                 : xml_append(p, &copy, xml_ctx_encoding_name(p),
+                       strlen(xml_ctx_encoding_name(p)));
   if (status == GTEXT_XML_OK) {
     status = xml_from_markup(p,
         gtext_markup_document_set_encoding(p->doc, copy.data,
@@ -1461,7 +1461,7 @@ static GTEXT_XML_Status parse_document(xml_ctx * p) {
   if (!declared) {
     status = xml_from_markup(p,
         gtext_markup_document_set_encoding(p->doc,
-            xml_family_name(p->enc_family),
+            xml_ctx_encoding_name(p),
             p->enc_bom ? GTEXT_MARKUP_ENCODING_BOM : GTEXT_MARKUP_ENCODING_DEFAULT));
     if (status != GTEXT_XML_OK) {
       return status;

@@ -61,9 +61,10 @@
  *
  * The first bytes decide the family (xml_sniff()); for a document with no mark
  * that begins `<?xml`, that waits for the declaration to end, since it may name
- * ISO-8859-1 or US-ASCII. Anything that is not UTF-8 is converted piece by piece
- * (xml_converter), which carries a cut code unit or surrogate pair across
- * pieces, and the lexer sees UTF-8 only, as it does for the DOM parse.
+ * another encoding (ISO-8859-1, Windows-1251, Shift_JIS, ...). Anything that is
+ * not UTF-8 is converted piece by piece (xml_converter), which carries a cut
+ * code unit, surrogate pair or multi-byte character across pieces, and the
+ * lexer sees UTF-8 only, as it does for the DOM parse.
  *
  * ## Events
  *
@@ -611,7 +612,7 @@ static GTEXT_XML_Status construct(GTEXT_XML_Stream * s, scan_kind kind,
 
 static GTEXT_XML_Status emit_default_document_start(GTEXT_XML_Stream * s) {
   xml_ctx * p = &s->p;
-  const char * name = xml_family_name(p->enc_family);
+  const char * name = xml_ctx_encoding_name(p);
   return xml_emit_document_start(p, NULL, name, strlen(name),
       p->enc_bom ? GTEXT_MARKUP_ENCODING_BOM : GTEXT_MARKUP_ENCODING_DEFAULT,
       GTEXT_MARKUP_STANDALONE_UNSPECIFIED);
@@ -961,15 +962,17 @@ static GTEXT_XML_Status append_input(
 static GTEXT_XML_Status detect(GTEXT_XML_Stream * s) {
   xml_ctx * p = &s->p;
   xml_family family = XML_FAMILY_UTF8;
+  GTEXT_Encoding legacy = GTEXT_ENCODING_NONE;
   size_t skip = 0;
   int bom = 0;
   if (xml_sniff((const unsigned char *)s->input.data, s->input.length, &family,
-          &skip, &bom)) {
+          &legacy, &skip, &bom)) {
     return xml_fail(p, GTEXT_XML_E_UNSUPPORTED_ENCODING,
         "EBCDIC is not supported");
   }
   p->enc_bom = bom;
   p->enc_family = family;
+  p->enc_legacy = legacy;
   s->detected = 1;
   if (family == XML_FAMILY_UTF8) {
     p->pos = skip;
@@ -979,7 +982,7 @@ static GTEXT_XML_Status detect(GTEXT_XML_Stream * s) {
   /* Convert what was held, from the first byte after the mark. */
   markup_buf raw = s->input;
   markup_buf_init(&s->input, &s->allocator);
-  xml_converter_init(&s->converter, p, &s->input, family);
+  xml_converter_init(&s->converter, p, &s->input, family, legacy);
   s->converter.raw_total = skip;
   s->converting = 1;
   const GTEXT_XML_Status status = xml_converter_feed(&s->converter,
@@ -1461,6 +1464,7 @@ GTEXT_API void gtext_xml_stream_free(GTEXT_XML_Stream * s) {
     p->resolver_reentered = 1;
     return;
   }
+  xml_converter_release(&s->converter);
   markup_buf_free(&s->input);
   markup_buf_free(&s->arena);
   xml_doctype_continuation_reset(p);

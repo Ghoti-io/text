@@ -48,6 +48,7 @@
 #ifndef GHOTI_IO_GTEXT_SRC_XML_XML_INTERNAL_H
 #define GHOTI_IO_GTEXT_SRC_XML_XML_INTERNAL_H
 
+#include <ghoti.io/text/encoding.h>
 #include <ghoti.io/text/macros.h>
 #include <ghoti.io/text/xml.h>
 #include <ghoti.io/text/xml/xml_stream.h>
@@ -109,7 +110,8 @@ typedef enum {
   XML_FAMILY_UTF32LE,
   XML_FAMILY_UTF32BE,
   XML_FAMILY_LATIN1, ///< Declared ISO-8859-1.
-  XML_FAMILY_ASCII   ///< Declared US-ASCII.
+  XML_FAMILY_ASCII,  ///< Declared US-ASCII.
+  XML_FAMILY_LEGACY  ///< Declared one of the other encodings the encoding module decodes (`enc_legacy`).
 } xml_family;
 
 /** An encoding label from the declaration, by family. */
@@ -119,7 +121,10 @@ typedef enum {
   XML_LABEL_UTF16,
   XML_LABEL_UTF32,
   XML_LABEL_LATIN1,
-  XML_LABEL_ASCII
+  XML_LABEL_ASCII,
+  XML_LABEL_UTF16LE, ///< UTF-16 with the byte order spelled out.
+  XML_LABEL_UTF16BE,
+  XML_LABEL_LEGACY   ///< Another encoding the encoding module decodes: see xml_label_encoding().
 } xml_label;
 
 /** The effective XML character profile. Zero initialization means XML 1.0. */
@@ -574,6 +579,7 @@ typedef struct {
   int partial;
 
   xml_family enc_family; ///< What the document was found to be in.
+  GTEXT_Encoding enc_legacy; ///< With XML_FAMILY_LEGACY, which encoding; GTEXT_ENCODING_NONE otherwise.
   xml_version version;   ///< Effective profile; defaults to XML 1.0.
   int enc_bom;           ///< It began with a byte order mark.
   markup_buf decoded;    ///< The UTF-8 form of converted input; `in` points here.
@@ -644,13 +650,13 @@ typedef struct {
  */
 GTEXT_XML_Status xml_detect_encoding(xml_ctx * p);
 /**
- * What the first `n` bytes say, as xml_detect_encoding() decides it: the family,
- * how many leading bytes are a byte order mark, and whether there was one.
+ * What the first `n` bytes say, as xml_detect_encoding() decides it: the family
+ * (and for XML_FAMILY_LEGACY the encoding), how many leading bytes are a byte order mark, and whether there was one.
  * Returns non-zero for EBCDIC, which is refused. Pure: it looks at the bytes and
  * nothing else, so a document that arrives in pieces is decided by the same code.
  */
 int xml_sniff(const unsigned char * s, size_t n, xml_family * family,
-    size_t * skip, int * bom);
+    GTEXT_Encoding * legacy, size_t * skip, int * bom);
 /**
  * Are `n` bytes too few to decide? Fewer than four, or a declaration that may
  * still say ISO-8859-1 and has not ended (`*has_close` tells whether a '>'
@@ -667,6 +673,12 @@ typedef struct {
   size_t raw_total;    ///< Original encoded bytes accepted so far.
   size_t raw_unit_offset; ///< Start of the current encoded unit.
   size_t high_raw_offset; ///< Start of a pending UTF-16 high surrogate.
+  GTEXT_Encoding legacy; ///< With XML_FAMILY_LEGACY, the encoding to decode.
+  GTEXT_Decoder * decoder; ///< Its decoder, made by the first piece; NULL until then.
+  size_t decoder_base;   ///< Original bytes before the decoder's first byte (the mark).
+  GTEXT_XML_Status sink_status; ///< What stopped the decoder's sink, if it did.
+  int sink_invalid;      ///< The sink stopped at ill-formed input, which began at...
+  size_t sink_invalid_at; ///< ...this offset from the decoder's first byte.
   size_t line;
   size_t column;
   uint32_t previous;
@@ -675,15 +687,20 @@ typedef struct {
   size_t left_n;
   uint32_t high;       ///< A high surrogate waiting for its low one.
 } xml_converter;
-void xml_converter_init(
-    xml_converter * c, xml_ctx * p, markup_buf * out, xml_family family);
+void xml_converter_init(xml_converter * c, xml_ctx * p, markup_buf * out,
+    xml_family family, GTEXT_Encoding legacy);
+/** Release what the converter holds (its decoder). Safe to call twice, and on a
+ *  converter that was never fed. */
+void xml_converter_release(xml_converter * c);
 /** Convert a piece, appending to `out`. `final` says no more will come, so a
  *  partial unit is an error. Errors are recorded in `p->err`. */
 GTEXT_XML_Status xml_converter_feed(xml_converter * c,
     const unsigned char * data, size_t n, int final);
 
-/** Classify an encoding label, case-insensitively. */
-xml_label xml_classify_label(const unsigned char * label, size_t length);
+/** Classify an encoding label, case-insensitively. For XML_LABEL_LEGACY the
+ *  encoding is in `*legacy` (which may be NULL). */
+xml_label xml_classify_label(
+    const unsigned char * label, size_t length, GTEXT_Encoding * legacy);
 /**
  * Check the declaration's label against the family found. Mismatches the
  * specification makes fatal are GTEXT_XML_E_ENCODING_MISMATCH, any other
@@ -693,6 +710,9 @@ GTEXT_XML_Status xml_check_label(xml_ctx * p, const unsigned char * label,
     size_t length, const GTEXT_Markup_Location * where);
 /** The name a document gets when it declares none. */
 const char * xml_family_name(xml_family family);
+/** The name of what a document (or an external source) was found to be in: the
+ *  family's name, or the encoding module's name for XML_FAMILY_LEGACY. */
+const char * xml_ctx_encoding_name(const xml_ctx * p);
 
 /* ---- Errors ------------------------------------------------------------- */
 

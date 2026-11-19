@@ -3,8 +3,9 @@
 # XML
 
 `gtext_xml_parse()` reads a whole **XML 1.0 (Fifth Edition) or XML 1.1
-(Second Edition)** document, in UTF-8, UTF-16, UTF-32, ISO-8859-1 or US-ASCII,
-with the matching Namespaces in XML 1.0 or 1.1 rules, and builds a
+(Second Edition)** document, in UTF-8, UTF-16, UTF-32, ISO-8859-1, US-ASCII or any
+other encoding the library's encoding module decodes (Windows-1251, Shift_JIS,
+EUC-KR, GBK and the rest: **Encodings** below), with the matching Namespaces in XML 1.0 or 1.1 rules, and builds a
 \ref format_markup "Markup tree" from it. `GTEXT_XML_Stream` (push) and
 `GTEXT_XML_Reader` (pull) read the same documents as a stream of events, in
 pieces, without building a tree (**Event parsers** below). `gtext_xml_write()` and
@@ -88,7 +89,7 @@ carries its source location, and so does every attribute. A location is the
 byte offset, the line and the column of the construct's first character; a line
 ends according to the document version and a column counts characters. For direct
 UTF-8, a byte order mark counts in the offset but not in columns. For converted
-UTF-16, UTF-32, ISO-8859-1 or US-ASCII input, line and column count original
+UTF-16, UTF-32 or single- or multi-byte legacy input, line and column count original
 characters, while **offset counts bytes of the converted UTF-8 form**; any
 original byte order mark is excluded.
 
@@ -183,35 +184,84 @@ parse.
 
 ## Encodings
 
-Input is decoded to UTF-8 before parsing. Supported non-UTF-8 encodings are
-converted in one pass through the document's allocator, so the parse itself is
-the same for every encoding. The document's encoding name and its source (`BOM`,
+Input is decoded to UTF-8 before parsing. Every non-UTF-8 encoding is converted
+in one pass through the document's allocator, so the parse itself is the same for
+every encoding. The document's encoding name and its source (`BOM`,
 `DECLARATION`, `DEFAULT`) describe the **original**: a UTF-16 document with a mark
-says `UTF-16` from `BOM`, and one declared `ISO-8859-1` says `ISO-8859-1` from
-`DECLARATION`. The input limit applies to the original bytes.
+says `UTF-16` from `BOM`, one declared `ISO-8859-1` says `ISO-8859-1` from
+`DECLARATION`, and one declared `Windows-1251` says `Windows-1251`, as written,
+from `DECLARATION`. The input limit applies to the original bytes.
+
+**Which encodings.** UTF-8, UTF-16 and UTF-32, ISO-8859-1 and US-ASCII, and every
+encoding the \ref format_encoding "encoding module" decodes: the single-byte
+ones (the Windows code pages, KOI8, the ISO-8859 parts, Mac, ...), `GBK`,
+`gb18030`, `Big5`, `EUC-JP`, `ISO-2022-JP`, `Shift_JIS`, `EUC-KR` and
+`x-user-defined`. A label is read the way that module reads one (the Encoding
+standard's labels, in any case: `windows-1251`, `cp1251`, `sjis`, ...), with
+these exceptions, which are the XML specification's and not the Encoding
+standard's:
+
+- XML 1.0 4.3.3 sends an IANA name to the encoding IANA registers for it. The
+  Encoding standard reads `latin1`, `l1`, `iso_8859-1`, `iso-ir-100`, `ibm819`,
+  `cp819`, `csisolatin1` and `us-ascii`'s names (`ansi_x3.4-1968`, `iso646-us`,
+  `us`, `cp367`, ...) as windows-1252, which puts printable characters where
+  ISO-8859-1 has C1 controls and accepts bytes US-ASCII does not have. They keep
+  the readings that `ISO-8859-1` and `US-ASCII` have. `ascii`, which only the
+  Encoding standard has, is windows-1252 as that standard says; so is `windows-1252`.
+- The label `replacement` and the names that the Encoding standard makes of it
+  (`hz-gb-2312`, `iso-2022-kr`, `csiso2022kr`, ...) decode as one U+FFFD and
+  nothing of the text, which is a safeguard for browsers and not a reading of the
+  document: they are not read.
+- `utf8` and `unicode-1-1-utf-8` are `UTF-8`. `UTF-16LE` and `UTF-16BE` are UTF-16 with
+  the order spelled out, and `UCS-2`, `unicode` and `ISO-10646-UCS-2` are `UTF-16`
+  with none: the first bytes decide the order, and a label with an order that is
+  not the document's is a mismatch.
+
+**How a document says.** The first bytes decide UTF-8 with a mark, UTF-16 and
+UTF-32 (a mark, or the bytes of `<?` in the encoding's width: Appendix F). Every
+other encoding starts a document with the bytes of `<?xml` as ASCII (ISO-2022-JP
+too: it begins in ASCII), so, as for ISO-8859-1, the declaration is read from the
+raw bytes of a document with no mark and its label decides. A document in an
+encoding whose first bytes are not those, with no mark, cannot be told from UTF-8,
+and is read as UTF-8 (Appendix F's own answer); a UTF-16 or UTF-32 document with
+no mark whose first characters are not `<?` is refused (below).
 
 | Input | Result |
 |---|---|
 | UTF-8, with or without a byte order mark | parsed; a mark is skipped and the document's encoding source is `BOM` |
 | UTF-16 or UTF-32, little or big endian, by byte order mark or by the first bytes of `<?` (Appendix F; a mark-less UTF-16 document that starts with `<` and anything else is read as UTF-8 and refused) | converted and parsed. A document with no mark and no declaration is read as the family its first bytes show, named `UTF-16` or `UTF-32` from `DEFAULT` |
-| a declaration `encoding="ISO-8859-1"` or `"US-ASCII"` (case-insensitive) in a document with no mark | converted (every byte of Latin-1 is the code point of that value) and parsed. The label is read from the declaration in the raw bytes before converting |
-| a UTF-16 or UTF-32 document whose label names another family (`UTF-8`, `ISO-8859-1`, `US-ASCII`, or the other width) | `GTEXT_XML_E_ENCODING_MISMATCH`, at the label |
-| a UTF-8 document (with or without a mark) labeled `UTF-16` or `UTF-32`, or one with a UTF-8 mark labeled `ISO-8859-1` or `US-ASCII` | the same |
+| a declaration naming ISO-8859-1 or US-ASCII (by any of their IANA names, case-insensitive) in a document with no mark | converted (every byte of Latin-1 is the code point of that value) and parsed. The label is read from the declaration in the raw bytes before converting |
+| a declaration naming any other encoding of the encoding module (`windows-1251`, `Shift_JIS`, `EUC-KR`, `GBK`, `ISO-2022-JP`, ...) in a document with no mark | converted by that module's decoder (the Encoding standard's decoding of the encoding, which has a mapping for every byte or a refusal of it) and parsed |
+| a UTF-16 or UTF-32 document whose label names another family (`UTF-8`, `ISO-8859-1`, `US-ASCII`, `Windows-1251`, ..., or the other width, or the other order of UTF-16) | `GTEXT_XML_E_ENCODING_MISMATCH`, at the label |
+| a UTF-8 document (with or without a mark) labeled `UTF-16`, `UTF-32` or any of their names, or one with a UTF-8 mark labeled any other encoding | the same |
 | a bare label `UTF-16` or `UTF-32` | matches either byte order |
 | a lone or reversed surrogate, a UTF-32 unit past U+10FFFF or in the surrogate range, a document that ends inside a code unit, a byte of 0x80 or above under `US-ASCII` | `GTEXT_XML_E_INVALID_SEQUENCE`, at the original encoded-byte unit (`raw_byte_offset`); `offset` is in converted UTF-8 |
-| the labels `UTF-16LE`, `UTF-16BE`, `UTF-32LE`, `UTF-32BE` and aliases such as `UCS-2` or `latin1` (declined on purpose) | `GTEXT_XML_E_UNSUPPORTED_ENCODING` at the label |
-| EBCDIC, by its first bytes; any other label (`windows-1252`, `Shift_JIS`, ...) | `GTEXT_XML_E_UNSUPPORTED_ENCODING` (offset 0 for EBCDIC, the label otherwise) |
+| a byte sequence that is not legal in the declared encoding (a lead byte with no trail byte, a byte no character has, a document that ends inside a character, ISO-2022-JP's bytes above 0x7F) | `GTEXT_XML_E_INVALID_SEQUENCE`, at the first byte of the ill-formed sequence (`raw_byte_offset`); `offset` is in converted UTF-8, and the line and column are those of the last character before it |
+| a label that names no encoding the module decodes (`UTF-7`, `UCS-4`, `EBCDIC-US`, any name of nothing) or that it makes `replacement` of | `GTEXT_XML_E_UNSUPPORTED_ENCODING`, at the label |
+| EBCDIC, by its first bytes | `GTEXT_XML_E_UNSUPPORTED_ENCODING` (offset 0) |
 | an XML declaration whose `encoding` is not an `EncName` | `GTEXT_XML_E_SYNTAX` |
 | a version other than 1.0 or 1.1 | `GTEXT_XML_E_UNSUPPORTED_VERSION` for `1.<digits>`, `GTEXT_XML_E_SYNTAX` for anything the production does not allow |
 | bytes that are not UTF-8 | `GTEXT_XML_E_UTF8`, at the input-byte offset (`offset`; includes a UTF-8 BOM if present) |
 | UTF-8 that is not an XML character | `GTEXT_XML_E_CHARACTER` |
 
+**An invalid byte sequence is fatal.** XML 1.0 4.3.3 makes a byte sequence that is
+not legal in the entity's encoding a fatal error. The decoder would write U+FFFD
+for it (the Encoding standard's "replacement" error mode, which is for browsers);
+a document that has one is refused instead, and the error is at the original
+byte where the ill-formed sequence begins, found with the decoder's source map.
+The document is read in whole before any of it is parsed, as for UTF-16, so the
+refusal is the first the DOM parse gives. A byte that the encoding maps to a
+character XML does not have (U+0000 in any encoding, a C0 control, a code point
+that is a noncharacter) is a `GTEXT_XML_E_CHARACTER` of the parser's, as in UTF-8.
+
 An unsupported answer is a statement about the **parser** and not about the
 document: the document may be well-formed. The conformance score keeps those
 cases apart for that reason. The mismatch and invalid-sequence answers are
-statements about the **document** and score as well-formedness refusals. The
-other labels, a streaming decoder, and the four unusual byte orders of
-Appendix F are not supported.
+statements about the **document** and score as well-formedness refusals. The four
+unusual byte orders of Appendix F, and a document in a stateful or multi-byte
+encoding that has no declaration and no mark, are not read as anything but
+UTF-8. The writer writes UTF-8, UTF-16, ISO-8859-1 and US-ASCII; reading another
+encoding does not give it a way to write one.
 
 ### Byte order marks and declarations
 
@@ -224,9 +274,10 @@ parser and the pull reader alike, however the input is cut:
 | Mark | Declaration | Result |
 |---|---|---|
 | UTF-8 | none, or `encoding="UTF-8"` in any case | accepted; encoding `UTF-8`, source `BOM` (the mark wins as the source even when the declaration says the same) |
-| UTF-8 | `ISO-8859-1`, `US-ASCII`, `UTF-16`, `UTF-32` | `GTEXT_XML_E_ENCODING_MISMATCH`, at the label |
-| UTF-16 | `UTF-8`, `ISO-8859-1`, `UTF-32` | `GTEXT_XML_E_ENCODING_MISMATCH`, at the label |
-| UTF-16 | `UTF-16` | accepted |
+| UTF-8 | `ISO-8859-1`, `US-ASCII`, `UTF-16`, `UTF-32`, `Windows-1251` or any other encoding of the encoding module | `GTEXT_XML_E_ENCODING_MISMATCH`, at the label |
+| UTF-16 | `UTF-8`, `ISO-8859-1`, `UTF-32`, `Windows-1251` or any other legacy encoding, or `UTF-16` of the other order | `GTEXT_XML_E_ENCODING_MISMATCH`, at the label |
+| UTF-16 | `UTF-16`, `UCS-2`, or `UTF-16LE` or `UTF-16BE` of the document's own order | accepted |
+| UTF-8 | `UTF-8`, `utf8` | accepted |
 
 A UTF-8 mark is skipped by parsing but remains in byte offsets, not columns, so
 the first element of `EF BB BF <a/>` is at offset 3, line 1, column 1. A BOM for
@@ -601,7 +652,7 @@ and are by construction:
 - *Bytes invalid in the encoding.* `gtext_xml_parse()` validates the complete
   input encoding before applying XML grammar, so it reports a later malformed
   byte sequence even if the document is not well-formed earlier. UTF-8 errors
-  use `_UTF8`; malformed UTF-16, UTF-32, ISO-8859-1 or US-ASCII input uses
+  use `_UTF8`; malformed input in any other encoding uses
   `_INVALID_SEQUENCE`. An unsupported or mismatched encoding declaration is
   still reported at the declaration. The event parser validates as bytes arrive
   and reports whichever error it encounters first.
@@ -611,11 +662,12 @@ and are by construction:
   `max_nodes` counts what the tree would hold (the document node included), so
   both refuse the same documents at the same place.
 
-**Encodings.** The same five. The first four bytes decide UTF-16, UTF-32 and a
+**Encodings.** The same. The first four bytes decide UTF-16, UTF-32 and a
 UTF-8 mark, and for a document with none that begins `<?xml` the parser waits for
-the declaration to end, because it may say `ISO-8859-1` or `US-ASCII`; until then
-nothing is delivered. After that the input is converted piece by piece, carrying
-a cut code unit or a surrogate pair into the next piece.
+the declaration to end, because it may name another encoding (`ISO-8859-1`,
+`Windows-1251`, `Shift_JIS`, ...); until then nothing is delivered. After that the
+input is converted piece by piece, carrying a cut code unit, a surrogate pair or
+a cut multi-byte character (and ISO-2022-JP's shift state) into the next piece.
 
 **The callback.** It may return any status other than `GTEXT_XML_OK` to stop. That
 status is returned from the `_feed` or `_finish` that was running, and the stream
@@ -1253,7 +1305,9 @@ parser reaches first.
 - The writer has no streaming (event) form, no canonicalization (C14N), no HTML
   serialization and no DTD output yet; parsed declarations are retained but not
   emitted.
-- Encodings other than UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII are declined (see Encodings).
+- The writer writes UTF-8, UTF-16, ISO-8859-1 and US-ASCII only; the parser reads every encoding the
+  encoding module decodes (see Encodings), and a document read from one of the others is written back in
+  one of those four.
 - The reference differential and the fuzzers (above) have limits of their own. The gate's
   generated population is small (3,997 documents), so the references' leniencies (above)
   are found by a hunt on a larger one and not by the gate; and the fuzzers have run for

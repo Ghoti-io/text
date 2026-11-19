@@ -764,10 +764,3 @@ x-rmt5-014	unsupported recommendation XML1.0-errata4e
 x-rmt5-014a	unsupported recommendation XML1.0-errata4e
 x-rmt5-016	unsupported recommendation XML1.0-errata4e
 x-rmt5-019	unsupported recommendation XML1.0-errata4e
-pr-xml-euc-jp	parser does not support UNSUPPORTED_ENCODING for this case
-pr-xml-iso-2022-jp	parser does not support UNSUPPORTED_ENCODING for this case
-pr-xml-shift_jis	parser does not support UNSUPPORTED_ENCODING for this case
-weekly-euc-jp	parser does not support UNSUPPORTED_ENCODING for this case
-weekly-iso-2022-jp	parser does not support UNSUPPORTED_ENCODING for this case
-weekly-shift_jis	parser does not support UNSUPPORTED_ENCODING for this case
-ibm-not-wf-P23-ibm23n05.xml	parser does not support UNSUPPORTED_ENCODING for this case
