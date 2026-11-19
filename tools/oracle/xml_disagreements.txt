@@ -51,112 +51,414 @@ encoding07	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with th
 ext01	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 ext02	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:0201f40b951f	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:02e870e37100	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:03241fc9a529	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:03f3427b48c9	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:0496a0035e66	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:05421c796d13	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:05517a2ecbbd	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:0567cf915526	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:065455fde6e1	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:066cea8fdcbd	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:074847388091	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:0799268b1144	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:0811b918620d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:081e264d7333	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:096ea61afbe6	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; libxml2 accepts it, where expat refuses it as this parser does
 gen:09896e628af3	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:09a98ef7beca	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:0a93695da2e3	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:0ae2d85002ef	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:0b389c66d334	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:0b4ff2384bd8	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:0bc34290e004	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:0c01a3bd1b4b	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:0c09a2a08f41	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:0c8e347ab1f4	ours=R xml2=R expat=A plain=A	reference-wrong	the version '1' is not a VersionNum (1.[0-9]+) and this parser refuses it; expat accepts it. With the version replaced by 1.0 everyone agrees
+gen:0d22458f5d69	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:0e325914d612	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:0e954df414a4	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:0ed293c5ab1c	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:0f3b08fb7aa7	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:0f4071da3764	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:0fd99c6e1edc	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:0fdac51da0be	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:10020d294da5	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:10a95a290f76	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:11815dc99ee2	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:1227b94f4233	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:12aa53f29839	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:133169b89b74	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:137865e8fa21	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:13d4dda9872d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:148d1529f92f	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:164b90fe53cb	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:166ba7ed3302	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
-gen:1a2a28e5d384	ours=D:UNSUPPORTED_ENCODING xml2=A expat=R plain=R	scope-unsupported	the encoding label 'windows-1252' is declined: only UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII are read
+gen:16aee4cfa26a	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:170f473e4c5d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:17e3a3a0596f	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:199f6699daab	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:1a2a28e5d384	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:1c02674c1835	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:1c4407b223b9	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:1c4f9a692245	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:1d5b6921695a	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:1daa262c3397	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:1e33fb86453d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:1e9e49def00b	ours=R xml2=R expat=A plain=A	reference-wrong	the version '1' is not a VersionNum (1.[0-9]+) and this parser refuses it; expat accepts it. With the version replaced by 1.0 everyone agrees
+gen:1f6d36d94e57	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:1ffb271692d8	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:20e9f494013d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:2152d3f4d8a7	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:21700d83eecb	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:21f34ca191a4	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:21ff6d74a8c3	ours=A xml2=A expat=R plain=R	version-specific	expat's name-character tables are XML 1.0 Fourth Edition's: it refuses a character that Fifth Edition makes a name character
+gen:2361d2ecbf0f	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:23edb5dca0fe	ours=A xml2=A expat=A plain=A dump=xml2#17f8ee8e	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:24011748d7c8	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:24521d591179	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:24acad9854de	ours=A xml2=R expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:25805895840b	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:27860a49206b	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:27f4cb88dc53	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:2897801c9152	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:28c1929ec573	ours=R xml2=R expat=A plain=A	spec-ambiguity	UTF-16 or UTF-32 with no byte order mark and no '<?' at the start: XML 4.3.3 requires the mark and Appendix F's detection does not cover it; expat guesses from a NUL beside the first character. The same document as UTF-8 agrees
+gen:29b74f9b6140	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:2b1c85360270	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:2b49c3c2fd92	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:2bad72da8e00	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:2e887c545309	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:2eb7d0010858	ours=R xml2=R expat=A plain=A	reference-wrong	the version '2.0' is not a VersionNum (1.[0-9]+) and this parser refuses it; expat accepts it. With the version replaced by 1.0 everyone agrees
+gen:2ed27490ff42	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:2f61288fe600	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:2fe24632bfca	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:300fbedaa18d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:305ae772e575	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:3077c16abe86	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:31fd565b7838	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:327e1867fd1b	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:3296acfd89dd	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:33621e899bf1	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:33bade97fa4e	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:344481ac6827	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:34bba2b65289	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:35b5ad74d53a	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
+gen:365d17fb6d9c	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:36a3065da280	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:38bb6c299584	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:38d2107f74da	ours=R xml2=R expat=A plain=A	reference-wrong	the version '2.0' is not a VersionNum (1.[0-9]+) and this parser refuses it; expat accepts it. With the version replaced by 1.0 everyone agrees
+gen:38f16d815de9	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
 gen:39b50eff27c8	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:3b2d1850088d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:3c54d8db8aa4	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:3c61ee70c783	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:3d195f7df934	ours=A xml2=A expat=R plain=R	version-specific	expat's name-character tables are XML 1.0 Fourth Edition's: it refuses a character that Fifth Edition makes a name character
+gen:3e46e218ea61	ours=R xml2=A expat=R plain=R	reference-wrong	the bytes are not legal in the declared encoding (Python's decoder for it refuses them too), which XML 4.3.3 makes fatal; libxml2 accepts them
+gen:3f199b97b731	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:3f42d1401cef	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:3f712fe9278e	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:3fa96a88af9e	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:4262d84487fa	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:42d2b2c83f41	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:432882c9b4e6	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:4371c0d97dd7	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:44450f1c7d51	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:44510991a645	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:457f96ff2d4a	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:45a091c59078	ours=R xml2=A expat=R plain=R	reference-wrong	XML 1.1 section 2.2 forbids RestrictedChar literals; the character must be written as a reference, but both pinned references accept it literally
 gen:460349d360a4	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:463f17ce6d0c	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:46d444975d58	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:476c02b29d7a	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:4772b3d246e7	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:48309dbcc51a	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:49437fb85498	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:49dbbeee7254	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:4a1ca85faafc	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:4b6878e41de1	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:4cd255d7efcc	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:4dd0d8a2dfdb	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:4e7fd59de0b8	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:4e9b1d5e553f	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:4ef9614eadc4	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:4f36dbcbee40	ours=A xml2=R expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:50a51a7ac474	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:50c37474bccb	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:510e1d124a3c	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:5118f44a6dfe	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:5205b145dbd5	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:5295f5a6f026	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:53a2a0b1fb72	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:53a313719bea	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:542fa7eeb553	ours=R xml2=R expat=A plain=A	reference-wrong	the version '2.0' is not a VersionNum (1.[0-9]+) and this parser refuses it; expat accepts it. With the version replaced by 1.0 everyone agrees
+gen:55828819bcc3	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:56d9fd7f9353	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; libxml2 accepts it, where expat refuses it as this parser does
+gen:56f5bc4a7475	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:574853e125c9	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:579403498d82	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:58be32a15a71	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:58be3325bda3	ours=R xml2=R expat=A plain=A	reference-wrong	the version '1' is not a VersionNum (1.[0-9]+) and this parser refuses it; expat accepts it. With the version replaced by 1.0 everyone agrees
+gen:5959b54c70de	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
 gen:5a5bb721d14a	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:5ab25f3d7ff5	ours=A xml2=A expat=R plain=R	version-specific	expat's name-character tables are XML 1.0 Fourth Edition's: it refuses a character that Fifth Edition makes a name character
+gen:5b5b2bc43416	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:5c585d56e51e	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:5d8153c1d5bf	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:5e9f9969a9b3	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:5f901341023b	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:5ff72caa1ddb	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:6065ffece51d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:608181fd9e55	ours=A xml2=R expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:60bf1fabab9e	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:61661993553c	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:61a6d463cc19	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:64b02d6c8f6c	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:64bb38049388	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:6660fb4549d8	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:674b1748ab5b	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:675c20d0f538	ours=R xml2=R expat=A plain=A	spec-ambiguity	UTF-16 or UTF-32 with no byte order mark and no '<?' at the start: XML 4.3.3 requires the mark and Appendix F's detection does not cover it; expat guesses from a NUL beside the first character. The same document as UTF-8 agrees
+gen:677adb72e889	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:677b87a51d5a	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:67e42b18f994	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:68ad174540e5	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:68c44e0e6ccc	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:69f6dde774db	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:6a1a9db8e141	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; libxml2 accepts it, where expat refuses it as this parser does
+gen:6bbe1818e543	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:6cb96670d93d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:6d0dff76c0c9	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:6dbb707410d9	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
-gen:73610b85db03	ours=D:UNSUPPORTED_ENCODING xml2=A expat=R plain=R	scope-unsupported	the encoding label 'windows-1252' is declined: only UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII are read
-gen:7383cc17ebee	ours=D:UNSUPPORTED_ENCODING xml2=A expat=R plain=R	scope-unsupported	the encoding label 'latin1' is declined: only UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII are read
+gen:6e8c68cb4ddf	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:6eaa47bd54d4	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:6eca836b4d87	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:6f7398139bcf	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:6fa1ea7ad8ea	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:706fdcf86e97	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:73610b85db03	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:7383cc17ebee	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:73d0c36727f4	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:73d3b6f018bf	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:741a689626d1	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:748a0b213108	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:74a45590fda1	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:754f37326b67	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:75522c2afb5d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:7557004df358	ours=R xml2=A expat=R plain=R	reference-wrong	the bytes are not legal in the declared encoding (Python's decoder for it refuses them too), which XML 4.3.3 makes fatal; libxml2 accepts them
+gen:75b125b3f376	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:75eca61e2466	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
+gen:7663d3f5085d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:76c9165d8cc6	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:7709f443f2bb	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:778fb4104faf	ours=A xml2=A expat=A plain=A dump=xml2#fb4bb1a6	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:78068a8eca70	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:781a8d81ad7c	ours=A xml2=A expat=A plain=A dump=xml2+expat#09f775ef	reference-wrong	XML 1.1 section 2.11 requires literal NEL and LINE SEPARATOR line ends to normalize to LF; both references retain the literal character
 gen:78211f7a07ee	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:793eca8e6adb	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:794958c39a94	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; libxml2 accepts it, where expat refuses it as this parser does
+gen:7a93517770aa	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:7b5aa9c267bb	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:7b87e168dfad	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:7c5d8f9477e9	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:7c9392826a25	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:7d96ce40f8bd	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:7da37b4b1974	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:81509203eedd	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:815bcf338125	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:83cf043e040f	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:83f8d281ebe3	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:8427904c9d7c	ours=R xml2=R expat=A plain=A	reference-wrong	the version '2.0' is not a VersionNum (1.[0-9]+) and this parser refuses it; expat accepts it. With the version replaced by 1.0 everyone agrees
+gen:84905800d003	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:84bc12c7ffa3	ours=R xml2=R expat=A plain=A	spec-ambiguity	UTF-16 or UTF-32 with no byte order mark and no '<?' at the start: XML 4.3.3 requires the mark and Appendix F's detection does not cover it; expat guesses from a NUL beside the first character. The same document as UTF-8 agrees
+gen:856b78d523a7	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:85cb57f8d91a	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:8606f3dbf5fc	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:862b375ed1f2	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:864760959d67	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:86a07d8e1df8	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:86d912a79901	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:870479457c53	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; libxml2 accepts it, where expat refuses it as this parser does
+gen:873a257c5ee8	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:8770aa72affb	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:88b40a5ee443	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:893afffe1d93	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:898ac77ceaaa	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:89a8320d78c9	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:8a3104516733	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:8a583bdd65d5	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:8b2fa46dbf32	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:8c628f6fac90	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:8d362c314975	ours=R xml2=A expat=R plain=R	reference-wrong	the bytes are not legal in the declared encoding (Python's decoder for it refuses them too), which XML 4.3.3 makes fatal; libxml2 accepts them
+gen:8f16a714d252	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:8f32d83cf336	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:8f4045f4ff50	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:8f91ded15d26	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:917022cc4a60	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
+gen:91d65545df8f	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:937114722930	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:93b2fa58bd1f	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:94009b196da3	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:94f87144fd5c	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:95986aba7e24	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:95a3e6e03913	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:977e69f087af	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:97923d6915d3	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:97ba18ad69a5	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:98a2adf44195	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:9d084f2d0bf0	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:9d26b0754075	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:9de111648475	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:9df553872b32	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:9e756ee230bb	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:9e7b028b5a9b	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:9efcac0de5a9	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:9f83ff648bd3	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:9fc2685206f8	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:a1bee78a35e0	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:a21d786a3e28	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:a2d0605f95bf	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:a2e8a927b039	ours=A xml2=A expat=R plain=R	version-specific	expat's name-character tables are XML 1.0 Fourth Edition's: it refuses a character that Fifth Edition makes a name character
 gen:a332de7af28f	ours=R xml2=R expat=A plain=A	spec-ambiguity	UTF-16 or UTF-32 with no byte order mark and no '<?' at the start: XML 4.3.3 requires the mark and Appendix F's detection does not cover it; expat guesses from a NUL beside the first character. The same document as UTF-8 agrees
+gen:a3640a892796	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:a3806660af64	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:a3f2957d6168	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:a407e998cedc	ours=R xml2=R expat=A plain=A	reference-wrong	the version '2.0' is not a VersionNum (1.[0-9]+) and this parser refuses it; expat accepts it. With the version replaced by 1.0 everyone agrees
+gen:a57026a0ad89	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:a5e46dd14c0d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:a66ce5742ff3	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:a7c09e35ee00	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:a7f7e1017edb	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:a8550363ceeb	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:ab0656a82190	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:ab738ba53b56	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:ac87b8f5759a	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
+gen:ac94ae312a75	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:accf48f245b9	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:af58d92ab169	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:b0b740dbe51b	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
 gen:b0cbb99c8da5	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:b196973a0c86	ours=R xml2=R expat=A plain=A	reference-wrong	the version '1' is not a VersionNum (1.[0-9]+) and this parser refuses it; expat accepts it. With the version replaced by 1.0 everyone agrees
+gen:b23f53d42c08	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:b3820ec0eb75	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:b4433e93eaa5	ours=R xml2=R expat=A plain=A	spec-ambiguity	UTF-16 or UTF-32 with no byte order mark and no '<?' at the start: XML 4.3.3 requires the mark and Appendix F's detection does not cover it; expat guesses from a NUL beside the first character. The same document as UTF-8 agrees
+gen:b49661fbddf3	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
 gen:b4bac7533f11	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:b5b8b692033d	ours=A xml2=R expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:b5e0ef3bff94	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:b6642fa82a25	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:b69307859683	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:b757bb3fc056	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:b7d81c9b765a	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:b911fc802673	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:b9747f14365b	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:ba02720f6939	ours=A xml2=A expat=R plain=R	version-specific	expat's name-character tables are XML 1.0 Fourth Edition's: it refuses a character that Fifth Edition makes a name character
+gen:bae586c43b42	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
+gen:bb032c48c0c8	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:bb9168ef315e	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:bbbf35312378	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
-gen:bcbb4b49fe29	ours=D:UNSUPPORTED_ENCODING xml2=A expat=R plain=R	scope-unsupported	the encoding label 'windows-1252' is declined: only UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII are read
+gen:bc0413edf6de	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:bcbb4b49fe29	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:bcc5e7005bb1	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
+gen:bd7a9e02d920	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:be4c5607e5a2	ours=A xml2=A expat=R plain=R	version-specific	expat's name-character tables are XML 1.0 Fourth Edition's: it refuses a character that Fifth Edition makes a name character
 gen:be66ce036ed0	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:c1cb6cdc58b3	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:c359c694b5f6	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:c498e6d18b4a	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:c51c76b28ddc	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:c587b0af2818	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:c5aa3e53eace	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:c616225121f8	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:c6c4963e8034	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:c706ea720d76	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:c80167190977	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:c8cd2211ea64	ours=A xml2=A expat=A plain=A dump=xml2#1a94da92	representation	libxml2 does not report a declaration of the reserved xml prefix; expat and this parser do
+gen:c966cc4e25a9	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:cbfea0093a05	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:ccb3fbba03cc	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:ce6407705bc3	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:cfa1da2f7709	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:cfeaf3ed7a9a	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:d012e19a025e	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:d022217efd8b	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:d025fb2b0f1c	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:d1fc9fcf1109	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:d3a0e5ddbcdd	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:d3dfb30bf3de	ours=R xml2=A expat=R plain=R	reference-wrong	the bytes are not legal in the declared encoding (Python's decoder for it refuses them too), which XML 4.3.3 makes fatal; libxml2 accepts them
+gen:d3e00d85f5b6	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:d52b3b6298cb	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:d53556533a01	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:d5bc45f73b10	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:d6b108064746	ours=A xml2=R expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:d81e1387180e	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:d89cdb44b097	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:d941103ca54c	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:d983d30cd9b5	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:daaec635aa44	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:dac163df2df5	ours=A xml2=R expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:dae694962de4	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:db267f8be0ec	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
+gen:db6c0091dde7	ours=A xml2=R expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:dbd202acf759	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:dc5178e6489d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:dce825444568	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:dd99be8166e7	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:dddf1018c8ff	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
+gen:de0812efdd7d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:de3e4c130838	ours=A xml2=R expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:dfb520816544	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:e16c97d94783	ours=R xml2=A expat=R plain=R	reference-wrong	the bytes are not legal in the declared encoding (Python's decoder for it refuses them too), which XML 4.3.3 makes fatal; libxml2 accepts them
+gen:e170b784fdba	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:e1bbf5b35ddf	ours=R xml2=A expat=A plain=A	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; libxml2 accepts it, and so does expat
+gen:e291d7849084	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:e3acbef71ac5	ours=A xml2=A expat=R plain=R	version-specific	expat's name-character tables are XML 1.0 Fourth Edition's: it refuses a character that Fifth Edition makes a name character
 gen:e420d2792f04	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:e4508296910a	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:e56eb4bf0e76	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:e60069b7464f	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:e775c1c9c72c	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 gen:e907b615be07	ours=A xml2=A expat=R plain=R	version-specific	expat's name-character tables are XML 1.0 Fourth Edition's: it refuses a character that Fifth Edition makes a name character
+gen:e978b3977a45	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:e9a2bf61034b	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:ea42f06aacb2	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:ea4c0a3a3bdd	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:ead316722815	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:eb80fe1489e5	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:ec26f9599f56	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:ec96ecc2cce2	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:eca9b2fbe9d6	ours=R xml2=R expat=A plain=A	reference-wrong	the version '2.0' is not a VersionNum (1.[0-9]+) and this parser refuses it; expat accepts it. With the version replaced by 1.0 everyone agrees
+gen:ed064aa78e8e	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:eeb4d5ea608b	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:f03b5817f2e1	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:f15780e13487	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:f1fb50c19461	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:f2002089538d	ours=R xml2=A expat=R plain=R	reference-wrong	the bytes are not legal in the declared encoding (Python's decoder for it refuses them too), which XML 4.3.3 makes fatal; libxml2 accepts them
+gen:f26c3ab34250	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:f2c529874de8	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:f3e7b0e7af38	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:f4d0cdb24fbb	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:f5134fbbc513	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:f5207cea6636	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:f58f4d49e9e8	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; libxml2 accepts it, where expat refuses it as this parser does
+gen:f5bfe58e57a7	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:f7a6f088efa4	ours=R xml2=A expat=R plain=R	reference-wrong	the bytes are not legal in the declared encoding (Python's decoder for it refuses them too), which XML 4.3.3 makes fatal; libxml2 accepts them
+gen:f7f45ddbec9e	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:f94793e042ae	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:f97da932699e	ours=A xml2=A expat=A plain=A dump=xml2#c06ff54e	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
-gen:fb67d80dc842	ours=D:UNSUPPORTED_ENCODING xml2=A expat=R plain=R	scope-unsupported	the encoding label 'latin1' is declined: only UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII are read
+gen:f9ba61ed2a44	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:f9cc4df17685	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:fafee753a875	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:fb2f5f8348eb	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:fb67d80dc842	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
+gen:fc51ab3c9975	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:fc6548bf1db7	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:fca0317aa9d5	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:fcff73cf97f2	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:fe054aa14749	ours=A xml2=R expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 gen:feabb9c7e136	ours=A xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+gen:ff1789d90f94	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:ff3243e00b4d	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:ff8c0278e08f	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+gen:ff8dc9307601	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 hst-bh-005	ours=A xml2=A expat=A plain=A dump=xml2#aeb9d404	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 hst-lhs-007	ours=R xml2=A expat=A plain=A	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; libxml2 accepts it, and so does expat
 hst-lhs-008	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; libxml2 accepts it, where expat refuses it as this parser does
@@ -541,7 +843,10 @@ o-p76fail1	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with th
 o-p76fail2	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 o-p76fail3	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 o-p76fail4	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+pr-xml-euc-jp	ours=R xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+pr-xml-iso-2022-jp	ours=R xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 pr-xml-little	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+pr-xml-shift_jis	ours=R xml2=A expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 pr-xml-utf-16	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 pr-xml-utf-8	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 pubid01	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
@@ -590,11 +895,20 @@ rmt-ns11-004	ours=A xml2=R expat=R plain=A	reference-wrong	pinned W3C xmlconf TY
 sa02	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 sa03	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 sa04	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+seed:encoding-euc-jp-declared.seed	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+seed:encoding-euc-kr-declared.seed	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+seed:encoding-gb18030-declared.seed	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+seed:encoding-iso-2022-jp-declared.seed	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 seed:encoding-label-lies-utf16.seed	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; libxml2 accepts it, where expat refuses it as this parser does
-seed:encoding-unsupported-label.seed	ours=D:UNSUPPORTED_ENCODING xml2=A expat=R plain=R	scope-unsupported	the encoding label 'windows-1252' is declined: only UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII are read
+seed:encoding-latin1-iana-alias.seed	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+seed:encoding-legacy-label-lies-utf8.seed	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; the same document without the label agrees with everyone
+seed:encoding-shift-jis-declared.seed	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+seed:encoding-utf16-order-label.seed	ours=R xml2=A expat=R plain=R	reference-wrong	the encoding label contradicts the document's bytes, which XML 4.3.3 makes an error; libxml2 accepts it, where expat refuses it as this parser does
 seed:encoding-utf32be-bom.seed	ours=A xml2=R expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 seed:encoding-utf32le-bom.seed	ours=A xml2=R expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 seed:encoding-utf32le-decl.seed	ours=A xml2=R expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+seed:encoding-windows-1251-declared.seed	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+seed:encoding-windows-1252-declared.seed	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
 sgml04	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 sgml05	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 sgml06	ours=A xml2=R expat=R plain=R	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
@@ -639,3 +953,6 @@ valid-sa-114	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with 
 valid-sa-115	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 valid-sa-117	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
 valid-sa-118	ours=R xml2=A expat=A plain=A	scope-dtd	needs DTD processing: with the document type declaration removed all three programs agree
+weekly-euc-jp	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+weekly-iso-2022-jp	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees
+weekly-shift_jis	ours=A xml2=A expat=R plain=R	reference-scope	a reference does not read this encoding or its presentation: the same document as UTF-8, without the label, agrees

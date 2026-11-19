@@ -980,12 +980,16 @@ and not settled by a vote. No browser and no host-installed library is used.
 
 **The inputs** are the whole of the W3C suite - the not-well-formed cases, which are
 the refusals and the point, and every `valid`, `invalid` and `error` case, which are
-asked only whether they are well-formed - 17 fuzz seeds that are not suite documents,
-and 3,997 generated and mutated documents, mostly refused (this parser accepts about 6% of
+asked only whether they are well-formed - the fuzz seeds that are not suite documents,
+400 generated documents in the encoding module's other encodings (Windows-1251, KOI8-R,
+Shift_JIS, EUC-JP, ISO-2022-JP, EUC-KR, GBK, Big5, ...: declared, corrupted, cut inside a
+character, labeled over a UTF-8 mark or over UTF-16; made with Python's codecs, which are
+not the library's tables, so a difference is a disagreement to read), and 3,997 generated and
+mutated documents, mostly refused (this parser accepts about 6% of
 them, and the run fails if that leaves 3% to 30%, or if any axis below has fewer than 10). The deciding axes are varied on purpose and counted in the report:
 namespaces (bound, unbound and reused prefixes, the reserved `xml` and `xmlns`,
 `xmlns=""`, two colons) and encodings (a mark, none, UTF-16 and UTF-32 in both byte
-orders, ISO-8859-1 and US-ASCII by declaration, a label that lies, a unit that is
+orders, ISO-8859-1 and US-ASCII by declaration, the other legacy encodings by declaration, a label that lies, a unit that is
 not a character).
 
 **What is compared.** The verdict, ours against each reference run namespace-aware,
@@ -1019,11 +1023,11 @@ regression, a valid UTF-16 document refused, and requires the hunt to fail on it
 |---|---:|---|
 | `scope-dtd` | 1,070 | historical differential results used DTD_OFF defaults and references with DTD loading disabled. 1,004 are suite documents that declare entities, attribute defaults or types, or whose declaration is malformed. This default-off population does not measure DTD PROCESS. |
 | `scope-xml11` | 130 | historical differential results predate XML 1.1 support; the current parser selects XML 1.1 from the declaration. |
-| `scope-unsupported` | 13 | an encoding label (`euc-jp`, `Shift_JIS`, `iso-2022-jp`, `latin1`, `windows-1252`) or a version (`1.7`) that is declined; libxml2 reads most of them through iconv, expat none |
+| `scope-unsupported` | 0 | an encoding label this parser declines (one the Encoding standard has no reading of, or makes `replacement` of) or a version (`1.7`); the population has none now that every label of the standard is read: `euc-jp`, `Shift_JIS`, `iso-2022-jp`, `latin1` and `windows-1252` were the 13 before |
 | `version-specific` | 21 | expat's name tables are XML 1.0 **Fourth** Edition's: it refuses an element named `eggſ` (U+017F, a letter) and one named with a supplementary-plane character, name characters since the Fifth. The suite says so itself: `x-rmt5-014` and `x-rmt5-016` are marked `EDITION="5"`, and the `ibm-invalid-P89-*` documents say "only legal per 5th edition" |
-| `reference-wrong` | 20 | libxml2 accepts a document whose declared encoding contradicts its bytes (XML 4.3.3), 9 times, expat refusing it as this parser does; expat accepts a version that is not `1.` and digits (`2.0`, `1`, `42.88`), 11 times |
+| `reference-wrong` | 120 | libxml2 accepts a document whose declared encoding contradicts its bytes (XML 4.3.3), 9 times, expat refusing it as this parser does; expat accepts a version that is not `1.` and digits (`2.0`, `1`, `42.88`), 11 times; and libxml2 accepts bytes that are not legal in the declared encoding (an ISO-2022-JP document with a byte above 0x7F in ASCII mode, which Python's decoder refuses too), and a C1 control in an XML 1.1 document that expat cannot read for its encoding |
 | `spec-ambiguity` | 5 | UTF-16 or UTF-32 with no byte order mark and no `<?` to start: 4.3.3 requires the mark and Appendix F's detection does not cover the case; expat guesses from a NUL beside the first character, and this parser reads it as UTF-8 and refuses the NUL |
-| `reference-scope` | 5 | a reference does not read the document in its encoding: UTF-32: expat never reads it, and libxml2 2.9.14 reads some presentations of it and not others |
+| `reference-scope` | 304 | a reference does not read the document in its encoding: UTF-32: expat never reads it, and libxml2 2.9.14 reads some presentations of it and not others; and, in nearly every case, a document in one of the encoding module's encodings, which expat reads none of (the same document converted to UTF-8 is agreed on by all three) |
 | `representation` | 2 | libxml2 does not report a declaration of the reserved `xml` prefix; expat and this parser do |
 
 Two more comparisons are reported and not scored. libxml2 also objects to 33 of the

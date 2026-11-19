@@ -17,7 +17,10 @@ is itself a measurement**, taken from the programs that disagreed.
                     ASCII, in a document libxml2 and this parser both accept. The
                     offending character is one of the Fifth Edition's, which
                     expat's Fourth Edition tables do not have.
-  scope-unsupported
+  scope-unsupported a version, or an encoding label, that this parser declines: the label is one
+                    that the pinned Encoding standard's table (third_party/encoding) does not
+                    have, or has as `replacement`. A label it does have and this parser
+                    declines is unclassified, which is a defect to read.
   reference-wrong   a control again: the same document with the one thing the specification
                     forbids put right (the declared version made `1.0`; the bytes after a NUL
                     cut off, which libxml2 does by itself) is agreed on, or the encoding
@@ -37,6 +40,7 @@ to read: each is either a defect of this parser or a rule not yet written.
 Copyright 2026 by Corey Pennycuff
 """
 
+import os
 import re
 
 # Expat's error codes as numbered in the pinned 2.8.3 (containers/IMAGES); the driver prints the
@@ -46,6 +50,64 @@ EXPAT_INVALID_TOKEN = "4 "
 EXPAT_INCORRECT_ENCODING = "19 "
 
 SUPPORTED_LABELS = (b"utf-8", b"utf-16", b"utf-32", b"iso-8859-1", b"us-ascii")
+
+# Python's codec for the encodings the populations declare, by the Encoding standard's name. They
+# are an independent reading of each encoding (Python's tables are not the library's), which is
+# the point: a document converted here and put to the references is a control, and a place where
+# Python and the library differ shows as an unexplained disagreement to be read, not as a pass.
+LEGACY_CODECS = {
+    "windows-1250": "cp1250", "windows-1251": "cp1251", "windows-1252": "cp1252", "windows-1253": "cp1253",
+    "windows-1254": "cp1254", "windows-1255": "cp1255", "windows-1256": "cp1256", "windows-1257": "cp1257",
+    "windows-1258": "cp1258", "windows-874": "cp874", "ibm866": "cp866", "koi8-r": "koi8_r", "koi8-u": "koi8_u",
+    "macintosh": "mac_roman", "x-mac-cyrillic": "mac_cyrillic",
+    "iso-8859-2": "iso8859_2", "iso-8859-4": "iso8859_4", "iso-8859-5": "iso8859_5", "iso-8859-7": "iso8859_7",
+    "iso-8859-15": "iso8859_15",
+    "shift_jis": "cp932", "euc-jp": "euc_jp", "iso-2022-jp": "iso2022_jp", "euc-kr": "cp949",
+    "gbk": "gb18030", "gb18030": "gb18030", "big5": "big5hkscs",
+}
+# The labels the populations write for them, and the aliases a document may use.
+LEGACY_LABEL_ALIASES = {"cp1251": "windows-1251", "x-cp1251": "windows-1251", "sjis": "shift_jis",
+                        "windows-31j": "shift_jis", "ms_kanji": "shift_jis", "cp1252": "windows-1252",
+                        "koi8": "koi8-r", "csshiftjis": "shift_jis"}
+
+_RAW_LABEL = re.compile(rb"<\?xml[^>]*?\sencoding\s*=\s*[\"']([^\"']*)[\"']")
+
+
+def legacy_declared(data):
+    """Whether the raw declaration names an encoding of the encoding module that expat has no
+    reader for, so that its refusal says nothing about the document."""
+    m = _RAW_LABEL.match(data)
+    return bool(m and legacy_codec(m.group(1).decode("latin-1")))
+
+
+def legacy_codec(label):
+    """Python's codec for an Encoding standard label the populations use, or None."""
+    name = label.strip().lower()
+    return LEGACY_CODECS.get(LEGACY_LABEL_ALIASES.get(name, name))
+
+
+_whatwg_labels = None
+
+
+def whatwg_labels():
+    """Every label of the pinned Encoding standard's table that this parser must read: all but
+    `replacement`'s, and but the ones this parser gives their IANA readings."""
+    global _whatwg_labels
+    if _whatwg_labels is None:
+        import json
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                            "third_party", "encoding", "encodings.json")
+        labels = set()
+        try:
+            with open(path, encoding="utf-8") as fh:
+                for group in json.load(fh):
+                    for enc in group["encodings"]:
+                        if enc["name"] != "replacement":
+                            labels.update(enc["labels"])
+        except OSError:
+            pass
+        _whatwg_labels = labels
+    return _whatwg_labels
 
 
 def decode_text(data, loose=False):
@@ -89,10 +151,19 @@ def decode_text(data, loose=False):
                 return data.decode(codec), codec
             except UnicodeDecodeError:
                 return None
+    # An encoding of the encoding module, named by the declaration in the raw bytes.
+    m = _RAW_LABEL.match(data)
+    if m:
+        codec = legacy_codec(m.group(1).decode("latin-1"))
+        if codec:
+            try:
+                return data.decode(codec), codec
+            except UnicodeDecodeError:
+                return None
     try:
         return data.decode("utf-8"), "utf-8"
     except UnicodeDecodeError:
-        m = re.match(rb"<\?xml[^>]*encoding=[\"'](iso-8859-1|us-ascii)[\"']", data, re.I)
+        m = re.match(rb"<\?xml[^>]*encoding=[\"'](iso-8859-1|iso_8859-1|latin1|l1|us-ascii)[\"']", data, re.I)
         if m:
             return data.decode("latin-1"), "latin-1"
         return None
@@ -188,6 +259,12 @@ def nodtd_control(data):
         return None
     if codec == "latin-1":
         return out.encode("latin-1", "replace")
+    if codec in LEGACY_CODECS.values():
+        # The label stays and so must the encoding.
+        try:
+            return out.encode(codec)
+        except UnicodeEncodeError:
+            return None
     return out.encode("utf-8", "surrogatepass")
 
 
@@ -375,7 +452,7 @@ def classify(data, ours, ref, sig, detail, ctl, normalize, tags=()):
                          or 0x7f <= ord(c) <= 0x84 or 0x86 <= ord(c) <= 0x9f for c in text)
         xml2 = "A" if ref["xml2"]["wf"] and ref["xml2"]["ns"] else "R"
         expat = "A" if ref["expat"]["ok"] else "R"
-        if restricted and xml2 == expat == "A":
+        if restricted and xml2 == "A" and (expat == "A" or legacy_declared(data)):
             return "reference-wrong", ("XML 1.1 section 2.2 forbids RestrictedChar literals; the character must "
                                         "be written as a reference, but both pinned references accept it literally")
 
@@ -398,9 +475,20 @@ def classify(data, ours, ref, sig, detail, ctl, normalize, tags=()):
                 loose = decode_text(data, loose=True)
                 label = declared_label(loose[0]) if loose else None
             if label is not None and label.lower().encode() not in SUPPORTED_LABELS:
-                return "scope-unsupported", "the encoding label %r is declined: only UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII are read" % label
+                if label.strip().lower() in whatwg_labels() or legacy_codec(label):
+                    return "unclassified", ("the encoding label %r is one the library's encoding module decodes, "
+                                            "and the parser declined it" % label)
+                return "scope-unsupported", ("the encoding label %r names no encoding the library decodes (not in "
+                                             "the Encoding standard's table, or `replacement`'s)" % label)
         if status.startswith("LIMIT"):
             return "scope-limit", "a limit this parser enforces and the references do not"
+
+    if (status == "INVALID_SEQUENCE" and ours["verdict"] == "REFUSE" and ref["xml2"]["wf"] and ref["xml2"]["ns"]
+            and legacy_declared(data) and decode_text(data) is None):
+        # An independent decoder (Python's codec for the declared encoding) refuses the bytes too, so
+        # the document is not in the encoding it declares, which XML 4.3.3 makes fatal.
+        return "reference-wrong", ("the bytes are not legal in the declared encoding (Python's decoder for it "
+                                   "refuses them too), which XML 4.3.3 makes fatal; libxml2 accepts them")
 
     if status == "ENCODING_MISMATCH":
         c = ctl.get("utf8")

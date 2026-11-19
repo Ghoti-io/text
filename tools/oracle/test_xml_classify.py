@@ -55,5 +55,34 @@ class Xml11LineEndClassification(unittest.TestCase):
         self.assertIsNone(self.compare("\r\u2028", "wrong", "unrelated"))
 
 
+class LegacyEncodingClassification(unittest.TestCase):
+    cyrillic = ('<?xml version="1.0" encoding="windows-1251"?><!DOCTYPE a [<!ENTITY e "x">]><a>\u041f</a>'
+                ).encode("cp1251")
+
+    def test_a_document_in_a_legacy_encoding_is_read_by_its_label(self):
+        text, codec = xml_classify.decode_text(self.cyrillic)
+        self.assertEqual(codec, "cp1251")
+        self.assertIn("\u041f", text)
+
+    def test_a_label_over_bytes_that_are_not_the_encoding_is_not_read(self):
+        self.assertIsNone(xml_classify.decode_text(b'<?xml version="1.0" encoding="shift_jis"?><a>\x82</a>'))
+
+    def test_the_no_dtd_control_keeps_the_encoding_of_the_label(self):
+        control = xml_classify.nodtd_control(self.cyrillic)
+        self.assertNotIn(b"DOCTYPE", control)
+        self.assertTrue(control.endswith("\u041f</a>".encode("cp1251")))
+
+    def test_the_utf8_control_drops_the_label_and_converts(self):
+        control = xml_classify.utf8_control(self.cyrillic)
+        self.assertIn("\u041f".encode("utf-8"), control)
+        self.assertNotIn(b"windows-1251", control)
+
+    def test_a_label_the_encoding_table_has_is_not_scope_unsupported(self):
+        self.assertTrue(xml_classify.legacy_codec("Shift_JIS"))
+        self.assertIn("windows-1251", xml_classify.whatwg_labels())
+        self.assertNotIn("hz-gb-2312", xml_classify.whatwg_labels())
+        self.assertNotIn("utf-7", xml_classify.whatwg_labels())
+
+
 if __name__ == "__main__":
     unittest.main()

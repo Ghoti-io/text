@@ -19,7 +19,11 @@ and be counted:
                colons; the same attribute under two prefixes bound to one URI
   encodings    UTF-8 with and without a mark; UTF-16 and UTF-32, both byte orders,
                with and without a mark; ISO-8859-1 and US-ASCII by declaration;
-               labels that disagree with the bytes; units that are not characters
+               labels that disagree with the bytes; units that are not characters;
+               and a second population (legacy_generated) of documents in the
+               other encodings the library decodes (Windows-1251, KOI8-R,
+               Shift_JIS, EUC-JP, ISO-2022-JP, EUC-KR, GBK, Big5, ...): declared,
+               corrupted, labeled over a mark, labeled over UTF-16
   references   the five predefined entities, decimal and hexadecimal character
                references, ones that name a forbidden character, ones that do not
                end, and a name no declaration could give a meaning to
@@ -386,12 +390,106 @@ def generated(count, seed, xmlconf):
     return out
 
 
+# ---- documents in the other encodings the library decodes -----------------------
+
+# label, Python's codec, text that the encoding has (and that is not the other scripts'). The
+# population is made with Python's codecs, which are not the library's tables: a place where
+# they differ is a disagreement to be read.
+LEGACY_SAMPLES = [
+    ("windows-1251", "cp1251", ["\u041f\u0440\u0438\u0432\u0435\u0442", "\u043c\u0438\u0440", "\u0416\u0436"]),
+    ("KOI8-R", "koi8_r", ["\u041f\u0440\u0438\u0432\u0435\u0442", "\u043c\u0438\u0440"]),
+    ("windows-1252", "cp1252", ["caf\u00e9", "\u20ac", "na\u00efve"]),
+    ("ISO-8859-7", "iso8859_7", ["\u0395\u03bb\u03bb\u03ac\u03b4\u03b1", "\u03a9"]),
+    ("Shift_JIS", "cp932", ["\u65e5\u672c\u8a9e", "\u3042\u3044", "\u30a2"]),
+    ("EUC-JP", "euc_jp", ["\u65e5\u672c\u8a9e", "\u3042\u3044", "\u30a2"]),
+    ("ISO-2022-JP", "iso2022_jp", ["\u65e5\u672c\u8a9e", "\u3042\u3044"]),
+    ("EUC-KR", "cp949", ["\ud55c\uad6d\uc5b4", "\uac00\ub098"]),
+    ("GBK", "gb18030", ["\u4e2d\u6587", "\u6c49\u5b57"]),
+    ("Big5", "big5hkscs", ["\u4e2d\u6587", "\u6f22\u5b57"]),
+]
+# What a label may look like; the Encoding standard's labels are not case sensitive.
+LEGACY_LABEL_FORMS = {
+    "windows-1251": ["windows-1251", "Windows-1251", "cp1251", "x-cp1251"],
+    "Shift_JIS": ["Shift_JIS", "shift_jis", "sjis", "windows-31j"],
+    "EUC-KR": ["EUC-KR", "euc-kr"],
+}
+
+
+def _legacy_document(rng, label, words):
+    """A well-formed document in which every non-ASCII character is one of `words`, as text."""
+    w = lambda: rng.pick(words)
+    body = rng.pick([
+        "<r a=\"%s\">%s<c>%s</c></r>" % (w(), w(), w()),
+        "<r>%s %s<!--%s--></r>" % (w(), w(), w()),
+        "<%s a=\"%s\">%s</%s>" % ("r", w(), w(), "r"),
+        "<r><![CDATA[%s]]><?p %s?>%s</r>" % (w(), w(), w()),
+        "<r>\n  <c>%s</c>\r\n  <c b='%s'/>\n</r>" % (w(), w()),
+        "<%s>%s</%s>" % (w(), w(), w()) if rng.chance(1, 3) else "<r>%s</r>" % w(),
+    ])
+    decl = '<?xml version="%s" encoding="%s"?>' % (rng.pick(["1.0", "1.0", "1.1"]), label)
+    return decl + rng.pick(["", "\n", "<!--x-->"]) + body
+
+
+def legacy_generated(count, seed):
+    """[(id, bytes, tags)]: documents in the other encodings of the encoding module, valid ones
+    and the ways they go wrong. A stream of random numbers of its own, so that adding them left
+    the identity of every other generated document (a hash of its bytes) as it was."""
+    rng = Rng(seed ^ 0x4C45474143590001)
+    out = []
+    seen = set()
+    guard = 0
+    while len(out) < count and guard < count * 20:
+        guard += 1
+        label, codec, words = rng.pick(LEGACY_SAMPLES)
+        written = rng.pick(LEGACY_LABEL_FORMS.get(label, [label, label.lower()]))
+        text = _legacy_document(rng, written, words)
+        kind = rng.below(10)
+        if kind < 5:
+            data, axis = text.encode(codec), "enc:legacy-declared"
+        elif kind == 5:
+            # An ill-formed sequence: the last byte of a multi-byte character cut off, or a byte no
+            # character of the encoding starts with.
+            data = bytearray(text.encode(codec))
+            high = [i for i, b in enumerate(data) if b >= 0x80]
+            if high and codec not in ("iso2022_jp",):
+                at = rng.pick(high)
+                if rng.chance(1, 2):
+                    del data[at]
+                else:
+                    data[at] = rng.pick([0x80, 0xFF, 0xFE, 0xA0])
+            else:
+                data += b"\xff"
+            data, axis = bytes(data), "enc:legacy-invalid"
+        elif kind == 6:
+            data, axis = b"\xef\xbb\xbf" + text.encode("utf-8"), "enc:legacy-labeled-utf8bom"
+        elif kind == 7:
+            data, axis = b"\xff\xfe" + text.encode("utf-16-le"), "enc:legacy-labeled-utf16"
+        elif kind == 8:
+            # UTF-8 bytes under a legacy label: ASCII only, so every encoding reads them the same.
+            data = _legacy_document(rng, written, ["t", "hello"]).encode("ascii")
+            axis = "enc:legacy-declared-ascii"
+        else:
+            # A document that is cut inside its last multi-byte character.
+            raw = text.encode(codec)
+            high = [i for i, b in enumerate(raw) if b >= 0x80]
+            multi = high and codec not in ("iso2022_jp", "cp1251", "koi8_r", "cp1252", "iso8859_7")
+            data = raw[:high[-1] + 1] if multi else raw
+            axis = "enc:legacy-cut" if multi else "enc:legacy-declared"
+        digest = hashlib.sha256(data).hexdigest()[:12]
+        if digest in seen:
+            continue
+        seen.add(digest)
+        out.append(("gen:" + digest, data, ["gen:legacy", axis]))
+    return out
+
+
 def corpus(count, seed):
     """Every input: suite, seeds, generated. Deduplicated by content, the first
     name kept, so a seed that is a suite document is counted once."""
     suite = xmlconf_cases()
     source_suite = xmlconf_cases(include_excluded=True)
-    items = suite + seed_cases() + generated(count, seed, source_suite)
+    items = (suite + seed_cases() + generated(count, seed, source_suite)
+             + legacy_generated(max(60, count // 10), seed))
     seen = {}
     out = []
     for ident, data, tags in items:
