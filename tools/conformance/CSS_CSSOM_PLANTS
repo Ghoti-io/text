@@ -377,7 +377,7 @@ math-result-outside-the-range-is-clamped-for-text-combine	css_compute_algo.c	run
 later-shorthand-replaces-an-important-one-kept-as-written	css_block.c	  if (st == GTEXT_CSS_OK && superseded && keep_important && !important && block->items[superseded - 1].important) {	  if (0) {	decl
 shorthand-formed-from-longhands-beside-the-one-kept-as-written	css_shorthand_serialize.c	        present = !(block->items[i].opaque && !block->items[i].dead && block->items[i].property == (GTEXT_CSS_Property_Id)id);	        present = present;	decl
 animation-time-never-asked	cssom_computed.c	  const GTEXT_CSS_Status st = core->layout.animation_time(core->layout.user, element, pseudo, effect, time_ms, known);	  const GTEXT_CSS_Status st = GTEXT_CSS_OK;	animation
-timeline-version-ignored	cssom_computed.c	    v = core->layout.timeline_version(core->layout.user);	    v = 0;	animation
+timeline-version-ignored	cssom_computed.c	    v += core->layout.timeline_version(core->layout.user);	    v += 0;	animation
 style-cache-not-keyed-by-the-time	cssom_computed.c	cs->pcepoch == cs->cepoch && cs->ptime == time;	cs->pcepoch == cs->cepoch;	animation
 declaration-not-compared-with-the-time	cssom_computed.c	c->cepoch == cs->cepoch && c->time == time) {	c->cepoch == cs->cepoch) {	animation
 untimed-property-looks-computed	cssom_resolved.c	      origin = GTEXT_CSSOM_ORIGIN_ABSENT_TIMELINE;   /* an animation targets it and the caller gave no time: the underlying value stands */	      origin = origin;	animation

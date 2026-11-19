@@ -1049,7 +1049,9 @@ static GTEXT_CSS_Status effect_value(sampler * s, entry * e, size_t key_index, c
     /* "If this keyframe effect has an iteration composite operation of accumulate, apply the following step current iteration times" */
     if (st == GTEXT_CSS_OK && e->iteration_accumulate && e->current_iteration >= 1.0 && e->current_iteration < 1e300) {
       val last, accumulated;
-      st = keyframe_value(s, e, &list[n - 1], ky, under, &last);
+      /* "the property value on the final keyframe in property-specific keyframes": the keyframe being processed has had its composite operation applied, and the final keyframe is that one when it is the endpoint */
+      const size_t at = side == 0 ? a : b;
+      st = at == n - 1 ? val_copy(s, v, &last) : keyframe_value(s, e, &list[n - 1], ky, under, &last);
       if (st == GTEXT_CSS_OK) {
         st = accumulate_times(s, ky, &last, v, e->current_iteration, &accumulated);
         val_free(&s->al, &last);

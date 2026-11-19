@@ -158,6 +158,19 @@ static GTEXT_Anim_Status control_push(GTEXT_Anim_World * w, GTEXT_Anim_Animation
   return GTEXT_ANIM_OK;
 }
 
+/// Take back an animation `gtext_anim_world_animation_new()` made and could not finish (its control, if it was added, is the last): the effect it held is its own again, and nothing of it is left.
+/// Nothing here can fail.
+static void animation_undo(GTEXT_Anim_World * w, GTEXT_Anim_Animation * a, GTEXT_Anim_Effect * effect) {
+  if (effect && gtext_anim_animation_effect(a) == effect) {
+    anim_effect_detach(effect);
+    anim_effect_put(a, NULL);
+  }
+  if (w->ncontrols && w->controls[w->ncontrols - 1].animation == a) {
+    w->ncontrols--;
+  }
+  gtext_anim_animation_free(a);
+}
+
 GTEXT_Anim_Status gtext_anim_world_animation_new(GTEXT_Anim_World * w, GTEXT_Anim_Effect * effect, GTEXT_Anim_Timeline_Kind timeline, uint64_t * id, GTEXT_Anim_Animation ** out) {
   if (!w || !out || !id) {
     return GTEXT_ANIM_INVALID;
@@ -178,10 +191,7 @@ GTEXT_Anim_Status gtext_anim_world_animation_new(GTEXT_Anim_World * w, GTEXT_Ani
     st = control_push(w, a, SCRIPT_ID_BASE + w->next_script_id);
   }
   if (st != GTEXT_ANIM_OK) {
-    if (effect && gtext_anim_animation_effect(a) == effect) {
-      (void)gtext_anim_animation_set_effect_object(a, NULL, now);
-    }
-    gtext_anim_animation_free(a);
+    animation_undo(w, a, effect);
     return st;
   }
   *id = SCRIPT_ID_BASE + w->next_script_id++;
@@ -196,6 +206,7 @@ GTEXT_Anim_Status gtext_anim_world_animate(GTEXT_Anim_World * w, const void * ta
     return GTEXT_ANIM_INVALID;
   }
   *out = NULL;
+  *id = 0;
   GTEXT_Anim_Effect * e = NULL;
   /* "Construct a new KeyframeEffect object effect ... by using the same procedure as the KeyframeEffect constructor" */
   GTEXT_Anim_Status st = gtext_anim_world_effect_new(w, target, keyframes, options, &e);
@@ -215,7 +226,12 @@ GTEXT_Anim_Status gtext_anim_world_animate(GTEXT_Anim_World * w, const void * ta
     }
   }
   if (st != GTEXT_ANIM_OK) {
-    return st;   /* the effect stays in the world (owned there); an animation that was made stays in the list, idle */
+    if (a) {
+      animation_undo(w, a, e);   /* "On an error no animation was made": the effect stays in the world, which owns it */
+      w->next_script_id--;
+    }
+    *id = 0;
+    return st;
   }
   if (effect) {
     *effect = e;
@@ -439,18 +455,6 @@ static bool replaceable(const GTEXT_Anim_Animation * a, GTEXT_Anim_Effect * e, G
   return gtext_anim_effect_get_computed_timing(e, now, &c) == GTEXT_ANIM_OK && c.in_effect;
 }
 
-GTEXT_Anim_Status anim_script_reserve_remove(GTEXT_Anim_World * w) {
-  for (size_t i = 0; i < w->ncontrols; i++) {
-    if (script_control(w, i)) {
-      const GTEXT_Anim_Status st = gtext_anim_animation_reserve_calls(w->controls[i].animation, 3);
-      if (st != GTEXT_ANIM_OK) {
-        return st;
-      }
-    }
-  }
-  return GTEXT_ANIM_OK;
-}
-
 GTEXT_Anim_Status anim_script_remove_replaced(GTEXT_Anim_World * w, bool * changed) {
   *changed = false;
   const GTEXT_Anim_Time now = anim_world_now(w);
@@ -472,7 +476,7 @@ GTEXT_Anim_Status anim_script_remove_replaced(GTEXT_Anim_World * w, bool * chang
     }
     /* "for which there exists for each target property of every animation effect associated with animation, an animation effect associated with a replaceable animation with a higher composite order that
        includes the same target property": the effects of the same target, above this animation in the stack */
-    bool all = mine.n + mine.nnames > 0;
+    bool all = true;   /* an effect with no target property has every one of them covered: "for each target property" is vacuous */
     size_t ek = 0;
     const char * key = anim_effect_key(e, &ek);
     for (size_t pi = 0; pi < mine.n + mine.nnames && all; pi++) {

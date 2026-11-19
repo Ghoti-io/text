@@ -59,7 +59,7 @@ anim-css-timing-follows-css-over-update-timing	css_animations.c	      p->c.timin
 anim-css-place-in-the-list-not-recorded	css_animations.c	      p->c.order = e.index;\n      if (e.paused != old->css_paused && old->m) {	      if (e.paused != old->css_paused && old->m) {	animcss
 anim-css-same-name-always-the-first	css_animations.c	        if (seen == occurrence) {	        if (1) {	animcss
 anim-css-no-keyframes-is-an-animation	css_animations.c	    if (!keyframes || !gtext_css_atrule_set_keyframes(keyframes, e.name.data, e.name.length)) {\n      continue;	    if (0) {\n      continue;	animcss
-anim-css-before-phase-is-not-relevant	css_animations.c	  out->relevant = out->computed.in_effect || out->computed.phase == GTEXT_ANIM_PHASE_BEFORE ||	  out->relevant = out->computed.in_effect ||	animcss
+anim-css-before-phase-is-not-relevant	css_animations.c	  out->relevant = gtext_anim_effect_is_relevant(&out->computed, out->play_state, rate_of(c));	  out->relevant = out->computed.in_effect;	animcss
 anim-css-play-state-change-ignored	css_animations.c	      else if (e.paused != old->css_paused) {	      else if (0 && e.paused != old->css_paused) {	animcss
 anim-css-pause-then-play-keeps-the-pause	css_animations.c	        else if (old->pending == PENDING_PAUSE && old->start_valid) {	        else if (0) {	animcss
 anim-css-update-timing-forgets-the-lock	css_animations.c	  c->locked |= input->present;	  c->locked |= 0;	animcss
@@ -125,13 +125,13 @@ effect-offset-of-one-is-out-of-range	effect.c	(k->frames[i].offset < 0.0 || k->f
 effect-easings-not-repeated	effect.c	ne ? &in->easings[i % ne] : &linear	ne ? &in->easings[i < ne ? i : ne - 1] : &linear	animeffect
 effect-invalid-value-is-kept	effect.c	    if (keep) {\n      f->props[kept++] = *p;	    if (1) {\n      f->props[kept++] = *p;	animeffect
 effect-float-is-not-cssfloat	effect.c	else if (length == 5 && memcmp(name, "float", 5) == 0) {	else if (0 && length == 5 && memcmp(name, "float", 5) == 0) {	animeffect
-effect-legacy-before-is-not-two-colons	effect.c	((text->length == 7 && memcmp(text->data, ":before", 7) == 0) ||	((0 && text->length == 7 && memcmp(text->data, ":before", 7) == 0) ||	animeffect
+effect-legacy-before-is-not-two-colons	effect.c	((text->length == 7 && ascii_ieq(text->data, ":before", 7)) ||	((0 && text->length == 7 && ascii_ieq(text->data, ":before", 7)) ||	animeffect
 effect-local-time-ignores-the-animation	effect.c	      local = s.current_time;	      local = (GTEXT_Anim_Time){false, 0.0};	animeffect
 effect-timing-update-leaves-the-animation	effect.c	      st = gtext_anim_animation_update_effect_timing(e->animation, &in, now);	      st = GTEXT_ANIM_OK;	animeffect
 script-replaced-by-a-lower-animation	script.c	for (size_t j = i + 1; j < w->ncontrols && !covered; j++) {	for (size_t j = 0; j < w->ncontrols && !covered; j++) {	animeffect
 script-commit-keeps-the-higher-effects	script.c	if (committing && c->id > w->commit.limit) {	if (committing && c->id > w->commit.limit + 1000) {	animeffect
 script-removed-animation-stays-stacked	script.c	return gtext_anim_animation_state(a, (GTEXT_Anim_Time){true, 0.0}, &s) == GTEXT_ANIM_OK && s.replace_state != GTEXT_ANIM_REPLACE_REMOVED;	return true;	animeffect
-script-relevance-not-asked	script.c	  *relevant = (current || c2->in_effect) && s.replace_state != GTEXT_ANIM_REPLACE_REMOVED;	  *relevant = true;	animeffect
+script-relevance-not-asked	script.c	  *relevant = gtext_anim_effect_is_relevant(&out->computed, s.play_state, s.playback_rate) && s.replace_state != GTEXT_ANIM_REPLACE_REMOVED;	  *relevant = true;	animeffect
 script-pending-task-not-run-by-the-frame	world.c	        (void)gtext_anim_animation_run_pending(world->controls[i].animation, now);	        (void)now;	animeffect
 script-animation-is-not-over-the-css-ones	world.c	    return a->info.id > b->info.id;       /* "sort by the position of their associated animations in the global animation list" */	    return a->info.id < b->info.id;	animeffect
 sample-overshoot-below-zero-is-interpolated	css_anim_sample.c	  if (t < 0.0 && at0 > 1) {	  if (t < 0.0 && at0 > 100) {	animeffect
@@ -146,3 +146,6 @@ effect-relevance-before-phase-of-a-reversed-animation	timing.c	(c->phase == GTEX
 effect-transition-keyframes-are-swapped	effect.c	const GTEXT_CSS_String value = i ? info.end_value : info.start_value;	const GTEXT_CSS_String value = i ? info.start_value : info.end_value;	animeffect
 effect-css-view-composite-ignored	effect.c	      return info.composite;	      return GTEXT_ANIM_COMPOSITE_REPLACE;	animeffect
 effect-css-view-refuses-nothing	effect.c	  if (e->css_kind) {\n    return GTEXT_ANIM_NOT_SUPPORTED;\n  }\n  e->composite = c;	  e->composite = c;	animeffect
+effect-failed-property-parse-leaves-stale-slots	effect.c	      memmove(&f->props[kept], &f->props[i], (f->nprops - i) * sizeof *p);\n      f->nprops = kept + (f->nprops - i);\n		animeffect
+effect-css-effects-move-between-animations	effect.c	  if ((old && old->css_kind) || (effect && effect->css_kind)) {	  if (0) {	animeffect
+sample-final-endpoint-accumulates-its-raw-value	css_anim_sample.c	st = at == n - 1 ? val_copy(s, v, &last) :	st = 0 ? val_copy(s, v, &last) :	animeffect

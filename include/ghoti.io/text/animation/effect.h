@@ -32,7 +32,8 @@
  * object form turned into keyframes (the offsets, easings and composite modes repeated or truncated as the specification says), the loose sorting and the range of the offsets checked, each value parsed
  * by the syntax of its property (an invalid one discarded), each easing parsed (a failure is a `TypeError`), and the offsets nobody gave computed ("compute missing keyframe offsets").
  *
- * **An effect is the world's.** It belongs to the world that made it (gtext_anim_world_effect_new()) and lives as long as the world: the binding keeps one object for each pointer. An effect is
+ * **An effect is the world's.** It belongs to the world that made it (gtext_anim_world_effect_new()) and lives as long as the world: the binding keeps one object for each pointer. The element handle an effect targets is
+ * the tree's own and is not owned: the caller keeps it valid while an effect targets it (the same rule as for the elements the tracker knows), or sets the target to NULL first. An effect is
  * associated with at most one animation. Its timing is its own until an animation holds it, and the animation's from then on; the calls here that read or change the timing do the same either way.
  * Every call that changes what a style would be (the target, the keyframes, the timing, the composite operations) tells the world, so that a style computed before is computed again.
  *
@@ -289,9 +290,9 @@ GTEXT_API GTEXT_Anim_Status gtext_anim_effect_get_computed_timing(const GTEXT_An
 GTEXT_API GTEXT_Anim_Status gtext_anim_effect_get_keyframes(GTEXT_Anim_Effect * effect, GTEXT_Anim_Keyframes ** out);
 
 /**
- * @brief `setKeyframes(keyframes)`: the effect's keyframes become what the argument processes to. If it throws, they are not modified. After it an effect of a CSS animation or transition no longer follows its
- * style.
- * @return GTEXT_ANIM_OK; GTEXT_ANIM_TYPE_ERROR; GTEXT_ANIM_INVALID; GTEXT_ANIM_OOM.
+ * @brief `setKeyframes(keyframes)`: the effect's keyframes become what the argument processes to. If it throws, they are not modified. On the effect of a CSS animation or transition (what the style owns) it is
+ * GTEXT_ANIM_NOT_SUPPORTED.
+ * @return GTEXT_ANIM_OK; GTEXT_ANIM_TYPE_ERROR; GTEXT_ANIM_NOT_SUPPORTED; GTEXT_ANIM_INVALID; GTEXT_ANIM_OOM.
  */
 GTEXT_API GTEXT_Anim_Status gtext_anim_effect_set_keyframes(GTEXT_Anim_Effect * effect, const GTEXT_Anim_Keyframes_Argument * keyframes);
 

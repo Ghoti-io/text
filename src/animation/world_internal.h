@@ -95,12 +95,12 @@ void anim_script_free(GTEXT_Anim_World * world);
 /// The info of a script animation (script control `control` of the world's list), and whether it is relevant. false: that control is not a script animation.
 bool anim_script_info(GTEXT_Anim_World * world, size_t control, GTEXT_Anim_Info * out, bool * relevant);
 
-/// Room for the notes and events that "remove replaced animations" makes; then anim_script_remove_replaced() cannot fail for lack of it.
-GTEXT_Anim_Status anim_script_reserve_remove(GTEXT_Anim_World * world);
-
 /// "Remove replaced animations" for the document: the script animations whose every target property is overridden by a replaceable animation of a higher composite order become removed, and a `remove`
 /// event is owed for each. `*changed` says whether one was.
 GTEXT_Anim_Status anim_script_remove_replaced(GTEXT_Anim_World * world, bool * changed);
+
+/// An effect is no longer held by its animation (the animation is going away): effect.c.
+void anim_effect_detach(GTEXT_Anim_Effect * effect);
 
 /// Release every keyframe effect the world made (effect.c).
 void anim_effects_free(GTEXT_Anim_World * world);

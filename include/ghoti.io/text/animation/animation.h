@@ -160,7 +160,8 @@ GTEXT_API GTEXT_Anim_Status gtext_anim_animation_get_timing(const GTEXT_Anim_Ani
  * @brief `animation.effect = effect` ("Setting the associated effect of an animation") with a keyframe effect object: the animation's effect is `effect` (NULL for none); an effect that is the effect of
  * another animation leaves that animation first ("If new effect is not null and if new effect is the associated effect of another previous animation ... set the associated effect of previous animation to null"),
  * and the finished state is updated. The timing of the effect is the animation's from then on, and the effect's again when it leaves.
- * @return GTEXT_ANIM_OK; GTEXT_ANIM_INVALID.
+ * @return GTEXT_ANIM_OK; GTEXT_ANIM_NOT_SUPPORTED (the old or the new effect is the view of a CSS animation or transition: the replacement of what the style owns is not built); GTEXT_ANIM_INVALID; GTEXT_ANIM_OOM
+ * (nothing changed).
  */
 GTEXT_API GTEXT_Anim_Status gtext_anim_animation_set_effect_object(GTEXT_Anim_Animation * animation, GTEXT_Anim_Effect * effect, GTEXT_Anim_Time now);
 

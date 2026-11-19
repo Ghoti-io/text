@@ -857,6 +857,7 @@ size_t oom_sweep(Fn fn, size_t limit = 600) {
 TEST(AnimEffectOom, ProcessingAKeyframesArgument) {
   Arg a;
   a.frame({{"marginLeft", "1px"}, {"opacity", "0"}}, 0, "ease-in", GTEXT_ANIM_KF_COMPOSITE_ADD).frame({{"opacity", "1"}}, NAN, "steps(3)").frame({{"opacity", "0.5"}}, 1);
+  a.frame({{"opacity", "bad"}, {"left", "1px"}, {"top", "2px"}, {"zIndex", "nope"}, {"color", "red"}}, 1);
   Arg b;
   b.list("opacity", {"0", "0.5", "1"}).list("left", {"0px", "100px"}).offset({NAN, 0.25}).easing({"ease-in", "ease-out"}).composite({GTEXT_ANIM_KF_COMPOSITE_ACCUMULATE});
   EXPECT_GT(oom_sweep([&](Ew & w, bool) {
@@ -1125,4 +1126,87 @@ TEST(AnimEffectCssView, TheKeyframesOfATransitionAndTheMembersOfTheEffectOfAnAni
   ASSERT_EQ(gtext_anim_effect_get_timing(ke, &timing, &easing), GTEXT_ANIM_OK);
   EXPECT_EQ(timing.duration, 100000);
   EXPECT_EQ(std::string(easing.data, easing.length), "ease");
+}
+
+/* Web Animations 2, "Effect accumulation": "the property value on the final keyframe in property-specific keyframes" is the value the composite operation made of it when that keyframe is the endpoint being processed. With a
+   composite operation of add, underlying 10px, keyframes of 1px and 2px and the second iteration at its middle: the first endpoint accumulates the raw final keyframe (2px, then 11px) to 13px, the final endpoint (12px)
+   accumulates itself to 24px, and the middle is 18.5px (not 13.5px, which a raw final keyframe gives). */
+TEST(AnimEffectStack, IterationAccumulationOfTheFinalEndpointUsesTheCompositedValue) {
+  Ew w("<div id=a style='letter-spacing: 10px'></div>");
+  w.at(0);
+  Arg a;
+  a.list("letterSpacing", {"1px", "2px"});
+  GTEXT_Anim_Effect_Options o = duration(1000);
+  o.has_composite = true;
+  o.composite = GTEXT_ANIM_COMPOSITE_ADD;
+  o.timing.present |= GTEXT_ANIM_TIMING_ITERATIONS;
+  o.timing.values.iterations = 3;
+  o.has_iteration_composite = true;
+  o.iteration_composite = GTEXT_ANIM_ITERATION_ACCUMULATE;
+  w.animate("#a", a, 1000, nullptr, &o);
+  w.frame();
+  w.at(500);
+  EXPECT_EQ(w.v("#a", "letter-spacing"), "11.5px") << "the first iteration: 10 + 1.5";
+  w.at(1500);
+  EXPECT_EQ(w.v("#a", "letter-spacing"), "18.5px");
+}
+
+/* An effect the style owns stays with its animation: the effect of a CSS animation is not given to a script animation and a script animation does not take it ("not built": NotSupported, nothing changes). */
+TEST(AnimEffectObject, TheEffectOfACssAnimationIsNotMovedAndANewAnimationRefusesIt) {
+  Ew w("<style>@keyframes k { to { opacity: 0 } } #a { animation: k 100s }</style><div id=a></div>");
+  w.at(0);
+  w.flush("#a");
+  GTEXT_Anim_List * l = nullptr;
+  ASSERT_EQ(gtext_anim_world_get_animations(w.world, w.h("#a"), nullptr, 0, false, &l), GTEXT_ANIM_OK);
+  GTEXT_Anim_Info info{};
+  ASSERT_TRUE(gtext_anim_list_at(l, 0, &info));
+  GTEXT_Anim_Animation * css = nullptr;
+  ASSERT_EQ(gtext_anim_world_control(w.world, info.kind, info.id, &css), GTEXT_ANIM_OK);
+  gtext_anim_list_free(l);
+  GTEXT_Anim_Effect * view = nullptr;
+  ASSERT_EQ(gtext_anim_world_effect_of(w.world, css, &view), GTEXT_ANIM_OK);
+  ASSERT_NE(view, nullptr);
+  uint64_t id = 0;
+  GTEXT_Anim_Animation * mine = nullptr;
+  EXPECT_EQ(gtext_anim_world_animation_new(w.world, view, GTEXT_ANIM_TIMELINE_DOCUMENT, &id, &mine), GTEXT_ANIM_NOT_SUPPORTED);
+  EXPECT_EQ(mine, nullptr);
+  EXPECT_EQ(gtext_anim_animation_effect(css), view);
+  Arg a;
+  a.list("opacity", {"0", "1"});
+  GTEXT_Anim_Animation * script = w.animate("#a", a, 100);
+  EXPECT_EQ(gtext_anim_animation_set_effect_object(css, gtext_anim_animation_effect(script), {true, 0}), GTEXT_ANIM_NOT_SUPPORTED);
+  EXPECT_EQ(gtext_anim_animation_set_effect_object(script, view, {true, 0}), GTEXT_ANIM_NOT_SUPPORTED);
+  EXPECT_NE(gtext_anim_animation_effect(script), nullptr);
+}
+
+/* "On an error no animation was made": animate() that fails for lack of memory leaves no animation of the world behind, whichever allocation it was. */
+TEST(AnimEffectOom, AFailedAnimateLeavesNoAnimation) {
+  Arg a;
+  a.list("opacity", {"0", "1"});
+  for (size_t n = 1; n < 200; n++) {
+    FaultAllocator fa;
+    {
+      Ew w(PAGE, &fa.alloc);
+      w.at(0);
+      GTEXT_Anim_Effect_Options o = duration(100);
+      GTEXT_Anim_Animation * an = nullptr;
+      uint64_t id = 7;
+      fa.arm(n);
+      const GTEXT_Anim_Status st = gtext_anim_world_animate(w.world, w.h("#a"), a.get(), &o, nullptr, &id, &an);
+      const bool failed = fa.failed;
+      fa.disarm();
+      if (!failed) {
+        break;
+      }
+      EXPECT_EQ(st, GTEXT_ANIM_OOM) << n;
+      EXPECT_EQ(an, nullptr) << n;
+      EXPECT_EQ(id, 0u) << n;
+      EXPECT_EQ(gtext_anim_world_control_count(w.world), 0u) << n << ": no animation was made";
+      EXPECT_EQ(w.list(nullptr), "") << n;
+      GTEXT_Anim_Animation * again = nullptr;
+      ASSERT_EQ(gtext_anim_world_animate(w.world, w.h("#a"), a.get(), &o, nullptr, &id, &again), GTEXT_ANIM_OK) << n;
+      EXPECT_EQ(w.list(nullptr), "S:0") << n << ": and the next one is the first";
+    }
+    EXPECT_TRUE(fa.live.empty()) << n;
+  }
 }

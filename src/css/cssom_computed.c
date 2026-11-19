@@ -599,9 +599,9 @@ static uint64_t timeline_version(const css_core * core, bool * cacheable) {
   }
   uint64_t v = script;
   if (core->layout.timeline_version) {
-    v = core->layout.timeline_version(core->layout.user);
+    v += core->layout.timeline_version(core->layout.user);
   }
-  else if (core->layout.animation_time && core->keyframes) {
+  else if (core->layout.animation_time && (core->keyframes || core->script.effects)) {
     *cacheable = false;
   }
   /* the version of the transitions is a part of the same key; a layout that gives transitions and no version keeps no style across reads */

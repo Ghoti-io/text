@@ -415,6 +415,9 @@ static GTEXT_Anim_Status finish_props(const GTEXT_Anim_World * w, kframe * f) {
     }
     gtext_css_property_value_free(&pv);
     if (result != GTEXT_ANIM_OK) {
+      /* the pairs before this one are compacted and the slots between them and this one are stale: close the gap, so that the frame owns exactly the pairs it holds */
+      memmove(&f->props[kept], &f->props[i], (f->nprops - i) * sizeof *p);
+      f->nprops = kept + (f->nprops - i);
       return result;
     }
     if (keep) {
@@ -845,6 +848,16 @@ static GTEXT_Anim_Status parse_timing_easing(GTEXT_Anim_World * w, const GTEXT_A
   return keyframe_easing(w, text, easing, serialized, length);
 }
 
+static bool ascii_ieq(const char * a, const char * lower, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    const char c = a[i] >= 'A' && a[i] <= 'Z' ? (char)(a[i] + 32) : a[i];
+    if (c != lower[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /// "Pseudo-element parsing": the selector with two colons, and its key. `text` NULL is `null`.
 static GTEXT_Anim_Status parse_pseudo_target(GTEXT_Anim_World * w, const GTEXT_Anim_Text * text, char ** pseudo, size_t * pseudo_length, char ** key, size_t * key_length) {
   *pseudo = NULL;
@@ -864,8 +877,8 @@ static GTEXT_Anim_Status parse_pseudo_target(GTEXT_Anim_World * w, const GTEXT_A
   }
   /* "If value is one of the legacy Selectors Level 2 single-colon selectors (':before', ':after', ':first-letter', or ':first-line'), then return the equivalent two-colon selector" */
   const bool legacy = text->length >= 2 && text->data[0] == ':' && text->data[1] != ':' &&
-      ((text->length == 7 && memcmp(text->data, ":before", 7) == 0) || (text->length == 6 && memcmp(text->data, ":after", 6) == 0) ||
-       (text->length == 13 && memcmp(text->data, ":first-letter", 13) == 0) || (text->length == 11 && memcmp(text->data, ":first-line", 11) == 0));
+      ((text->length == 7 && ascii_ieq(text->data, ":before", 7)) || (text->length == 6 && ascii_ieq(text->data, ":after", 6)) ||
+       (text->length == 13 && ascii_ieq(text->data, ":first-letter", 13)) || (text->length == 11 && ascii_ieq(text->data, ":first-line", 11)));
   char * copy = gtext_allocator_malloc(&w->alloc, text->length + 2);
   if (!copy) {
     gtext_allocator_free(&w->alloc, *key);
@@ -1409,23 +1422,40 @@ GTEXT_Anim_Status gtext_anim_animation_set_effect_object(GTEXT_Anim_Animation * 
   if (old == effect) {
     return GTEXT_ANIM_OK;
   }
-  /* "If new effect is not null and if new effect is the associated effect of another previous animation, run the procedure to set the associated effect of previous animation to null" */
-  if (effect && effect->animation && effect->animation != a) {
-    const GTEXT_Anim_Status st = gtext_anim_animation_set_effect_object(effect->animation, NULL, now);
+  /* an effect the style owns (a CSS animation's or transition's) stays with its animation: giving it to another is the replacement of the effect of a CSS animation, which is not built, and the Animation of a CSS
+     animation or transition holds the style's timing state and takes no other effect */
+  if ((old && old->css_kind) || (effect && effect->css_kind)) {
+    return GTEXT_ANIM_NOT_SUPPORTED;
+  }
+  GTEXT_Anim_Animation * previous = effect ? effect->animation : NULL;
+  if (previous == a) {
+    previous = NULL;
+  }
+  /* "If new effect is not null and if new effect is the associated effect of another previous animation, run the procedure to set the associated effect of previous animation to null": the room for what
+     the two calls make is reserved first, so that a failure leaves both as they were */
+  GTEXT_Anim_Status st = gtext_anim_animation_reserve_calls(a, 2);
+  if (st == GTEXT_ANIM_OK && previous) {
+    st = gtext_anim_animation_reserve_calls(previous, 2);
+  }
+  if (st != GTEXT_ANIM_OK) {
+    return st;
+  }
+  if (previous) {
+    st = gtext_anim_animation_set_effect_object(previous, NULL, now);
     if (st != GTEXT_ANIM_OK) {
       return st;
     }
   }
-  GTEXT_Anim_Effect_Timing previous;
-  const bool had = old && gtext_anim_animation_get_timing(a, &previous) == GTEXT_ANIM_OK;
-  const GTEXT_Anim_Status st = gtext_anim_animation_set_effect(a, effect ? &effect->timing : NULL, now);
+  GTEXT_Anim_Effect_Timing before;
+  const bool had = old && gtext_anim_animation_get_timing(a, &before) == GTEXT_ANIM_OK;
+  st = gtext_anim_animation_set_effect(a, effect ? &effect->timing : NULL, now);
   if (st != GTEXT_ANIM_OK) {
-    return st;
+    return st;   /* the timing of the effect was invalid: nothing changed (an effect of the model always is valid) */
   }
   anim_effect_put(a, effect);
   if (old) {
     if (had) {
-      old->timing = previous;
+      old->timing = before;
     }
     old->animation = NULL;
     effect_touch(old);
@@ -1505,6 +1535,10 @@ GTEXT_Anim_Status anim_effect_sample(GTEXT_Anim_Effect * e, GTEXT_Anim_Time now,
   out->before_flag = c.before_flag;
   *in_effect = true;
   return GTEXT_ANIM_OK;
+}
+
+void anim_effect_detach(GTEXT_Anim_Effect * e) {
+  e->animation = NULL;
 }
 
 const char * anim_effect_key(const GTEXT_Anim_Effect * e, size_t * length) {
