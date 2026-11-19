@@ -275,7 +275,10 @@ static GTEXT_XML_Status conv_invalid(xml_converter * c, const char * message,
    text holds a `>` (or does not begin as a declaration at all) the answer is
    whatever it is now and growth cannot change it. The text can also get
    shorter (the stream drops what the parser has read), and then it begins
-   somewhere else and the question is open again. */
+   somewhere else and the question is open again (the stream drops at least
+   4,095 bytes at a time, and a character is at most 4, so the text is shorter
+   at the next question). The `>` is looked for in what was added since the
+   last question only, so the cost of a character does not grow with the text. */
 static int conv_select_profile(xml_converter * c) {
   if (c->version == XML_VERSION_11) {
     return 0;
@@ -283,6 +286,7 @@ static int conv_select_profile(xml_converter * c) {
   const size_t length = c->out->length;
   if (length <= c->probe_length) {
     c->probe_decided = 0;
+    c->probe_scanned = 0;
   }
   c->probe_length = length;
   if (c->probe_decided || length == 0) {
@@ -300,7 +304,8 @@ static int conv_select_profile(xml_converter * c) {
   probe.length = length;
   xml_probe_xml11_declaration(&probe);
   if (probe.version != XML_VERSION_11) {
-    c->probe_decided = memchr(c->out->data, '>', length) != NULL;
+    c->probe_decided = memchr(c->out->data + c->probe_scanned, '>', length - c->probe_scanned) != NULL;
+    c->probe_scanned = length;
     return 0;
   }
   c->version = probe.version;

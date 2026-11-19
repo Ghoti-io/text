@@ -35,6 +35,7 @@
  * Copyright 2026 by Corey Pennycuff
  */
 
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -667,6 +668,19 @@ TEST_F(XmlEncodings, TheProfileOfALegacyDocumentIsTheVersionOfItsDeclarationAndN
   r = parse("<?xml version=\"1.0\" encoding=\"ISO-8859-3\"?><a>x\x85y<?xml version=\"1.1\"?></a>");
   EXPECT_EQ(r.status, GTEXT_XML_E_SYNTAX);
   EXPECT_EQ(r.err.line, 1u) << "the version after the declaration is not the profile";
+}
+
+TEST_F(XmlEncodings, ALegacyDocumentWhoseFirstMarkupNeverEndsIsConvertedInLinearTime) {
+  // The profile is asked about after every converted character and the answer is final once the text holds a `>`; a document that has none for a
+  // megabyte (the declaration's last attribute value is never closed) is the one in which the question is asked every time, and in which a search of
+  // the whole text for the `>` each time would take a minute.
+  std::string doc = "<?xml version=\"1.0\" encoding=\"windows-1251\" a=\"";
+  doc.append(1 << 20, '\xCF');
+  const auto start = std::chrono::steady_clock::now();
+  Result r = parse(doc);
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+  EXPECT_NE(r.status, GTEXT_XML_OK);
+  EXPECT_LT(ms, 10000) << "the conversion of one megabyte must not grow with the text it has converted";
 }
 
 TEST_F(XmlEncodings, BadUnitsAreRefused) {
